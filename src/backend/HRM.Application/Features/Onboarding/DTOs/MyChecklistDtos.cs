@@ -34,7 +34,7 @@ public sealed record MyChecklistTaskDto
     public string? Description { get; init; }
     public string? Category { get; init; }
     public OnboardingResponsibleRole ResponsibleRole { get; init; }
-    public DateTime DueDate { get; init; }
+    public DateOnly DueDate { get; init; }
     /// <summary>Effective status — pending/in-progress/completed/overdue (overdue computed at read time, AC-5).</summary>
     public string Status { get; init; } = string.Empty;
     public bool IsMandatory { get; init; }

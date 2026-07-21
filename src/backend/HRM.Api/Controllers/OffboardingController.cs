@@ -180,7 +180,7 @@ public sealed class OffboardingController : ControllerBase
 /// <summary>POST /initiate body (US-ONB-005 §7). Reason is a string for the FE contract.</summary>
 public sealed record InitiateOffboardingRequest(
     Guid EmployeeId,
-    DateTime LastWorkingDay,
+    DateOnly LastWorkingDay,
     Guid? OffboardingTemplateId,
     string Reason,
     string? Notes);

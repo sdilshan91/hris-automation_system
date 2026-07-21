@@ -32,7 +32,7 @@ public sealed record IssueAssetCommandLine(
     string? Brand,
     string? Model,
     AssetCondition Condition,
-    DateTime IssueDate,
+    DateOnly IssueDate,
     string? Notes);
 
 public sealed class IssueAssetsCommandHandler

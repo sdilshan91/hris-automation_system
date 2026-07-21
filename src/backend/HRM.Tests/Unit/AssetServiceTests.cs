@@ -103,8 +103,8 @@ public sealed class AssetServiceTests
     }
 
     private static IssueAssetLineInput Line(string tag, string type = "Laptop", Guid? assetId = null,
-        string? serial = null, AssetCondition condition = AssetCondition.New, DateTime? issueDate = null) =>
-        new(assetId, type, tag, serial, null, null, condition, issueDate ?? DateTime.UtcNow.Date, null);
+        string? serial = null, AssetCondition condition = AssetCondition.New, DateOnly? issueDate = null) =>
+        new(assetId, type, tag, serial, null, null, condition, issueDate ?? DateOnly.FromDateTime(DateTime.UtcNow), null);
 
     private IssueAssetsInput IssueInput(Guid employeeId, Guid? taskId, params IssueAssetLineInput[] lines) =>
         new(employeeId, taskId, lines, null, null, null, 0);
@@ -182,12 +182,12 @@ public sealed class AssetServiceTests
             {
                 Id = checklistId, TenantId = _tenantId, EmployeeId = _employeeId,
                 TemplateId = BaseEntity.NewUuidV7(), TemplateName = "Standard",
-                Status = OnboardingChecklistStatus.Active, StartDate = DateTime.UtcNow.Date,
+                Status = OnboardingChecklistStatus.Active, StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
                 Tasks = { new OnboardingTaskInstance
                 {
                     Id = taskId, TenantId = _tenantId, ChecklistInstanceId = checklistId,
                     Title = "Issue laptop", ResponsibleRole = OnboardingResponsibleRole.HR,
-                    DueDate = DateTime.UtcNow.Date, Status = OnboardingTaskStatus.Pending,
+                    DueDate = DateOnly.FromDateTime(DateTime.UtcNow), Status = OnboardingTaskStatus.Pending,
                 } },
             });
             db.SaveChanges();
@@ -215,12 +215,12 @@ public sealed class AssetServiceTests
             {
                 Id = checklistId, TenantId = _tenantId, EmployeeId = _otherEmployeeId,
                 TemplateId = BaseEntity.NewUuidV7(), TemplateName = "Standard",
-                Status = OnboardingChecklistStatus.Active, StartDate = DateTime.UtcNow.Date,
+                Status = OnboardingChecklistStatus.Active, StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
                 Tasks = { new OnboardingTaskInstance
                 {
                     Id = taskId, TenantId = _tenantId, ChecklistInstanceId = checklistId,
                     Title = "Issue laptop", ResponsibleRole = OnboardingResponsibleRole.HR,
-                    DueDate = DateTime.UtcNow.Date, Status = OnboardingTaskStatus.Pending,
+                    DueDate = DateOnly.FromDateTime(DateTime.UtcNow), Status = OnboardingTaskStatus.Pending,
                 } },
             });
             db.SaveChanges();
@@ -301,7 +301,7 @@ public sealed class AssetServiceTests
         SeedEmployees();
 
         var result = await Service().IssueAsync(IssueInput(_employeeId, null,
-            Line("LAP-FUT", issueDate: DateTime.UtcNow.AddDays(1).Date)));
+            Line("LAP-FUT", issueDate: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)))));
 
         result.IsFailure.Should().BeTrue();
         result.ErrorCode.Should().Be("issue_date_future");

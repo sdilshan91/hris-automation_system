@@ -45,7 +45,7 @@ public sealed class IssueAssetLineValidator : AbstractValidator<IssueAssetComman
 
         // §7: issue date cannot be in the future (compared against UTC "today").
         RuleFor(x => x.IssueDate)
-            .Must(d => d.Date <= DateTime.UtcNow.Date)
+            .Must(d => d <= DateOnly.FromDateTime(DateTime.UtcNow))
             .WithMessage("Issue date cannot be in the future.");
     }
 }

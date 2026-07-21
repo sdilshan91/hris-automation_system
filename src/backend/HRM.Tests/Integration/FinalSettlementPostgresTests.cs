@@ -177,7 +177,7 @@ public sealed class FinalSettlementPostgresTests : IAsyncLifetime
                 act, tc, new HRM.Infrastructure.Services.StatutoryDeductionResolver(
                     act, tc, Microsoft.Extensions.Logging.Abstractions.NullLogger<HRM.Infrastructure.Services.StatutoryDeductionResolver>.Instance),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<HRM.Infrastructure.Services.RealPayrollFnFIntegration>.Instance);
-            settlementId = await svc.TriggerFinalSettlementAsync(_tenantId, empId, offboardingId, new DateTime(2026, 6, 15));
+            settlementId = await svc.TriggerFinalSettlementAsync(_tenantId, empId, offboardingId, new DateOnly(2026, 6, 15));
         }
 
         await using var read = CreateContext(tc, cu);

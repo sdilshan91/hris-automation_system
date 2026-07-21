@@ -14,9 +14,9 @@ public sealed class InitiateOffboardingValidatorTests
     private readonly InitiateOffboardingValidator _validator = new();
 
     private static InitiateOffboardingCommand Cmd(
-        Guid? employeeId = null, DateTime? lwd = null,
+        Guid? employeeId = null, DateOnly? lwd = null,
         OffboardingReason reason = OffboardingReason.Resignation, string? notes = null) =>
-        new(employeeId ?? Guid.NewGuid(), lwd ?? DateTime.UtcNow.AddDays(7).Date, null, reason, notes);
+        new(employeeId ?? Guid.NewGuid(), lwd ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(7)), null, reason, notes);
 
     [Fact]
     public void Valid_command_passes()
@@ -35,14 +35,14 @@ public sealed class InitiateOffboardingValidatorTests
     [Fact]
     public void Last_working_day_in_the_past_fails()
     {
-        var result = _validator.TestValidate(Cmd(lwd: DateTime.UtcNow.AddDays(-1).Date));
+        var result = _validator.TestValidate(Cmd(lwd: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1))));
         result.ShouldHaveValidationErrorFor(x => x.LastWorkingDay);
     }
 
     [Fact]
     public void Last_working_day_today_passes()
     {
-        var result = _validator.TestValidate(Cmd(lwd: DateTime.UtcNow.Date));
+        var result = _validator.TestValidate(Cmd(lwd: DateOnly.FromDateTime(DateTime.UtcNow)));
         result.ShouldNotHaveValidationErrorFor(x => x.LastWorkingDay);
     }
 

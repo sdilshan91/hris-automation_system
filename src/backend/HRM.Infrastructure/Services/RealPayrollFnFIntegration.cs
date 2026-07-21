@@ -74,10 +74,10 @@ public sealed class RealPayrollFnFIntegration : IPayrollFnFIntegration
         Guid tenantId,
         Guid employeeId,
         Guid offboardingInstanceId,
-        DateTime lastWorkingDay,
+        DateOnly lastWorkingDay,
         CancellationToken cancellationToken = default)
     {
-        var lwd = DateOnly.FromDateTime(lastWorkingDay);
+        var lwd = lastWorkingDay;
 
         // ── Idempotency (money-critical) ─────────────────────────────────────────────────────────────────────
         // If a settlement already exists for this offboarding instance, return its ref WITHOUT recomputing. A

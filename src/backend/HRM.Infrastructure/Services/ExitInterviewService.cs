@@ -119,7 +119,7 @@ public sealed class ExitInterviewService : IExitInterviewService
                     "You can only submit an exit interview for your own offboarding.", 403, "not_own_offboarding");
 
             // BR-3: self-service must be submitted before the last working day.
-            if (DateTime.UtcNow.Date > offboarding.LastWorkingDay.Date)
+            if (DateOnly.FromDateTime(DateTime.UtcNow) > offboarding.LastWorkingDay)
                 return Result<ExitInterviewDto>.Failure(
                     "Self-service exit interviews must be submitted before your last working day.",
                     409, "after_last_working_day");
@@ -176,8 +176,8 @@ public sealed class ExitInterviewService : IExitInterviewService
             TemplateId = template.Id,
             InterviewMode = mode,
             ConductedByUserId = mode == ExitInterviewMode.HrConducted ? _currentUser.UserId : null,
-            // BUG-289 class: interview_date is timestamptz — .Date is Kind=Unspecified (Npgsql rejects it). UTC-kind it.
-            InterviewDate = DateTime.SpecifyKind(input.InterviewDate.Date, DateTimeKind.Utc),
+            // DF-1: interview_date is a real `date` column mapped to DateOnly — assign directly (no Kind games).
+            InterviewDate = input.InterviewDate,
             OverallExperienceRating = input.OverallExperienceRating,
             WouldRecommendEmployer = input.WouldRecommendEmployer,
             AdditionalComments = string.IsNullOrWhiteSpace(input.AdditionalComments)
@@ -238,8 +238,9 @@ public sealed class ExitInterviewService : IExitInterviewService
         if (!_tenantContext.IsResolved)
             return Result<ExitInterviewAnalyticsDto>.Failure("Tenant context is not resolved.", 400);
 
-        var from = fromDate?.Date;
-        var to = toDate?.Date;
+        // InterviewDate is now a real `date` column (DateOnly); collapse the DateTime range bounds to DateOnly.
+        DateOnly? from = fromDate is { } f ? DateOnly.FromDateTime(f) : null;
+        DateOnly? to = toDate is { } t ? DateOnly.FromDateTime(t) : null;
 
         // Active (non-superseded) interviews in range — tenant-scoped via the global query filter (BR-4/AC-5).
         var interviewsQuery = _dbContext.ExitInterviews

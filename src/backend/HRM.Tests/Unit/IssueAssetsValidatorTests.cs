@@ -18,8 +18,8 @@ public sealed class IssueAssetsValidatorTests
 
     private static IssueAssetCommandLine Line(
         string tag = "LAP-1", string type = "Laptop", AssetCondition condition = AssetCondition.New,
-        DateTime? issueDate = null, string? notes = null) =>
-        new(null, type, tag, null, null, null, condition, issueDate ?? DateTime.UtcNow.Date, notes);
+        DateOnly? issueDate = null, string? notes = null) =>
+        new(null, type, tag, null, null, null, condition, issueDate ?? DateOnly.FromDateTime(DateTime.UtcNow), notes);
 
     [Fact]
     public void Valid_command_passes()
@@ -46,7 +46,7 @@ public sealed class IssueAssetsValidatorTests
     [Fact]
     public void Future_issue_date_fails()
     {
-        var result = _validator.TestValidate(Cmd(Line(issueDate: DateTime.UtcNow.AddDays(2).Date)));
+        var result = _validator.TestValidate(Cmd(Line(issueDate: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)))));
         result.ShouldHaveValidationErrorFor("Assets[0].IssueDate");
     }
 

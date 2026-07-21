@@ -17,7 +17,7 @@ public sealed class RecordExitInterviewValidatorTests
     private static RecordExitInterviewCommand Cmd(
         Guid? offboardingId = null,
         string mode = "hr_conducted",
-        DateTime? date = null,
+        DateOnly? date = null,
         int? overall = 4,
         string? comments = null,
         IReadOnlyList<ExitInterviewResponseInput>? responses = null)
@@ -25,7 +25,7 @@ public sealed class RecordExitInterviewValidatorTests
         var input = new RecordExitInterviewInput(
             offboardingId ?? Guid.NewGuid(),
             mode,
-            date ?? DateTime.UtcNow.Date,
+            date ?? DateOnly.FromDateTime(DateTime.UtcNow),
             responses ?? new[] { new ExitInterviewResponseInput(Guid.NewGuid(), 5, null, null) },
             overall, true, comments);
         return new RecordExitInterviewCommand(input, IsSelfService: false, AllowEdit: false);
@@ -64,14 +64,14 @@ public sealed class RecordExitInterviewValidatorTests
     [Fact]
     public void Interview_date_in_the_future_fails()
     {
-        var result = _validator.TestValidate(Cmd(date: DateTime.UtcNow.AddDays(1).Date));
+        var result = _validator.TestValidate(Cmd(date: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1))));
         result.ShouldHaveValidationErrorFor("Input.InterviewDate");
     }
 
     [Fact]
     public void Interview_date_today_passes()
     {
-        var result = _validator.TestValidate(Cmd(date: DateTime.UtcNow.Date));
+        var result = _validator.TestValidate(Cmd(date: DateOnly.FromDateTime(DateTime.UtcNow)));
         result.ShouldNotHaveValidationErrorFor("Input.InterviewDate");
     }
 

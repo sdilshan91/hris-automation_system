@@ -23,7 +23,7 @@ public sealed record OnboardingChecklistInstanceDto
     public string TemplateName { get; init; } = string.Empty;
     public OnboardingChecklistStatus Status { get; init; }
     public string StatusName { get; init; } = string.Empty;
-    public DateTime StartDate { get; init; }
+    public DateOnly StartDate { get; init; }
     public int Version { get; init; }
     public Guid? AssignedByUserId { get; init; }
     public IReadOnlyList<OnboardingTaskInstanceDto> Tasks { get; init; } = [];
@@ -44,7 +44,7 @@ public sealed record OnboardingTaskInstanceDto
     public OnboardingResponsibleRole ResponsibleRole { get; init; }
     public string ResponsibleRoleName { get; init; } = string.Empty;
     public Guid? ResponsibleUserId { get; init; }
-    public DateTime DueDate { get; init; }
+    public DateOnly DueDate { get; init; }
     public OnboardingTaskStatus Status { get; init; }
     public string StatusName { get; init; } = string.Empty;
     public bool IsMandatory { get; init; }
@@ -82,7 +82,7 @@ public sealed record AssignChecklistRequest
 {
     public Guid EmployeeId { get; init; }
     public Guid TemplateId { get; init; }
-    public DateTime? OverrideStartDate { get; init; }
+    public DateOnly? OverrideStartDate { get; init; }
     public ChecklistAssignmentMode Mode { get; init; } = ChecklistAssignmentMode.Replace;
     public IReadOnlyList<AdHocTaskRequest> AdditionalTasks { get; init; } = [];
     public string? IdempotencyKey { get; init; }
@@ -92,7 +92,7 @@ public sealed record AssignChecklistRequest
 public sealed record ModifyTaskRequest
 {
     public Guid TaskInstanceId { get; init; }
-    public DateTime? NewDueDate { get; init; }
+    public DateOnly? NewDueDate { get; init; }
     public bool Remove { get; init; }
 }
 

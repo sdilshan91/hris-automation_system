@@ -155,7 +155,7 @@ public sealed class OnboardingChecklistServiceTests
 
     private AssignChecklistInput Assign(
         Guid templateId, ChecklistAssignmentMode mode = ChecklistAssignmentMode.Replace,
-        DateTime? overrideStart = null, string? idempotencyKey = null,
+        DateOnly? overrideStart = null, string? idempotencyKey = null,
         IReadOnlyList<AdHocTaskInput>? adhoc = null) =>
         new(_employeeId, templateId, overrideStart, mode, adhoc ?? Array.Empty<AdHocTaskInput>(), idempotencyKey);
 
@@ -174,13 +174,13 @@ public sealed class OnboardingChecklistServiceTests
         var dto = result.Value!;
         dto.TaskCount.Should().Be(3);
         dto.Status.Should().Be(OnboardingChecklistStatus.Active);
-        dto.StartDate.Should().Be(joining);
+        dto.StartDate.Should().Be(DateOnly.FromDateTime(joining));
         dto.Tasks.Should().OnlyContain(t => t.Status == OnboardingTaskStatus.Pending);
 
         // FR-2: due_date = start_date + due_offset_days.
-        dto.Tasks.Single(t => t.Title == "Sign contract").DueDate.Should().Be(joining);
-        dto.Tasks.Single(t => t.Title == "Provision laptop").DueDate.Should().Be(joining.AddDays(2));
-        dto.Tasks.Single(t => t.Title == "Welcome lunch").DueDate.Should().Be(joining.AddDays(3));
+        dto.Tasks.Single(t => t.Title == "Sign contract").DueDate.Should().Be(DateOnly.FromDateTime(joining));
+        dto.Tasks.Single(t => t.Title == "Provision laptop").DueDate.Should().Be(DateOnly.FromDateTime(joining).AddDays(2));
+        dto.Tasks.Single(t => t.Title == "Welcome lunch").DueDate.Should().Be(DateOnly.FromDateTime(joining).AddDays(3));
 
         await using var db = Db();
         var stored = await db.OnboardingChecklistInstances.Include(c => c.Tasks).FirstAsync(c => c.Id == dto.Id);
@@ -234,7 +234,7 @@ public sealed class OnboardingChecklistServiceTests
 
         var dto = (await Service().AssignAsync(Assign(templateId))).Value!;
 
-        var today = DateTime.UtcNow.Date;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         dto.StartDate.Should().Be(today);
         dto.Tasks.Single(t => t.Title == "Provision laptop").DueDate.Should().Be(today.AddDays(2));
     }
@@ -413,7 +413,7 @@ public sealed class OnboardingChecklistServiceTests
         var instance = (await Service().AssignAsync(Assign(templateId))).Value!;
 
         var laptop = instance.Tasks.Single(t => t.Title == "Provision laptop"); // non-mandatory
-        var newDue = DateTime.UtcNow.AddDays(20).Date;
+        var newDue = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(20));
 
         var result = await Service().ModifyAsync(new ModifyChecklistInput(
             instance.Id,

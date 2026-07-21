@@ -19,13 +19,13 @@ public sealed record AdHocTaskInput(
 public sealed record AssignChecklistInput(
     Guid EmployeeId,
     Guid TemplateId,
-    DateTime? OverrideStartDate,
+    DateOnly? OverrideStartDate,
     ChecklistAssignmentMode Mode,
     IReadOnlyList<AdHocTaskInput> AdditionalTasks,
     string? IdempotencyKey);
 
 /// <summary>A single task modification op (US-ONB-002 AC-4/FR-5/FR-6).</summary>
-public sealed record ModifyTaskInput(Guid TaskInstanceId, DateTime? NewDueDate, bool Remove);
+public sealed record ModifyTaskInput(Guid TaskInstanceId, DateOnly? NewDueDate, bool Remove);
 
 /// <summary>Input for modifying an assigned checklist (US-ONB-002 AC-4).</summary>
 public sealed record ModifyChecklistInput(

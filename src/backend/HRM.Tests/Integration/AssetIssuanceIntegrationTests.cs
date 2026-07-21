@@ -146,7 +146,7 @@ public sealed class AssetIssuanceIntegrationTests
 
     private static IssueAssetCommandLine Line(string tag, string type = "Laptop", Guid? assetId = null,
         string? serial = null, AssetCondition condition = AssetCondition.New) =>
-        new(assetId, type, tag, serial, null, null, condition, DateTime.UtcNow.Date, null);
+        new(assetId, type, tag, serial, null, null, condition, DateOnly.FromDateTime(DateTime.UtcNow), null);
 
     private static IssueAssetsCommand IssueCmd(Guid employeeId, Guid? taskId, params IssueAssetCommandLine[] lines) =>
         new(employeeId, taskId, lines, null, null, null, 0);
@@ -188,12 +188,12 @@ public sealed class AssetIssuanceIntegrationTests
             {
                 Id = checklistId, TenantId = _tenantA, EmployeeId = _employeeA,
                 TemplateId = BaseEntity.NewUuidV7(), TemplateName = "Standard",
-                Status = OnboardingChecklistStatus.Active, StartDate = DateTime.UtcNow.Date,
+                Status = OnboardingChecklistStatus.Active, StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
                 Tasks = { new OnboardingTaskInstance
                 {
                     Id = taskId, TenantId = _tenantA, ChecklistInstanceId = checklistId,
                     Title = "Issue laptop", ResponsibleRole = OnboardingResponsibleRole.HR,
-                    DueDate = DateTime.UtcNow.Date, Status = OnboardingTaskStatus.Pending,
+                    DueDate = DateOnly.FromDateTime(DateTime.UtcNow), Status = OnboardingTaskStatus.Pending,
                 } },
             });
             db.SaveChanges();

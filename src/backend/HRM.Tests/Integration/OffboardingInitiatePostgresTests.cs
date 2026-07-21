@@ -1,11 +1,12 @@
 // ============================================================================
-// BUG-289 class: offboarding INITIATE persists on real Postgres.
+// DF-1 (was BUG-289 class): offboarding INITIATE persists on real Postgres.
 //
-// InitiateAsync writes LastWorkingDay (from input.LastWorkingDay.Date) and each
-// task's DueDate (from ClampDueDate(...)) into the timestamptz last_working_day /
-// due_date columns. Plain `.Date` is Kind=Unspecified, which Npgsql rejects — so
-// this used to throw on real Postgres (the InMemory suite hid it). This is the
-// compound case (two write sites + ClampDueDate). Real Postgres via Testcontainers.
+// InitiateAsync writes LastWorkingDay (from input.LastWorkingDay) and each task's
+// DueDate (from ClampDueDate(...)) into real `date` last_working_day / due_date
+// columns mapped to DateOnly. This proves the NEW contract on real Postgres: the
+// exact calendar dates round-trip through the `date` columns with no off-by-one
+// (regardless of DB session timezone) — the failure the timestamptz remodel kills.
+// Real Postgres via Testcontainers.
 // ============================================================================
 
 using FluentAssertions;
@@ -75,7 +76,7 @@ public sealed class OffboardingInitiatePostgresTests : IAsyncLifetime
 
     [Fact]
     [Trait("TC", "TC-ONB-005-13")]
-    public async Task Initiate_persists_last_working_day_and_task_due_dates_on_postgres_bug289()
+    public async Task Initiate_persists_last_working_day_and_task_due_dates_on_postgres_df1()
     {
         await using (var seed = CreateContext())
         {
@@ -96,10 +97,9 @@ public sealed class OffboardingInitiatePostgresTests : IAsyncLifetime
             await seed.SaveChangesAsync();
         }
 
-        // A FUTURE last working day → LastWorkingDay + the derived (clamped) task due dates all write to
-        // timestamptz columns; the write path must NOT throw on Postgres. Kind MUST be Unspecified (as a date
-        // arrives from model binding): `.Date` PRESERVES Kind, so a Utc seed would let the mutant survive.
-        var lwd = new DateTime(2026, 12, 1);
+        // A FUTURE last working day → LastWorkingDay + the derived (clamped) task due dates all write to the
+        // real `date` columns; the exact calendar dates must round-trip on Postgres with no off-by-one.
+        var lwd = new DateOnly(2026, 12, 1);
         await using var db = CreateContext();
         var result = await CreateService(db).InitiateAsync(new InitiateOffboardingInput(
             _employeeId, lwd, null, OffboardingReason.Resignation, null));
@@ -110,8 +110,12 @@ public sealed class OffboardingInitiatePostgresTests : IAsyncLifetime
         var instance = await verify.OffboardingInstances
             .Include(o => o.Tasks)
             .SingleAsync(o => o.EmployeeId == _employeeId);
-        instance.LastWorkingDay.Kind.Should().Be(DateTimeKind.Utc);
+        // DF-1 contract: the last working day round-trips exactly through the `date` column.
+        instance.LastWorkingDay.Should().Be(lwd);
         instance.Tasks.Should().NotBeEmpty();                       // default clearance tasks
-        instance.Tasks.Should().OnlyContain(t => t.DueDate.Kind == DateTimeKind.Utc);
+        // FR-2: due_date = LWD - offset_days. "Return IT assets" has offset 0 → due == LWD (round-trips exactly).
+        instance.Tasks.Single(t => t.Title == "Return IT assets").DueDate.Should().Be(lwd);
+        // "Knowledge transfer and handover" has offset 3 → due == LWD - 3 days.
+        instance.Tasks.Single(t => t.Title == "Knowledge transfer and handover").DueDate.Should().Be(lwd.AddDays(-3));
     }
 }

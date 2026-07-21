@@ -65,7 +65,7 @@ public sealed class OffboardingServiceTests
         _authService.RevokeAllSessionsAsync(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(Result.Success());
         _payrollFnF.TriggerFinalSettlementAsync(
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
             .Returns(_settlementRef);
     }
 
@@ -111,8 +111,8 @@ public sealed class OffboardingServiceTests
         return id;
     }
 
-    private InitiateOffboardingInput InitiateInput(DateTime? lwd = null, OffboardingReason reason = OffboardingReason.Resignation) =>
-        new(_employeeId, lwd ?? DateTime.UtcNow.AddDays(10).Date, null, reason, "Leaving for a new role.");
+    private InitiateOffboardingInput InitiateInput(DateOnly? lwd = null, OffboardingReason reason = OffboardingReason.Resignation) =>
+        new(_employeeId, lwd ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)), null, reason, "Leaving for a new role.");
 
     // ── AC-1 / FR-2 / FR-3 initiate ─────────────────────────────────────
 
@@ -120,7 +120,7 @@ public sealed class OffboardingServiceTests
     public async Task Initiate_creates_default_clearance_tasks_with_lwd_relative_due_dates_and_tenant_id()
     {
         SeedEmployees();
-        var lwd = DateTime.UtcNow.AddDays(10).Date;
+        var lwd = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10));
 
         var result = await Service().InitiateAsync(InitiateInput(lwd));
 
@@ -204,7 +204,7 @@ public sealed class OffboardingServiceTests
     {
         SeedEmployees();
 
-        var result = await Service().InitiateAsync(InitiateInput(DateTime.UtcNow.AddDays(-1).Date));
+        var result = await Service().InitiateAsync(InitiateInput(DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1))));
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
@@ -216,7 +216,7 @@ public sealed class OffboardingServiceTests
     {
         SeedEmployees();
 
-        var result = await Service().InitiateAsync(InitiateInput(DateTime.UtcNow.Date));
+        var result = await Service().InitiateAsync(InitiateInput(DateOnly.FromDateTime(DateTime.UtcNow)));
 
         result.IsSuccess.Should().BeTrue();
     }
@@ -404,7 +404,7 @@ public sealed class OffboardingServiceTests
         db.OffboardingInstances.Single(o => o.Id == initiated.Id).Status.Should().Be(OffboardingStatus.InProgress);
         db.Employees.Single(e => e.Id == _employeeId).Status.Should().Be(EmployeeStatus.Suspended);
         await _payrollFnF.DidNotReceive().TriggerFinalSettlementAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
