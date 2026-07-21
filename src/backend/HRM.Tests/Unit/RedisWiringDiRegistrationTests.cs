@@ -9,9 +9,12 @@
 // multiplexer immediately, and RedisCache defers its connection until first use.
 // ============================================================================
 
+using System.Linq;
 using FluentAssertions;
 using HRM.Api.Redis;
+using HRM.Application.Common.Interfaces;
 using HRM.Infrastructure;
+using HRM.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.Configuration;
@@ -88,6 +91,45 @@ public sealed class RedisWiringDiRegistrationTests
         opts.SyncTimeout.Should().Be(1000, "a frozen Redis must fast-fail per op, not stall the 5s default");
         opts.AsyncTimeout.Should().Be(1000,
             "the IDistributedCache path is async, so AsyncTimeout is the one that governs the cached-read fast-fail");
+    }
+
+    // DF-7: assert the REGISTERED implementation type of the per-IP portal-link limiter (via the service descriptor)
+    // rather than resolving/activating it — DbCount transitively needs AppDbContext → TenantContext →
+    // IHttpContextAccessor, which this minimal cache-only provider intentionally does not register.
+    private static Type PortalLinkLimiterImplType(string? redisConnectionString)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=unused;Username=unused",
+                ["ConnectionStrings:Redis"] = redisConnectionString,
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddLogging();
+        services.AddSharedRedisMultiplexer(configuration);
+        services.AddInfrastructure(configuration);
+
+        var descriptor = services.Single(d => d.ServiceType == typeof(IPortalLinkIpRateLimiter));
+        return descriptor.ImplementationType!;
+    }
+
+    [Fact] // DF-7: no Redis → the per-IP portal-link limiter falls back to the DB sliding-window counter
+    public void WhenRedisNotConfigured_PortalLinkLimiterIsDbCount()
+    {
+        PortalLinkLimiterImplType(redisConnectionString: "")
+            .Should().Be<DbCountPortalLinkIpRateLimiter>(
+                "with no Redis the per-IP portal-link throttle uses the single-instance DB sliding-window counter");
+    }
+
+    [Fact] // DF-7: Redis configured → the per-IP portal-link limiter uses the distributed Redis counter
+    public void WhenRedisConfigured_PortalLinkLimiterIsRedisBacked()
+    {
+        PortalLinkLimiterImplType(redisConnectionString: "localhost:6399,abortConnect=false")
+            .Should().Be<RedisPortalLinkIpRateLimiter>(
+                "with Redis configured the per-IP throttle uses the distributed multi-instance Redis counter");
     }
 
     [Fact] // BUG-115: Redis:OperationTimeoutMs overrides the bounded default

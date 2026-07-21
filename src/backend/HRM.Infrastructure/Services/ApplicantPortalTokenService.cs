@@ -29,6 +29,8 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
     private readonly ILogger<ApplicantPortalTokenService> _logger;
     // ISSUE-130: optional (nullable) so isolated construction/tests compile; DI injects it in production.
     private readonly IHttpContextAccessor? _httpContextAccessor;
+    // DF-7: per-IP throttle behind one seam (Redis distributed counter, or DB sliding-window fallback).
+    private readonly IPortalLinkIpRateLimiter _ipRateLimiter;
 
     /// <summary>FR-8: default magic-link validity window (days) when not configured.</summary>
     private const int DefaultExpiryDays = 30;
@@ -36,19 +38,13 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
     /// <summary>NFR-6: basic rate-limit guard — reuse a token issued within this window instead of minting a new one.</summary>
     private const int RecentTokenWindowSeconds = 60;
 
-    /// <summary>ISSUE-130 (NFR-6): per-IP rate limit — max tokens one IP may have issued (across ALL emails) within
-    /// <see cref="IpWindowSeconds"/>. Catches enumeration via rotating emails that the per-email guard misses.</summary>
-    private const int MaxIssuesPerIp = 10;
-
-    /// <summary>ISSUE-130: the per-IP rate-limit window (1 hour).</summary>
-    private const int IpWindowSeconds = 3600;
-
     public ApplicantPortalTokenService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IConfiguration configuration,
         INotificationDispatcher dispatcher,
         ILogger<ApplicantPortalTokenService> logger,
+        IPortalLinkIpRateLimiter ipRateLimiter,
         IHttpContextAccessor? httpContextAccessor = null)
     {
         _dbContext = dbContext;
@@ -56,6 +52,7 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
         _configuration = configuration;
         _dispatcher = dispatcher;
         _logger = logger;
+        _ipRateLimiter = ipRateLimiter;
         _httpContextAccessor = httpContextAccessor;
     }
 
@@ -77,8 +74,9 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
         var now = DateTime.UtcNow;
 
         // NFR-6 (basic guard): if a non-expired token was issued for this email very recently, do not mint a
-        // fresh one — a real distributed rate-limiter is DEFERRED (see report). We can't return the prior raw
-        // token (only its hash is stored), so we throttle by refusing rapid re-issue.
+        // fresh one. (The per-IP throttle below is now the distributed limiter — DF-7 — but this per-EMAIL
+        // guard stays a simple DB check.) We can't return the prior raw token (only its hash is stored), so
+        // we throttle by refusing rapid re-issue.
         var recentExists = await _dbContext.ApplicantPortalTokens
             .AsNoTracking()
             .AnyAsync(t => t.ApplicantEmail == emailLower
@@ -93,24 +91,17 @@ public sealed class ApplicantPortalTokenService : IApplicantPortalTokenService
                 "A portal link was just sent. Please wait a moment before requesting another.", 429, "rate_limited");
         }
 
-        // ISSUE-130 (NFR-6): per-IP throttle. The per-email guard above misses an attacker rotating DISTINCT
-        // emails from one IP (enumeration / provider-exhaustion), so also cap how many tokens a single IP may
-        // have issued (across all emails) within the window. Skipped when the IP is unknown (e.g. background job).
+        // ISSUE-130 (NFR-6) / DF-7: per-IP throttle. The per-email guard above misses an attacker rotating DISTINCT
+        // emails from one IP (enumeration / provider-exhaustion), so also cap how many tokens a single IP may issue
+        // (across all emails) within the window. Delegated to IPortalLinkIpRateLimiter — a distributed Redis counter
+        // at multi-instance scale, or the DB sliding-window fallback when Redis is not configured. Skipped when the IP
+        // is unknown (e.g. a background job with no HttpContext) — preserving the original behaviour.
         var requestIp = _httpContextAccessor?.HttpContext?.Connection.RemoteIpAddress?.ToString();
-        if (!string.IsNullOrEmpty(requestIp))
+        if (!string.IsNullOrEmpty(requestIp)
+            && !await _ipRateLimiter.TryAcquireAsync(tenantId, requestIp, cancellationToken))
         {
-            var ipIssueCount = await _dbContext.ApplicantPortalTokens
-                .AsNoTracking()
-                .CountAsync(t => t.RequestIp == requestIp
-                                 && t.CreatedAt > now.AddSeconds(-IpWindowSeconds), cancellationToken);
-            if (ipIssueCount >= MaxIssuesPerIp)
-            {
-                _logger.LogWarning(
-                    "Portal token issue throttled (NFR-6, per-IP) from {RequestIp} in tenant {TenantId} — {Count} issued in the last {Window}s.",
-                    requestIp, tenantId, ipIssueCount, IpWindowSeconds);
-                return Result<IssuedPortalToken>.Failure(
-                    "Too many portal link requests. Please try again later.", 429, "rate_limited");
-            }
+            return Result<IssuedPortalToken>.Failure(
+                "Too many portal link requests. Please try again later.", 429, "rate_limited");
         }
 
         var expiresAt = now.AddDays(DefaultExpiryDays);

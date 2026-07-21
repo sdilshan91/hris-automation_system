@@ -16,6 +16,7 @@ using HRM.Tests.Unit.Helpers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace HRM.Tests.Unit;
@@ -68,9 +69,13 @@ public sealed class ApplicantPortalTokenServiceTests
             accessor = Substitute.For<IHttpContextAccessor>();
             accessor.HttpContext.Returns(ctx);
         }
+        // DF-7: wire the REAL DB-fallback per-IP limiter (sharing the InMemory store) so the existing per-IP
+        // assertions exercise the moved sliding-window logic exactly as before the extraction.
+        var limiter = new DbCountPortalLinkIpRateLimiter(
+            Db(), Options.Create(new PortalLinkRateLimitOptions()));
         return new ApplicantPortalTokenService(
             Db(), _tenantContext, _config, dispatcher ?? new RecordingDispatcher(),
-            NullLogger<ApplicantPortalTokenService>.Instance, accessor);
+            NullLogger<ApplicantPortalTokenService>.Instance, limiter, accessor);
     }
 
     private async Task SeedApplicantAsync(string email)
