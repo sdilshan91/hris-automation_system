@@ -346,8 +346,22 @@ public sealed class AttendanceService : IAttendanceService
 
         var clockOut = UtcNow;                           // FR-1: server-side UTC, not client-reported (DF-43 clock seam).
 
+        // DF-56: resolve the employee's shift for the clock-in's LOCAL date so any EXPLICIT per-shift
+        // work-minute knobs override the tenant policy in the clock-out math. Reuses the US-ATT-005
+        // assignment→rotation→tenant-default resolution; the concrete resolved shift is then loaded so its
+        // knob columns are read. A shift with all-null knobs (or no shift at all) → byte-identical to today.
+        var clockInLocalDate = TenantClock.LocalDateOf(openLog.ClockIn, tenantZone);
+        Shift? resolvedShift = null;
+        var resolvedShiftResult = await _shiftService.ResolveForEmployeeAsync(
+            openLog.EmployeeId, clockInLocalDate, cancellationToken);
+        if (!resolvedShiftResult.IsFailure && resolvedShiftResult.Value is { } resolvedShiftDto)
+        {
+            resolvedShift = await _dbContext.Shifts.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == resolvedShiftDto.Id, cancellationToken);
+        }
+
         // FR-2/FR-3/FR-4/FR-7, BR-2/BR-3/BR-4/BR-6: minute-accurate work-hours calculation.
-        var calc = AttendanceCalculator.Calculate(openLog.ClockIn, clockOut, settings);
+        var calc = AttendanceCalculator.Calculate(openLog.ClockIn, clockOut, settings, shift: resolvedShift);
 
         // ISSUE-069: snapshot the pre-clock-out state so the audit row captures before/after.
         var beforeSnapshot = SnapshotLog(openLog);
@@ -365,7 +379,7 @@ public sealed class AttendanceService : IAttendanceService
         // are exempt (BR-6/§10); grace does NOT apply to early departure (§10). Re-evaluate the late
         // flag too (idempotent — the clock-in value is preserved) against the same resolved shift.
         var shiftSignals = await ResolveShiftSignalsAsync(
-            openLog.EmployeeId, TenantClock.LocalDateOf(openLog.ClockIn, tenantZone), settings, cancellationToken);
+            openLog.EmployeeId, clockInLocalDate, settings, cancellationToken);
         if (shiftSignals is { } ss)
         {
             // ISSUE-065: compare LOCAL wall-clock times (tenant time zone) to the local shift start/end.
@@ -747,7 +761,9 @@ public sealed class AttendanceService : IAttendanceService
 
         // BR-3: shift grace, else tenant default, else 0.
         var grace = shift.GracePeriodMinutes > 0 ? shift.GracePeriodMinutes : settings.GracePeriodMinutes;
-        var minimumMinutes = shift.MinimumHours is { } mh ? (int)Math.Round(mh * 60m) : 0;
+        // DF-56: an EXPLICIT per-shift MinimumWorkMinutes wins; else derive from MinimumHours as today.
+        var minimumMinutes = shift.MinimumWorkMinutes
+            ?? (shift.MinimumHours is { } mh ? (int)Math.Round(mh * 60m) : 0);
 
         // US-ATT-008 BR-8: an approved HALF-DAY leave means only half the shift is expected. Evaluate
         // late/early against the WORKED half only — halve the minimum-hours gate, and move the expected

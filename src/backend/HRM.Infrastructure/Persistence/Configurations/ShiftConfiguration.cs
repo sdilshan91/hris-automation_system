@@ -37,6 +37,14 @@ public sealed class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             .HasDefaultValue(0)
             .IsRequired();
 
+        // DF-56: per-shift work-minute overrides. Nullable, NO default — a null column means the knob is
+        // unset and the resolution falls through to the tenant AttendanceSettings / shift-span derivation.
+        builder.Property(s => s.StandardWorkMinutes);
+        builder.Property(s => s.MinimumWorkMinutes);
+        builder.Property(s => s.AutoBreakMinutes);
+        builder.Property(s => s.AutoBreakThresholdMinutes);
+        builder.Property(s => s.OvertimeThresholdMinutes);
+
         builder.Property(s => s.GracePeriodMinutes)
             .HasDefaultValue(0)
             .IsRequired();

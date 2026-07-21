@@ -37,6 +37,14 @@ public record ShiftDto
     public int BreakDurationMinutes { get; init; }
     public int GracePeriodMinutes { get; init; }
     public decimal? MinimumHours { get; init; }
+
+    // DF-56: optional EXPLICIT per-shift work-minute overrides (null → tenant/derived resolution).
+    public int? StandardWorkMinutes { get; init; }
+    public int? MinimumWorkMinutes { get; init; }
+    public int? AutoBreakMinutes { get; init; }
+    public int? AutoBreakThresholdMinutes { get; init; }
+    public int? OvertimeThresholdMinutes { get; init; }
+
     public IReadOnlyList<int> WorkingDays { get; init; } = Array.Empty<int>();
     public bool IsDefault { get; init; }
     public bool IsActive { get; init; }
@@ -84,6 +92,15 @@ public sealed record ShiftRequest
     public int BreakDurationMinutes { get; init; }
     public int GracePeriodMinutes { get; init; }
     public decimal? MinimumHours { get; init; }
+
+    // DF-56: optional EXPLICIT per-shift work-minute overrides. Omit/null → the shift keeps deferring to
+    // the tenant AttendanceSettings / shift-span derivation (byte-identical to pre-DF-56 behavior).
+    public int? StandardWorkMinutes { get; init; }
+    public int? MinimumWorkMinutes { get; init; }
+    public int? AutoBreakMinutes { get; init; }
+    public int? AutoBreakThresholdMinutes { get; init; }
+    public int? OvertimeThresholdMinutes { get; init; }
+
     public IReadOnlyList<int> WorkingDays { get; init; } = Array.Empty<int>();
     public RotationRequest? Rotation { get; init; }
 }

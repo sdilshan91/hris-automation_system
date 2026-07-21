@@ -186,6 +186,59 @@ public sealed class OvertimeIntegrationTests
         ot.AttendanceLogId.Should().NotBeNull();   // NFR-1: linked to the closed log.
     }
 
+    /// <summary>DF-56: seeds a tenant DEFAULT shift carrying an (optional) explicit standard-work-minutes knob.</summary>
+    private void SeedDefaultShift(Guid tenantId, int? standardWorkMinutes)
+    {
+        using var db = Db(tenantId);
+        db.Shifts.Add(new Shift
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            Name = "Default",
+            IsDefault = true,
+            StandardWorkMinutes = standardWorkMinutes,
+        });
+        db.SaveChanges();
+    }
+
+    // ── DF-56: an EXPLICIT shift StandardWorkMinutes governs the persisted overtime RECORD (Site B, money) ──
+
+    [Fact]
+    [Trait("TC", "TC-ATT-006-19")]
+    public async Task ClockOut_ExplicitShiftStandard_OvertimeRecordUsesShiftStandard_DF56()
+    {
+        SeedSettings(_tenantA);                                 // tenant standard 480
+        SeedDefaultShift(_tenantA, standardWorkMinutes: 420);   // the shift's explicit standard is LOWER → more OT
+        SeedOpenClockInExactSpan(_tenantA, _employeeA, minutes: 540);
+        var (mediator, provider) = BuildPipeline(_tenantA, _employeeUserA);
+
+        (await mediator.Send(new ClockOutCommand(null, null, null, null))).IsSuccess.Should().BeTrue();
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.OvertimeRecords.Single(o => o.EmployeeId == _employeeA)
+            .OvertimeMinutes.Should().Be(120,
+                "540 worked − the shift's explicit 420 standard = 120 (vs 60 under the tenant 480) — the shift knob governs pay");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-006-19")]
+    public async Task ClockOut_NullShiftStandardKnob_OvertimeRecordUsesTenantStandard_DF56()
+    {
+        SeedSettings(_tenantA);
+        SeedDefaultShift(_tenantA, standardWorkMinutes: null);  // shift present but the knob is unset
+        SeedOpenClockInExactSpan(_tenantA, _employeeA, minutes: 540);
+        var (mediator, provider) = BuildPipeline(_tenantA, _employeeUserA);
+
+        (await mediator.Send(new ClockOutCommand(null, null, null, null))).IsSuccess.Should().BeTrue();
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.OvertimeRecords.Single(o => o.EmployeeId == _employeeA)
+            .OvertimeMinutes.Should().Be(60,
+                "a null shift knob falls back to the tenant standard 480 → 540−480=60 (ISSUE-078 preserved)");
+    }
+
     [Fact]
     public async Task ClockOut_BelowThreshold_CreatesNoOvertimeRecord()
     {

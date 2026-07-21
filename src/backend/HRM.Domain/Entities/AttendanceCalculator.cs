@@ -17,12 +17,11 @@ public readonly record struct AttendanceCalculation(
 /// Policy thresholds come from <see cref="AttendanceSettings"/> as a fallback — resolved by the CALLER via
 /// <c>AttendancePolicyResolver</c> (the employee's Location override, else the tenant default; US-ATT-011
 /// AC-3), not necessarily the tenant-level row.
-/// TODO(US-ATT-005 follow-up): the <see cref="Shift"/> entity now exists (US-ATT-005). Wiring the
-/// resolved shift's break/grace/minimum-hours into this calculation is deferred — the shift model
-/// carries BreakDurationMinutes / MinimumHours / GracePeriodMinutes but NOT the calculator's
-/// StandardWorkMinutes / AutoBreakThresholdMinutes / OvertimeThresholdMinutes, so a clean mapping
-/// needs those fields added to Shift (or a derived policy). Until then the tenant-level
-/// AttendanceSettings remains the source for clock-out work-hours math (see vault note).
+/// DF-56: the resolved <see cref="Shift"/> may carry EXPLICIT per-shift work-minute overrides
+/// (StandardWorkMinutes / MinimumWorkMinutes / AutoBreakMinutes / AutoBreakThresholdMinutes /
+/// OvertimeThresholdMinutes). When present they take TOP priority; precedence is
+/// <c>shift?.&lt;Knob&gt; ?? settings.&lt;Knob&gt;</c>, so a shift that leaves a knob null computes
+/// byte-identically to the tenant-only path.
 /// </summary>
 public static class AttendanceCalculator
 {
@@ -42,27 +41,36 @@ public static class AttendanceCalculator
         DateTime clockIn,
         DateTime clockOut,
         AttendanceSettings settings,
-        bool isSystemClosed = false)
+        bool isSystemClosed = false,
+        Shift? shift = null)
     {
+        // DF-56: each knob prefers the resolved shift's EXPLICIT override, else the tenant setting. A null
+        // knob (or null shift) falls through to exactly the pre-DF-56 tenant-only math.
+        var autoBreakThreshold = shift?.AutoBreakThresholdMinutes ?? settings.AutoBreakThresholdMinutes;
+        var autoBreak = shift?.AutoBreakMinutes ?? settings.AutoBreakMinutes;
+        var standardWork = shift?.StandardWorkMinutes ?? settings.StandardWorkMinutes;
+        var overtimeThreshold = shift?.OvertimeThresholdMinutes ?? settings.OvertimeThresholdMinutes;
+        var minimumWork = shift?.MinimumWorkMinutes ?? settings.MinimumWorkMinutes;
+
         // NFR-2: minute-accurate. Truncate to whole minutes (round toward zero); never negative.
         var grossMinutes = (int)Math.Max(0, Math.Floor((clockOut - clockIn).TotalMinutes));
 
         // FR-3 / BR-2: auto-deduct the configured break once the gross session exceeds the threshold.
-        var breakMinutes = grossMinutes > settings.AutoBreakThresholdMinutes
-            ? settings.AutoBreakMinutes
+        var breakMinutes = grossMinutes > autoBreakThreshold
+            ? autoBreak
             : 0;
 
         var totalWorkMinutes = Math.Max(0, grossMinutes - breakMinutes);
 
         // FR-4 / BR-3: overtime is net work beyond standard + the tolerance threshold.
         var overtimeMinutes = Math.Max(
-            0, totalWorkMinutes - (settings.StandardWorkMinutes + settings.OvertimeThresholdMinutes));
+            0, totalWorkMinutes - (standardWork + overtimeThreshold));
 
         // Status precedence: ANOMALY (system close or >16h span) > SHORT_DAY > OVERTIME > COMPLETE.
         string status;
         if (isSystemClosed || grossMinutes > AnomalyThresholdMinutes)
             status = "ANOMALY";                                   // FR-7 / BR-6 / BR-5
-        else if (totalWorkMinutes < settings.MinimumWorkMinutes)
+        else if (totalWorkMinutes < minimumWork)
             status = "SHORT_DAY";                                 // BR-4
         else if (overtimeMinutes > 0)
             status = "OVERTIME";                                  // BR-3

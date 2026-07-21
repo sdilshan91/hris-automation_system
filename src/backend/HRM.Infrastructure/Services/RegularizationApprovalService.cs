@@ -595,7 +595,18 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
             return Result<AttendanceLog>.Failure(
                 "The corrected clock-out must be after the corrected clock-in.", 400, "invalid_times");
 
-        var calc = AttendanceCalculator.Calculate(clockIn.Value, clockOut.Value, settings);
+        // DF-56: honor the resolved shift's explicit work-minute knobs on the regularized recompute, mirroring
+        // the live clock-out path (AttendanceService). Without this a regularized OT day silently reverts to
+        // tenant settings and diverges from its original clock-out value (a half-wired money path). A null shift
+        // or all-null knobs → identical to today.
+        Shift? resolvedShift = null;
+        var shiftResult = await _shiftService.ResolveForEmployeeAsync(
+            regularization.EmployeeId, regularization.Date, cancellationToken);
+        if (!shiftResult.IsFailure && shiftResult.Value is { } shiftDto)
+            resolvedShift = await _dbContext.Shifts.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == shiftDto.Id, cancellationToken);
+
+        var calc = AttendanceCalculator.Calculate(clockIn.Value, clockOut.Value, settings, shift: resolvedShift);
 
         if (log is null)
         {
