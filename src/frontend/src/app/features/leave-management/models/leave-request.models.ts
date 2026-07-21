@@ -37,6 +37,9 @@ export interface ILeaveRequest {
   status: LeaveRequestStatus;
   requestedAt: string;
   attachmentUrls: string[];
+  /** DF-54 (US-LV-010): tenant leave-cancellation notice window in days, echoed on each row so the UI can
+   *  proactively disable Cancel inside the window (mirrors the authoritative BE 400). Optional; 0 when absent. */
+  cancellationWindowDays?: number;
 }
 
 /**
@@ -166,11 +169,14 @@ export interface ICancelEligibility {
  *
  * Payroll-lock (AC-4) is NOT detectable from these fields, so it is enforced by the
  * backend and surfaced as a 400 error on submit; we do not pre-block for it here.
- * `today` is injectable for deterministic tests; defaults to the current date.
+ * `today` is injectable for deterministic tests; defaults to the current date. `windowDays` is the tenant's
+ * cancellation notice window (DF-54, US-LV-010): an Approved leave starting within it (startDate <= today +
+ * windowDays) is not self-cancellable — mirrors the authoritative BE 400. Defaults to 0 (no window).
  */
 export function evaluateCancelEligibility(
   req: Pick<ILeaveRequest, 'status' | 'startDate'>,
   today: Date = new Date(),
+  windowDays = 0,
 ): ICancelEligibility {
   if (req.status === 'Cancelled') {
     return { eligible: false, reason: 'This request has already been cancelled.' };
@@ -192,6 +198,17 @@ export function evaluateCancelEligibility(
       eligible: false,
       reason: 'This leave has already started or passed. Please contact HR to cancel.',
     };
+  }
+  // DF-54 (US-LV-010): mirror the BE guard — an Approved leave inside the tenant's cancellation notice window
+  // (startDate <= today + windowDays) can't be self-cancelled; the BE returns a 400 on submit either way.
+  if (windowDays > 0) {
+    const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() + windowDays);
+    if (start <= cutoff) {
+      return {
+        eligible: false,
+        reason: `Cancellations require at least ${windowDays} day${windowDays === 1 ? '' : 's'} notice. Please contact HR to cancel.`,
+      };
+    }
   }
   return { eligible: true, reason: '' };
 }

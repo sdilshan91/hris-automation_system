@@ -328,7 +328,7 @@ export class MyLeaveRequestsComponent implements OnInit, OnDestroy {
 
   /** Whether a request is cancellable + the tooltip reason when it is not (§8). */
   cancelEligibility(req: ILeaveRequest): ICancelEligibility {
-    return evaluateCancelEligibility(req);
+    return evaluateCancelEligibility(req, new Date(), req.cancellationWindowDays ?? 0);
   }
 
   // --- Cancel flow (US-LV-010) -------------------------------

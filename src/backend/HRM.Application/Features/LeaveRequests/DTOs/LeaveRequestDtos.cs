@@ -47,6 +47,10 @@ public sealed record LeaveRequestDto
     public bool IsLop { get; init; }
     /// <summary>US-LV-011 FR-4: origin of the LOP entry (EmployeeRequest/SystemGenerated/HrAssigned/Compulsory); null for normal leave.</summary>
     public string? LopSource { get; init; }
+    /// <summary>DF-54 (US-LV-010): the tenant's leave-cancellation notice window in days, echoed on each row so
+    /// the employee UI can proactively disable Cancel inside the window — mirroring the authoritative 400 in
+    /// CancelAsync (block Approved when StartDate &lt;= today + window). A tenant-level constant repeated per row; 0 = no window.</summary>
+    public int CancellationWindowDays { get; init; }
 }
 
 /// <summary>
