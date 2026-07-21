@@ -152,6 +152,85 @@ public sealed class PayrollReportIntegrationTests
         await db.SaveChangesAsync();
     }
 
+    /// <summary>DF-37: seed a finalized-run slip with arbitrary component details (Code + Name + type).</summary>
+    private async Task SeedSlipWithDetails(
+        Guid tenantId, Guid runId, string no, decimal gross, decimal deductions,
+        params (string? Code, string Name, SalaryComponentType Type, decimal Amount)[] details)
+    {
+        using var db = Db(tenantId);
+        var deptId = BaseEntity.NewUuidV7();
+        db.Departments.Add(new Department { Id = deptId, TenantId = tenantId, Name = "Engineering", Code = "ENG" });
+        var empId = BaseEntity.NewUuidV7();
+        db.Employees.Add(new Employee
+        {
+            Id = empId, TenantId = tenantId, EmployeeNo = no, FirstName = no, LastName = "X",
+            Email = $"{no}@t.com", DateOfJoining = new DateTime(2020, 1, 1),
+            EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+            DepartmentId = deptId, JobTitleId = BaseEntity.NewUuidV7(),
+        });
+        var slipId = BaseEntity.NewUuidV7();
+        db.PayrollSlips.Add(new PayrollSlip
+        {
+            Id = slipId, TenantId = tenantId, PayrollRunId = runId, EmployeeId = empId,
+            GrossEarnings = gross, TotalDeductions = deductions, NetSalary = gross - deductions,
+            WorkingDays = 22, PaidDays = 22, LopDays = 0, PayMonth = 5, PayYear = 2026,
+        });
+        foreach (var d in details)
+            db.PayrollSlipDetails.Add(new PayrollSlipDetail
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = tenantId, PayrollSlipId = slipId,
+                SalaryComponentId = BaseEntity.NewUuidV7(),
+                ComponentCode = d.Code, ComponentName = d.Name,
+                ComponentType = d.Type.ToString(), Amount = d.Amount,
+            });
+        await db.SaveChangesAsync();
+    }
+
+    // ── DF-37/ISSUE-280: the report's Basic bucket keys on component Code, not the mutable Name ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-011-15")]
+    public async Task DeptSummary_BasicBucket_KeysOnComponentCode_NotName_DF37()
+    {
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
+        // A RENAMED basic component (Code "BASIC", Name "Base Pay") must still count as Basic; a non-basic
+        // component misleadingly NAMED "Basic" (Code "HRA") must NOT — the report keys on Code now.
+        await SeedSlipWithDetails(_tenantA, runId, "E1", gross: 50_000m, deductions: 0m,
+            ("BASIC", "Base Pay", SalaryComponentType.Earning, 40_000m),
+            ("HRA", "Basic", SalaryComponentType.Earning, 10_000m));
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var report = (await svc.GenerateReportAsync(PayrollReportType.PayrollSummary,
+                new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 })).Value!;
+            var total = report.TotalRow!.Cells;
+            total[2].Should().Be("40000.00", "only the Code=BASIC line is Basic; the Name='Basic' HRA line is not");
+            total[3].Should().Be("10000.00", "the misleadingly-named HRA (Code=HRA) lands in Allowances");
+        }
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PAY-011-15")]
+    public async Task DeptSummary_BasicBucket_FallsBackToName_ForLegacySlipsWithoutCode_DF37()
+    {
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
+        // Pre-DF-37 slip: no ComponentCode → the legacy "Basic" name heuristic still buckets it as Basic.
+        await SeedSlipWithDetails(_tenantA, runId, "E2", gross: 25_000m, deductions: 0m,
+            (null, "Basic", SalaryComponentType.Earning, 25_000m));
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var report = (await svc.GenerateReportAsync(PayrollReportType.PayrollSummary,
+                new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 })).Value!;
+            report.TotalRow!.Cells[2].Should().Be("25000.00",
+                "a legacy slip with no Code still buckets by the Name heuristic");
+        }
+    }
+
     // ── FR-1a: summary totals == sum of payslips ─────────────────────────────
 
     [Fact]

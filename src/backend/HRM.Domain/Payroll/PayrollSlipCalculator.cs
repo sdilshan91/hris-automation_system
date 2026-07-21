@@ -48,7 +48,11 @@ public readonly record struct PayrollSlipLine(
     SalaryComponentType Type,
     bool IsStatutory,
     decimal Amount,
-    string CalculationBasis);
+    string CalculationBasis,
+    // DF-37/ISSUE-280: the component's stable Code (e.g. "BASIC"), denormalized onto the slip so BASIC-basis
+    // report lookups key on Code, not the mutable display Name. Empty for synthetic lines (LOP/statutory/OT/
+    // adjustments), which are never BASIC.
+    string Code = "");
 
 /// <summary>The fully-computed result for one employee's payslip (US-PAY-003 FR-5).</summary>
 /// <remarks>
@@ -127,7 +131,7 @@ public static class PayrollSlipCalculator
                 ? $"{c.MonthlyAmount:0.##}/month"
                 : $"{c.MonthlyAmount:0.##} x {paidDaysBeforeLop:0.##}/{workingDays:0.##} days";
 
-            lines.Add(new PayrollSlipLine(c.ComponentId, c.Name, c.Type, c.IsStatutory, proRated, basis));
+            lines.Add(new PayrollSlipLine(c.ComponentId, c.Name, c.Type, c.IsStatutory, proRated, basis, c.Code));
         }
 
         // BR-2: LOP deduction line. daily_rate = monthly_basic / working_days; amount = daily_rate * lop_days.

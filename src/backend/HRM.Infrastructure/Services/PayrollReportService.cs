@@ -1474,10 +1474,15 @@ public sealed class PayrollReportService : IPayrollReportService
     private static bool IsStatutory(string componentType) =>
         string.Equals(componentType, nameof(SalaryComponentType.Statutory), StringComparison.OrdinalIgnoreCase);
 
+    // DF-37/ISSUE-280: prefer the denormalized component Code (robust to a display-name rename); fall back to
+    // the legacy Name/basis heuristic ONLY for historical slips persisted before ComponentCode existed
+    // (null/empty). A new slip whose BASIC component was renamed still buckets correctly via its Code.
     private static bool IsBasic(PayrollSlipDetail d) =>
-        string.Equals(d.ComponentName, "Basic", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(d.ComponentName, "Basic Salary", StringComparison.OrdinalIgnoreCase)
-        || (d.CalculationBasis?.Contains("BASIC", StringComparison.OrdinalIgnoreCase) ?? false);
+        !string.IsNullOrEmpty(d.ComponentCode)
+            ? string.Equals(d.ComponentCode, "BASIC", StringComparison.OrdinalIgnoreCase)
+            : string.Equals(d.ComponentName, "Basic", StringComparison.OrdinalIgnoreCase)
+              || string.Equals(d.ComponentName, "Basic Salary", StringComparison.OrdinalIgnoreCase)
+              || (d.CalculationBasis?.Contains("BASIC", StringComparison.OrdinalIgnoreCase) ?? false);
 
     private static string Money(decimal value) => value.ToString("0.00", CultureInfo.InvariantCulture);
 
@@ -1519,8 +1524,8 @@ public sealed class PayrollReportService : IPayrollReportService
 
     /// <summary>
     /// Splits a slip's detail lines into Basic / Allowances (other earnings + reimbursements) /
-    /// Statutory / OtherDeductions (non-statutory deductions). Basic is identified by component name /
-    /// calculation basis (no BASIC marker exists on the detail row, so the "Basic"/"Basic Salary" name is used).
+    /// Statutory / OtherDeductions (non-statutory deductions). Basic is identified by the denormalized
+    /// component Code (DF-37/ISSUE-280), falling back to the "Basic"/"Basic Salary" name for pre-DF-37 slips.
     /// </summary>
     private readonly record struct ComponentBreakdown(
         decimal Basic, decimal Allowances, decimal Statutory, decimal OtherDeductions)

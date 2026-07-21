@@ -51,6 +51,29 @@ public sealed class PayrollSlipCalculatorTests
         r.Lines.Should().HaveCount(4); // no LOP line when LOP days = 0.
     }
 
+    // ── DF-37/ISSUE-280: the component Code is carried onto the computed line ──
+    [Fact]
+    [Trait("TC", "TC-PAY-011-15")]
+    public void Compute_CarriesComponentCode_OntoTheSlipLine_DistinctFromName_DF37()
+    {
+        var basicId = Guid.NewGuid();
+        var input = new PayrollSlipInput(
+            Guid.NewGuid(),
+            new[]
+            {
+                // A BASIC component whose display Name was renamed to "Base Pay" — Code stays "BASIC".
+                new PayrollComponentInput(basicId, "BASIC", "Base Pay", SalaryComponentType.Earning, false, 50_000m, 1),
+                Comp("HRA", SalaryComponentType.Earning, 20_000m, 2),
+            },
+            WorkingDays: 22m, LopDays: 0m, ProRataPaidDays: null);
+
+        var r = PayrollSlipCalculator.Compute(input, LopId);
+
+        var basicLine = r.Lines.Single(l => l.ComponentId == basicId);
+        basicLine.Code.Should().Be("BASIC", "the stable Code is threaded onto the line, independent of the display Name");
+        basicLine.Name.Should().Be("Base Pay");
+    }
+
     // ── BR-2 LOP: 3 absent days in a 22-working-day month ───────────────────
     // BASIC 22,000/month → daily rate 1,000; LOP 3 days = 3,000 deducted.
     [Fact]
