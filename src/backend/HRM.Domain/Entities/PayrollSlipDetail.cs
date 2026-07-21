@@ -17,6 +17,14 @@ public sealed class PayrollSlipDetail : BaseEntity, IAuditExempt
     /// <summary>Component display name, denormalized for history (FR-5, required, max 100 chars).</summary>
     public string ComponentName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// DF-37/ISSUE-280: the component's stable <c>Code</c> (e.g. "BASIC"), denormalized so report BASIC-basis
+    /// lookups key on Code, not the mutable display <see cref="ComponentName"/>. Nullable — historical rows
+    /// (persisted before DF-37) and synthetic lines (LOP/statutory/OT/adjustments) carry no component Code;
+    /// consumers fall back to the legacy Name heuristic when this is null/empty. Max 50 chars.
+    /// </summary>
+    public string? ComponentCode { get; set; }
+
     /// <summary>Component classification (Earning/Deduction/Statutory/Reimbursement), denormalized (FR-5, required, max 20 chars).</summary>
     public string ComponentType { get; set; } = string.Empty;
 

@@ -491,6 +491,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
                     PayrollSlipId = slip.Id,
                     SalaryComponentId = line.ComponentId,
                     ComponentName = line.Name,
+                    ComponentCode = string.IsNullOrEmpty(line.Code) ? null : line.Code,
                     ComponentType = line.Type.ToString(),
                     Amount = line.Amount,
                     CalculationBasis = line.CalculationBasis,

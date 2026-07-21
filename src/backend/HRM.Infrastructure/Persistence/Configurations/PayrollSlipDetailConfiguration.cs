@@ -22,6 +22,7 @@ public sealed class PayrollSlipDetailConfiguration : IEntityTypeConfiguration<Pa
         builder.Property(x => x.SalaryComponentId).IsRequired();
 
         builder.Property(x => x.ComponentName).HasMaxLength(100).IsRequired();
+        builder.Property(x => x.ComponentCode).HasMaxLength(50); // DF-37/ISSUE-280: nullable denormalized Code
         builder.Property(x => x.ComponentType).HasMaxLength(20).IsRequired();
 
         builder.Property(x => x.Amount).HasColumnType("numeric(18,2)").IsRequired();
