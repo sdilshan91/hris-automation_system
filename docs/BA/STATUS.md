@@ -126,7 +126,7 @@
   - **BUG-110** — `role="tablist"` containing non-`tab` children (statutory fiscal-year selector class) → correct ARIA roles.
   - **BUG-111** — dynamic char-counters lack `aria-live`/`role="status"` → add live region.
   - **BUG-112** — `overflow-x-auto` scroll regions lack `tabindex="0"` → make keyboard-scrollable.
-- [ ] **BUILD/FIX Core HR functional gaps (P3c-functional, 2026-07-01)** — **BUG-113 HIGH** (employee Create/Edit API has no `LocationId` → employee↔location linking impossible, per-location count always 0, deactivation-guard is dead code — wire `LocationId` into `CreateEmployeeCommand`/`UpdateEmployeeProfileRequest`), **BUG-114 MED** (tenant storage quota `MaxStorageGb` never enforced — no usage sum/gate), **ISSUE-218 MED** (reporting-manager/chain not exposed on `GET /employees/{id}`).
+- [ ] **BUILD/FIX Core HR functional gaps (P3c-functional, 2026-07-01)** — **BUG-113 HIGH** (employee Create/Edit API has no `LocationId` → employee↔location linking impossible, per-location count always 0, deactivation-guard is dead code — wire `LocationId` into `CreateEmployeeCommand`/`UpdateEmployeeProfileRequest`), **BUG-114 MED** (tenant storage quota `MaxStorageGb` never enforced — no usage sum/gate), ~~**ISSUE-218 MED**~~ ✅ **DONE via DF-8 (#410)** — reporting-manager/chain now exposed on `GET /employees/{id}` (BUG-113/114 remain open).
 - [ ] **(tracked above) US-PLT-002 RLS** — unblocks the 19 `[DEFERRED]` RLS/at-rest-encryption isolation TCs; env precondition now met.
 
 ## 6. Payroll (13 stories) — COMPLETE ✅
@@ -231,7 +231,7 @@
 | US-CHR-002 | **Education / Work-History / Dependents backend now EXISTS ✅ (#386)** — net-new `EmployeeEducation` / `EmployeeWorkHistory` / `EmployeeDependent` entities+tables + address columns + CRUD + `PATCH {id}/profile` save path; FE edit re-enabled off the #380 read-only state (DF-38/DF-39 DONE). Employment (dept/title/type/status) + address edit fields wired (ISSUE-320 addressed). Profile-edit **route** 404 fixed #380 (ISSUE-319 RESOLVED). | E functional gap | — |
 | US-CHR-008 | EXIF not stripped from photos; magic-byte sniff (BUG-058). *(doc-expiry notification now real-delivered ✅ NTF-006)* | D | — |
 | US-CHR-010 | **custom-field columns in import (FR-11)** — see story AC-K1. *(import-completion notification now real-delivered ✅ NTF-006)* | K | — |
-| US-CHR-011 | reporting-manager/chain not on `GET /employees/{id}` (ISSUE-218). *(manager-reassignment notification now real-delivered ✅ NTF-006)* | E | — |
+| US-CHR-011 | ~~reporting-manager/chain not on `GET /employees/{id}` (ISSUE-218)~~ **RESOLVED via DF-8 (#410)** — full reporting-chain now on `GET /employees/{id}`. *(manager-reassignment notification now real-delivered ✅ NTF-006)* | ~~E~~ ✅ | — |
 | US-CHR-012 | custom-field **cap not enforced**; custom-fields absent from bulk import | H; K | US-ADM-012 |
 | US-LV-002 | **FTE proration (BR-2)** + **accrual-frequency scheduling (FR-5)** — see story AC-K1/K2 | K | — |
 | US-LV-005 | **AC-4 multi-level routing inert** (`WorkflowInstanceId` null); **BR-4 payroll-lock hardcoded false**. *(approval/reject email now real-delivered ✅ NTF-006)* | C/E; E | US-ADM-011 |
@@ -248,7 +248,7 @@
 | US-REC-008 | **status-tracking magic-link email now delivered ✅ (#384)** — applicant-portal token minted+persisted and the delivering email now fires through the real dispatcher (`applicant_portal_link` event / `PortalLinkBuilder`); DF-41 DONE | — | — |
 | US-REC-010 | **AC-3 no user-account creation** *(partially shipped — FR-5 provisioning #355)*, **AC-2 no salary persistence, AC-4 no "Converted" badge (ISSUE-232)**; **FR-9 welcome-email + FR-8 onboarding trigger still deferred/log-only** (ISSUE-140 residual — only the generic "Converted" stage-change email fires) | E; B (ISSUE-140) | ISSUE-140 |
 | US-PAY-009 | **year-end tax-statement PDF (ISSUE-177)** + report PDF export | F | — |
-| US-PRF-001 | **goal-set finalize == 100% shipped ✅ (#387, BUG-056)** — `POST /tenant/performance/goals/finalize` locks the set to `GoalStatus.Finalized` (409 `goals_finalized` thereafter); goal-**read** authz self-scoped (#387/DF-18); re-open endpoint = DF-46. See story AC-K1/K2. *(goals-set notification also real-delivered ✅ NTF-006)* | K (DONE) | — |
+| US-PRF-001 | **goal-set finalize == 100% shipped ✅ (#387, BUG-056)** — `POST /tenant/performance/goals/finalize` locks the set to `GoalStatus.Finalized` (409 `goals_finalized` thereafter); goal-**read** authz self-scoped (#387/DF-18); re-open endpoint shipped ✅ **DF-46 (#393)**. See story AC-K1/K2. *(goals-set notification also real-delivered ✅ NTF-006)* | K (DONE) | — |
 | US-PRF-002 | **AC-B1 self-assessment attachment DELETE missing (BUG-243)**. *(self-rating notification now real-delivered ✅ NTF-006)* | F/BUG-243 | — |
 | US-PRF-004 | **AC-B1 cycle rating-scales endpoint missing**; **AC-B2 low-privilege "resolve active cycle" resolver missing — cross-cutting BUG-243 enabler** | F/BUG-243 | — |
 | US-PRF-005 | **360 report PDF**; **AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment missing (BUG-243)**. *(360 reviewer-assigned notifications now real-delivered ✅ NTF-006)* | F; F/BUG-243 | — |
@@ -264,7 +264,7 @@
 | Existing story | Attached follow-up | Finding |
 |---|---|---|
 | US-PAY-001 | ~~AC-K1 SalaryGrade entity~~ **DELIVERED #389** (entity + CRUD `/api/v1/tenant/salary-grades` + FE + JobTitle FK-validation) | ISSUE-021 |
-| US-PRF-001 | ~~AC-K1 goal-set finalize (==100%)~~ **DELIVERED #387** (`POST goals/finalize` → `Finalized`/409; re-open = DF-46) | BUG-056 |
+| US-PRF-001 | ~~AC-K1 goal-set finalize (==100%)~~ **DELIVERED #387** (`POST goals/finalize` → `Finalized`/409; re-open = DF-46 ✅ **shipped #393**) | BUG-056 |
 | US-LV-002 | AC-K1 FTE proration · AC-K2 accrual-frequency scheduling | LV-002 BR-2/FR-5 |
 | US-CHR-010 | AC-K1 custom-field columns in bulk import (spans US-CHR-012) | CHR-010/012 FR-11 |
 | US-LV-012 | AC-K1 Dept Leave-Coverage report (empty stub) | LV-012 FR-1 |

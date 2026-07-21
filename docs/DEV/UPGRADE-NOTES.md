@@ -16,6 +16,55 @@ entries below.
 
 ---
 
+## 2026-07-21 — DF-50 (#415): dashboard startup warmup + parallel widget loads
+
+**What changed.** The role-based dashboard now (1) primes the EF model / query plans / connection pool on
+startup so the very first request doesn't pay the ~25s cold-start tax, and (2) loads its widgets in parallel
+(each in its own tenant-scoped DI child scope) rather than sequentially.
+
+**What the platform does automatically.** A background `DashboardWarmupHostedService` runs one trivial read
+per hot entity at startup — **non-blocking** (never delays or crashes startup) and tenant-agnostic. No schema
+change. Two new config keys with safe defaults: `Dashboard:WarmupEnabled` (default **true**) and
+`Dashboard:MaxWidgetParallelism` (default **4** — bounds concurrent DB connections per dashboard hit).
+
+**Action for admins.** None required. Optional: set `Dashboard:WarmupEnabled=false` to skip the warmup (e.g.
+a fast-boot test host), or tune `Dashboard:MaxWidgetParallelism` if your Npgsql pool sizing needs it.
+
+---
+
+## 2026-07-21 — DF-7 (#413): applicant-portal magic-link per-IP throttle is now Redis-distributed (opt-in via Redis)
+
+**What changed.** The per-IP rate limit on candidate-portal magic-link issuance
+(`POST /careers/portal/request-link`) is now a **distributed Redis counter** when Redis is configured — so the
+cap holds across all API instances at multi-instance scale — falling back to the previous per-tenant DB-count
+(sliding window) when Redis is not configured. The 429 response and the per-**email** guard are unchanged.
+
+**What the platform does automatically.** Two new config keys with the historical defaults:
+`Recruitment:PortalLink:MaxIssuesPerIp` (default **10**) and `Recruitment:PortalLink:IpWindowSeconds` (default
+**3600**), shared by both backends. When `ConnectionStrings:Redis` is set, a fixed-window `INCR`+`EXPIRE`
+counter is used (fail-open on a Redis error → allow); otherwise the DB sliding-window count. No schema change.
+
+**Action for admins.** None required. Optional: tune the two limits. For **multi-instance** deployments,
+configure Redis so the per-IP cap is enforced cluster-wide (single-instance DB-count is already correct).
+
+---
+
+## 2026-07-21 — DF-4 (#411): leave-entitlement recalc durability backstop (new recurring job)
+
+**What changed.** Editing a leave-entitlement rule enqueues a recalc after commit (best-effort). If Hangfire
+storage is briefly unavailable in that window the enqueue could be lost and affected employees would not
+converge. A new daily reconciliation **sweep** re-runs the (idempotent) recalc so a dropped enqueue self-heals.
+
+**What the platform does automatically.** A new recurring Hangfire job **`leave-entitlement-reconcile`** runs
+daily at **02:30 UTC** (`30 2 * * *`), per active/trial tenant, calling the same idempotent
+`RecalculateEntitlementsAsync` (writes an `Adjusted` delta only when the rule-derived target differs; nothing
+when it matches — safe to re-run). No schema change. The immediate post-commit enqueue is unchanged (latency path).
+
+**Action for admins.** None — informational. The job appears in the Hangfire dashboard as
+`leave-entitlement-reconcile`; convergence after a lost enqueue is bounded by its daily cadence.
+
+---
+
 ## 2026-07-20 — ISSUE-173 FR-6: payroll approval delegation (config-driven, on approver leave)
 
 **What changed.** A payroll approval step can name a **primary approver user** and a **delegate user**. When the

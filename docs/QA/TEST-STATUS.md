@@ -80,6 +80,17 @@
 >   cross-tenant isolation) via `[Trait("TC","TC-PAY-008-14")]` + the payroll-approval Karma specs (repointed URL +
 >   `runId→id` + `initiatedByName`). Enforcer WIRED (shared predicate == ApproveAsync, tenant-safe, batched);
 >   authenticator 100% on shipped arms (3 MISS healed inline, real-PG/HTTP arm filed DF-52).
+> - **arc-n M/L-backlog TC bindings (2026-07-21, doc-only — no story state flipped):** 7 IEEE-829 TCs bound to
+>   the arc-n Tier-A/B + DF-50 feature deliveries (#403–#415). Each binds already-green xUnit/Karma arms to its
+>   shipped feature (the "code green + PR merged ≠ done" gap); they do **not** change any story's report-only
+>   execution state below:
+>   - TC-LV-267 (DF-21, US-LV-006) — my-balance N+1 → batched entitlement resolution (#408; real-PG perf arm).
+>   - TC-LV-268 (DF-4, US-LV-002) — leave-entitlement recalc durability: idempotent reconciliation **sweep** backstop (#411).
+>   - TC-ATT-162 (DF-22, US-ATT-011) — per-location policy on tenant-wide sweeps (auto-clock-out / monthly-summary; absenteeism kept tenant-wide) (#409).
+>   - TC-CHR-338 (DF-8, US-CHR-011) — full reporting-chain breadcrumb on `GET /employees/{id}` (**closes ISSUE-218**) (#410).
+>   - TC-CHR-339 (DF-9, US-CHR-012) — custom-fields FE render pass (#412).
+>   - TC-REC-011 (DF-7, US-REC-008) — distributed (Redis) magic-link limiter (#413; regression fix #414).
+>   - TC-RPT-005-50 (DF-50, US-RPT-005) — dashboard cold-start warmup + parallelize via a child-scope-per-widget runner (tenant-reseed gate) (#415).
 
 ---
 
