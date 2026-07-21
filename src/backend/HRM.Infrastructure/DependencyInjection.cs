@@ -330,6 +330,21 @@ public static class DependencyInjection
             services.AddScoped<ISessionRevoker, NoOpSessionRevoker>();
         }
 
+        // DF-7 (US-REC-008 NFR-6, ISSUE-130): per-IP applicant-portal magic-link throttle. Same Redis-or-fallback
+        // gate as the denylist above: with Redis configured, use a DISTRIBUTED fixed-window INCR counter so the cap
+        // holds across all API instances (a per-instance DB count under-counts by N); without Redis, keep the original
+        // single-instance sliding-window DB COUNT. Both read identical limits from Recruitment:PortalLink.
+        services.Configure<PortalLinkRateLimitOptions>(
+            configuration.GetSection(PortalLinkRateLimitOptions.SectionName));
+        if (!string.IsNullOrWhiteSpace(revokerRedisConn))
+        {
+            services.AddScoped<IPortalLinkIpRateLimiter, RedisPortalLinkIpRateLimiter>();
+        }
+        else
+        {
+            services.AddScoped<IPortalLinkIpRateLimiter, DbCountPortalLinkIpRateLimiter>();
+        }
+
         // US-ONB-006: exit-interview recording + analytics. Reuses the onboarding notification outbox (FR-8)
         // and the offboarding instance/task link (FR-3/AC-2). Anonymized analytics (FR-5).
         services.AddScoped<IExitInterviewService, ExitInterviewService>();
