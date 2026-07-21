@@ -27,18 +27,21 @@ public sealed class PayslipGenerationService : IPayslipGenerationService
     private readonly IFileStorage _fileStorage;
     private readonly IPayslipGenerationJobScheduler? _jobScheduler;
     private readonly ILogger<PayslipGenerationService> _logger;
+    private readonly IPayrollAuditLogger _audit;
 
     public PayslipGenerationService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IFileStorage fileStorage,
         ILogger<PayslipGenerationService> logger,
+        IPayrollAuditLogger audit,
         IPayslipGenerationJobScheduler? jobScheduler = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _fileStorage = fileStorage;
         _logger = logger;
+        _audit = audit;
         _jobScheduler = jobScheduler;
     }
 
@@ -123,10 +126,19 @@ public sealed class PayslipGenerationService : IPayslipGenerationService
         // BE-permissive (locked decision): retry ANY slip state (Failed / stuck-Pending / even Generated) — the
         // render is idempotent, and the FE only surfaces Retry on Failed. Reset THIS slip to Pending and clear the
         // generated markers; PdfStoragePath is left as-is (the renderer overwrites the same GUID-derived path).
+        var originalStatus = slip.PdfStatus;
         var regenerated = slip.PdfStatus == PayslipPdfStatus.Generated;
         slip.PdfStatus = PayslipPdfStatus.Pending;
         slip.PdfGeneratedAt = null;
         slip.PdfFileSizeBytes = null;
+
+        // DF-55/US-PAY-012 (BR-1 complete audit trail): attribute this MANUAL per-employee retry to the acting
+        // HR user — distinct from the system-actor PayslipPDF.Generated render audit the job later writes. Staged
+        // (default actor = current user) before SaveChanges so the audit commits atomically with the slip reset.
+        _audit.Log(PayrollAuditAction.PayslipRetried, PayrollAuditAction.ResourceType.Payslip, slip.Id.ToString(),
+            before: new { PdfStatus = originalStatus.ToString() },
+            after: new { RunId = run.Id, EmployeeId = employeeId, Regenerated = regenerated });
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // FR-8: enqueue the single-slip retry job (when the Hangfire-backed scheduler is registered); otherwise the

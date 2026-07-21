@@ -29,6 +29,8 @@ using HRM.Infrastructure.Services;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace HRM.Tests.Integration;
 
@@ -145,6 +147,60 @@ public sealed class PayrollAuditIntegrationTests
         entry.ResourceId.Should().Be(created.Value!.Id.ToString());
         entry.Before.Should().BeNull();          // create has no "before"
         entry.After.Should().NotBeNullOrWhiteSpace();
+    }
+
+    // ── DF-55/US-PAY-012: a manual per-employee payslip retry is attributed to the acting user ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-004-06")]
+    public async Task RetryOne_WritesPayslipRetriedAudit_AttributedToActingUser()
+    {
+        var runId = BaseEntity.NewUuidV7();
+        var empId = BaseEntity.NewUuidV7();
+        var slipId = BaseEntity.NewUuidV7();
+        using (var seed = Db(_tenantA))
+        {
+            seed.PayrollRuns.Add(new PayrollRun
+            {
+                Id = runId, TenantId = _tenantA, PayMonth = 5, PayYear = 2026,
+                Status = PayrollRunStatus.Finalized, InitiatedBy = _actor, InitiatedAt = DateTime.UtcNow,
+            });
+            seed.PayrollSlips.Add(new PayrollSlip
+            {
+                Id = slipId, TenantId = _tenantA, PayrollRunId = runId, EmployeeId = empId,
+                GrossEarnings = 1000m, TotalDeductions = 0m, NetSalary = 1000m,
+                WorkingDays = 22, PaidDays = 22, LopDays = 0, PayMonth = 5, PayYear = 2026,
+                PdfStatus = PayslipPdfStatus.Generated,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        // The audit logger + service MUST share one DbContext so the Payslip.Retried row commits atomically
+        // with the slip reset via the service's SaveChanges. The acting user is _actor (not the system actor).
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var cu = new FakeCurrentUser { TenantId = _tenantA, UserId = _actor };
+        await using var db = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options, ctx);
+        var audit = new PayrollAuditLogger(db, ctx, cu, NullLogger<PayrollAuditLogger>.Instance);
+        var svc = new PayslipGenerationService(
+            db, ctx, Substitute.For<IFileStorage>(), NullLogger<PayslipGenerationService>.Instance, audit);
+
+        var result = await svc.RetryOneAsync(runId, empId);
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Regenerated.Should().BeTrue();
+
+        using var read = Db(_tenantA);
+        var entry = await read.AuditLogs.AsNoTracking()
+            .SingleAsync(a => a.Action == PayrollAuditAction.PayslipRetried && a.ResourceId == slipId.ToString());
+
+        entry.ResourceType.Should().Be(PayrollAuditAction.ResourceType.Payslip);
+        entry.UserId.Should().Be(_actor,
+            "a manual retry must be attributed to the acting HR user, not the system-actor render audit");
+        entry.TenantId.Should().Be(_tenantA);
+        entry.After.Should().NotBeNullOrWhiteSpace();
+        var after = JsonSerializer.Deserialize<JsonElement>(entry.After!);
+        after.GetProperty("EmployeeId").GetGuid().Should().Be(empId);
+        after.GetProperty("Regenerated").GetBoolean().Should().BeTrue();
     }
 
     // ── ISSUE-185 / ISSUE-186: audit-trail EXPORT (FR-5/BR-4) ─────────────────────────

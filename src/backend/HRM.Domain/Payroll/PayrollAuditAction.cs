@@ -48,6 +48,9 @@ public static class PayrollAuditAction
     // Payslip distribution
     public const string PayslipPdfGenerated = "PayslipPDF.Generated";
     public const string PayslipEmailSent = "PayslipEmail.Sent";
+    // DF-55/US-PAY-012 (BR-1): a HUMAN manually retried ONE employee's payslip render — attributes "user X
+    // retried employee Y's slip on run Z", distinct from the system-actor PayslipPDF.Generated render audit.
+    public const string PayslipRetried = "Payslip.Retried";
 
     // Reports (US-RPT-003 NFR-3): sensitive-PII reveal on a payroll report (e.g. unmasked bank account).
     public const string PayrollReportViewSensitive = "PayrollReport.ViewSensitive";
