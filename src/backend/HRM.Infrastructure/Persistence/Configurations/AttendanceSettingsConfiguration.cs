@@ -156,5 +156,12 @@ public sealed class AttendanceSettingsConfiguration : IEntityTypeConfiguration<A
             .WithMany()
             .HasForeignKey(s => s.LocationId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // DF-23 / ISSUE-068: the allowed clock-in locations (multi-location geofence) are OWNED by this
+        // settings row — deleting the row cascades to its allowed locations.
+        builder.HasMany(s => s.GeoFenceLocations)
+            .WithOne()
+            .HasForeignKey(g => g.AttendanceSettingsId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

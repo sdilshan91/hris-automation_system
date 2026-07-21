@@ -87,6 +87,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<CompulsoryLeave> CompulsoryLeaves => Set<CompulsoryLeave>();
     public DbSet<AttendanceLog> AttendanceLogs => Set<AttendanceLog>();
     public DbSet<AttendanceSettings> AttendanceSettings => Set<AttendanceSettings>();
+    public DbSet<GeofenceLocation> GeofenceLocations => Set<GeofenceLocation>();
     public DbSet<AttendanceRegularization> AttendanceRegularizations => Set<AttendanceRegularization>();
     public DbSet<RegularizationApprovalHistory> RegularizationApprovalHistories => Set<RegularizationApprovalHistory>();
     public DbSet<AttendancePeriodLock> AttendancePeriodLocks => Set<AttendancePeriodLock>();
@@ -365,6 +366,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
         // US-ATT-001: AttendanceSettings tenant isolation + soft-delete filter
         modelBuilder.Entity<AttendanceSettings>()
             .HasQueryFilter(s => !s.IsDeleted && (!_tenantContext.IsResolved || s.TenantId == _tenantContext.TenantId));
+
+        // DF-23 / ISSUE-068: GeofenceLocation (allowed clock-in locations) tenant isolation + soft-delete filter
+        modelBuilder.Entity<GeofenceLocation>()
+            .HasQueryFilter(g => !g.IsDeleted && (!_tenantContext.IsResolved || g.TenantId == _tenantContext.TenantId));
 
         // US-ATT-003: AttendanceRegularization tenant isolation + soft-delete filter
         modelBuilder.Entity<AttendanceRegularization>()

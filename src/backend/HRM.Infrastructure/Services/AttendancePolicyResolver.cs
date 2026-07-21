@@ -56,9 +56,12 @@ internal static class AttendancePolicyResolver
         AppDbContext db, Guid? locationId, CancellationToken ct)
     {
         // Tier 1: the Location's override, when the employee has a location AND that location has one.
+        // DF-23: eager-load the allowed clock-in locations (multi-location geofence) so the clock-in geofence
+        // check sees them — added to THIS predicated query, never a new unpredicated read.
         if (locationId is not null)
         {
             var over = await db.AttendanceSettings
+                .Include(s => s.GeoFenceLocations)
                 .FirstOrDefaultAsync(s => s.LocationId == locationId, ct);
             if (over is not null)
                 return over;
@@ -77,7 +80,10 @@ internal static class AttendancePolicyResolver
     public static async Task<AttendanceSettings> GetOrCreateTenantDefaultAsync(
         AppDbContext db, CancellationToken ct)
     {
+        // DF-23: eager-load the allowed clock-in locations (multi-location geofence) — the tenant-default row
+        // is the clock-in fallback when no location override exists, so its geofence must resolve too.
         var settings = await db.AttendanceSettings
+            .Include(s => s.GeoFenceLocations)
             .FirstOrDefaultAsync(s => s.LocationId == null, ct);
         if (settings is not null)
             return settings;
@@ -100,7 +106,9 @@ internal static class AttendancePolicyResolver
             // the committed winner instead of throwing a 500 — the DB is the arbiter (cf. onboarding ISSUE-314,
             // clock-in). InMemory does not enforce unique indexes, so this only ever fires on Postgres.
             db.Entry(settings).State = EntityState.Detached;
-            return await db.AttendanceSettings.FirstAsync(s => s.LocationId == null, ct);
+            return await db.AttendanceSettings
+                .Include(s => s.GeoFenceLocations)
+                .FirstAsync(s => s.LocationId == null, ct);
         }
     }
 
@@ -112,6 +120,7 @@ internal static class AttendancePolicyResolver
     public static Task<AttendanceSettings?> GetTenantDefaultOrNullAsync(
         AppDbContext db, CancellationToken ct)
         => db.AttendanceSettings.AsNoTracking()
+            .Include(s => s.GeoFenceLocations)   // DF-23: the read DTO projects the allowed clock-in locations.
             .FirstOrDefaultAsync(s => s.LocationId == null, ct);
 
     // ── Batch resolution (for loops over every employee in the tenant) ──────────────────────────────────
