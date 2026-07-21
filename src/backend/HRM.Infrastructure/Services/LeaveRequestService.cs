@@ -361,7 +361,17 @@ public sealed class LeaveRequestService : ILeaveRequestService
             .OrderByDescending(lr => lr.RequestedAt)
             .ToListAsync(cancellationToken);
 
-        var dtos = requests.Select(lr => MapToDto(lr, lr.LeaveType?.Name ?? string.Empty)).ToList();
+        // DF-54: echo the tenant cancellation-notice window so the employee UI can proactively disable Cancel
+        // inside it (the authoritative guard remains the 400 in CancelAsync). Read once per request, per-tenant —
+        // reuses the same scoped read CancelAsync uses.
+        var windowDays = await _dbContext.Tenants
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => (int?)t.LeaveCancellationWindowDays)
+            .FirstOrDefaultAsync(cancellationToken) ?? DefaultCancellationWindowDays;
+
+        var dtos = requests
+            .Select(lr => MapToDto(lr, lr.LeaveType?.Name ?? string.Empty) with { CancellationWindowDays = windowDays })
+            .ToList();
         return Result<IReadOnlyList<LeaveRequestDto>>.Success(dtos);
     }
 

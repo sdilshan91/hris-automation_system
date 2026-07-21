@@ -104,4 +104,30 @@ describe('evaluateCancelEligibility (pure, US-LV-010)', () => {
     const e = evaluateCancelEligibility({ status: 'Approved', startDate: 'not-a-date' }, today);
     expect(e.eligible).toBeFalse();
   });
+
+  // DF-54: proactive notice-window gate (mirrors the BE 400 in CancelAsync).
+  it('is ineligible for an approved request that starts within the notice window', () => {
+    // today 2026-06-14, window 3 → cutoff 06-17; start 06-16 is inside → blocked.
+    const e = evaluateCancelEligibility({ status: 'Approved', startDate: '2026-06-16' }, today, 3);
+    expect(e.eligible).toBeFalse();
+    expect(e.reason).toContain('3 days');
+  });
+
+  it('is eligible for an approved request that starts just outside the notice window', () => {
+    // window 3 → cutoff 06-17; start 06-18 is strictly beyond → allowed.
+    const e = evaluateCancelEligibility({ status: 'Approved', startDate: '2026-06-18' }, today, 3);
+    expect(e.eligible).toBeTrue();
+  });
+
+  it('window = 0 preserves the original future/past boundary (backward-compat)', () => {
+    expect(evaluateCancelEligibility({ status: 'Approved', startDate: '2026-06-20' }, today, 0).eligible).toBeTrue();
+    expect(evaluateCancelEligibility({ status: 'Approved', startDate: '2026-06-14' }, today, 0).eligible).toBeFalse();
+  });
+
+  it('uses singular "day" for a 1-day window', () => {
+    // today 06-14, window 1 → cutoff 06-15; start 06-15 is inside → blocked with singular wording.
+    const e = evaluateCancelEligibility({ status: 'Approved', startDate: '2026-06-15' }, today, 1);
+    expect(e.eligible).toBeFalse();
+    expect(e.reason).toContain('1 day ');
+  });
 });

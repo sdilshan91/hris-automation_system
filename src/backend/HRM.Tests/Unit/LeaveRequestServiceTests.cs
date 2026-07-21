@@ -587,6 +587,34 @@ public sealed class LeaveRequestServiceTests
         result.Value![0].StartDate.Year.Should().Be(2027);
     }
 
+    [Fact]
+    public async Task GetMine_EchoesTenantCancellationWindow_DF54()
+    {
+        using (var db = CreateDbContext())
+        {
+            db.Tenants.Add(new Tenant { Id = _tenantId, Subdomain = "acme", Name = "Acme", LeaveCancellationWindowDays = 5 });
+            db.SaveChanges();
+        }
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2027, 2, 1), LeaveRequestStatus.Approved);
+
+        var result = await CreateService().GetMineAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().NotBeEmpty();
+        result.Value!.Should().OnlyContain(r => r.CancellationWindowDays == 5);
+    }
+
+    [Fact]
+    public async Task GetMine_CancellationWindowDefaultsToZero_WhenTenantRowAbsent_DF54()
+    {
+        SeedRequest(_annualLeaveTypeId, new DateOnly(2027, 2, 1), LeaveRequestStatus.Approved);
+
+        var result = await CreateService().GetMineAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Should().OnlyContain(r => r.CancellationWindowDays == 0);
+    }
+
     // ── ISSUE-035: eligible-types filters by BR-4 gender + BR-5 probation (TC-LV-058/059) ──
 
     [Fact]

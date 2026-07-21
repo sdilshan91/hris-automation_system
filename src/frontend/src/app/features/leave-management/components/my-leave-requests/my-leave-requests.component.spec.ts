@@ -155,6 +155,20 @@ describe('MyLeaveRequestsComponent', () => {
       expect(buttons.some((b) => !b.disabled)).toBeTrue(); // eligible pending
       expect(buttons.some((b) => b.disabled)).toBeTrue(); // ineligible started
     });
+
+    it('threads the tenant cancellation window into eligibility (DF-54)', () => {
+      // Same future start date (~30 days out); only the window differs, so any eligibility difference can
+      // ONLY come from the component threading req.cancellationWindowDays into evaluateCancelEligibility.
+      const soon = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+      const within = component.cancelEligibility(
+        makeRequest({ status: 'Approved', startDate: soon, cancellationWindowDays: 365 }),
+      );
+      expect(within.eligible).toBeFalse(); // 30 days out is inside a 365-day notice window
+      const noWindow = component.cancelEligibility(
+        makeRequest({ status: 'Approved', startDate: soon, cancellationWindowDays: 0 }),
+      );
+      expect(noWindow.eligible).toBeTrue(); // same date, no window → cancellable
+    });
   });
 
   // --- US-LV-010: confirm dialog + reason logic ------------------
