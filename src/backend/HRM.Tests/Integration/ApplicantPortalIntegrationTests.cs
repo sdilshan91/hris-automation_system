@@ -114,6 +114,11 @@ public sealed class ApplicantPortalIntegrationTests
         // DF-41: ApplicantPortalTokenService now dispatches the magic-link email; a no-op dispatcher satisfies the
         // ctor dep for these token-lifecycle integration tests (they don't assert on delivery).
         services.AddScoped<INotificationDispatcher>(_ => Substitute.For<INotificationDispatcher>());
+        // DF-7: ApplicantPortalTokenService now depends on IPortalLinkIpRateLimiter (the per-IP magic-link
+        // throttle). This InMemory harness has no Redis, so wire the DB-count fallback (matching the app's
+        // Redis-not-configured DI branch) with default limits so the token service resolves.
+        services.Configure<PortalLinkRateLimitOptions>(_ => { });
+        services.AddScoped<IPortalLinkIpRateLimiter, DbCountPortalLinkIpRateLimiter>();
         services.AddScoped<IApplicantPortalTokenService, ApplicantPortalTokenService>();
         services.AddScoped<IApplicantPortalService, ApplicantPortalService>();
 
