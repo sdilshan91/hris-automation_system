@@ -115,7 +115,7 @@ public sealed class OffboardingIntegrationTests
         {
             _payrollFnF = Substitute.For<IPayrollFnFIntegration>();
             _payrollFnF.TriggerFinalSettlementAsync(
-                    Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+                    Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>())
                 .Returns(_settlementRef);
             services.AddSingleton(_payrollFnF);
         }
@@ -177,7 +177,7 @@ public sealed class OffboardingIntegrationTests
     }
 
     private static InitiateOffboardingCommand InitiateCmd(Guid employeeId) =>
-        new(employeeId, DateTime.UtcNow.AddDays(14).Date, null, OffboardingReason.Resignation, "Moving on.");
+        new(employeeId, DateOnly.FromDateTime(DateTime.UtcNow.AddDays(14)), null, OffboardingReason.Resignation, "Moving on.");
 
     private static async Task ClearAllMandatory(IMediator mediator, OffboardingInstanceDto instance)
     {
@@ -217,7 +217,7 @@ public sealed class OffboardingIntegrationTests
 
         await _authService.Received(1).RevokeAllSessionsAsync(_employeeUserA, _tenantA, Arg.Any<CancellationToken>());
         await _payrollFnF.Received(1).TriggerFinalSettlementAsync(
-            _tenantA, _employeeA, initiated.Value.Id, Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+            _tenantA, _employeeA, initiated.Value.Id, Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
     }
 
     // ── ISSUE-294 DI-swap seam: CompleteAsync drives the REAL RealPayrollFnFIntegration → a FinalSettlement row ──
@@ -268,7 +268,7 @@ public sealed class OffboardingIntegrationTests
 
         // Nothing was terminated and F&F was not triggered.
         await _payrollFnF.DidNotReceive().TriggerFinalSettlementAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateOnly>(), Arg.Any<CancellationToken>());
     }
 
     // ── AC-2 / BR-3 asset return updates the register ───────────────────

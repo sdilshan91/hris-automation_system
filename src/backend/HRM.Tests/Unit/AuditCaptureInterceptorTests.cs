@@ -651,7 +651,7 @@ public sealed class AuditCaptureInterceptorTests
                 AssetTag = "LT-0001",
                 Status = AssetStatus.Assigned,
                 AssignedEmployeeId = Guid.NewGuid(),
-                IssueDate = DateTime.UtcNow,
+                IssueDate = DateOnly.FromDateTime(DateTime.UtcNow),
             });
             await db.SaveChangesAsync();
         }

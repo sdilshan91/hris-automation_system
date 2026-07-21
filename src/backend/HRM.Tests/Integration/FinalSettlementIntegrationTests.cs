@@ -44,7 +44,7 @@ public sealed class FinalSettlementIntegrationTests
     // of those 22 ⇒ pro-ration factor 11/22 = 0.5 (unchanged from the old 15/30 = 0.5 — which is why
     // ExpectedProRatedGross is untouched). BASIC 30000 ⇒ pro-rated gross 15000; daily rate 30000/22 = 1363.64
     // ⇒ 10 encashable days × 1363.64 = 13636.40.
-    private static readonly DateTime Lwd = new(2026, 6, 15);
+    private static readonly DateOnly Lwd = new(2026, 6, 15);
     private const decimal MonthlyBasic = 30_000m;
     private const decimal ExpectedProRatedGross = 15_000m;
 
@@ -438,12 +438,12 @@ public sealed class FinalSettlementIntegrationTests
 
         // A leaver whose LWD is BEFORE policy B's effective date resolves policy A (encashment included) — the
         // newer policy must not retroactively rewrite the earlier settlement.
-        var early = await ActWithLwdAsync(empId, Guid.NewGuid(), new DateTime(2026, 2, 20));
+        var early = await ActWithLwdAsync(empId, Guid.NewGuid(), new DateOnly(2026, 2, 20));
         early.PolicyEffectiveFrom.Should().Be(new DateOnly(2026, 1, 1));
         early.LeaveEncashmentTotal.Should().BeGreaterThan(0m, "the LWD predates policy B, so policy A (encashment ON) governs");
 
         // A leaver whose LWD is on/after policy B resolves policy B (encashment excluded).
-        var later = await ActWithLwdAsync(empId, Guid.NewGuid(), new DateTime(2026, 6, 15));
+        var later = await ActWithLwdAsync(empId, Guid.NewGuid(), new DateOnly(2026, 6, 15));
         later.PolicyEffectiveFrom.Should().Be(new DateOnly(2026, 6, 1));
         later.LeaveEncashmentTotal.Should().Be(0m, "on/after policy B's effective date, encashment is OFF");
     }
@@ -562,7 +562,7 @@ public sealed class FinalSettlementIntegrationTests
     }
 
     // ── act with a custom last-working-day (effective-dated policy arms) ──
-    private async Task<FinalSettlement> ActWithLwdAsync(Guid empId, Guid offboardingId, DateTime lwd)
+    private async Task<FinalSettlement> ActWithLwdAsync(Guid empId, Guid offboardingId, DateOnly lwd)
     {
         Guid settlementId;
         using (var db = Db())

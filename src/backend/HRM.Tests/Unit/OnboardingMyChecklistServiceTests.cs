@@ -101,7 +101,7 @@ public sealed class OnboardingMyChecklistServiceTests
         {
             Id = checklistId, TenantId = _tenantId, EmployeeId = _employeeId,
             TemplateId = BaseEntity.NewUuidV7(), TemplateName = "Standard", Status = OnboardingChecklistStatus.Active,
-            StartDate = DateTime.UtcNow.AddDays(-1).Date, Version = 1, AssignedByUserId = _hrUserId,
+            StartDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)), Version = 1, AssignedByUserId = _hrUserId,
         };
         var sort = 0;
         foreach (var t in tasks)
@@ -113,7 +113,7 @@ public sealed class OnboardingMyChecklistServiceTests
                 Id = id, TenantId = _tenantId, ChecklistInstanceId = checklistId,
                 Title = t.Title, Category = t.Category, ResponsibleRole = t.Role,
                 ResponsibleUserId = t.Role == OnboardingResponsibleRole.Employee ? _employeeUserId : null,
-                DueDate = DateTime.UtcNow.AddDays(t.DueOffsetDays).Date, Status = t.Status,
+                DueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(t.DueOffsetDays)), Status = t.Status,
                 IsMandatory = t.Mandatory, RequiresDocument = t.RequiresDoc, SortOrder = sort++,
             });
         }
@@ -307,12 +307,12 @@ public sealed class OnboardingMyChecklistServiceTests
             {
                 Id = otherChecklistId, TenantId = _tenantId, EmployeeId = otherEmpId,
                 TemplateId = BaseEntity.NewUuidV7(), TemplateName = "Standard",
-                Status = OnboardingChecklistStatus.Active, StartDate = DateTime.UtcNow.Date,
+                Status = OnboardingChecklistStatus.Active, StartDate = DateOnly.FromDateTime(DateTime.UtcNow),
                 Tasks = { new OnboardingTaskInstance
                 {
                     Id = otherTaskId, TenantId = _tenantId, ChecklistInstanceId = otherChecklistId,
                     Title = "Other task", ResponsibleRole = OnboardingResponsibleRole.Employee,
-                    DueDate = DateTime.UtcNow.Date, Status = OnboardingTaskStatus.Pending,
+                    DueDate = DateOnly.FromDateTime(DateTime.UtcNow), Status = OnboardingTaskStatus.Pending,
                 } },
             });
             db.SaveChanges();

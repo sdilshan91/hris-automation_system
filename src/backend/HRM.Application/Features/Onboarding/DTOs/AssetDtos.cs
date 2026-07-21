@@ -30,11 +30,11 @@ public sealed record AssetDto
     public string? SerialNumber { get; init; }
     public string? Brand { get; init; }
     public string? Model { get; init; }
-    public DateTime? PurchaseDate { get; init; }
+    public DateOnly? PurchaseDate { get; init; }
     public string Condition { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public Guid? AssignedEmployeeId { get; init; }
-    public DateTime? IssueDate { get; init; }
+    public DateOnly? IssueDate { get; init; }
     public string? Notes { get; init; }
     public string? AcknowledgmentUrl { get; init; }
 }
@@ -50,7 +50,7 @@ public sealed record IssueAssetLineDto
     public string? Brand { get; init; }
     public string? Model { get; init; }
     public string Condition { get; init; } = string.Empty;
-    public DateTime IssueDate { get; init; }
+    public DateOnly IssueDate { get; init; }
     public string? Notes { get; init; }
 }
 

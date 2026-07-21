@@ -30,7 +30,7 @@ public sealed class OnboardingChecklistInstance : BaseEntity
     /// Effective start date the due dates are anchored to. Defaults to the employee's date_of_joining,
     /// overridable per request; if that date is in the past, due dates anchor to today instead (BR-4).
     /// </summary>
-    public DateTime StartDate { get; set; }
+    public DateOnly StartDate { get; set; }
 
     /// <summary>Assignment version (BR-2). First active = 1; each replace creates a new instance at +1.</summary>
     public int Version { get; set; } = 1;

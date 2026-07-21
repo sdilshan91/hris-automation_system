@@ -17,7 +17,7 @@ public sealed record ModifyAssignedChecklistCommand(
 ) : IRequest<Result<OnboardingChecklistInstanceDto>>;
 
 /// <summary>A single task modification op on the modify command (US-ONB-002 AC-4/FR-6).</summary>
-public sealed record ModifyChecklistTaskChange(Guid TaskInstanceId, DateTime? NewDueDate, bool Remove);
+public sealed record ModifyChecklistTaskChange(Guid TaskInstanceId, DateOnly? NewDueDate, bool Remove);
 
 public sealed class ModifyAssignedChecklistCommandHandler
     : IRequestHandler<ModifyAssignedChecklistCommand, Result<OnboardingChecklistInstanceDto>>

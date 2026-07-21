@@ -13,7 +13,7 @@ public sealed record OffboardingTaskDto
     public OnboardingResponsibleRole ResponsibleRole { get; init; }
     public string ResponsibleRoleName { get; init; } = string.Empty;
     public Guid? ResponsibleUserId { get; init; }
-    public DateTime DueDate { get; init; }
+    public DateOnly DueDate { get; init; }
     public OnboardingTaskStatus Status { get; init; }
     public string StatusName { get; init; } = string.Empty;
     public bool IsMandatory { get; init; }
@@ -66,7 +66,7 @@ public sealed record OffboardingInstanceDto
     public string EmployeeName { get; init; } = string.Empty;
     public Guid? TemplateId { get; init; }
     public string TemplateName { get; init; } = string.Empty;
-    public DateTime LastWorkingDay { get; init; }
+    public DateOnly LastWorkingDay { get; init; }
     public OffboardingReason Reason { get; init; }
     public string ReasonName { get; init; } = string.Empty;
     public string? Notes { get; init; }

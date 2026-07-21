@@ -1,10 +1,10 @@
 // ============================================================================
-// BUG-290 class: the two remaining `.Date`(Kind=Unspecified) → timestamptz write sites — Asset issuance
-// (AssetService.IssueAsync → asset.issue_date) and Exit-interview (ExitInterviewService.RecordAsync →
-// exit_interview.interview_date) — persist on REAL Postgres. Both were fixed with the same
-// `DateTime.SpecifyKind(<.Date>, Utc)` idiom as the Postgres-proven Offboarding compound case, but were
-// NOT independently verified on the real provider (the InMemory suites ignore DateTimeKind and hid the
-// original throw). This closes that coverage gap. postgres:17-alpine via Testcontainers.
+// DF-1 (was BUG-290 class): Asset issuance (AssetService.IssueAsync → asset.issue_date) and Exit-interview
+// (ExitInterviewService.RecordAsync → exit_interview.interview_date) now use real Postgres `date` columns
+// mapped to `DateOnly` — the `.Date`→timestamptz `DateTimeKind` band-aids are gone. These tests prove the
+// NEW contract on REAL Postgres: a `DateOnly` value round-trips through the `date` column with the correct
+// calendar date — no DateTimeKind, no time component, and NO off-by-one regardless of DB session timezone
+// (the exact failure the timestamptz remodel eliminates). postgres:17-alpine via Testcontainers.
 // ============================================================================
 
 using FluentAssertions;
@@ -99,7 +99,7 @@ public sealed class AssetExitInterviewDateKindPostgresTests : IAsyncLifetime
 
     [Fact]
     [Trait("TC", "TC-ONB-004-13")]
-    public async Task Asset_issuance_persists_issue_date_utc_on_postgres_bug290()
+    public async Task Asset_issuance_persists_issue_date_as_dateonly_on_postgres_df1()
     {
         var employeeId = await SeedEmployee();
 
@@ -108,8 +108,9 @@ public sealed class AssetExitInterviewDateKindPostgresTests : IAsyncLifetime
         var service = new AssetService(db, tc, cu,
             Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(), NullLogger<AssetService>.Instance);
 
-        // AssetId null → a new asset is created; IssueDate is written to the timestamptz issue_date column.
-        // `.Date` alone is Kind=Unspecified, which Npgsql rejects — the write used to throw on Postgres.
+        var issueDate = new DateOnly(2026, 7, 1);
+
+        // AssetId null → a new asset is created; IssueDate is written to the real `date` issue_date column.
         var result = await service.IssueAsync(new IssueAssetsInput(
             employeeId, null,
             new[]
@@ -117,9 +118,7 @@ public sealed class AssetExitInterviewDateKindPostgresTests : IAsyncLifetime
                 new IssueAssetLineInput(
                     AssetId: null, AssetType: "Laptop", AssetTag: "LT-0001", SerialNumber: "SN-1",
                     Brand: "Acme", Model: "X1", Condition: AssetCondition.Good,
-                    // Kind=Unspecified, exactly as a date-only value arrives from model binding — this is what
-                    // the fix must UTC-kind. `.Date` PRESERVES Kind, so a Utc input would not reproduce the bug.
-                    IssueDate: new DateTime(2026, 7, 1), Notes: null),
+                    IssueDate: issueDate, Notes: null),
             },
             AcknowledgmentStream: null, AcknowledgmentFileName: null,
             AcknowledgmentContentType: null, AcknowledgmentSize: 0));
@@ -130,12 +129,13 @@ public sealed class AssetExitInterviewDateKindPostgresTests : IAsyncLifetime
         var asset = await verify.Assets.AsNoTracking().SingleAsync(a => a.AssetTag == "LT-0001");
         asset.Status.Should().Be(AssetStatus.Assigned);
         asset.IssueDate.Should().NotBeNull();
-        asset.IssueDate!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        // DF-1 contract: the exact calendar date round-trips through the `date` column (no time, no off-by-one).
+        asset.IssueDate!.Value.Should().Be(issueDate);
     }
 
     [Fact]
     [Trait("TC", "TC-ONB-006-13")]
-    public async Task Exit_interview_persists_interview_date_utc_on_postgres_bug290()
+    public async Task Exit_interview_persists_interview_date_as_dateonly_on_postgres_df1()
     {
         var offboardingId = Guid.NewGuid();
         await using (var seed = CreateContext())
@@ -145,7 +145,7 @@ public sealed class AssetExitInterviewDateKindPostgresTests : IAsyncLifetime
             {
                 Id = offboardingId, TenantId = _tenantId, EmployeeId = Guid.NewGuid(),
                 TemplateName = "Default", Reason = OffboardingReason.Resignation,
-                LastWorkingDay = DateTime.SpecifyKind(DateTime.UtcNow.AddDays(14).Date, DateTimeKind.Utc),
+                LastWorkingDay = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(14)),
             });
             await seed.SaveChangesAsync();
         }
@@ -154,12 +154,13 @@ public sealed class AssetExitInterviewDateKindPostgresTests : IAsyncLifetime
         var (tc, cu) = Actors();
         var service = new ExitInterviewService(db, tc, cu, NullLogger<ExitInterviewService>.Instance);
 
-        // InterviewDate is written to the timestamptz interview_date column via SpecifyKind(.Date, Utc).
+        var interviewDate = new DateOnly(2026, 7, 1);
+
+        // InterviewDate is written to the real `date` interview_date column.
         var result = await service.RecordAsync(
             new RecordExitInterviewInput(
                 OffboardingId: offboardingId, InterviewMode: "HrConducted",
-                // Kind=Unspecified input (as it arrives from model binding) — the value the fix must UTC-kind.
-                InterviewDate: new DateTime(2026, 7, 1), Responses: Array.Empty<ExitInterviewResponseInput>(),
+                InterviewDate: interviewDate, Responses: Array.Empty<ExitInterviewResponseInput>(),
                 OverallExperienceRating: 4, WouldRecommendEmployer: true, AdditionalComments: null),
             isSelfService: false, allowEdit: true);
 
@@ -168,6 +169,7 @@ public sealed class AssetExitInterviewDateKindPostgresTests : IAsyncLifetime
         await using var verify = CreateContext();
         var interview = await verify.ExitInterviews.AsNoTracking()
             .SingleAsync(i => i.OffboardingInstanceId == offboardingId);
-        interview.InterviewDate.Kind.Should().Be(DateTimeKind.Utc);
+        // DF-1 contract: the exact calendar date round-trips through the `date` column (no time, no off-by-one).
+        interview.InterviewDate.Should().Be(interviewDate);
     }
 }

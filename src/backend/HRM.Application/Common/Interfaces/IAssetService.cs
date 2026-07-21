@@ -41,7 +41,7 @@ public sealed record IssueAssetLineInput(
     string? Brand,
     string? Model,
     AssetCondition Condition,
-    DateTime IssueDate,
+    DateOnly IssueDate,
     string? Notes);
 
 /// <summary>

@@ -14,7 +14,7 @@ namespace HRM.Application.Features.Onboarding.Commands;
 public sealed record AssignChecklistCommand(
     Guid EmployeeId,
     Guid TemplateId,
-    DateTime? OverrideStartDate,
+    DateOnly? OverrideStartDate,
     ChecklistAssignmentMode Mode,
     IReadOnlyList<AssignChecklistAdHocTask> AdditionalTasks,
     string? IdempotencyKey

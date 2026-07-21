@@ -150,7 +150,7 @@ public sealed class AssetService : IAssetService
         if (employee is null)
             return Result<IReadOnlyList<AssetDto>>.Failure("Employee not found.", 404, "employee_not_found");
 
-        var today = DateTime.UtcNow.Date;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // Resolve the linked onboarding task up front (AC-2): it must be on THIS employee's checklist.
         OnboardingTaskInstance? linkedTask = null;
@@ -180,7 +180,7 @@ public sealed class AssetService : IAssetService
         foreach (var line in input.Assets)
         {
             // §7: issue date cannot be in the future (defence-in-depth; also in the validator).
-            if (line.IssueDate.Date > today)
+            if (line.IssueDate > today)
                 return Result<IReadOnlyList<AssetDto>>.Failure(
                     "Issue date cannot be in the future.", 400, "issue_date_future");
 
@@ -250,8 +250,8 @@ public sealed class AssetService : IAssetService
             asset.Condition = line.Condition;
             asset.Status = AssetStatus.Assigned;
             asset.AssignedEmployeeId = employee.Id;
-            // BUG-289 class: issue_date is timestamptz — .Date is Kind=Unspecified, which Npgsql rejects. UTC-kind it.
-            asset.IssueDate = DateTime.SpecifyKind(line.IssueDate.Date, DateTimeKind.Utc);
+            // DF-1: issue_date is a real `date` column mapped to DateOnly — assign directly (no Kind games).
+            asset.IssueDate = line.IssueDate;
             asset.Notes = string.IsNullOrWhiteSpace(line.Notes) ? null : line.Notes.Trim();
 
             // FR-8: explicit before/after audit line for the status transition (AuditInterceptor stamps columns).

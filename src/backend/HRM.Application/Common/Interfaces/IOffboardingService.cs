@@ -6,7 +6,7 @@ namespace HRM.Application.Common.Interfaces;
 /// <summary>Input for initiating an offboarding (US-ONB-005 AC-1, FR-2, §7).</summary>
 public sealed record InitiateOffboardingInput(
     Guid EmployeeId,
-    DateTime LastWorkingDay,
+    DateOnly LastWorkingDay,
     Guid? OffboardingTemplateId,
     Domain.Enums.OffboardingReason Reason,
     string? Notes);

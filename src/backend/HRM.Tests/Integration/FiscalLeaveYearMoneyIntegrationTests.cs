@@ -49,7 +49,7 @@ public sealed class FiscalLeaveYearMoneyIntegrationTests
     // where a raw `.Year` reads the wrong ledger bucket. For a month-1 (calendar) tenant it is leave year 2027.
     private const int PayYear = 2027;
     private const int PayMonth = 2; // February — inside the Jan-Mar window.
-    private static readonly DateTime Lwd = new(2027, 2, 10);
+    private static readonly DateOnly Lwd = new(2027, 2, 10);
 
     private const int FiscalLeaveYear = 2026;   // an Apr-Mar tenant's leave year for a Feb-2027 date.
     private const int CalendarLeaveYear = 2027;  // a Jan-Dec tenant's leave year for the same date.

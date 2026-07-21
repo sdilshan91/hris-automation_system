@@ -25,7 +25,7 @@ public sealed class RecordExitInterviewValidator : AbstractValidator<RecordExitI
             .WithMessage("Interview mode must be 'hr_conducted' or 'self_service'.");
 
         RuleFor(x => x.Input.InterviewDate)
-            .Must(d => d.Date <= DateTime.UtcNow.Date)
+            .Must(d => d <= DateOnly.FromDateTime(DateTime.UtcNow))
             .WithMessage("Interview date cannot be in the future.");
 
         RuleFor(x => x.Input.OverallExperienceRating)

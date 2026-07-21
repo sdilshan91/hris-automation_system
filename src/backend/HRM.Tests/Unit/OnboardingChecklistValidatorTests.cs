@@ -89,7 +89,7 @@ public sealed class OnboardingChecklistValidatorTests
     {
         var cmd = new ModifyAssignedChecklistCommand(
             Guid.NewGuid(), Array.Empty<AssignChecklistAdHocTask>(),
-            new[] { new ModifyChecklistTaskChange(Guid.NewGuid(), DateTime.UtcNow.AddDays(1), false) });
+            new[] { new ModifyChecklistTaskChange(Guid.NewGuid(), DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), false) });
 
         _modify.TestValidate(cmd).ShouldNotHaveAnyValidationErrors();
     }

@@ -11,7 +11,7 @@ public sealed class InitiateOffboardingValidator : AbstractValidator<InitiateOff
         RuleFor(x => x.EmployeeId).NotEmpty().WithMessage("Employee is required.");
 
         RuleFor(x => x.LastWorkingDay)
-            .Must(d => d.Date >= DateTime.UtcNow.Date)
+            .Must(d => d >= DateOnly.FromDateTime(DateTime.UtcNow))
             .WithMessage("Last working day must be today or in the future.");
 
         RuleFor(x => x.Reason).IsInEnum().WithMessage("A valid reason is required.");

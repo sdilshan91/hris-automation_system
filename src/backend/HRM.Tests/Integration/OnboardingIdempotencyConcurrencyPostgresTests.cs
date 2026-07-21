@@ -65,7 +65,7 @@ public sealed class OnboardingIdempotencyConcurrencyPostgresTests : IAsyncLifeti
     {
         Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EmployeeId = _employeeId, TemplateId = _templateId,
         TemplateName = "Standard Onboarding", Status = status,
-        StartDate = DateTime.UtcNow, Version = 1, IdempotencyKey = key, IsDeleted = false,
+        StartDate = DateOnly.FromDateTime(DateTime.UtcNow), Version = 1, IdempotencyKey = key, IsDeleted = false,
     };
 
     [Fact]

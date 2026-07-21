@@ -12,7 +12,7 @@ namespace HRM.Application.Features.Onboarding.Commands;
 /// </summary>
 public sealed record InitiateOffboardingCommand(
     Guid EmployeeId,
-    DateTime LastWorkingDay,
+    DateOnly LastWorkingDay,
     Guid? OffboardingTemplateId,
     OffboardingReason Reason,
     string? Notes

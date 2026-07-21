@@ -31,7 +31,7 @@ public sealed class Asset : BaseEntity
     public string? Model { get; set; }
 
     /// <summary>Purchase date (FR-2). Optional.</summary>
-    public DateTime? PurchaseDate { get; set; }
+    public DateOnly? PurchaseDate { get; set; }
 
     /// <summary>Condition at issuance (FR-2, §7).</summary>
     public AssetCondition Condition { get; set; } = AssetCondition.Good;
@@ -43,7 +43,7 @@ public sealed class Asset : BaseEntity
     public Guid? AssignedEmployeeId { get; set; }
 
     /// <summary>Date the asset was issued (§7). Set on issuance; cannot be in the future.</summary>
-    public DateTime? IssueDate { get; set; }
+    public DateOnly? IssueDate { get; set; }
 
     /// <summary>
     /// FR-6: tenant-isolated storage key of the signed acknowledgment receipt uploaded with the issuance

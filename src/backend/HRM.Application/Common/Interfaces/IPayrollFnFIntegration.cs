@@ -17,6 +17,6 @@ public interface IPayrollFnFIntegration
         Guid tenantId,
         Guid employeeId,
         Guid offboardingInstanceId,
-        DateTime lastWorkingDay,
+        DateOnly lastWorkingDay,
         CancellationToken cancellationToken = default);
 }

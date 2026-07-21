@@ -1,11 +1,11 @@
 // ============================================================================
-// BUG-289: onboarding checklist ASSIGN persists on real Postgres.
+// DF-1 (was BUG-289): onboarding checklist ASSIGN persists on real Postgres.
 //
-// HARNESS = real Postgres via Testcontainers. This is load-bearing: AssignAsync
-// computes start/due dates via `.Date` (Kind=Unspecified) and writes them to the
-// timestamptz start_date/due_date columns. The InMemory provider ignores Kind and
-// hid this; Npgsql REJECTS Kind=Unspecified for `timestamp with time zone`, so the
-// assign SaveChanges used to throw. The UtcMidnight() fix makes the write valid.
+// HARNESS = real Postgres via Testcontainers. AssignAsync anchors start/due dates
+// as DateOnly and writes them to real `date` start_date/due_date columns. This
+// proves the NEW contract: the exact calendar dates round-trip through the `date`
+// columns with no off-by-one (regardless of DB session timezone) — the failure the
+// timestamptz remodel eliminates.
 // ============================================================================
 
 using FluentAssertions;
@@ -78,7 +78,7 @@ public sealed class OnboardingAssignPostgresTests : IAsyncLifetime
 
     [Fact]
     [Trait("TC", "TC-ONB-002-13")]
-    public async Task Assign_persists_on_real_postgres_bug289()
+    public async Task Assign_persists_on_real_postgres_df1()
     {
         await using (var seed = CreateContext())
         {
@@ -93,9 +93,7 @@ public sealed class OnboardingAssignPostgresTests : IAsyncLifetime
                 FirstName = "Nora", LastName = "Newhire", Email = "nora@acme.com",
                 DepartmentId = deptId, JobTitleId = jobTitleId,
                 // A FUTURE joining date (the realistic new-hire case) so startDate comes from DateOfJoining —
-                // this exercises the primary write site (instance.StartDate + task due dates from it). Kind MUST
-                // be Unspecified (as a date arrives from model binding): `.Date` PRESERVES Kind, so a Utc seed
-                // would make the mutant survive (the write would still be Utc) — green theater.
+                // this exercises the primary write site (instance.StartDate as DateOnly + task due dates from it).
                 DateOfJoining = new DateTime(2026, 12, 1),
             });
             seed.OnboardingChecklistTemplates.Add(new OnboardingChecklistTemplate
@@ -115,7 +113,7 @@ public sealed class OnboardingAssignPostgresTests : IAsyncLifetime
             await seed.SaveChangesAsync();
         }
 
-        // The assign write path (instance.StartDate + task due dates → timestamptz) must NOT throw on Postgres.
+        // The assign write path (instance.StartDate + task due dates → real `date` columns) persists on Postgres.
         await using var db = CreateContext();
         var result = await CreateService(db).AssignAsync(new AssignChecklistInput(
             _employeeId, _templateId, null, ChecklistAssignmentMode.Replace,
@@ -128,7 +126,9 @@ public sealed class OnboardingAssignPostgresTests : IAsyncLifetime
             .Include(c => c.Tasks)
             .SingleAsync(c => c.EmployeeId == _employeeId && c.Status == OnboardingChecklistStatus.Active);
         instance.Tasks.Should().ContainSingle();
-        // The start date persisted (and round-trips) at UTC midnight.
-        instance.StartDate.Kind.Should().Be(DateTimeKind.Utc);
+        // DF-1 contract: start date = the (future) joining date, round-tripped exactly through the `date` column.
+        instance.StartDate.Should().Be(new DateOnly(2026, 12, 1));
+        // The single task has DueOffsetDays = 3 → due == start + 3 days (round-trips exactly).
+        instance.Tasks.Single().DueDate.Should().Be(new DateOnly(2026, 12, 4));
     }
 }

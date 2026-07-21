@@ -36,7 +36,7 @@ public sealed record ExitInterviewDto
     public Guid TemplateId { get; init; }
     public string InterviewMode { get; init; } = string.Empty; // "hr_conducted" | "self_service"
     public Guid? ConductedByUserId { get; init; }
-    public DateTime InterviewDate { get; init; }
+    public DateOnly InterviewDate { get; init; }
     public int? OverallExperienceRating { get; init; }
     public bool? WouldRecommendEmployer { get; init; }
     public string? AdditionalComments { get; init; }
@@ -61,7 +61,7 @@ public sealed record ExitInterviewResponseDto
 public sealed record RecordExitInterviewInput(
     Guid OffboardingId,
     string InterviewMode,
-    DateTime InterviewDate,
+    DateOnly InterviewDate,
     IReadOnlyList<ExitInterviewResponseInput> Responses,
     int? OverallExperienceRating,
     bool? WouldRecommendEmployer,

@@ -130,7 +130,7 @@ public sealed class ExitInterviewIntegrationTests
     /// <summary>Seeds an in-progress offboarding for tenant A with a default-named exit-interview task.</summary>
     private Guid SeedOffboarding(
         Guid employeeId, OffboardingReason reason = OffboardingReason.Resignation,
-        DateTime? lwd = null, bool withExitTask = true)
+        DateOnly? lwd = null, bool withExitTask = true)
     {
         var instanceId = BaseEntity.NewUuidV7();
         using var db = OpenDb(_tenantA);
@@ -138,7 +138,7 @@ public sealed class ExitInterviewIntegrationTests
         {
             Id = instanceId, TenantId = _tenantA, EmployeeId = employeeId,
             TemplateName = "Default Exit Clearance",
-            LastWorkingDay = lwd ?? DateTime.UtcNow.AddDays(10).Date,
+            LastWorkingDay = lwd ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
             Reason = reason, Status = OffboardingStatus.InProgress,
             InitiatedByUserId = _hrUserA,
         };
@@ -148,7 +148,7 @@ public sealed class ExitInterviewIntegrationTests
             {
                 Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, OffboardingInstanceId = instanceId,
                 ClearanceCategory = ClearanceCategory.HR, Title = "Conduct exit interview",
-                ResponsibleRole = OnboardingResponsibleRole.HR, DueDate = DateTime.UtcNow.AddDays(5).Date,
+                ResponsibleRole = OnboardingResponsibleRole.HR, DueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
                 Status = OnboardingTaskStatus.Pending, IsMandatory = false, SortOrder = 0,
             });
         }
@@ -162,12 +162,12 @@ public sealed class ExitInterviewIntegrationTests
 
     private static RecordExitInterviewInput Input(
         Guid offboardingId, ExitInterviewTemplateDto template, string mode = "hr_conducted",
-        DateTime? date = null, int? overall = 4)
+        DateOnly? date = null, int? overall = 4)
     {
         var ratingQ = template.Categories.SelectMany(c => c.Questions).First(q => q.Type == "rating");
         var freeQ = template.Categories.SelectMany(c => c.Questions).First(q => q.Type == "free_text");
         return new RecordExitInterviewInput(
-            offboardingId, mode, date ?? DateTime.UtcNow.Date,
+            offboardingId, mode, date ?? DateOnly.FromDateTime(DateTime.UtcNow),
             new[]
             {
                 new ExitInterviewResponseInput(ratingQ.QuestionId, 5, null, null),

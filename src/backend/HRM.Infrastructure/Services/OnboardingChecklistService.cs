@@ -164,8 +164,8 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 cancellationToken);
 
         // BR-4: anchor due dates to the override start date or the joining date, but never the past.
-        var startDate = UtcMidnight(input.OverrideStartDate ?? employee.DateOfJoining);
-        var today = UtcMidnight(DateTime.UtcNow);
+        var startDate = input.OverrideStartDate ?? DateOnly.FromDateTime(employee.DateOfJoining);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         if (startDate < today)
             startDate = today;
 
@@ -284,14 +284,6 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
     private static bool IsIdempotencyKeyViolation(DbUpdateException ex)
         => ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
-    /// <summary>
-    /// BUG-289: the date part at UTC midnight. Onboarding start/due dates are date-only but stored in
-    /// <c>timestamptz</c> columns; plain <c>.Date</c> yields <c>Kind=Unspecified</c>, which Npgsql REJECTS for
-    /// <c>timestamp with time zone</c> (the InMemory provider hid this — it ignores Kind). SpecifyKind(Utc)
-    /// makes the write valid on real Postgres. (A cleaner remodel to <c>date</c> columns is a tracked follow-up.)
-    /// </summary>
-    private static DateTime UtcMidnight(DateTime value) => DateTime.SpecifyKind(value.Date, DateTimeKind.Utc);
-
     // ── Get ─────────────────────────────────────────────────────────────
 
     public async Task<Result<OnboardingChecklistInstanceDto>> GetInstanceAsync(
@@ -351,7 +343,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
             }
             else if (change.NewDueDate.HasValue)
             {
-                task.DueDate = UtcMidnight(change.NewDueDate.Value); // FR-6.
+                task.DueDate = change.NewDueDate.Value; // FR-6.
             }
         }
 
@@ -359,7 +351,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         if (input.AddTasks.Count > 0)
         {
             var resolution = await ResolveResponsiblePartiesAsync(employee, cancellationToken);
-            var today = UtcMidnight(DateTime.UtcNow);
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
             var maxSort = instance.Tasks.Count == 0 ? 0 : instance.Tasks.Max(t => t.SortOrder);
             foreach (var ad in input.AddTasks)
                 AddTaskInstance(NewAdHocTask(instance.Id, ad, today, resolution, employee, ++maxSort));
@@ -438,7 +430,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         => _dbContext.OnboardingTaskInstances.Add(task);
 
     private OnboardingTaskInstance NewTaskFromTemplate(
-        Guid instanceId, OnboardingTemplateTask t, DateTime startDate, PartyResolution r, Employee employee, int sortOrder)
+        Guid instanceId, OnboardingTemplateTask t, DateOnly startDate, PartyResolution r, Employee employee, int sortOrder)
         => new()
         {
             Id = BaseEntity.NewUuidV7(),
@@ -459,7 +451,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         };
 
     private OnboardingTaskInstance NewAdHocTask(
-        Guid instanceId, AdHocTaskInput t, DateTime anchorDate, PartyResolution r, Employee employee, int sortOrder)
+        Guid instanceId, AdHocTaskInput t, DateOnly anchorDate, PartyResolution r, Employee employee, int sortOrder)
         => new()
         {
             Id = BaseEntity.NewUuidV7(),
@@ -691,7 +683,8 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
     public async Task<int> RunOverdueSweepAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {
         var now = DateTime.UtcNow;
-        var today = now.Date;
+        var today = DateOnly.FromDateTime(now);       // for the `date` due_date comparison.
+        var todayStart = now.Date;                    // for the timestamptz created_at comparison (unchanged).
 
         // Past-due, not-completed, on an active checklist, for this tenant.
         var overdue = await _dbContext.OnboardingTaskInstances
@@ -748,7 +741,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 .Where(o => o.TenantId == tenantId
                     && o.ChecklistInstanceId == task.ChecklistInstanceId
                     && o.NotificationType == TaskOverdueNotificationType
-                    && o.CreatedAt >= today)
+                    && o.CreatedAt >= todayStart)
                 .Select(o => o.Payload)
                 .ToListAsync(cancellationToken);
             var alreadyNotifiedToday = candidatePayloads.Any(p => p != null && p.Contains(taskIdString));
@@ -769,7 +762,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 taskInstanceId = task.Id,
                 taskTitle = task.Title,
                 dueDate = task.DueDate,
-                daysOverdue = (today - task.DueDate.Date).Days,
+                daysOverdue = today.DayNumber - task.DueDate.DayNumber,
                 employeeId = emp.Id,
                 employeeName = $"{emp.FirstName} {emp.LastName}".Trim(),
             });
@@ -927,7 +920,7 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
     private static bool IsOverdue(OnboardingTaskInstance t, DateTime now) =>
         t.Status != OnboardingTaskStatus.Completed
         && t.Status != OnboardingTaskStatus.Skipped
-        && t.DueDate.Date < now.Date;
+        && t.DueDate < DateOnly.FromDateTime(now);
 
     /// <summary>FR-4: progress = completed / total (0 when no tasks). Excludes soft-deleted (caller pre-filters).</summary>
     private static int ProgressPercent(IReadOnlyCollection<OnboardingTaskInstance> tasks)

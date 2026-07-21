@@ -28,7 +28,7 @@ public sealed class ExitInterview : BaseEntity
     public Guid? ConductedByUserId { get; set; }
 
     /// <summary>The date the interview was conducted (§7). Cannot be in the future.</summary>
-    public DateTime InterviewDate { get; set; }
+    public DateOnly InterviewDate { get; set; }
 
     /// <summary>Optional overall experience rating (§7, 1-5).</summary>
     public int? OverallExperienceRating { get; set; }

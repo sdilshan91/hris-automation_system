@@ -59,7 +59,7 @@ public sealed class ExitInterviewServiceTests
         new(Db(), _tenantContext, user ?? _hrUser, Substitute.For<ILogger<ExitInterviewService>>());
 
     /// <summary>Seeds a departing employee + an in-progress offboarding (with a default-named exit interview task).</summary>
-    private Guid SeedOffboarding(DateTime? lwd = null, bool withExitTask = true)
+    private Guid SeedOffboarding(DateOnly? lwd = null, bool withExitTask = true)
     {
         var instanceId = BaseEntity.NewUuidV7();
         using var db = Db();
@@ -75,7 +75,7 @@ public sealed class ExitInterviewServiceTests
         {
             Id = instanceId, TenantId = _tenantId, EmployeeId = _employeeId,
             TemplateName = "Default Exit Clearance",
-            LastWorkingDay = lwd ?? DateTime.UtcNow.AddDays(10).Date,
+            LastWorkingDay = lwd ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)),
             Reason = OffboardingReason.Resignation, Status = OffboardingStatus.InProgress,
             InitiatedByUserId = _hrUserId,
         };
@@ -85,7 +85,7 @@ public sealed class ExitInterviewServiceTests
             {
                 Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, OffboardingInstanceId = instanceId,
                 ClearanceCategory = ClearanceCategory.HR, Title = "Conduct exit interview",
-                ResponsibleRole = OnboardingResponsibleRole.HR, DueDate = DateTime.UtcNow.AddDays(5).Date,
+                ResponsibleRole = OnboardingResponsibleRole.HR, DueDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(5)),
                 Status = OnboardingTaskStatus.Pending, IsMandatory = false, SortOrder = 0,
             });
         }
@@ -98,12 +98,12 @@ public sealed class ExitInterviewServiceTests
 
     private static RecordExitInterviewInput Input(
         Guid offboardingId, ExitInterviewTemplateDto template, string mode = "hr_conducted",
-        DateTime? date = null, int? overall = 4)
+        DateOnly? date = null, int? overall = 4)
     {
         var ratingQ = template.Categories.SelectMany(c => c.Questions).First(q => q.Type == "rating");
         var freeQ = template.Categories.SelectMany(c => c.Questions).First(q => q.Type == "free_text");
         return new RecordExitInterviewInput(
-            offboardingId, mode, date ?? DateTime.UtcNow.Date,
+            offboardingId, mode, date ?? DateOnly.FromDateTime(DateTime.UtcNow),
             new[]
             {
                 new ExitInterviewResponseInput(ratingQ.QuestionId, 5, null, null),
@@ -195,7 +195,7 @@ public sealed class ExitInterviewServiceTests
         await Template();
 
         var bad = new RecordExitInterviewInput(
-            offboardingId, "hr_conducted", DateTime.UtcNow.Date,
+            offboardingId, "hr_conducted", DateOnly.FromDateTime(DateTime.UtcNow),
             new[] { new ExitInterviewResponseInput(Guid.NewGuid(), 3, null, null) },
             4, true, null);
 
@@ -286,7 +286,7 @@ public sealed class ExitInterviewServiceTests
     [Fact]
     public async Task Record_self_service_after_last_working_day_is_rejected_br3()
     {
-        var offboardingId = SeedOffboarding(lwd: DateTime.UtcNow.AddDays(-1).Date);
+        var offboardingId = SeedOffboarding(lwd: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)));
         var template = await Template();
 
         var employeeUser = Substitute.For<ICurrentUser>();
@@ -419,7 +419,7 @@ public sealed class ExitInterviewServiceTests
         db.OffboardingInstances.Add(new OffboardingInstance
         {
             Id = id, TenantId = _tenantId, EmployeeId = empId, TemplateName = "Default Exit Clearance",
-            LastWorkingDay = DateTime.UtcNow.AddDays(10).Date, Reason = reason,
+            LastWorkingDay = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10)), Reason = reason,
             Status = OffboardingStatus.InProgress, InitiatedByUserId = _hrUserId,
         });
         db.SaveChanges();

@@ -37,7 +37,7 @@ public sealed class OnboardingTaskInstance : BaseEntity
     public Guid? ResponsibleUserId { get; set; }
 
     /// <summary>Calculated due date: StartDate + due_offset_days (FR-2, BR-4).</summary>
-    public DateTime DueDate { get; set; }
+    public DateOnly DueDate { get; set; }
 
     /// <summary>Status (AC-2). New task instances start <see cref="OnboardingTaskStatus.Pending"/>.</summary>
     public OnboardingTaskStatus Status { get; set; } = OnboardingTaskStatus.Pending;

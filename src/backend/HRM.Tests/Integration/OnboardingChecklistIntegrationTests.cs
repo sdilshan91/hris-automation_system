@@ -190,7 +190,7 @@ public sealed class OnboardingChecklistIntegrationTests
 
         result.IsSuccess.Should().BeTrue();
         var dto = result.Value!;
-        var joining = DateTime.UtcNow.AddDays(10).Date;
+        var joining = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(10));
         dto.TaskCount.Should().Be(2);
         dto.Tasks.Should().OnlyContain(t => t.Status == OnboardingTaskStatus.Pending);
         dto.Tasks.Single(t => t.Title == "Provision laptop").DueDate.Should().Be(joining.AddDays(2));
@@ -265,7 +265,7 @@ public sealed class OnboardingChecklistIntegrationTests
 
         var dto = (await mediator.Send(AssignCmd(_employeeA, templateId))).Value!;
 
-        var today = DateTime.UtcNow.Date;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
         dto.StartDate.Should().Be(today);
         dto.Tasks.Single(t => t.Title == "Provision laptop").DueDate.Should().Be(today.AddDays(2));
     }

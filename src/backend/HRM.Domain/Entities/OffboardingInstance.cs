@@ -22,7 +22,7 @@ public sealed class OffboardingInstance : BaseEntity
     public string TemplateName { get; set; } = string.Empty;
 
     /// <summary>The employee's last working day (AC-1, FR-2). Due dates anchor to this date.</summary>
-    public DateTime LastWorkingDay { get; set; }
+    public DateOnly LastWorkingDay { get; set; }
 
     /// <summary>Reason for departure (§7, BR-1).</summary>
     public OffboardingReason Reason { get; set; }
