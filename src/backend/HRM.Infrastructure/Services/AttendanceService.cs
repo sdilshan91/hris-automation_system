@@ -150,15 +150,27 @@ public sealed class AttendanceService : IAttendanceService
         // photo rules below, are separate business rules and still apply to a Remote employee.
         var geoFenceExempt = employee.WorkArrangement == WorkArrangement.Remote;
 
-        // FR-3: geo-fence radius check when enabled and coordinates were supplied.
-        if (!geoFenceExempt && settings.GeoFenceEnabled && hasCoordinates
-            && settings.GeoFenceLatitude.HasValue && settings.GeoFenceLongitude.HasValue)
+        // FR-3 / DF-23 / ISSUE-068: geo-fence radius check when enabled and coordinates were supplied.
+        // Multi-location: pass when the punch is within ANY allowed location's own radius; a single allowed
+        // location behaves byte-identically to the legacy single-center fence.
+        if (!geoFenceExempt && settings.GeoFenceEnabled && hasCoordinates)
         {
-            var distance = HaversineMeters(
-                (double)settings.GeoFenceLatitude.Value, (double)settings.GeoFenceLongitude.Value,
-                (double)data.Latitude!.Value, (double)data.Longitude!.Value);
+            bool withinAllowed;
+            if (settings.GeoFenceLocations.Count > 0)
+                // any-match: pass when the punch is within ANY allowed location's own radius.
+                withinAllowed = settings.GeoFenceLocations.Any(loc =>
+                    HaversineMeters((double)loc.Latitude, (double)loc.Longitude,
+                                    (double)data.Latitude!.Value, (double)data.Longitude!.Value) <= loc.RadiusMeters);
+            else if (settings.GeoFenceLatitude.HasValue && settings.GeoFenceLongitude.HasValue)
+                // Legacy single-center fallback (a row with no allowed locations but a scalar center) — TODAY'S behavior.
+                withinAllowed = HaversineMeters(
+                    (double)settings.GeoFenceLatitude.Value, (double)settings.GeoFenceLongitude.Value,
+                    (double)data.Latitude!.Value, (double)data.Longitude!.Value) <= settings.GeoFenceRadiusMeters;
+            else
+                // Enabled but nothing configured → no restriction (matches today: check skipped when no lat/lng).
+                withinAllowed = true;
 
-            if (distance > settings.GeoFenceRadiusMeters)
+            if (!withinAllowed)
                 return Result<AttendanceLogDto>.Failure(
                     "You are outside the allowed clock-in area.", 403, "geo_fence_violation");
         }

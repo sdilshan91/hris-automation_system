@@ -317,6 +317,51 @@ public sealed class AttendanceServiceTests
         result.IsSuccess.Should().BeTrue();
     }
 
+    // ── DF-23/ISSUE-068: multi-location geofence (any-match over allowed locations) ──
+
+    [Fact]
+    [Trait("TC", "TC-ATT-005-16")]
+    public async Task ClockIn_WithinOneOfMultipleAllowedLocations_Succeeds()
+    {
+        SeedSettings(s =>
+        {
+            s.GeoFenceEnabled = true;
+            s.GeoFenceLocations = new List<GeofenceLocation>
+            {
+                new() { TenantId = _tenantId, Name = "Colombo HQ", Latitude = 6.9271m, Longitude = 79.8612m, RadiusMeters = 200 },
+                new() { TenantId = _tenantId, Name = "Kandy Branch", Latitude = 7.2906m, Longitude = 80.6337m, RadiusMeters = 200 },
+            };
+        });
+
+        // At the Kandy branch (the SECOND allowed location, ~90 km from HQ) — any-match must accept it.
+        var result = await CreateService().ClockInAsync(Data(lat: 7.2906m, lon: 80.6337m));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-005-16")]
+    public async Task ClockIn_OutsideAllAllowedLocations_IsRejected()
+    {
+        SeedSettings(s =>
+        {
+            s.GeoFenceEnabled = true;
+            s.GeoFenceLocations = new List<GeofenceLocation>
+            {
+                new() { TenantId = _tenantId, Name = "Colombo HQ", Latitude = 6.9271m, Longitude = 79.8612m, RadiusMeters = 100 },
+                new() { TenantId = _tenantId, Name = "Kandy Branch", Latitude = 7.2906m, Longitude = 80.6337m, RadiusMeters = 100 },
+            };
+        });
+
+        // Galle (~100 km south of Colombo) — far from BOTH allowed locations → rejected.
+        var result = await CreateService().ClockInAsync(Data(lat: 6.0535m, lon: 80.2210m));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+        result.ErrorCode.Should().Be("geo_fence_violation");
+        result.Error.Should().Contain("outside the allowed clock-in area");
+    }
+
     // ── BR-6: photo required ───────────────────────────────────────
 
     [Fact]

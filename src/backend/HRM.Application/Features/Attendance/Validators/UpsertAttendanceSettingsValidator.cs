@@ -83,6 +83,31 @@ public sealed class AttendanceSettingsPolicyValidator : AbstractValidator<Attend
         RuleFor(x => x.GeoFenceLongitude!.Value)
             .InclusiveBetween(-180m, 180m).WithMessage("Geo-fence longitude must be between -180 and 180.")
             .When(x => x.GeoFenceLongitude.HasValue);
+
+        // ── DF-23 / ISSUE-068: multi-location geofence — validate each allowed clock-in location.
+        RuleForEach(x => x.GeoFenceLocations).SetValidator(new GeofenceLocationValidator());
+    }
+}
+
+/// <summary>
+/// DF-23 / ISSUE-068: shape validation for one ALLOWED clock-in location in the multi-location geofence.
+/// </summary>
+public sealed class GeofenceLocationValidator : AbstractValidator<GeofenceLocationDto>
+{
+    public GeofenceLocationValidator()
+    {
+        RuleFor(x => x.Name)
+            .NotEmpty().WithMessage("Allowed-location name is required.")
+            .MaximumLength(100).WithMessage("Allowed-location name cannot exceed 100 characters.");
+
+        RuleFor(x => x.Latitude)
+            .InclusiveBetween(-90m, 90m).WithMessage("Allowed-location latitude must be between -90 and 90.");
+
+        RuleFor(x => x.Longitude)
+            .InclusiveBetween(-180m, 180m).WithMessage("Allowed-location longitude must be between -180 and 180.");
+
+        RuleFor(x => x.RadiusMeters)
+            .GreaterThan(0).WithMessage("Allowed-location radius must be greater than 0 metres.");
     }
 }
 

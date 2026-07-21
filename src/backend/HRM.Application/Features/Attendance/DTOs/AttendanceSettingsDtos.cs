@@ -64,6 +64,15 @@ public sealed record AttendanceSettingsDto
     /// <summary>FR-3: permitted radius in metres around the allowed location. Default 100.</summary>
     public int GeoFenceRadiusMeters { get; init; } = 100;
 
+    /// <summary>
+    /// DF-23 / ISSUE-068: the ALLOWED clock-in locations (multi-location geofence). When
+    /// <see cref="GeoFenceEnabled"/> is on and this list is non-empty, a clock-in passes when the punch is
+    /// within ANY one of these locations' own radius. When empty, the check falls back to the single-center
+    /// scalars above so a single-location tenant behaves identically. Part of the FULL-REPLACE PUT payload —
+    /// omit it and the row's allowed locations are CLEARED.
+    /// </summary>
+    public List<GeofenceLocationDto> GeoFenceLocations { get; init; } = new();
+
     /// <summary>BR-3/AC-5: the request source IP must be in <see cref="IpAllowlist"/>.</summary>
     public bool IpAllowlistEnabled { get; init; }
 
@@ -137,4 +146,23 @@ public sealed record AttendanceSettingsDto
 
     /// <summary>BR-4: average LOP days per month above which an employee is flagged. Default 3.</summary>
     public decimal AbsenteeismThresholdDays { get; init; } = 3m;
+}
+
+/// <summary>
+/// DF-23 / ISSUE-068: one ALLOWED clock-in location in the multi-location geofence. Part of the
+/// <see cref="AttendanceSettingsDto"/> read projection and FULL-REPLACE PUT payload.
+/// </summary>
+public sealed record GeofenceLocationDto
+{
+    /// <summary>Human label for this allowed location, e.g. "HQ". Required, max 100 chars.</summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>Allowed-location latitude, [-90, 90].</summary>
+    public decimal Latitude { get; init; }
+
+    /// <summary>Allowed-location longitude, [-180, 180].</summary>
+    public decimal Longitude { get; init; }
+
+    /// <summary>Permitted radius in metres around this location. Must be &gt; 0.</summary>
+    public int RadiusMeters { get; init; }
 }

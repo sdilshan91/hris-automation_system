@@ -77,8 +77,10 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
             return Result<AttendanceSettingsDto>.Failure("Tenant context is not resolved.", 400);
 
         // ⚠ Predicated on LocationId == null. Without this predicate an existing Location override could be
-        // fetched and OVERWRITTEN with the tenant-wide policy the admin just typed.
+        // fetched and OVERWRITTEN with the tenant-wide policy the admin just typed. DF-23: Include the allowed
+        // clock-in locations so the FULL-REPLACE below can delete the stale children.
         var entity = await _dbContext.AttendanceSettings
+            .Include(s => s.GeoFenceLocations)
             .FirstOrDefaultAsync(s => s.LocationId == null, cancellationToken);
 
         if (entity is null)
@@ -121,8 +123,9 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
         // appear in this list. Left-joined to Locations (rather than projected through the navigation) so an
         // override survives in the list even if its location row went away, and so the projection does not
         // depend on the navigation's own query filter.
+        // DF-23: Include the allowed clock-in locations on the source so each row's DTO carries them.
         var rows = await (
-                from s in _dbContext.AttendanceSettings.AsNoTracking()
+                from s in _dbContext.AttendanceSettings.AsNoTracking().Include(s => s.GeoFenceLocations)
                 where s.LocationId != null
                 join l in _dbContext.Locations.AsNoTracking() on s.LocationId equals l.Id into joined
                 from l in joined.DefaultIfEmpty()
@@ -151,8 +154,9 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
         if (location is null)
             return InvalidLocation<AttendanceSettingsDto>();
 
-        // ⚠ Predicated on LocationId == locationId.
+        // ⚠ Predicated on LocationId == locationId. DF-23: Include the allowed clock-in locations for the DTO.
         var entity = await _dbContext.AttendanceSettings.AsNoTracking()
+            .Include(s => s.GeoFenceLocations)
             .FirstOrDefaultAsync(s => s.LocationId == locationId, cancellationToken);
 
         if (entity is null)
@@ -178,8 +182,10 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
             return InvalidLocation<AttendanceSettingsDto>();
 
         // ⚠ Predicated on LocationId == locationId. Upsert UPDATES this location's own row — it must never
-        // reach the tenant-default row (LocationId null) or another location's override.
+        // reach the tenant-default row (LocationId null) or another location's override. DF-23: Include the
+        // allowed clock-in locations so the FULL-REPLACE below can delete the stale children.
         var entity = await _dbContext.AttendanceSettings
+            .Include(s => s.GeoFenceLocations)
             .FirstOrDefaultAsync(s => s.LocationId == locationId, cancellationToken);
 
         if (entity is null)
@@ -285,7 +291,7 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
     /// change to the pinned AttendanceSettingsDto. LocationId is NOT assigned here — the scope comes from the
     /// route and is fixed at row creation.
     /// </summary>
-    private static void Apply(AttendanceSettings entity, AttendanceSettingsDto dto)
+    private void Apply(AttendanceSettings entity, AttendanceSettingsDto dto)
     {
         entity.RequireGeolocation = dto.RequireGeolocation;
         entity.GeoFenceEnabled = dto.GeoFenceEnabled;
@@ -312,6 +318,34 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
         entity.FteScaledOvertimeBase = dto.FteScaledOvertimeBase;
         entity.HalfDayEnabled = dto.HalfDayEnabled;
         entity.AbsenteeismThresholdDays = dto.AbsenteeismThresholdDays;
+
+        // DF-23 / ISSUE-068: FULL REPLACE of the allowed clock-in locations (multi-location geofence). Mirrors
+        // the repo's child-collection full-replace pattern (EmployeeService EmergencyContacts/Education):
+        // RemoveRange the Include'd children, then rebuild from the payload. A bare nav .Clear() severs the
+        // REQUIRED FK instead of deleting — which fights the soft-delete interceptor + xmin concurrency token and
+        // throws a spurious DbUpdateConcurrencyException on real Postgres. Requires the caller to have Include'd
+        // GeoFenceLocations, or a stale child would survive the replace.
+        // RemoveRange marks the loaded children Deleted; add the new set straight to the DbSet with an explicit
+        // FK. Do NOT also mutate entity.GeoFenceLocations — reassigning/Clearing the nav makes EF ALSO try to
+        // sever (null the required FK on) rows it is already deleting, which throws a spurious
+        // DbUpdateConcurrencyException on Postgres. (Same reason EmployeeService adds via _dbContext, not the nav.)
+        _dbContext.GeofenceLocations.RemoveRange(entity.GeoFenceLocations);
+        if (dto.GeoFenceLocations is not null)
+        {
+            foreach (var loc in dto.GeoFenceLocations)
+            {
+                _dbContext.GeofenceLocations.Add(new GeofenceLocation
+                {
+                    Id = BaseEntity.NewUuidV7(),
+                    TenantId = entity.TenantId,   // also stamped by TenantInterceptor; explicit for clarity.
+                    AttendanceSettingsId = entity.Id,
+                    Name = loc.Name,
+                    Latitude = loc.Latitude,
+                    Longitude = loc.Longitude,
+                    RadiusMeters = loc.RadiusMeters,
+                });
+            }
+        }
     }
 
     private static AttendanceSettingsDto MapToDto(AttendanceSettings e, string? locationName = null) => new()
@@ -323,6 +357,15 @@ public sealed class AttendanceSettingsService : IAttendanceSettingsService
         GeoFenceLatitude = e.GeoFenceLatitude,
         GeoFenceLongitude = e.GeoFenceLongitude,
         GeoFenceRadiusMeters = e.GeoFenceRadiusMeters,
+        GeoFenceLocations = e.GeoFenceLocations
+            .Select(g => new GeofenceLocationDto
+            {
+                Name = g.Name,
+                Latitude = g.Latitude,
+                Longitude = g.Longitude,
+                RadiusMeters = g.RadiusMeters,
+            })
+            .ToList(),
         IpAllowlistEnabled = e.IpAllowlistEnabled,
         IpAllowlist = new List<string>(e.IpAllowlist),
         RequirePhoto = e.RequirePhoto,

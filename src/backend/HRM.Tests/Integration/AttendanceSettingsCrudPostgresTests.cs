@@ -584,4 +584,62 @@ public sealed class AttendanceSettingsCrudPostgresTests : IAsyncLifetime
             rows.Count(r => r.LocationId == null).Should().Be(1);
         }
     }
+
+    // ══ Arm 9 — DF-23: the GeoFenceLocations child collection full-replaces (no orphans) ══
+
+    /// <summary>
+    /// DF-23/ISSUE-068: a settings upsert FULL-REPLACES the allowed-location collection. Re-upserting with a
+    /// different set must cascade-delete the prior children (no orphans), stamp tenant_id, and round-trip the
+    /// numeric(10,7) coords through real Postgres — the ISSUE-322 full-replace data-loss class + the
+    /// Include-dependence of the Clear()+rebuild (a dropped Include would leave stale children behind).
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-005-17")]
+    public async Task UpsertTenantSettings_FullReplacesGeofenceLocations_CascadeDeletesOrphans()
+    {
+        var tenantId = Guid.NewGuid();
+
+        await using (var db = Db(tenantId))
+        {
+            var dto = FullyPopulated() with
+            {
+                GeoFenceLocations = new List<GeofenceLocationDto>
+                {
+                    new() { Name = "HQ", Latitude = 6.9271m, Longitude = 79.8612m, RadiusMeters = 100 },
+                    new() { Name = "Branch", Latitude = 7.2906m, Longitude = 80.6337m, RadiusMeters = 150 },
+                },
+            };
+            (await Service(db, tenantId).UpsertTenantSettingsAsync(dto, default)).IsSuccess.Should().BeTrue();
+        }
+
+        // Full-replace with ONE different location.
+        await using (var db = Db(tenantId))
+        {
+            var dto = FullyPopulated() with
+            {
+                GeoFenceLocations = new List<GeofenceLocationDto>
+                {
+                    new() { Name = "New Site", Latitude = 6.0535m, Longitude = 80.2210m, RadiusMeters = 250 },
+                },
+            };
+            (await Service(db, tenantId).UpsertTenantSettingsAsync(dto, default)).IsSuccess.Should().BeTrue();
+        }
+
+        await using (var verify = Db(tenantId))
+        {
+            // Read through the service (proves the read projection's Include loads the children).
+            var read = (await Service(verify, tenantId).GetTenantSettingsAsync(default)).Value!;
+            read.GeoFenceLocations.Should().ContainSingle("the full-replace keeps only the new set");
+            read.GeoFenceLocations[0].Name.Should().Be("New Site");
+            read.GeoFenceLocations[0].Latitude.Should().Be(6.0535m);
+            read.GeoFenceLocations[0].RadiusMeters.Should().Be(250);
+
+            // No orphan child rows survive the replace (FK cascade), tenant_id stamped, precision preserved.
+            var rows = await verify.GeofenceLocations.IgnoreQueryFilters().AsNoTracking()
+                .Where(g => g.TenantId == tenantId).ToListAsync();
+            rows.Should().ContainSingle("the prior two children must cascade-delete — no orphans (ISSUE-322 class)");
+            rows[0].TenantId.Should().Be(tenantId);
+            rows[0].Longitude.Should().Be(80.2210m);
+        }
+    }
 }

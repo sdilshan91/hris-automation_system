@@ -57,6 +57,16 @@ public sealed class AttendanceSettings : BaseEntity
     public int GeoFenceRadiusMeters { get; set; } = 100;
 
     /// <summary>
+    /// DF-23 / ISSUE-068: the multi-location geofence — the set of ALLOWED clock-in locations for this
+    /// settings scope. When non-empty, clock-in passes the geofence if the punch is within ANY one of these
+    /// locations' own radius (any-match). When EMPTY, the check falls back to the legacy single-center
+    /// scalars above (<see cref="GeoFenceLatitude"/>/<see cref="GeoFenceLongitude"/>/<see cref="GeoFenceRadiusMeters"/>)
+    /// so a single-center tenant behaves byte-identically to its pre-DF-23 value. The scalars are KEPT for
+    /// that backward-compat fallback.
+    /// </summary>
+    public List<GeofenceLocation> GeoFenceLocations { get; set; } = [];
+
+    /// <summary>
     /// BR-3 / AC-5: when true, the request source IP must be in <see cref="IpAllowlist"/>.
     /// </summary>
     public bool IpAllowlistEnabled { get; set; }
