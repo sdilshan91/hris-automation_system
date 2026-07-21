@@ -35,6 +35,9 @@ using HRM.Infrastructure.Persistence.Interceptors;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit; // FakeTimeProvider (hand-rolled TimeProvider, reused across the HRM.Tests assembly)
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage; // InMemoryDatabaseRoot — shared store across DI + direct seeding
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -43,6 +46,10 @@ namespace HRM.Tests.Integration;
 public sealed class DashboardIntegrationTests
 {
     private readonly string _dbName = Guid.NewGuid().ToString();
+    // DF-50: an explicit shared InMemory root so the DI-registered AppDbContext (used by the parallel fan-out's
+    // child scopes) and the direct-construction seeding contexts hit the SAME store, regardless of which internal
+    // EF service provider each ends up with.
+    private readonly InMemoryDatabaseRoot _root = new();
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantB = Guid.NewGuid();
 
@@ -83,16 +90,20 @@ public sealed class DashboardIntegrationTests
     private AppDbContext Db(Guid tenantId)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(_dbName)
-            // ISSUE-285(a): wire the interceptor so seeded employees get Employee.BirthMonthDay populated on the
-            // InMemory provider (mirrors production), which the upcoming-birthdays widget's index-backed query reads.
-            .AddInterceptors(new EmployeeBirthMonthDayInterceptor())
-            .Options;
-        return new AppDbContext(options, ctx);
+        return new AppDbContext(Options(), ctx);
     }
 
-    private (AppDbContext Db, DashboardService Svc, FakeCurrentUser User) Scope(
+    // ISSUE-285(a): wire the birth-month-day interceptor so seeded employees get Employee.BirthMonthDay populated
+    // on the InMemory provider (mirrors production). DF-50: pin the shared _root so DI + direct contexts share data.
+    private DbContextOptions<AppDbContext> Options() => new DbContextOptionsBuilder<AppDbContext>()
+        .UseInMemoryDatabase(_dbName, _root)
+        .AddInterceptors(new EmployeeBirthMonthDayInterceptor())
+        .Options;
+
+    // DF-50: the service-under-test is now built through a REAL DI container so the parallel fan-out's child
+    // scopes resolve fresh AppDbContext + collaborators and the REAL ParallelTenantScopeRunner enforces the
+    // tenant re-seed gate. Removing that gate makes the isolation test below leak — exactly what it guards.
+    private (TestScope Scope, DashboardService Svc, FakeCurrentUser User) Scope(
         Guid tenantId,
         Guid userId,
         IReadOnlyList<string> permissions,
@@ -107,19 +118,56 @@ public sealed class DashboardIntegrationTests
         IMyPayslipService? payslips = null,
         TimeProvider? timeProvider = null)
     {
-        var ctx = new MutableTenantContext { TenantId = tenantId };
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(_dbName)
-            .AddInterceptors(new EmployeeBirthMonthDayInterceptor())
-            .Options;
-        var db = new AppDbContext(options, ctx);
         var user = new FakeCurrentUser { UserId = userId, TenantId = tenantId, Permissions = permissions, Roles = roles ?? [] };
-        var hrReports = new HrReportService(db, ctx, NullLogger<HrReportService>.Instance);
-        var svc = new DashboardService(
-            db, ctx, user, hrReports, NullLogger<DashboardService>.Instance,
-            vacancies, leaveRequests, leaveDashboard, attendance, onboarding, holidays, appraisalCycles, payslips,
-            cache: null, timeProvider: timeProvider);
-        return (db, svc, user);
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ICurrentUser>(user);
+        // Scoped tenant context — starts UNRESOLVED in each fresh scope; the runner re-seeds it (the gate).
+        services.AddScoped<ITenantContext, MutableTenantContext>();
+        // Fresh AppDbContext per scope, bound to that scope's tenant context (so the query filter tracks it).
+        services.AddScoped<AppDbContext>(sp => new AppDbContext(Options(), sp.GetRequiredService<ITenantContext>()));
+        // Real HrReportService (the widgets compose it) — fresh per scope, over that scope's context.
+        services.AddScoped<IHrReportService>(sp =>
+            new HrReportService(sp.GetRequiredService<AppDbContext>(), sp.GetRequiredService<ITenantContext>(), NullLogger<HrReportService>.Instance));
+
+        // Optional per-module collaborators are NSubstitute stubs (stateless) → singletons are fine.
+        if (vacancies is not null) services.AddSingleton(vacancies);
+        if (leaveRequests is not null) services.AddSingleton(leaveRequests);
+        if (leaveDashboard is not null) services.AddSingleton(leaveDashboard);
+        if (attendance is not null) services.AddSingleton(attendance);
+        if (onboarding is not null) services.AddSingleton(onboarding);
+        if (holidays is not null) services.AddSingleton(holidays);
+        if (appraisalCycles is not null) services.AddSingleton(appraisalCycles);
+        if (payslips is not null) services.AddSingleton(payslips);
+        services.AddSingleton(timeProvider ?? TimeProvider.System);
+
+        services.AddScoped<IParallelTenantScopeRunner>(sp =>
+            new ParallelTenantScopeRunner(sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<ITenantContext>()));
+
+        // Build DashboardService explicitly so we control exactly which optional collaborators are present
+        // (sp.GetService returns null when a stub wasn't provided → the widget degrades gracefully, as before).
+        services.AddScoped<IDashboardService>(sp => new DashboardService(
+            sp.GetRequiredService<AppDbContext>(), sp.GetRequiredService<ITenantContext>(), sp.GetRequiredService<ICurrentUser>(),
+            sp.GetRequiredService<IHrReportService>(), NullLogger<DashboardService>.Instance,
+            sp.GetRequiredService<IParallelTenantScopeRunner>(), new ConfigurationBuilder().Build(),
+            sp.GetService<IVacancyService>(), sp.GetService<ILeaveRequestService>(), sp.GetService<ILeaveDashboardService>(),
+            sp.GetService<IAttendanceDashboardService>(), sp.GetService<IOnboardingChecklistService>(), sp.GetService<IHolidayService>(),
+            sp.GetService<IAppraisalCycleService>(), sp.GetService<IMyPayslipService>(),
+            cache: null, timeProvider: sp.GetService<TimeProvider>()));
+
+        var provider = services.BuildServiceProvider();
+        var scope = provider.CreateScope();
+        // Seed the PARENT (request) tenant so the prelude (me / hasDirectReports / role) resolves; the runner
+        // replays THIS tenant into every child scope.
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().SetTenant(tenantId, "test", TenantStatus.Active);
+        var svc = (DashboardService)scope.ServiceProvider.GetRequiredService<IDashboardService>();
+        return (new TestScope(provider, scope), svc, user);
+    }
+
+    // Disposes the parent scope then the provider (which disposes any child scopes the runner created).
+    private sealed class TestScope(ServiceProvider provider, IServiceScope scope) : IDisposable
+    {
+        public void Dispose() { scope.Dispose(); provider.Dispose(); }
     }
 
     // ── Seeding ───────────────────────────────────────────────────────────────
@@ -376,6 +424,46 @@ public sealed class DashboardIntegrationTests
             var b = await svcB.GetWidgetsAsync();
             b.IsSuccess.Should().BeTrue();
             Widget(b.Value!, "headcount").Value.Should().Be(7m); // ONLY Tenant B's employees
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    //  DF-50: cross-tenant isolation UNDER PARALLELISM — the gate test.
+    //  Every widget now builds in its OWN child DI scope (fresh AppDbContext with
+    //  an initially-UNRESOLVED tenant context). ParallelTenantScopeRunner MUST
+    //  re-seed the tenant on each child scope; otherwise the fail-open EF query
+    //  filter returns EVERY tenant's rows. This drives the real parallelized
+    //  builder and asserts NO Tenant-B data bleeds into a Tenant-A dashboard.
+    //  If the SetTenant re-seed is removed from the runner, headcount would read
+    //  the cross-tenant total (10) and pending-leave (12) instead of A's 3 / 2.
+    // ════════════════════════════════════════════════════════════════════════
+    [Fact]
+    [Trait("TC", "TC-RPT-005-50")]
+    public async Task Dashboard_UnderParallelFanOut_NoTenantBDataLeaksIntoAnyWidget()
+    {
+        var deptA = await SeedDepartment(_tenantA, "Engineering");
+        var deptB = await SeedDepartment(_tenantB, "Sales");
+
+        // Tenant A: 3 employees + 2 pending leave.  Tenant B: 7 employees + 10 pending leave.
+        for (int i = 0; i < 3; i++) await SeedEmployee(_tenantA, $"A{i}", deptA);
+        for (int i = 0; i < 7; i++) await SeedEmployee(_tenantB, $"B{i}", deptB);
+        for (int i = 0; i < 2; i++) await SeedPendingLeave(_tenantA, BaseEntity.NewUuidV7());
+        for (int i = 0; i < 10; i++) await SeedPendingLeave(_tenantB, BaseEntity.NewUuidV7());
+
+        var (db, svc, _) = Scope(_tenantA, Guid.NewGuid(), HrPerms());
+        using (db)
+        {
+            var dash = (await svc.GetWidgetsAsync()).Value!;
+
+            // headcount comes from HrReportService (its own child scope); pending-leave from a direct read in
+            // ANOTHER child scope. Both must see ONLY Tenant A — proving the gate holds across parallel scopes.
+            Widget(dash, "headcount").Value.Should().Be(3m, "the headcount widget's child scope is re-seeded to Tenant A");
+            Widget(dash, "pending-leave").Value.Should().Be(2, "the pending-leave widget's child scope is re-seeded to Tenant A");
+
+            // Belt-and-suspenders: neither cross-tenant total can appear in ANY widget value.
+            var values = dash.Widgets.Select(w => w.Value).ToList();
+            values.Should().NotContain(10m, "10 = A+B employees would only appear if a child scope were unresolved");
+            values.Should().NotContain(12, "12 = A+B pending leave would only appear if a child scope leaked");
         }
     }
 

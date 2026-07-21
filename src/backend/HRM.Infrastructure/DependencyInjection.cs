@@ -40,6 +40,12 @@ public static class DependencyInjection
         // AppDbContext + ITenantContext. Behaviour-neutral while Rls:Enabled is false (the committed default).
         services.AddScoped<ITenantJobRunner, TenantJobRunner>();
 
+        // DF-50: parallel per-widget fan-out for the dashboard (and any future independent per-tenant reads).
+        // Runs each work item in its OWN DI scope with the tenant re-seeded, so a caller can concurrently drive
+        // work that all funnels through the single scoped AppDbContext without racing on it. Scoped so it
+        // captures the current request's resolved tenant to replay into each child scope (the isolation gate).
+        services.AddScoped<IParallelTenantScopeRunner, ParallelTenantScopeRunner>();
+
         // EF Core interceptors
         services.AddScoped<AuditInterceptor>();
         services.AddScoped<TenantInterceptor>();

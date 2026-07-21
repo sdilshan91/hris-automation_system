@@ -350,6 +350,11 @@ try
     // US-PAY-008 FR-3 (ISSUE-173): per-tenant SLA-escalation sweep for overdue PAYROLL approvals (every 5 min).
     builder.Services.AddScoped<HRM.Api.Jobs.PayrollApprovalSlaEscalationJob>();
 
+    // DF-50: dashboard cold-start warmup. On startup (background, non-blocking) primes the EF model + per-entity
+    // query plans + connection pool so the FIRST dashboard request pays warm (~193ms) latency instead of the
+    // ~25s cold-start tax. Gated by Dashboard:WarmupEnabled (default true); failures are logged, never fatal.
+    builder.Services.AddHostedService<HRM.Api.HostedServices.DashboardWarmupHostedService>();
+
     // US-ATT-007: monthly attendance summary jobs (daily refresh + monthly finalize) and the large-export
     // background job (bound to the interface so the Infrastructure service can enqueue it by interface).
     builder.Services.AddScoped<HRM.Api.Jobs.MonthlySummaryDailyJob>();
