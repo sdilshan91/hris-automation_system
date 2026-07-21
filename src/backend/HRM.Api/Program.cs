@@ -393,6 +393,9 @@ try
     // ILeaveEntitlementRecalcJobScheduler so LeaveEntitlementService.UpdateRuleAsync can enqueue by interface).
     builder.Services.AddScoped<HRM.Api.Jobs.RecalcLeaveEntitlementsJob>();
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.ILeaveEntitlementRecalcJobScheduler, HRM.Api.Jobs.HangfireLeaveEntitlementRecalcScheduler>();
+    // DF-4 (BUG-118): durability backstop for the best-effort post-commit recalc enqueue in UpdateRuleAsync —
+    // a daily sweep that re-runs the idempotent recalc across active tenants so a dropped enqueue self-heals.
+    builder.Services.AddScoped<HRM.Api.Jobs.LeaveEntitlementReconcileJob>();
 
     // US-PAY-004 FR-4: tenant-aware payslip-PDF generation job + the Hangfire-backed scheduler seam (bound to
     // IPayslipGenerationJobScheduler so the Infrastructure PayslipGenerationService can enqueue by interface).
@@ -679,6 +682,17 @@ try
             "leave-entitlement-accruals",
             job => job.RunAsync(),
             "30 0 * * *"); // 00:30 UTC daily
+
+        // DF-4 (BUG-118): durability backstop for the best-effort post-commit recalc enqueue in
+        // LeaveEntitlementService.UpdateRuleAsync. If Hangfire storage is unavailable in the enqueue window the
+        // recalc is lost and a leave type's employees never converge to the edited rule. This daily sweep
+        // re-runs the (idempotent) recalc across active tenants so a dropped enqueue self-heals — the
+        // convergence bound for a lost enqueue is this cadence. Offset from the accrual cron above to avoid
+        // overlap.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.LeaveEntitlementReconcileJob>(
+            "leave-entitlement-reconcile",
+            job => job.RunAsync(CancellationToken.None),
+            "30 2 * * *"); // 02:30 UTC daily
 
         // US-LV-007 FR-3 / BR-5: Recurring-holiday next-year generation (1 Dec, ~30 days before
         // year-end). Idempotent, so a daily-or-later cadence in December is safe.
