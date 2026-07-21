@@ -10,20 +10,17 @@ Scripts + seed are **committed**; run results (`results/`, CSV) are **gitignored
 
 ## 1. Seed (B1)
 Direct SQL, bypasses the broken employee-no generator (BUG-093) with explicit `employee_no`.
-Replicates acme's 8 built-in roles + permissions and creates `perfadmin@perf.test`
-(password `Admin@123!`, hash copied from `tenantadmin@acme.test`).
+Replicates the 8 built-in roles + permissions and creates `perfadmin@perf.test`
+(password `Admin@123!`).
 
-> **⚠ The seed is NOT self-contained on a fresh/throwaway DB.** It sources perfadmin's password hash
-> AND the 8 built-in roles **from the `acme` tenant** — which a normal dev DB has (via the QA personas
-> reseed) but a freshly-migrated DB does NOT (`DbInitializer` seeds only `platform` + `e2e`). On a fresh
-> DB the unpatched seed yields a `fk_user_tenants_users_user_id` error + a permission-less admin
-> (`roles=0`). **Throwaway-DB recipe (validated 2026-07-20 for the DF-51 50k run):** create the DB → start
-> the API against it once (migrates + seeds `platform`/`e2e`) → `CREATE EXTENSION pgcrypto;` → run the seed
-> with two edits: source the hash via `crypt('Admin@123!', gen_salt('bf', 12))` instead of copying from
-> `tenantadmin@acme.test`, and change the role-replication `WHERE t.subdomain = 'acme'` → `'e2e'` (the 8
-> standard tenant roles incl. `Tenant Admin`, 84 perms). Then perfadmin logs in with full View perms.
-> (Filed as a rig-hardening follow-up: make the seed COALESCE its role/hash source across acme→e2e→any
-> built-in-role tenant so it just works on any DB.)
+> **✓ Self-contained on any DB (DF-53).** The seed sources the 8 built-in roles from `acme` if present,
+> else `e2e`, else any tenant that already has them seeded — and copies perfadmin's password hash from
+> `tenantadmin@acme.test` when acme exists, otherwise derives a fresh bcrypt of the same `Admin@123!` via
+> `crypt()` (auto-`CREATE EXTENSION IF NOT EXISTS pgcrypto`). So it works unchanged on a normal dev DB and
+> on a freshly-migrated throwaway DB (`DbInitializer` seeds only `platform` + `e2e`) — no more
+> `fk_user_tenants_users_user_id` error or permission-less admin. Validated 2026-07-21 end-to-end on a
+> fresh `postgres:17-alpine` (migrations → e2e-only, no-acme → seed → perfadmin has Tenant Admin + a
+> `crypt`-verified `Admin@123!` hash) AND on an acme-present DB (hash copied verbatim from acme).
 
 ```bash
 # from src/backend/HRM.Api, with PGPASSWORD set from user-secrets (never echo it):

@@ -1,14 +1,20 @@
 -- Idempotent bulk seed for the dedicated `perf` load-test tenant.
 -- Bypasses the broken employee-no generator (BUG-093) by inserting explicit employee_no.
--- Replicates acme's 8 built-in roles + permissions so a perf admin can log in.
+-- Replicates the 8 built-in roles + permissions (from acme, else e2e, else any seeded tenant — DF-53) so a
+-- perf admin can log in. Self-contained: works on a fresh/throwaway DbInitializer DB (platform+e2e only).
 -- Safe: touches ONLY the perf tenant id + perfadmin@perf.test user.
 --
 -- Run (1k):  psql ... -v perf_tid="'11111111-2222-3333-4444-555555555555'" -v emp_count=1000 -f seed-perf-tenant.sql
 -- Run (5k):  psql ... -v perf_tid="'11111111-2222-3333-4444-555555555555'" -v emp_count=5000 -f seed-perf-tenant.sql
 --
 -- Login after seed:  POST /api/v1/auth/login  { "email":"perfadmin@perf.test", "password":"Admin@123!" }
---                    header X-Tenant-Subdomain: perf   (password copied from tenantadmin@acme.test)
+--                    header X-Tenant-Subdomain: perf   (password "Admin@123!": copied from tenantadmin@acme.test
+--                    when acme exists, else a freshly-derived bcrypt of the same password — DF-53)
 \set ON_ERROR_STOP on
+
+-- DF-53: crypt()/gen_salt() (the fallback admin hash below) need pgcrypto. Idempotent; the perf seed runs as
+-- an admin/ops user on a throwaway or dev DB.
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 BEGIN;
 
@@ -42,11 +48,22 @@ INSERT INTO job_titles (id, tenant_id, title_name, created_at, is_deleted, is_ac
 SELECT gen_random_uuid(), :perf_tid, 'Perf Title ' || g, now(), false, true
 FROM generate_series(1, 8) g;
 
--- ---- roles + permissions (copied from acme) ----
+-- ---- roles + permissions (DF-53: self-contained) ----
+-- Source the built-in roles from acme if present, else e2e, else ANY tenant that already has them seeded.
+-- A freshly-migrated DB (DbInitializer) has only platform + e2e, so the old `WHERE subdomain='acme'` copied
+-- zero roles → a permission-less perf admin. This COALESCEs the source so the seed works on any DB.
+CREATE TEMP TABLE perf_role_src ON COMMIT DROP AS
+SELECT t.id AS tenant_id
+FROM tenants t
+WHERE EXISTS (SELECT 1 FROM roles r WHERE r.tenant_id = t.id AND r.is_built_in = true)
+ORDER BY (t.subdomain = 'acme') DESC, (t.subdomain = 'e2e') DESC, t.created_at
+LIMIT 1;
+
 CREATE TEMP TABLE perf_role_map ON COMMIT DROP AS
 SELECT r.id AS old_id, gen_random_uuid() AS new_id, r.name, r.description, r.is_built_in
-FROM roles r JOIN tenants t ON t.id = r.tenant_id
-WHERE t.subdomain = 'acme';
+FROM roles r
+WHERE r.tenant_id = (SELECT tenant_id FROM perf_role_src)
+  AND r.is_built_in = true;
 
 INSERT INTO roles (id, tenant_id, name, description, is_built_in, created_at)
 SELECT new_id, :perf_tid, name, description, is_built_in, now() FROM perf_role_map;
@@ -59,12 +76,20 @@ FROM role_permissions rp JOIN perf_role_map rm ON rm.old_id = rp.role_id;
 CREATE TEMP TABLE perf_ids ON COMMIT DROP AS
 SELECT gen_random_uuid() AS admin_uid, gen_random_uuid() AS admin_ut_id;
 
+-- DF-53: always create the perf admin (FROM perf_ids → exactly one row). Copy acme's tenantadmin hash when
+-- present (identical to the prior dev-DB behaviour, password "Admin@123!"); otherwise derive a fresh bcrypt of
+-- the SAME password so a fresh/throwaway DB (no acme) still logs in with "Admin@123!" — instead of inserting
+-- zero user rows and then hitting fk_user_tenants_users_user_id on the user_tenants insert below.
 INSERT INTO users (id, email, display_name, password_hash, is_active, failed_login_count,
                    password_changed_at, mfa_enabled, created_at, tenant_id, lockout_count, mfa_failed_attempt_count)
-SELECT p.admin_uid, 'perfadmin@perf.test', 'Perf Admin', u.password_hash, true, 0,
-       now(), false, now(), :perf_tid, 0, 0
-FROM users u, perf_ids p
-WHERE u.email = 'tenantadmin@acme.test';
+SELECT p.admin_uid, 'perfadmin@perf.test', 'Perf Admin',
+       COALESCE(
+         (SELECT u.password_hash FROM users u JOIN tenants t ON t.id = u.tenant_id
+          WHERE u.email = 'tenantadmin@acme.test' AND t.subdomain = 'acme' LIMIT 1),
+         crypt('Admin@123!', gen_salt('bf', 10))
+       ),
+       true, 0, now(), false, now(), :perf_tid, 0, 0
+FROM perf_ids p;
 
 INSERT INTO user_tenants (id, user_id, tenant_id, status, created_at)
 SELECT p.admin_ut_id, p.admin_uid, :perf_tid, 'Active', now() FROM perf_ids p;
