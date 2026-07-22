@@ -1,3 +1,5 @@
+using System.Data;
+using System.Data.Common;
 using System.Text;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
@@ -106,6 +108,48 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         // period is a fresh initiate, not a reprocess of this run.
         if (run.Status == PayrollRunStatus.Cancelled)
             return Result.Failure("A cancelled payroll run cannot be reprocessed.", 409, "run_cancelled");
+
+        // DF-61-conc: per-runId interlock. Without it two concurrent ProcessAsync for the SAME run (e.g. a rerun
+        // job the reconcile sweep double-enqueued) could both replace-clean + re-insert slips → DUPLICATE
+        // ReviewPending slips (never a double-PAY — see PayrollRunReconcileJob doc — but wrong). PayrollRun has no
+        // concurrency token (ISSUE-154, last-writer-wins by design), so we serialize on a Postgres SESSION advisory
+        // lock keyed on the runId (DIFFERENT runs/tenants are NOT serialized against each other). Engaged only on
+        // real Npgsql — InMemory unit tests get a null lock and behave exactly as before. The lock is held on the
+        // DbContext's own connection (opened here, reused by the rest of the method) and released on dispose at the
+        // end of ProcessAsync (every return path).
+        await using var advisoryLock = await PayrollRunProcessLock.TryAcquireAsync(_dbContext, runId, cancellationToken);
+        if (advisoryLock is { Contended: true })
+        {
+            // Another worker already holds this run's lock and is processing it. RETURN cleanly (no-op) — never
+            // throw, which would make Hangfire retry-storm. The lock winner does the work.
+            _logger.LogInformation(
+                "ProcessPayrollRun SKIP — another worker holds the per-run lock. RunId={RunId}, Tenant={TenantId}",
+                runId, _tenantContext.TenantId);
+            return Result.Success();
+        }
+        if (advisoryLock is not null)
+        {
+            // No-regression edge: we acquired the lock, but the winner may have ALREADY FINISHED (and released it)
+            // while we waited. Re-read the run's committed state before touching slips. Skip conditions:
+            //   * initial (Queued)      -> needs first processing         -> proceed
+            //   * rerun (marker set)    -> a requested reprocess is due    -> proceed
+            //   * already-done          -> ReviewPending AND marker == null (the winner's ProcessAsync clears the
+            //                              marker on completion, so a NULL marker on a ReviewPending run means
+            //                              nothing is left to do) -> NO-OP (re-processing would re-duplicate).
+            // Finalized/Cancelled may also have been reached in the window; honour the same terminal guards.
+            await _dbContext.Entry(run).ReloadAsync(cancellationToken);
+            if (run.Status == PayrollRunStatus.Finalized)
+                return Result.Failure("A finalized payroll run cannot be reprocessed.", 409, "run_finalized");
+            if (run.Status == PayrollRunStatus.Cancelled)
+                return Result.Failure("A cancelled payroll run cannot be reprocessed.", 409, "run_cancelled");
+            if (run.Status == PayrollRunStatus.ReviewPending && run.ReprocessRequestedAt is null)
+            {
+                _logger.LogInformation(
+                    "ProcessPayrollRun SKIP — the reprocess was already satisfied by the lock winner. RunId={RunId}, Tenant={TenantId}",
+                    runId, _tenantContext.TenantId);
+                return Result.Success();
+            }
+        }
 
         // NFR-4: log start with correlation (run id) + tenant context.
         _logger.LogInformation(
@@ -1088,4 +1132,119 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     }
 
     private static decimal Round(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
+}
+
+/// <summary>
+/// DF-61-conc: a per-runId PostgreSQL SESSION advisory lock guarding <see cref="PayrollRunProcessor.ProcessAsync"/>
+/// against two concurrent executions on the SAME run (which would duplicate slips — never double-pay, but wrong).
+/// Keyed on the runId so different runs / tenants are never serialized against each other.
+///
+/// <para>Engaged only on the Npgsql provider (mirrors the <c>Database.IsNpgsql()</c> / <c>IsRelational()</c>
+/// provider guards used elsewhere, e.g. <c>ApplicantConversionService</c>); on the InMemory test provider
+/// <see cref="TryAcquireAsync"/> returns <c>null</c> so unit tests bypass the lock and behave exactly as before.
+/// The lock is taken on the DbContext's OWN connection — opened here and reused by the rest of ProcessAsync, so the
+/// session that holds the lock is the same one doing the work — and released (plus the connection closed) on
+/// dispose. <c>internal</c> for test visibility (<c>InternalsVisibleTo("HRM.Tests")</c>).</para>
+/// </summary>
+internal sealed class PayrollRunProcessLock : IAsyncDisposable
+{
+    private readonly AppDbContext? _dbContext;
+    private readonly string? _lockKey;
+    private readonly bool _acquired;
+
+    /// <summary>True when another session already holds this run's lock — the caller must no-op (never throw).</summary>
+    public bool Contended { get; }
+
+    private PayrollRunProcessLock(AppDbContext? dbContext, string? lockKey, bool acquired, bool contended)
+    {
+        _dbContext = dbContext;
+        _lockKey = lockKey;
+        _acquired = acquired;
+        Contended = contended;
+    }
+
+    /// <summary>The stable advisory-lock key for a run. Exposed so tests can hold the SAME lock from a raw connection.</summary>
+    internal static string LockKey(Guid runId) => $"payroll_run_process:{runId}";
+
+    /// <summary>
+    /// Tries to acquire the per-runId advisory lock via <c>pg_try_advisory_lock</c> (non-blocking). Returns
+    /// <c>null</c> on a non-Npgsql provider (no interlock, legacy behaviour). Otherwise returns a lock whose
+    /// <see cref="Contended"/> flag tells the caller whether the lock was taken (proceed) or is already held
+    /// elsewhere (no-op).
+    ///
+    /// <para>CAVEAT (DF-61-conc-retry, LOW): a SESSION advisory lock lives on one physical backend connection.
+    /// The DbContext runs under <c>EnableRetryOnFailure</c>, so on a transient mid-ProcessAsync fault the
+    /// execution strategy can reconnect on a DIFFERENT pooled connection that does not hold this lock — silently
+    /// degrading the interlock to the un-locked baseline for that run. This is acceptable: the
+    /// <c>ReprocessRequestedAt</c> marker + <c>PayrollRunReconcileJob</c> sweep remain the backstop and the worst
+    /// case is duplicate ReviewPending slips (never a double-PAY) — i.e. exactly the pre-change behaviour.</para>
+    /// </summary>
+    public static async Task<PayrollRunProcessLock?> TryAcquireAsync(
+        AppDbContext dbContext, Guid runId, CancellationToken cancellationToken)
+    {
+        // InMemory / non-relational providers have no advisory locks — behave exactly as before (no interlock).
+        if (!dbContext.Database.IsNpgsql())
+            return null;
+
+        var key = LockKey(runId);
+
+        // Open through EF's connection facade (ref-counted) rather than the raw ADO connection: the connection
+        // stays open for the rest of ProcessAsync (so the SAME session that holds the lock does the work) while
+        // EF's own open/close bookkeeping stays correct, and the matching CloseConnectionAsync on dispose releases
+        // exactly our hold. (Same pattern the RLS TenantGucConnectionInterceptor relies on for session-scoped SQL.)
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            var conn = dbContext.Database.GetDbConnection();
+            bool acquired;
+            await using (var cmd = conn.CreateCommand())
+            {
+                // hashtext(text) -> int4, implicitly widened to the bigint pg_try_advisory_lock overload.
+                cmd.CommandText = "SELECT pg_try_advisory_lock(hashtext(@key))";
+                AddKeyParameter(cmd, key);
+                acquired = await cmd.ExecuteScalarAsync(cancellationToken) is true;
+            }
+            return new PayrollRunProcessLock(dbContext, key, acquired, contended: !acquired);
+        }
+        catch
+        {
+            await dbContext.Database.CloseConnectionAsync();
+            throw;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_dbContext is null)
+            return;
+
+        var conn = _dbContext.Database.GetDbConnection();
+        // Release only a lock WE acquired (pg_advisory_unlock of a lock this session doesn't hold is a harmless
+        // no-op that logs a warning). The ref-counted CloseConnectionAsync below drops our hold; when the physical
+        // connection returns to the pool its reset also drops any session advisory locks — belt-and-suspenders.
+        if (_acquired && _lockKey is not null && conn.State == ConnectionState.Open)
+        {
+            try
+            {
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT pg_advisory_unlock(hashtext(@key))";
+                AddKeyParameter(cmd, _lockKey);
+                await cmd.ExecuteScalarAsync();
+            }
+            catch
+            {
+                // Best-effort release; the pool reset on physical close guarantees the session lock is dropped.
+            }
+        }
+
+        await _dbContext.Database.CloseConnectionAsync();
+    }
+
+    private static void AddKeyParameter(DbCommand cmd, string key)
+    {
+        var p = cmd.CreateParameter();
+        p.ParameterName = "key";
+        p.Value = key;
+        cmd.Parameters.Add(p);
+    }
 }

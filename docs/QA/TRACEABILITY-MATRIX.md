@@ -2725,7 +2725,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (PAY-001) | Multi-tenant isolation (salary_component / salary_structure / junction) | Critical | TC-PAY-ISO-001, TC-PAY-ISO-002, TC-PAY-ISO-003, TC-PAY-ISO-004 | 4 | -- |
 | US-PAY-002 | Assign Salary Structure to Employee | Must Have | TC-PAY-002-01, TC-PAY-002-02, TC-PAY-002-03, TC-PAY-002-04, TC-PAY-002-05, TC-PAY-002-06, TC-PAY-002-07, TC-PAY-002-08, TC-PAY-002-09, TC-PAY-002-10, TC-PAY-002-11, TC-PAY-002-12 | 12 | 5/5 AC covered |
 | Cross-cutting (PAY-002) | Multi-tenant isolation (employee_salary_component / salary_revision_history) | Critical | TC-PAY-ISO-005, TC-PAY-ISO-006, TC-PAY-ISO-007, TC-PAY-ISO-008 | 4 | -- |
-| US-PAY-003 | Run Monthly Payroll for All Employees | Must Have | TC-PAY-003-01, TC-PAY-003-02, TC-PAY-003-03, TC-PAY-003-04, TC-PAY-003-05, TC-PAY-003-06, TC-PAY-003-07, TC-PAY-003-08, TC-PAY-003-09, TC-PAY-003-10, TC-PAY-003-11, TC-PAY-003-12 | 12 | 7/7 AC covered |
+| US-PAY-003 | Run Monthly Payroll for All Employees | Must Have | TC-PAY-003-01, TC-PAY-003-02, TC-PAY-003-03, TC-PAY-003-04, TC-PAY-003-05, TC-PAY-003-06, TC-PAY-003-07, TC-PAY-003-08, TC-PAY-003-09, TC-PAY-003-10, TC-PAY-003-11, TC-PAY-003-12, TC-PAY-003-16, TC-PAY-003-17 | 14 | 7/7 AC covered |
 | Cross-cutting (PAY-003) | Multi-tenant isolation (payroll_run / payroll_slip / payroll_slip_detail + compute pipeline) | Critical | TC-PAY-ISO-009, TC-PAY-ISO-010, TC-PAY-ISO-011, TC-PAY-ISO-012 | 4 | -- |
 | US-PAY-004 | Generate Individual Payslips | Must Have | TC-PAY-004-01, TC-PAY-004-02, TC-PAY-004-03, TC-PAY-004-04, TC-PAY-004-05, TC-PAY-004-06, TC-PAY-004-07, TC-PAY-004-08, TC-PAY-004-09, TC-PAY-004-10, TC-PAY-004-11, TC-PAY-004-12, TC-PAY-018 | 13 | 5/5 AC covered |
 | Cross-cutting (PAY-004) | Multi-tenant isolation (payslip blob storage / download / preview) | Critical | TC-PAY-ISO-013, TC-PAY-ISO-014, TC-PAY-ISO-015, TC-PAY-ISO-016 | 4 | -- |
@@ -2796,6 +2796,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-PAY-003-10 | Idempotency-Key replay no dup; distributed lock blocks concurrent same-tenant+period | Security | Critical | US-PAY-003 | AC-1, FR-1, FR-2, FR-9, NFR-2, NFR-3 |
 | TC-PAY-003-11 | 5,000 employees < 10 min; batch insert; cached structure reads | Performance | High | US-PAY-003 | AC-5, NFR-1, NFR-6, NFR-7 |
 | TC-PAY-003-12 | Runs table + new-run modal + progress bar + status stepper WCAG 2.1 AA | Accessibility | High | US-PAY-003 | AC-1, AC-3, FR-6 |
+| TC-PAY-003-16 | Rerun reconcile-marker sweep on real Postgres — stale marker re-enqueued + reset commits; fresh/null/Processing skipped; tenant isolation (DF-61-pg) | Reliability | High | US-PAY-003 | AC-3 |
+| TC-PAY-003-17 | Per-runId interlock prevents concurrent reprocess from duplicating slips; different runIds not serialized; already-satisfied skip (DF-61-conc) | Reliability | High | US-PAY-003 | AC-3 |
 | TC-PAY-ISO-009 | Tenant A run includes only Tenant A employees; B excluded throughout compute pipeline | Security | Critical | US-PAY-003 | AC-7, FR-3, FR-5, FR-8 |
 | TC-PAY-ISO-010 | Run/slip APIs reject missing/invalid/mismatched tenant context; no cross-tenant read/IDOR | Security | Critical | US-PAY-003 | AC-7, FR-1, FR-3, FR-8 |
 | TC-PAY-ISO-011 | Cross-tenant payroll writes blocked; tenant_id session/job-arg-derived | Security | Critical | US-PAY-003 | AC-7, FR-1, FR-2, FR-3, FR-8 |
@@ -3086,7 +3088,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 |-------------|------|------------|----------|
 | AC-1: Initiate run -> payroll_run Queued + Hangfire job enqueued + 202 with runId | AC | TC-PAY-003-01, TC-PAY-003-03, TC-PAY-003-09, TC-PAY-003-10, TC-PAY-003-12 | Direct |
 | AC-2: Worker locks attendance/leave, fetches employees w/ structures, computes earnings/deductions/LOP/statutory/net | AC | TC-PAY-003-01, TC-PAY-003-03, TC-PAY-003-05, TC-PAY-003-06, TC-PAY-003-07 | Direct (statutory math depends on US-PAY-006 config) |
-| AC-3: Slips persisted, status -> ReviewPending, HR notified (SignalR + email) | AC | TC-PAY-003-01, TC-PAY-003-08, TC-PAY-003-12 | Direct (notification DELIVERY CONDITIONAL on S25/Hangfire; enqueue asserted) |
+| AC-3: Slips persisted, status -> ReviewPending, HR notified (SignalR + email) | AC | TC-PAY-003-01, TC-PAY-003-08, TC-PAY-003-12, TC-PAY-003-16, TC-PAY-003-17 | Direct (notification DELIVERY CONDITIONAL on S25/Hangfire; enqueue asserted; -16/-17 = reprocess self-heal + concurrency correctness on real PG) |
 | AC-4: Run for an already-Finalized period -> 409 Conflict | AC | TC-PAY-003-02, TC-PAY-003-08 | Direct |
 | AC-5: 5,000-employee run completes within 10 minutes | AC | TC-PAY-003-11 | Direct (requires a seeded load environment) |
 | AC-6: Employee w/o salary structure skipped with warning; run continues | AC | TC-PAY-003-04 | Direct |
