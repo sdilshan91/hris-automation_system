@@ -636,6 +636,39 @@ public sealed class PayrollRunIntegrationTests
         _scheduler.Enqueued.Should().ContainSingle(e => e.RunId == runId && e.TenantId == _tenantA);
     }
 
+    // ── DF-61: RerunAsync sets the ReprocessRequestedAt marker; a completed reprocess clears it ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-003-02")]
+    public async Task Rerun_SetsReprocessMarker_AndReprocessClearsIt_DF61()
+    {
+        await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await LockAttendance(_tenantA, 2026, 5);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+        var processor = provider.GetRequiredService<IPayrollRunProcessor>();
+
+        var init = await mediator.Send(new InitiatePayrollRunCommand(5, 2026, null));
+        var runId = init.Value!.RunId;
+        await processor.ProcessAsync(runId);
+
+        // A correctly-processed ReviewPending run carries NO marker (the sweep must skip it).
+        using (var db = Db(_tenantA))
+            db.PayrollRuns.Single(r => r.Id == runId).ReprocessRequestedAt.Should().BeNull();
+
+        // RerunAsync stamps the marker so the reconcile sweep can tell a stranded rerun from a processed run.
+        (await mediator.Send(new RerunPayrollRunCommand(runId))).IsSuccess.Should().BeTrue();
+        using (var db = Db(_tenantA))
+            db.PayrollRuns.Single(r => r.Id == runId).ReprocessRequestedAt.Should().NotBeNull(
+                "RerunAsync marks the reprocess request so a dropped enqueue is detectable");
+
+        // Driving the reprocess to completion clears the marker.
+        await processor.ProcessAsync(runId);
+        using (var db = Db(_tenantA))
+            db.PayrollRuns.Single(r => r.Id == runId).ReprocessRequestedAt.Should().BeNull(
+                "the completed reprocess clears the marker so the sweep no longer treats it as stranded");
+    }
+
     // ── RE-RUN: driving ProcessAsync directly replaces the prior slips with fresh ids ──
 
     [Fact]

@@ -527,6 +527,9 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         run.Status = PayrollRunStatus.ReviewPending;
         run.CompletedAt = DateTime.UtcNow;
         run.RunLog = runLog.Length > 0 ? runLog.ToString().TrimEnd() : null;
+        // DF-61: the reprocess (if this was one) has now completed — clear the request marker so the reconcile
+        // sweep no longer treats this run as a stranded rerun. Harmless no-op on a first-time (non-rerun) run.
+        run.ReprocessRequestedAt = null;
 
         // US-PAY-012 (BUG-080): audit run completion. This runs in a Hangfire job with no HTTP user, so it is a
         // system actor (BR-7). Staged into the SAME SaveChanges that persists the completed run/slips so the

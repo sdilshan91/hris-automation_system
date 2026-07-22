@@ -53,6 +53,14 @@ public sealed class PayrollRun : BaseEntity, IAuditExempt
     /// <summary>When the job finished computing (status -&gt; ReviewPending), nullable.</summary>
     public DateTime? CompletedAt { get; set; }
 
+    /// <summary>
+    /// DF-61: set by <c>RerunAsync</c> when a reprocess of this (ReviewPending) run is requested, cleared when
+    /// <c>PayrollRunProcessor.ProcessAsync</c> completes. It makes a "reprocess requested but the enqueue was
+    /// dropped" run distinguishable from a correctly-processed ReviewPending run, so the reconcile sweep can
+    /// safely re-enqueue only the former. Null on a run that has never been re-run or whose reprocess completed.
+    /// </summary>
+    public DateTime? ReprocessRequestedAt { get; set; }
+
     // ── Approval workflow (US-PAY-008) ────────────────────────────────────────
 
     /// <summary>

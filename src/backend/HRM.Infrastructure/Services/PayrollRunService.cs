@@ -282,6 +282,12 @@ public sealed class PayrollRunService : IPayrollRunService
             before: new { Status = run.Status.ToString() },
             after: new { run.PayYear, run.PayMonth, Status = run.Status.ToString() });
 
+        // DF-61: mark that a reprocess was requested (committed WITH the audit row, before the best-effort
+        // enqueue below). The run stays ReviewPending; this marker is what lets PayrollRunReconcileJob tell a
+        // "reprocess requested but the enqueue was dropped" run apart from a correctly-processed ReviewPending
+        // one, so a lost enqueue self-heals. Cleared by PayrollRunProcessor.ProcessAsync on completion.
+        run.ReprocessRequestedAt = DateTime.UtcNow;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // Re-enqueue the tenant-aware processing job AFTER the commit (which re-invokes ProcessAsync — its own
