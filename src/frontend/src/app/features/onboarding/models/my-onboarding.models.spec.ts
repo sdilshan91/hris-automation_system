@@ -81,6 +81,33 @@ describe('my-onboarding.models helpers (US-ONB-003)', () => {
     expect(daysOverdue(task({ dueDate: '2026-07-20' }), today)).toBe(0);
   });
 
+  // DF-60: the today-boundary — a task due *today* is not yet overdue; the day before is 1 day overdue.
+  // (The existing arms use 5-days-past / future and skip the exact boundary.)
+  it('treats a task due exactly today as not overdue', () => {
+    expect(isTaskOverdue(task({ dueDate: '2026-07-15', status: 'pending' }), today)).toBeFalse();
+    expect(daysOverdue(task({ dueDate: '2026-07-15' }), today)).toBe(0);
+  });
+
+  it('counts a task due yesterday as 1 day overdue (min-1 floor at the boundary)', () => {
+    const t = task({ dueDate: '2026-07-14', status: 'pending' });
+    expect(isTaskOverdue(t, today)).toBeTrue();
+    expect(daysOverdue(t, today)).toBe(1);
+  });
+
+  // DF-60: binds the DF-1 (#416) wire-format contract. isTaskOverdue/daysOverdue parse dueDate as
+  // `new Date(`${dueDate}T00:00:00`)`, which is correct ONLY for a bare `yyyy-MM-dd` string. If the BE
+  // ever reverted onboarding date fields to full-DateTime serialization, that concat would yield an
+  // Invalid Date and a genuinely past-due task would silently stop rendering as overdue. This arm pins
+  // the contract: the bare date flags overdue; the same date as an ISO datetime string does not.
+  it('requires the bare yyyy-MM-dd wire format — a datetime string silently defeats overdue detection', () => {
+    const bare = task({ dueDate: '2026-07-10', status: 'pending' });
+    expect(isTaskOverdue(bare, today)).toBeTrue();
+
+    const datetime = task({ dueDate: '2026-07-10T10:30:00Z', status: 'pending' });
+    expect(isTaskOverdue(datetime, today)).toBeFalse();
+    expect(daysOverdue(datetime, today)).toBe(0);
+  });
+
   // ─── categoryCompletedCount ────────────────────────────────
   it('counts completed tasks in a category', () => {
     const cat = {
