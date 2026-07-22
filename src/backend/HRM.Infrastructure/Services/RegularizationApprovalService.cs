@@ -36,6 +36,7 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
     private readonly IShiftService _shiftService;
     private readonly IWorkflowRuntime? _workflowRuntime;
     private readonly IAttendanceNotificationService? _notifications;
+    private readonly IOvertimeService? _overtimeService;
     private readonly ILogger<RegularizationApprovalService> _logger;
 
     public RegularizationApprovalService(
@@ -45,7 +46,8 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         IShiftService shiftService,
         ILogger<RegularizationApprovalService> logger,
         IWorkflowRuntime? workflowRuntime = null,
-        IAttendanceNotificationService? notifications = null)
+        IAttendanceNotificationService? notifications = null,
+        IOvertimeService? overtimeService = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -56,6 +58,9 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         _workflowRuntime = workflowRuntime;
         // US-NTF-006 Phase 6: optional so existing US-ATT-004 unit tests keep compiling; DI always supplies the Real impl.
         _notifications = notifications;
+        // DF-64: optional so existing US-ATT-004 unit tests keep compiling; DI always supplies it. Used to
+        // (re)create the payable OvertimeRecord when a regularized day has overtime (see ApplyToAttendanceLogAsync).
+        _overtimeService = overtimeService;
         _logger = logger;
     }
 
@@ -634,6 +639,54 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
         // same shift resolution the clock-in/out path uses.
         var tenantZone = await ResolveTenantTimeZoneAsync(cancellationToken);
         await RecomputeLateEarlyAsync(log, regularization.Date, settings, calc.TotalWorkMinutes, tenantZone, cancellationToken);
+
+        // DF-64: a regularized day that now has overtime must produce a PAYABLE OvertimeRecord — payroll pays
+        // ONLY from approved OvertimeRecords, and the auto-clock-out/ANOMALY path deliberately creates none, so
+        // regularizing an auto-closed OT day previously left the OT unpayable. Mirror the clock-out path: rebuild
+        // the auto-detected record (same shift/multiplier/cap rules) and enter it into the NORMAL OT approval
+        // flow (Pending — it still needs the standard OT approval before it is payroll-ready). Create-or-update-
+        // or-remove: drop any prior AUTO-DETECTED record for this log (the correction supersedes it; manual
+        // PreApproved records are left untouched) and add the rebuilt one, or none if the correction removed the
+        // overtime. The approval paths re-check the period lock before calling in, so no finalized record is touched.
+        if (_overtimeService is not null)
+        {
+            var subject = await _dbContext.Employees
+                .FirstOrDefaultAsync(e => e.Id == regularization.EmployeeId, cancellationToken);
+            if (subject is not null)
+            {
+                var priorAutoDetected = await _dbContext.OvertimeRecords
+                    .Where(o => o.AttendanceLogId == log.Id && o.Type == OvertimeType.AutoDetected)
+                    .ToListAsync(cancellationToken);
+
+                // DF-64 (guard): NEVER delete/replace a TERMINAL auto-detected OT decision — an Approved/
+                // payroll-ready record (deleting it would drop paid OT AND cascade-delete its immutable
+                // OvertimeApprovalHistory) or a Rejected one (deleting it would silently re-open a manager's
+                // rejection). Only a still-pending record may be superseded by the correction. When a terminal
+                // record exists we leave the OT state alone — the regularization still corrects the log's
+                // display minutes, but the manager's approved/rejected OT stands (a further change is a new,
+                // explicit OT action, not a silent side effect of a time correction).
+                bool hasTerminalDecision = priorAutoDetected.Any(o =>
+                    o.Status == OvertimeStatus.Approved
+                    || o.Status == OvertimeStatus.Rejected
+                    || o.IsPayrollReady);
+                if (!hasTerminalDecision)
+                {
+                    var supersededPending = priorAutoDetected
+                        .Where(o => o.Status == OvertimeStatus.Pending || o.Status == OvertimeStatus.Unapproved)
+                        .ToList();
+                    if (supersededPending.Count > 0)
+                        _dbContext.OvertimeRecords.RemoveRange(supersededPending);
+
+                    var rebuilt = await _overtimeService.BuildAutoDetectedAsync(
+                        log, subject, settings, calc.TotalWorkMinutes, cancellationToken);
+                    if (rebuilt is not null)
+                    {
+                        rebuilt.Reason = "Overtime recognized on regularization approval.";
+                        _dbContext.OvertimeRecords.Add(rebuilt);
+                    }
+                }
+            }
+        }
 
         return Result<AttendanceLog>.Success(log);
     }
