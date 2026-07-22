@@ -84,7 +84,8 @@ public sealed class OvertimeService : IOvertimeService
         Employee employee,
         AttendanceSettings settings,
         int netWorkMinutes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<Guid>? excludeRecordIds = null)
     {
         // BR-1 baseline: the standard from the resolved shift, else the tenant setting.
         var date = DateOnly.FromDateTime(log.ClockIn);
@@ -128,7 +129,8 @@ public sealed class OvertimeService : IOvertimeService
         // BR-5/FR-8: weekly-cap alert — sum the employee's existing approved+pending overtime in the
         // ISO week of this date and flag if adding this block crosses the max.
         var weeklyExceeded = await EvaluateWeeklyCapAsync(
-            employee.Id, date, computation.OvertimeMinutes, settings.MaxWeeklyOvertimeMinutes, cancellationToken);
+            employee.Id, date, computation.OvertimeMinutes, settings.MaxWeeklyOvertimeMinutes,
+            cancellationToken, excludeRecordIds);
 
         var record = new OvertimeRecord
         {
@@ -936,9 +938,14 @@ public sealed class OvertimeService : IOvertimeService
     /// <summary>
     /// BR-5/FR-8: returns true if adding <paramref name="newMinutes"/> pushes the employee's
     /// approved+pending overtime in the Monday-anchored week of <paramref name="date"/> over the max.
+    /// <para>DF-64-wk: <paramref name="excludeRecordIds"/> are OvertimeRecord ids the caller has staged
+    /// for removal but not yet flushed. This read is <c>AsNoTracking</c> and so cannot see an un-flushed
+    /// <c>RemoveRange</c>; excluding those ids stops a superseded record (being replaced in the same
+    /// atomic commit) from being double-counted and tripping the advisory flag falsely.</para>
     /// </summary>
     private async Task<bool> EvaluateWeeklyCapAsync(
-        Guid employeeId, DateOnly date, int newMinutes, int maxWeeklyMinutes, CancellationToken cancellationToken)
+        Guid employeeId, DateOnly date, int newMinutes, int maxWeeklyMinutes,
+        CancellationToken cancellationToken, IReadOnlyCollection<Guid>? excludeRecordIds = null)
     {
         if (maxWeeklyMinutes <= 0)
             return false;
@@ -953,7 +960,8 @@ public sealed class OvertimeService : IOvertimeService
             .AsNoTracking()
             .Where(o => o.EmployeeId == employeeId
                      && o.Date >= weekStart && o.Date <= weekEnd
-                     && (o.Status == OvertimeStatus.Approved || o.Status == OvertimeStatus.Pending))
+                     && (o.Status == OvertimeStatus.Approved || o.Status == OvertimeStatus.Pending)
+                     && (excludeRecordIds == null || !excludeRecordIds.Contains(o.Id)))
             .Select(o => o.Status == OvertimeStatus.Approved ? (o.ApprovedMinutes ?? 0) : o.OvertimeMinutes)
             .ToListAsync(cancellationToken);
 
