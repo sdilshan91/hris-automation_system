@@ -31,13 +31,19 @@ public interface IOvertimeService
     /// or SaveChanges. Applies the daily cap (BR-4), the weekday/weekend/holiday multiplier (BR-3/BR-7),
     /// the weekly-cap alert flag (BR-5), and UNAPPROVED status when pre-approval is required but missing
     /// (BR-6). <paramref name="netWorkMinutes"/> is the calculator's post-break TotalWorkMinutes.
+    /// <para>DF-64-wk: <paramref name="excludeRecordIds"/> are OvertimeRecord ids that a caller has
+    /// staged for removal but not yet flushed (e.g. the regularization funnel supersedes a prior
+    /// auto-detected record before rebuilding). The weekly-cap (BR-5) read is <c>AsNoTracking</c> and so
+    /// cannot see an un-flushed <c>RemoveRange</c>; excluding those ids stops the record being replaced
+    /// from being double-counted and tripping the advisory flag falsely. Defaults to none.</para>
     /// </summary>
     Task<OvertimeRecord?> BuildAutoDetectedAsync(
         AttendanceLog log,
         Employee employee,
         AttendanceSettings settings,
         int netWorkMinutes,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<Guid>? excludeRecordIds = null);
 
     /// <summary>
     /// AC-2/FR-4: the acting employee submits an overtime pre-approval request (a PRE_APPROVED,

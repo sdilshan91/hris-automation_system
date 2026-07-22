@@ -677,8 +677,14 @@ public sealed class RegularizationApprovalService : IRegularizationApprovalServi
                     if (supersededPending.Count > 0)
                         _dbContext.OvertimeRecords.RemoveRange(supersededPending);
 
+                    // DF-64-wk: the RemoveRange above is STAGED, not flushed — the atomic single-commit is
+                    // preserved (no mid-transaction SaveChanges). But the rebuilt record's weekly-cap (BR-5)
+                    // advisory re-evaluation reads AsNoTracking, which bypasses the change-tracker and so still
+                    // sees the un-flushed superseded record — double-counting it and tripping WeeklyCapExceeded
+                    // falsely. Exclude the ids being replaced from that weekly sum.
                     var rebuilt = await _overtimeService.BuildAutoDetectedAsync(
-                        log, subject, settings, calc.TotalWorkMinutes, cancellationToken);
+                        log, subject, settings, calc.TotalWorkMinutes, cancellationToken,
+                        excludeRecordIds: supersededPending.Select(o => o.Id).ToList());
                     if (rebuilt is not null)
                     {
                         rebuilt.Reason = "Overtime recognized on regularization approval.";

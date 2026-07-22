@@ -68,14 +68,14 @@ public sealed class RegularizationApprovalServiceTests
                 Substitute.For<ILogger<OvertimeService>>()));
 
     /// <summary>DF-64: seeds a tenant AttendanceSettings row with deterministic overtime knobs.</summary>
-    private void SeedOvertimeSettings()
+    private void SeedOvertimeSettings(int maxWeeklyMinutes = 3000)
     {
         using var db = Db();
         db.AttendanceSettings.Add(new AttendanceSettings
         {
             Id = BaseEntity.NewUuidV7(), TenantId = _tenantId,
             StandardWorkMinutes = 480, OvertimeMinimumThresholdMinutes = 0, MaxDailyOvertimeMinutes = 600,
-            MaxWeeklyOvertimeMinutes = 3000, AutoBreakThresholdMinutes = 360, AutoBreakMinutes = 60,
+            MaxWeeklyOvertimeMinutes = maxWeeklyMinutes, AutoBreakThresholdMinutes = 360, AutoBreakMinutes = 60,
             RequireOvertimePreApproval = false,
             WeekdayOvertimeMultiplier = 1.5m, WeekendOvertimeMultiplier = 2m, HolidayOvertimeMultiplier = 2.5m,
         });
@@ -610,5 +610,37 @@ public sealed class RegularizationApprovalServiceTests
         ot.Status.Should().Be(OvertimeStatus.Approved, "an approved OT decision is not silently re-opened");
         ot.OvertimeMinutes.Should().Be(120, "the approved value is untouched");
         ot.IsPayrollReady.Should().BeTrue("the payroll-ready approved OT stands");
+    }
+
+    // ── DF-64-wk: re-regularizing a day that had OT must not double-count the superseded record ──
+
+    [Fact]
+    [Trait("TC", "TC-ATT-006-65")]
+    public async Task Approve_ReRegularizingDayWithPriorOt_DoesNotDoubleCountSuperseded_ForWeeklyCap_DF64wk()
+    {
+        var date = Yesterday;
+        // Weekly cap tight enough that DOUBLE-counting the superseded record trips the advisory flag
+        // (180 stale + 180 rebuilt = 360 > 300), but the real post-replacement weekly total does not
+        // (a single 180-min record for the day, 180 <= 300).
+        SeedOvertimeSettings(maxWeeklyMinutes: 300);
+        var logId = SeedAutoClosedLog(_reportId, date, inHour: 8, outHour: 23);
+        // A prior auto-detected PENDING record for the SAME day (180 min) — it is superseded by the rebuild.
+        SeedAutoDetectedOtRecord(logId, _reportId, date, minutes: 180);
+        // Re-regularize to 8-20 -> 660 net -> OT 180. The RemoveRange of the stale record is STAGED, not
+        // flushed, so the AsNoTracking weekly-cap read still sees it — WITHOUT the exclusion it double-counts.
+        var regId = SeedPending(_reportId, RegularizationType.MissedClockOut, date,
+            requestedOut: At(date, 20), linkedLogId: logId);
+
+        using (var db = Db())
+            (await ServiceWithOvertime(db).ApproveAsync(regId, "Re-regularized")).IsSuccess.Should().BeTrue();
+
+        using var verify = Db();
+        var ot = verify.OvertimeRecords
+            .Where(o => o.AttendanceLogId == logId && o.Type == OvertimeType.AutoDetected)
+            .Should().ContainSingle("the prior record is replaced, not duplicated").Subject;
+        ot.OvertimeMinutes.Should().Be(180);
+        ot.WeeklyCapExceeded.Should().BeFalse(
+            "the superseded record staged for removal must NOT be double-counted in the weekly-cap advisory: " +
+            "the real weekly total is 180 <= 300; only the un-excluded stale 180 would push it to 360");
     }
 }

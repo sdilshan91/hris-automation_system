@@ -1556,7 +1556,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (ATT-004) | Multi-tenant isolation (approve/reject mutation path) | Critical | TC-ATT-ISO-007 (+ reuses TC-ATT-ISO-001..004, TC-ATT-ISO-006) | 1 | -- |
 | US-ATT-005 | Shift Management and Assignment per Employee | Must Have | TC-ATT-051, TC-ATT-052, TC-ATT-053, TC-ATT-054, TC-ATT-055, TC-ATT-056, TC-ATT-057, TC-ATT-058, TC-ATT-059, TC-ATT-060, TC-ATT-061, TC-ATT-062, TC-ATT-063, TC-ATT-064, TC-ATT-065, TC-ATT-066, TC-ATT-158 | 17 | 5/5 AC covered |
 | Cross-cutting (ATT-005) | Multi-tenant isolation (shift + employee_shift tables) | Critical | TC-ATT-ISO-008 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
-| US-ATT-006 | Overtime Tracking and Approval | Should Have | TC-ATT-067, TC-ATT-068, TC-ATT-069, TC-ATT-070, TC-ATT-071, TC-ATT-072, TC-ATT-073, TC-ATT-074, TC-ATT-075, TC-ATT-076, TC-ATT-077, TC-ATT-078, TC-ATT-079, TC-ATT-080, TC-ATT-081, TC-ATT-082, TC-ATT-083, TC-ATT-159 | 18 | 5/5 AC covered |
+| US-ATT-006 | Overtime Tracking and Approval | Should Have | TC-ATT-067, TC-ATT-068, TC-ATT-069, TC-ATT-070, TC-ATT-071, TC-ATT-072, TC-ATT-073, TC-ATT-074, TC-ATT-075, TC-ATT-076, TC-ATT-077, TC-ATT-078, TC-ATT-079, TC-ATT-080, TC-ATT-081, TC-ATT-082, TC-ATT-083, TC-ATT-159, TC-ATT-006-64, TC-ATT-006-65 | 20 | 5/5 AC covered |
 | Cross-cutting (ATT-006) | Multi-tenant isolation (overtime_record table) | Critical | TC-ATT-ISO-009 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
 | US-ATT-007 | Monthly Attendance Summary per Employee | Must Have | TC-ATT-084, TC-ATT-085, TC-ATT-086, TC-ATT-087, TC-ATT-088, TC-ATT-089, TC-ATT-090, TC-ATT-091, TC-ATT-092, TC-ATT-093, TC-ATT-094, TC-ATT-095, TC-ATT-096, TC-ATT-097, TC-ATT-098, TC-ATT-099 | 16 | 5/5 AC covered |
 | Cross-cutting (ATT-007) | Multi-tenant isolation (attendance_monthly_summary table) | Critical | TC-ATT-ISO-010 (+ reuses TC-ATT-ISO-001..004) | 1 | -- |
@@ -1647,6 +1647,8 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-ATT-066 | Shift table inline-edit, employee multi-select, rotation weekly view, 360px card layout accessible & responsive (WCAG 2.1 AA) | Accessibility | High | US-ATT-005 | UI/UX S8, WCAG 2.1 AA |
 | TC-ATT-ISO-008 | Tenant A shifts/employee_shift not visible to or actionable by Tenant B | Security | Critical | US-ATT-005 | NFR-3, FR-2, FR-3, FR-7 |
 | TC-ATT-067 | Overtime auto-detected on clock-out -- 9h on 8h shift, 30-min threshold -> PENDING AUTO_DETECTED record | Functional | Critical | US-ATT-006 | AC-1, FR-1, FR-2, NFR-1, BR-1 |
+| TC-ATT-006-64 | Regularization approval creates a payable Pending OT record; supersedes a prior Pending; never deletes a terminal Approved record or its audit history (real Postgres FK-cascade) (DF-64 / DF-64-pg) | Functional | High | US-ATT-006 | AC-1, BR-1 |
+| TC-ATT-006-65 | Re-regularizing a day with a prior OT record must not double-count the superseded record in the weekly-cap advisory (DF-64-wk) | Functional | Medium | US-ATT-006 | FR-8, BR-5 |
 | TC-ATT-068 | Threshold boundary -- 8h20m on 8h shift, 30-min threshold -> NO overtime record | Functional (boundary) | High | US-ATT-006 | AC-1, FR-1, BR-2 |
 | TC-ATT-069 | Multiplier by day type -- weekday 1.5x, weekend 2.0x, public holiday 2.5x | Functional (boundary) | High | US-ATT-006 | FR-3, BR-3, BR-7, S10 |
 | TC-ATT-070 | Daily cap -- 14h on 8h shift, 4h cap -> capped at 4h + flagged | Functional (boundary) | Critical | US-ATT-006 | FR-8, BR-4 |
@@ -1953,7 +1955,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 
 | Requirement | Type | Covered By | Coverage |
 |-------------|------|------------|----------|
-| AC-1: Clock-out beyond standard+threshold auto-creates an overtime record (excess minutes, PENDING) | AC | TC-ATT-067, TC-ATT-068 | Direct |
+| AC-1: Clock-out beyond standard+threshold auto-creates an overtime record (excess minutes, PENDING) | AC | TC-ATT-067, TC-ATT-068, TC-ATT-006-64 | Direct (TC-ATT-006-64 = the regularization-approval OT-record path on real PG) |
 | AC-2: Pre-approval policy on -- OT without pre-approval flagged UNAPPROVED | AC | TC-ATT-072 | Direct |
 | AC-3: Manager overtime approval queue lists team PENDING with employee/date/hours/reason | AC | TC-ATT-073 | Direct |
 | AC-4: Manager approves -- status APPROVED, record payroll-ready (approve/reject/adjust) | AC | TC-ATT-074, TC-ATT-075, TC-ATT-076, TC-ATT-078 | Direct |
