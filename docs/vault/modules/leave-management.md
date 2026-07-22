@@ -1732,3 +1732,37 @@ load/lookups/table render/filter-apply-resets-page/sort-toggle/pagination-guard/
 empty/bar+pie+line chart rendering+scaling/absenteeism flagging/no-analytics-for-non-chart/export
 csv+xlsx+large-job-processing+error/menu+sidebar toggles/route-param switch). Full suite **1225
 green, 0 regressions**.
+
+## DF-62-parity — accepted encashment/forfeiture divergence (no money-math change)
+
+Two forfeiture ceilings in the leave subsystem derive from **different balance bases** and agree only
+under a specific condition. The user (2026-07-22) **decided to characterize and pin this, NOT unify the
+math** — it is an accepted employee-detriment edge, never double-pay.
+
+**The two bases:**
+
+| Ceiling | Where | Base | Formula |
+|---|---|---|---|
+| **Encashment gate** | `LeaveEncashmentService.cs:104-107` | latest ledger `BalanceAfter` (running total = Σ of **all** ledger amounts, incl. the **actual accrual rows**) | `Compute(availableBalance, CarryForwardLimit).ForfeitedDays` |
+| **Year-end forfeiture** | `LeaveCarryForwardService.cs:150-152` | `unused = entitlement + carry − used − expired + adjusted`, where `entitlement` = **engine** `ProratedEntitlementDays` (accrual ledger rows are intentionally **not** summed — "Accrual realises the engine entitlement; not re-added") | `Compute(unused, CarryForwardLimit).ForfeitedDays` |
+
+**When they agree / diverge:** both end in the *same* `LeaveCarryForwardCalculator.Compute(base, limit)`
+with the same limit, so they agree **iff the bases agree**, i.e. **iff `Σaccruals == ProratedEntitlementDays`**.
+When they diverge, the gap is **exactly `ProratedEntitlementDays − Σaccruals`** (e.g. a mid-year entitlement
+change applied before re-accrual, or an under/over-accrued ledger).
+
+**Why accepted:** the divergence only changes *how many days are classified forfeitable* from the same
+starting point — it **erodes carried days (employee detriment) but is NOT double-pay**: the BUG-079
+`Encashed` draw-down means once HR encashes, the year-end job recomputes forfeitable from the reduced
+ledger, so the same day is never paid twice. User **deferred** unifying the two derivations (DF-62 clause 3);
+re-assess post-DF-65 (which reshaped the carried-days machinery).
+
+> **NOTE — an `Adjusted` ledger row is NOT a divergence lever:** it appears in *both* bases (the running
+> `BalanceAfter` **and** `ComputeUnusedBalanceAsync`'s `adjusted`), so it cancels. The only lever is
+> `Σaccruals ≠ ProratedEntitlementDays`.
+
+**Pinning test:** `LeaveForfeitureParityTests` (`HRM.Tests/Integration`, bound `TC-LV-269` / `DF-62-parity`)
+— an **aligned** arm (`Σaccruals == entitlement` → the two ceilings match, the parity guard) and a
+**divergent** arm (under-accrual → ceilings differ by exactly the accrual-vs-entitlement gap, characterizing
+the accepted edge). It exercises the real year-end path (`PreviewYearEndAsync`) + the production encashment
+gate expression + a live-gate boundary probe. It does **not** change any money math.

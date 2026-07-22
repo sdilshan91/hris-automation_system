@@ -5,8 +5,10 @@ module: Leave Management
 priority: critical
 type: integration
 status: blocked
-exec_note: "2026-07-01 KEEP-BLOCKED: requires firing a param-less GLOBAL recurring Hangfire job (RunAsync() iterates ALL active tenants) which would WRITE ledger rows to acme/techoneglobal — barred by no-cross-tenant-write policy. No per-tenant trigger/API exists. Math side validated separately via carry-forward-preview where applicable."
+exec_note: "2026-07-01 KEEP-BLOCKED: requires firing a param-less GLOBAL recurring Hangfire job (RunAsync() iterates ALL active tenants) which would WRITE ledger rows to acme/techoneglobal — barred by no-cross-tenant-write policy. No per-tenant trigger/API exists. Math side validated separately via carry-forward-preview where applicable. 2026-07-22 (DF-65): the double-forfeiture regression (year-end sweep must terminalize the prior ToYear==fromYear bucket so ProcessExpiryAsync can't re-forfeit) is now bound here — 3 InMemory unit arms (LeaveCarryForwardServiceTests, *_DF65) + a real-PG arm (LeaveCarryForwardDoubleForfeitPostgresTests) drive the per-tenant ProcessYearEndAsync/ProcessExpiryAsync path directly (NOT the global recurring job), so this TC's global-trigger blocker is unchanged — the DF-65 MATH is covered, the global-job trigger stays blocked."
 created: 2026-06-14
+defect:
+  - DF-65
 ---
 
 # TC-LV-151: Monthly expiry job expires carry-forward days past their 3-month expiry (AC-3, BR-3, FR-3, FR-6; Redis invalidation DEFERRED)
