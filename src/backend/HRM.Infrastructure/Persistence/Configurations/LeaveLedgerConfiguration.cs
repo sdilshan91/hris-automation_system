@@ -52,6 +52,18 @@ public sealed class LeaveLedgerConfiguration : IEntityTypeConfiguration<LeaveLed
             .HasColumnType("numeric(5,2)")
             .IsRequired();
 
+        // DF-19 / ISSUE-045: the balance pool (CarryForward | Accrual) this row drew from / restored
+        // to. Persisted as its enum name (mirrors EntryType), nullable — legacy rows and non-pool
+        // entries (Accrual/CarryForward credits, Encashed, Expired) stay null.
+        builder.Property(l => l.Pool)
+            .HasConversion(
+                v => v == null ? null : v.ToString(),
+                v => v == null ? null : Enum.Parse<LeavePool>(v))
+            .HasMaxLength(20);
+
+        // DF-19 / ISSUE-045: the carry-forward bucket a CarryForward-pool row drew from (nullable).
+        builder.Property(l => l.CarryForwardTrackingId);
+
         builder.Property(l => l.Description)
             .HasMaxLength(500);
 
@@ -90,6 +102,11 @@ public sealed class LeaveLedgerConfiguration : IEntityTypeConfiguration<LeaveLed
         // Chronological listing by occurrence.
         builder.HasIndex(l => new { l.TenantId, l.OccurredAt })
             .HasDatabaseName("ix_leave_ledger_tenant_occurred_at");
+
+        // DF-19 / ISSUE-045: locate a bucket's per-pool rows (cancel restore reads them by request;
+        // this supports bucket-level reconciliation of consumed vs. restored carry-forward days).
+        builder.HasIndex(l => new { l.TenantId, l.CarryForwardTrackingId })
+            .HasDatabaseName("ix_leave_ledger_tenant_cf_tracking");
     }
 
     /// <summary>

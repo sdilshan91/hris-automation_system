@@ -8,8 +8,12 @@ namespace HRM.Domain.Entities;
 /// One row per (tenant, employee, leave_type, from_year → to_year). The unique index on that
 /// tuple makes the year-end job idempotent (NFR-3): a second run finds the existing row and skips.
 ///
-/// FIFO consumption (BR-4) is derived — not stored as a running counter — from the new-year
-/// "Used" ledger entries vs. <see cref="CarriedDays"/>; see LeaveCarryForwardCalculator.
+/// FIFO consumption (BR-4) is PERSISTED (DF-19 / ISSUE-045) as the running <see cref="ConsumedDays"/>
+/// counter: the leave-approval deduction increments it when it draws carry-forward days from this
+/// bucket, a cancellation decrements it when it restores them, and the expiry job reads it directly
+/// (instead of re-deriving consumption from the new-year "Used" ledger, which double-counted a
+/// later-cancelled request). See LeaveRequestService (deduct/restore) and LeaveCarryForwardService
+/// (expiry).
 /// </summary>
 public sealed class LeaveCarryForwardTracking : BaseEntity
 {
@@ -27,6 +31,15 @@ public sealed class LeaveCarryForwardTracking : BaseEntity
 
     /// <summary>Days actually carried forward = MIN(unused_balance, carry_forward_limit) (BR-1).</summary>
     public decimal CarriedDays { get; set; }
+
+    /// <summary>
+    /// DF-19 / ISSUE-045: PERSISTED count of carried days consumed from this bucket (BR-4 FIFO).
+    /// Incremented by the leave-approval deduction when it draws carry-forward days from this row,
+    /// decremented by a cancellation when it restores them. Replaces the previously-derived FIFO
+    /// (new-year Used ledger vs. CarriedDays) so cancel and expiry agree. Live remaining carried
+    /// days = MAX(0, CarriedDays − ConsumedDays − ExpiredDays).
+    /// </summary>
+    public decimal ConsumedDays { get; set; }
 
     /// <summary>
     /// Date the carried days expire (BR-3): first day of the new leave year +

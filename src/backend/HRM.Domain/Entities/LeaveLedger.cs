@@ -46,6 +46,22 @@ public sealed class LeaveLedger : BaseEntity, IAuditExempt
     public decimal BalanceAfter { get; set; }
 
     /// <summary>
+    /// DF-19 / ISSUE-045: which balance pool this row drew from / restored to. Set only on the
+    /// per-pool Used deduction rows written at approval and the matching Adjusted restore rows
+    /// written at cancellation. NULL on legacy rows and on non-pool entries (Accrual credits,
+    /// CarryForward credits, Encashed draw-downs, Expired forfeitures) — those are not FIFO-split.
+    /// </summary>
+    public LeavePool? Pool { get; set; }
+
+    /// <summary>
+    /// DF-19 / ISSUE-045: the carry-forward bucket this row drew from, set only on
+    /// <see cref="LeavePool.CarryForward"/>-pool Used/Adjusted rows. Points at the
+    /// <see cref="LeaveCarryForwardTracking"/> whose <c>ConsumedDays</c> this deduction incremented
+    /// (and a cancellation decrements). NULL on every other row.
+    /// </summary>
+    public Guid? CarryForwardTrackingId { get; set; }
+
+    /// <summary>
     /// Human-readable description of this ledger entry.
     /// </summary>
     public string? Description { get; set; }

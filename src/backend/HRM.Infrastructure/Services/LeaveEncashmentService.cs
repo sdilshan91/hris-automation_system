@@ -133,23 +133,18 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
         // the same days again. Mirror the year-end Encashed entry shape. It is ADDED to the shared scoped
         // DbContext but NOT saved here — the adjustment service's SaveChanges (same scoped context) persists BOTH
         // the adjustment and this draw-down in ONE unit of work, so the encashment + draw-down are atomic.
-        LeaveLedger? drawDown = null;
+        PooledDeductionResult? drawDown = null;
         if (encashLeaveType is not null)
         {
-            drawDown = new LeaveLedger
-            {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = employee.TenantId,
-                EntryType = LedgerEntryType.Encashed,
-                EmployeeId = input.EmployeeId,
-                LeaveTypeId = encashLeaveType.Id,
-                LeaveYear = leaveYear,
-                Amount = -eligibleDays,
-                BalanceAfter = availableBalance - eligibleDays,
-                Description = $"HR leave encashment: {eligibleDays:0.##} day(s) for {input.PayYear}-{input.PayMonth:00} payroll",
-                OccurredAt = DateTime.UtcNow,
-            };
-            _dbContext.LeaveLedgerEntries.Add(drawDown);
+            // DF-19 / ISSUE-045: draw the balance down FIFO — carry-forward bucket first, then accrual —
+            // and bump the bucket's ConsumedDays so the year-end expiry job (which reads that counter)
+            // accounts for encashed carried days instead of over-forfeiting them. Same shared split the
+            // approval/LOP paths use; nets to −eligibleDays with the historical single-row aggregate.
+            drawDown = await PooledLeaveLedger.AppendDeductionAsync(
+                _dbContext, employee.TenantId, input.EmployeeId, encashLeaveType.Id, leaveYear,
+                eligibleDays, leaveRequestId: null, availableBalance,
+                $"HR leave encashment: {eligibleDays:0.##} day(s) for {input.PayYear}-{input.PayMonth:00} payroll",
+                DateTime.UtcNow, LedgerEntryType.Encashed, cancellationToken);
         }
 
         // AC-3/FR-5: create the EARNING adjustment (Bonus) for the next payroll run, reusing US-PAY-007. The
@@ -173,10 +168,10 @@ public sealed class LeaveEncashmentService : ILeaveEncashmentService
 
         if (createResult.IsFailure)
         {
-            // Adjustment rejected => do NOT persist the draw-down (both-or-neither). The entry was only tracked,
-            // never saved; detach it so an unrelated later SaveChanges in this scope cannot flush an orphan.
-            if (drawDown is not null)
-                _dbContext.Entry(drawDown).State = EntityState.Detached;
+            // Adjustment rejected => do NOT persist the draw-down (both-or-neither). The rows were only
+            // tracked, never saved; detach them AND revert the in-memory ConsumedDays bump so an unrelated
+            // later SaveChanges in this scope cannot flush an orphan or a phantom consumption.
+            drawDown?.Undo(_dbContext);
             return Result<LeaveEncashmentResultDto>.Failure(
                 createResult.Error!, createResult.StatusCode ?? 400, createResult.ErrorCode);
         }

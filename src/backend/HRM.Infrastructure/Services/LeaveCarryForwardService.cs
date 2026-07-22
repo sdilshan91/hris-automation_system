@@ -256,12 +256,13 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
 
         foreach (var row in dueRows)
         {
-            // BR-4 FIFO: how many carried days remain after new-year consumption + prior expiry.
-            decimal usedInNewYear = await GetUsedInYearAsync(
-                row.EmployeeId, row.LeaveTypeId, row.ToYear, cancellationToken);
-
-            decimal remaining = LeaveCarryForwardCalculator.RemainingCarriedDays(
-                row.CarriedDays, usedInNewYear, row.ExpiredDays);
+            // DF-19 / ISSUE-045 (BR-4 FIFO): remaining carried days come from the PERSISTED
+            // ConsumedDays counter — maintained by the leave-approval deduction (which draws
+            // carry-forward days from this bucket) and decremented by a cancellation. It is NOT
+            // re-derived from the new-year Used ledger: that derivation double-counted a later-
+            // cancelled request (the Used −N stayed, the Adjusted +N was ignored), so the expiry
+            // job would over-expire. Reading ConsumedDays makes expiry agree with cancel.
+            decimal remaining = Math.Max(0m, row.CarriedDays - row.ConsumedDays - row.ExpiredDays);
 
             if (remaining > 0m)
             {
@@ -414,22 +415,6 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
         var entitlement = await _entitlementService.ComputeEffectiveEntitlementAsync(
             employeeId, leaveTypeId, leaveYear, cancellationToken);
         return entitlement.IsSuccess ? entitlement.Value!.ProratedEntitlementDays : 0m;
-    }
-
-    /// <summary>Total days used (incl. encashed) in a leave year for FIFO derivation (BR-4).</summary>
-    private async Task<decimal> GetUsedInYearAsync(
-        Guid employeeId, Guid leaveTypeId, int leaveYear, CancellationToken cancellationToken)
-    {
-        var amounts = await _dbContext.LeaveLedgerEntries
-            .AsNoTracking()
-            .Where(l => l.EmployeeId == employeeId
-                        && l.LeaveTypeId == leaveTypeId
-                        && l.LeaveYear == leaveYear
-                        && (l.EntryType == LedgerEntryType.Used || l.EntryType == LedgerEntryType.Encashed))
-            .Select(l => l.Amount)
-            .ToListAsync(cancellationToken);
-
-        return amounts.Sum(Math.Abs);
     }
 
     /// <summary>

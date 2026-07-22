@@ -911,29 +911,22 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 400);
         }
 
-        // FR-3 / AC-1: append a LeaveLedger "Used" deduction, linked to the request, computing
+        // FR-3 / AC-1: append the LeaveLedger "Used" deduction, linked to the request, computing
         // balance_after from the running total (reuses the US-LV-002 accrual ledger-append logic).
-        var ledgerEntry = new LeaveLedger
-        {
-            Id = BaseEntity.NewUuidV7(),
-            TenantId = _tenantContext.TenantId,
-            EntryType = LedgerEntryType.Used,
-            EmployeeId = request.EmployeeId,
-            LeaveTypeId = leaveType.Id,
-            LeaveYear = leaveYear,
-            LeaveRequestId = request.Id,
-            Amount = -request.TotalDays,
-            BalanceAfter = projected,
-            Description = $"Leave approved ({leaveType.Name}): {request.TotalDays} day(s)",
-            OccurredAt = DateTime.UtcNow,
-        };
+        // DF-19 / ISSUE-045: PERSIST the BR-4 FIFO pool split — carry-forward days are consumed
+        // before accrual days, each row tagged with its pool + bucket, so a later cancellation
+        // restores each pool exactly and the expiry job reads the persisted ConsumedDays counter.
+        // The rows net to −TotalDays and the final row's BalanceAfter == projected (unchanged aggregate).
+        var ledgerEntry = await AppendPooledDeductionAsync(
+            request, leaveType, leaveYear, currentBalance,
+            $"Leave approved ({leaveType.Name}): {request.TotalDays} day(s)",
+            DateTime.UtcNow, cancellationToken);
 
         var priorStatus = request.Status;
         request.Status = LeaveRequestStatus.Approved;
 
         var history = NewHistory(request.Id, manager.Id, LeaveApprovalAction.Approved, comment);
 
-        _dbContext.LeaveLedgerEntries.Add(ledgerEntry);
         _dbContext.LeaveApprovalHistories.Add(history);
 
         // ISSUE-037 / FR-7: emit a DISTINCT semantic audit action (Leave.Approved) with a before/after
@@ -1178,21 +1171,13 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 $"negative_balance_limit_exceeded: Approving would exceed the allowed negative balance. " +
                 $"Available: {currentBalance} day(s), requested: {request.TotalDays} day(s), negative-balance limit: {negativeLimit} day(s).", 400);
 
-        var ledgerEntry = new LeaveLedger
-        {
-            Id = BaseEntity.NewUuidV7(),
-            TenantId = _tenantContext.TenantId,
-            EntryType = LedgerEntryType.Used,
-            EmployeeId = request.EmployeeId,
-            LeaveTypeId = leaveType.Id,
-            LeaveYear = leaveYear,
-            LeaveRequestId = request.Id,
-            Amount = -request.TotalDays,
-            BalanceAfter = projected,
-            Description = $"Leave approved via workflow ({leaveType.Name}): {request.TotalDays} day(s)",
-            OccurredAt = DateTime.UtcNow,
-        };
-        _dbContext.LeaveLedgerEntries.Add(ledgerEntry);
+        // DF-19 / ISSUE-045: same PERSISTED BR-4 FIFO pool split as the legacy ApproveAsync path —
+        // carry-forward days consumed before accrual days, tagged per pool + bucket, netting −TotalDays
+        // with the final row's BalanceAfter == projected. Staged (not saved) — the workflow runtime commits.
+        var ledgerEntry = await AppendPooledDeductionAsync(
+            request, leaveType, leaveYear, currentBalance,
+            $"Leave approved via workflow ({leaveType.Name}): {request.TotalDays} day(s)",
+            DateTime.UtcNow, cancellationToken);
 
         request.Status = LeaveRequestStatus.Approved;
 
@@ -1307,39 +1292,111 @@ public sealed class LeaveRequestService : ILeaveRequestService
 
         if (wasApproved)
         {
-            // AC-2 / FR-3: append a LeaveLedger "Adjusted" reversal entry with POSITIVE days to
-            // restore the balance, computing balance_after from the running total (same ledger-append
-            // logic as the US-LV-005 approval deduction, inverted).
-            // BR-4 (carry-forward): if the original deduction consumed carry-forward days, the
-            //   restoration should follow the original allocation (carry-forward days back to the
-            //   carry-forward pool). The current ledger model nets Adjusted entries into the running
-            //   balance, so a single positive Adjusted entry restores the FULL day count correctly.
-            //   True carry-forward-pool re-allocation is NOT modelled here (it would need per-pool
-            //   ledger tagging). TODO(BR-4 carry-forward-pool): when carry-forward pools are tracked
-            //   distinctly, split the reversal across the original allocation buckets.
+            // AC-2 / FR-3: append LeaveLedger "Adjusted" reversal rows with POSITIVE days to restore
+            // the balance, chaining balance_after from the running total (the approval deduction,
+            // inverted).
+            // DF-19 / ISSUE-045 (BR-4 carry-forward): restore PER POOL. Mirror THIS request's persisted
+            // Used deduction rows (the FIFO pool split written at approval): carry-forward days go back
+            // to their bucket (decrementing ConsumedDays, preserving the ORIGINAL ExpiryDate — never
+            // refreshed) and accrual days back to general balance. The rows sum to +request.TotalDays,
+            // so the aggregate running balance is byte-identical to the pre-DF-19 single reversal.
             int leaveYear = await LeaveYearForAsync(request.StartDate, cancellationToken);
             decimal currentBalance = await GetLedgerBalanceAsync(
                 request.EmployeeId, request.LeaveTypeId, leaveYear, cancellationToken);
 
-            decimal restored = currentBalance + request.TotalDays;
+            // This request's own Used deduction rows, oldest-first so the running balance chains
+            // deterministically. Tenant-scoped by the global query filter.
+            var usedRows = await _dbContext.LeaveLedgerEntries
+                .AsNoTracking()
+                .Where(l => l.LeaveRequestId == request.Id && l.EntryType == LedgerEntryType.Used)
+                .OrderBy(l => l.OccurredAt).ThenBy(l => l.CreatedAt)
+                .ToListAsync(cancellationToken);
 
-            reversal = new LeaveLedger
+            decimal running = currentBalance;
+            int idx = 0;
+
+            if (usedRows.Count == 0)
             {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = _tenantContext.TenantId,
-                EntryType = LedgerEntryType.Adjusted,
-                EmployeeId = request.EmployeeId,
-                LeaveTypeId = request.LeaveTypeId,
-                LeaveYear = leaveYear,
-                LeaveRequestId = request.Id,
-                Amount = request.TotalDays,           // positive — restores the balance
-                BalanceAfter = restored,
-                Description = $"Cancellation of leave request {request.Id}",
-                OccurredAt = cancelledAt,
-            };
-            balanceAfter = restored;
+                // Legacy / non-pool-tagged deduction (approved before DF-19, or a request whose Used
+                // row was not request-linked): restore the full day count as one untagged Adjusted
+                // entry — byte-identical to the pre-DF-19 behavior.
+                running += request.TotalDays;
+                reversal = BuildRestoreRow(request, leaveYear, pool: null, trackingId: null,
+                    amount: request.TotalDays, balanceAfter: running,
+                    description: $"Cancellation of leave request {request.Id}",
+                    occurredAt: cancelledAt);
+                _dbContext.LeaveLedgerEntries.Add(reversal);
+            }
+            else
+            {
+                bool multi = usedRows.Count > 1;
+                foreach (var used in usedRows)
+                {
+                    decimal restoreAmount = -used.Amount; // used.Amount is negative -> positive restore
+                    // Each restore row is stamped +idx µs so the final row is unambiguously latest
+                    // (GetLedgerBalanceAsync reads the latest OccurredAt's BalanceAfter). idx 0 == no
+                    // offset -> a single restore row keeps cancelledAt byte-identical.
+                    var occurredAt = cancelledAt.AddTicks(PooledLeaveLedger.PoolRowTickOffset * idx);
 
-            _dbContext.LeaveLedgerEntries.Add(reversal);
+                    if (used.Pool == LeavePool.CarryForward && used.CarryForwardTrackingId is Guid trackingId)
+                    {
+                        var tracking = await _dbContext.LeaveCarryForwardTrackings
+                            .FirstOrDefaultAsync(t => t.Id == trackingId, cancellationToken);
+
+                        if (tracking is not null && tracking.Status != CarryForwardTrackingStatus.Expired)
+                        {
+                            // Un-consume: return the carried days to their bucket. ExpiryDate is
+                            // UNTOUCHED (preserve — restored carry-forward days keep their ORIGINAL
+                            // expiry). If the bucket had been fully Consumed and now has remaining
+                            // days again, re-open it so the expiry sweep can still forfeit any residue.
+                            tracking.ConsumedDays = Math.Max(0m, tracking.ConsumedDays - restoreAmount);
+                            if (tracking.Status == CarryForwardTrackingStatus.Consumed
+                                && tracking.CarriedDays - tracking.ConsumedDays - tracking.ExpiredDays > 0m)
+                                tracking.Status = CarryForwardTrackingStatus.Active;
+
+                            running += restoreAmount;
+                            reversal = BuildRestoreRow(request, leaveYear, LeavePool.CarryForward, trackingId,
+                                restoreAmount, running,
+                                $"Cancellation of leave request {request.Id} [carry-forward pool: {restoreAmount} day(s)]",
+                                occurredAt);
+                            _dbContext.LeaveLedgerEntries.Add(reversal);
+                        }
+                        else
+                        {
+                            // The bucket already TERMINALLY expired — its carried days were forfeited
+                            // and cannot be un-expired. Restore the days as general (Accrual-pool)
+                            // balance instead of resurrecting a dead expired bucket (DF-19 fallback).
+                            _logger.LogWarning(
+                                "Leave cancel {LeaveRequestId}: carry-forward bucket {TrackingId} is already Expired; " +
+                                "restoring {Days} day(s) to accrual (general) balance instead of the forfeited bucket. Tenant {TenantId}.",
+                                request.Id, trackingId, restoreAmount, _tenantContext.TenantId);
+
+                            running += restoreAmount;
+                            reversal = BuildRestoreRow(request, leaveYear, LeavePool.Accrual, trackingId: null,
+                                restoreAmount, running,
+                                $"Cancellation of leave request {request.Id} [accrual pool (expired carry-forward forfeited): {restoreAmount} day(s)]",
+                                occurredAt);
+                            _dbContext.LeaveLedgerEntries.Add(reversal);
+                        }
+                    }
+                    else
+                    {
+                        // Accrual pool (or an untagged Used row): restore to general balance.
+                        running += restoreAmount;
+                        reversal = BuildRestoreRow(request, leaveYear, used.Pool, trackingId: null,
+                            restoreAmount, running,
+                            multi
+                                ? $"Cancellation of leave request {request.Id} [accrual pool: {restoreAmount} day(s)]"
+                                : $"Cancellation of leave request {request.Id}",
+                            occurredAt);
+                        _dbContext.LeaveLedgerEntries.Add(reversal);
+                    }
+
+                    idx++;
+                }
+            }
+
+            balanceAfter = running; // == currentBalance + request.TotalDays (aggregate preserved)
         }
 
         request.Status = LeaveRequestStatus.Cancelled;
@@ -1520,6 +1577,54 @@ public sealed class LeaveRequestService : ILeaveRequestService
         return _dbContext.Employees
             .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, cancellationToken);
     }
+
+    /// <summary>
+    /// DF-19 / ISSUE-045: appends the leave-approval "Used" deduction, PERSISTING the BR-4 FIFO pool
+    /// split. Consumes the active carry-forward bucket for this leave year BEFORE accrual days,
+    /// writing up to two Used rows — each tagged with its <see cref="LeavePool"/> (and the carry row
+    /// with its bucket id) — and chaining BalanceAfter from <paramref name="currentBalance"/>. The
+    /// rows net to −<c>request.TotalDays</c> and the final row's BalanceAfter equals
+    /// <c>currentBalance − TotalDays</c> — byte-identical in aggregate to the pre-DF-19 single row.
+    /// Increments the bucket's <c>ConsumedDays</c> so cancel (restore) and the expiry job agree.
+    /// Adds rows to the change set but does NOT save; returns the FINAL row (its Id + BalanceAfter
+    /// back the approval result).
+    /// </summary>
+    private async Task<LeaveLedger> AppendPooledDeductionAsync(
+        LeaveRequest request,
+        LeaveType leaveType,
+        int leaveYear,
+        decimal currentBalance,
+        string description,
+        DateTime occurredAt,
+        CancellationToken cancellationToken)
+        => (await PooledLeaveLedger.AppendDeductionAsync(
+            _dbContext, _tenantContext.TenantId, request.EmployeeId, leaveType.Id, leaveYear,
+            request.TotalDays, request.Id, currentBalance, description, occurredAt,
+            LedgerEntryType.Used, cancellationToken)).FinalRow;
+
+    /// <summary>
+    /// DF-19 / ISSUE-045: builds a single positive "Adjusted" cancel-restore ledger row, tagged with
+    /// the pool (+ bucket) it restores. Does NOT add it to the change set — the caller does, so it can
+    /// chain BalanceAfter deterministically across a multi-pool restore.
+    /// </summary>
+    private LeaveLedger BuildRestoreRow(
+        LeaveRequest request, int leaveYear, LeavePool? pool, Guid? trackingId,
+        decimal amount, decimal balanceAfter, string description, DateTime occurredAt) => new()
+    {
+        Id = BaseEntity.NewUuidV7(),
+        TenantId = _tenantContext.TenantId,
+        EntryType = LedgerEntryType.Adjusted,
+        EmployeeId = request.EmployeeId,
+        LeaveTypeId = request.LeaveTypeId,
+        LeaveYear = leaveYear,
+        LeaveRequestId = request.Id,
+        Pool = pool,
+        CarryForwardTrackingId = trackingId,
+        Amount = amount,           // positive — restores the balance
+        BalanceAfter = balanceAfter,
+        Description = description,
+        OccurredAt = occurredAt,
+    };
 
     private async Task<decimal> GetLedgerBalanceAsync(
         Guid employeeId,
