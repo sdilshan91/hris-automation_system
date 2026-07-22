@@ -244,6 +244,60 @@ public sealed class LeaveEncashmentEligibilityTests
             .Should().NotContain(l => l.EntryType == LedgerEntryType.Encashed); // nothing drawn down.
     }
 
+    // ── DF-62 clause 2 (user-decided): encashment is allowed only when the type is Encashable; a null
+    //    carry-forward limit means "no cap" (whole balance) — but ONLY because the type is Encashable, and the
+    //    balance-gate still bounds it. These arms PIN that ruling so a future change (e.g. hard-blocking a null
+    //    limit) breaks visibly rather than silently altering money policy. ──
+
+    [Fact]
+    [Trait("TC", "TC-PAY-010-09")]
+    [Trait("DF", "DF-62")]
+    public async Task Encash_NonEncashableType_Rejected422_NotEncashable_DF62()
+    {
+        var empId = await SeedEmployee();
+        // A non-Encashable type — balance/limit are irrelevant; encashment is refused outright (the "else block"
+        // side of the ruling). This guard predates the null-limit path, so a null-limit non-Encashable type is
+        // blocked here, never reaching the whole-balance branch.
+        var typeId = await SeedLeaveType(annual: 12m, carryForwardLimit: null, encashable: false);
+        await SeedLedgerBalance(empId, typeId, balance: 10m);
+
+        var (service, _) = BuildService();
+        var result = await service.ProcessAsync(
+            new LeaveEncashmentInput(empId, typeId, EligibleDays: 3m, PayMonth, PayYear, IsTaxable: true));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("leave_type_not_encashable");
+        (await LedgerFor(empId, typeId, PayYear))
+            .Should().NotContain(l => l.EntryType == LedgerEntryType.Encashed);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-PAY-010-09")]
+    [Trait("DF", "DF-62")]
+    public async Task Encash_EncashableType_NullCarryForwardLimit_WholeBalanceEncashable_StillBalanceGated_DF62()
+    {
+        var empId = await SeedEmployee();
+        // Encashable type with NO carry-forward limit -> the forfeitable ceiling is the whole non-negative
+        // balance ("null limit = no cap", allowed BECAUSE the type is Encashable).
+        var typeId = await SeedLeaveType(annual: 12m, carryForwardLimit: null, encashable: true, maxEncashDays: null);
+        await SeedLedgerBalance(empId, typeId, balance: 10m);
+
+        // STILL balance-gated: 11 > the 10-day balance is rejected (run first — no draw-down leaves 10 intact).
+        var (rejectSvc, _) = BuildService();
+        var over = await rejectSvc.ProcessAsync(
+            new LeaveEncashmentInput(empId, typeId, EligibleDays: 11m, PayMonth, PayYear, IsTaxable: true));
+        over.IsFailure.Should().BeTrue();
+        over.StatusCode.Should().Be(422);
+
+        // The WHOLE 10-day balance IS encashable — no carry-forward limit caps the forfeitable portion.
+        var (okSvc, _) = BuildService();
+        var whole = await okSvc.ProcessAsync(
+            new LeaveEncashmentInput(empId, typeId, EligibleDays: 10m, PayMonth, PayYear, IsTaxable: true));
+        whole.IsSuccess.Should().BeTrue(whole.Error);
+        whole.Value!.EncashedDays.Should().Be(10m, "a null carry-forward limit makes the whole balance forfeitable");
+    }
+
     // ── Test 3: carry-forward interaction — balance 10, limit 5 => ceiling 5; 6 rejected, 5 accepted ──
 
     [Fact]
