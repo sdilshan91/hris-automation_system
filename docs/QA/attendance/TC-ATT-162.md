@@ -10,6 +10,8 @@ automated: 2026-07-21
 defect:
   - DF-22
   - ISSUE-309
+  - DF-63
+  - DF-63-rls
 ---
 
 # TC-ATT-162: Tenant-wide attendance sweeps (auto-clock-out + monthly-summary) resolve the attendance policy PER LOCATION, not the tenant default (DF-22 / ISSUE-309)
@@ -75,3 +77,4 @@ tenant-default employee in the same sweep read the identical tenant-default poli
   - `HRM.Tests/Integration/MonthlySummaryIntegrationTests.Generate_LocationOverride_EachEmployeeGetsItsOwnLocationPolicy_DF22`
   - `HRM.Tests/Integration/AttendanceClockOutIntegrationTests.AutoClockOutJob_ResolvesPolicyPerLocation_AcrossTwoLocationsInOneSweep_DF22`
 - The CAL-4 `AttendancePolicyResolver` index/precedence contract is separately guarded on real Postgres by `AttendancePolicyResolverTests` + `AttendanceSettingsCrudPostgresTests`.
+- **DF-63-rls (RLS-ON variant):** `RlsIsolationPostgresTests.AutoClockOutJob_OnAppRole_RlsEnabled_ResolvesOwnTenantShift_AndSweepsOnlyOwnLogs_DF63` (also `[Trait("TC","TC-ATT-162")]`) runs the real `AutoClockOutJob` DI graph on the **hrm_app** role (NOBYPASSRLS) with `Rls:Enabled=true`, proving the DF-63 shift-aware sweep is tenant-isolated by the `app.current_tenant` GUC + FORCE ROW LEVEL SECURITY (not just the EF filter): a 3-way `TotalWorkMinutes` discriminator (own-shift 479 vs fail-closed 539 vs cross-tenant-bleed 569) pins that the shift is resolved under the GUC, and a missing GUC fail-closes to 0 rows → the log never closes. Auditors: enforcer WIRED, authenticator AUTHENTIC (RLS-decisive).

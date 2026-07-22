@@ -20,6 +20,7 @@
 
 using System.Reflection;
 using FluentAssertions;
+using HRM.Api.Jobs;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -27,7 +28,9 @@ using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
+using NSubstitute;
 using Testcontainers.PostgreSql;
 
 namespace HRM.Tests.Integration;
@@ -332,7 +335,188 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
         seenB.Should().Be(EmployeesB, "a subsequent run rescopes the GUC to B");
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 10. DF-63-rls — AutoClockOutJob shift resolution + open-log sweep under RLS-ON.
+    //
+    // DF-63 (#428) shipped the shift-aware auto-clock-out and proved the shift math on real Postgres with RLS
+    // OFF (the default). The residual DF-63-rls closes the RLS-ON path: when row visibility is enforced by the
+    // app.current_tenant GUC + FORCE ROW LEVEL SECURITY (not just the EF global query filter), the job must
+    //   (a) NOT fail-closed — it resolves the tenant's shift and sweeps the tenant's open logs INSIDE the GUC the
+    //       TenantJobRunner sets (RLS increment 2c), so tenant A's open log is actually closed; and
+    //   (b) resolve ONLY the current tenant's shift — A's system-closed minutes reflect A's shift knob, never a
+    //       fail-closed fallback nor a cross-tenant shift.
+    //
+    // Setup (seeded via the BYPASSRLS owner): tenant ACTIVE has a FR-5 default shift with AutoBreakMinutes=120
+    // (→ 599 − 120 = 479) that DIFFERS from its tenant AttendanceSettings break of 60 (→ 539); tenant SUSPENDED
+    // (excluded from the job's active-tenant scan) has a default shift with a distinctive break of 30 (→ 569) so a
+    // cross-tenant shift bleed would surface a third, unique number. Each tenant has ONE OPEN log clocked in
+    // yesterday 14:00 UTC (a fixed 599-min gross span) — old enough to be auto-clock-out eligible.
+    //
+    // The job runs through RunForTenantAsync (Rls:Enabled=true), so the GUC is set. Assertions:
+    //   • ACTIVE's open log is closed as ANOMALY  ⇒ the sweep ran INSIDE the GUC (a missing GUC ⇒ fail-closed 0
+    //     rows, test #2, ⇒ nothing closed). RLS-decisive.
+    //   • ACTIVE's TotalWorkMinutes == 479 (its OWN shift's 120 break) — not 539 (tenant fallback, i.e. the shift
+    //     read fail-closed inside ResolveForEmployeeAsync) and not 569 (SUSPENDED's shift). Proves DF-63's shift
+    //     resolution read the RIGHT tenant's shift under the GUC. RLS-decisive — the core of this residual.
+    //   • SUSPENDED's open log is UNTOUCHED — no cross-tenant over-close (defense-in-depth; the EF filter also
+    //     scopes to ACTIVE here, so this rides on top of the two RLS-decisive checks above).
+    //   • The wired TenantJobRunner sets the GUC so a job body on hrm_app sees ONLY ACTIVE's rows (mirrors #9).
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    [Trait("TC", "TC-ATT-162")]
+    public async Task AutoClockOutJob_OnAppRole_RlsEnabled_ResolvesOwnTenantShift_AndSweepsOnlyOwnLogs_DF63()
+    {
+        var tenantActive = Guid.NewGuid();
+        var tenantSuspended = Guid.NewGuid();
+        var empActive = Guid.NewGuid();
+        var empSuspended = Guid.NewGuid();
+
+        // Open logs clocked in yesterday 14:00 UTC → the job closes them at yesterday 23:59:59 → a fixed 599-min
+        // gross span independent of the wall clock at run time.
+        var clockInUtc = DateTime.SpecifyKind(DateTime.UtcNow.Date.AddDays(-1).AddHours(14), DateTimeKind.Utc);
+
+        // Seed via the BYPASSRLS owner (bypasses RLS + WITH CHECK); TenantId set explicitly on every row.
+        Guid activeLogId, suspendedLogId;
+        await using (var seed = OwnerAwareDb(_ownerConnString, new MutableTenantContext()))
+        {
+            // ACTIVE tenant: default shift break 120 (→479); tenant settings break 60 (the 539 fallback).
+            SeedAutoClockOutTenant(seed, tenantActive, "acjob-active", TenantStatus.Active, empActive,
+                shiftAutoBreak: 120, settingsAutoBreak: 60);
+            activeLogId = SeedOpenAttendanceLog(seed, tenantActive, empActive, clockInUtc);
+
+            // SUSPENDED tenant: excluded from the active-tenant scan; distinctive shift break 30 (→569).
+            SeedAutoClockOutTenant(seed, tenantSuspended, "acjob-susp", TenantStatus.Suspended, empSuspended,
+                shiftAutoBreak: 30, settingsAutoBreak: 45);
+            suspendedLogId = SeedOpenAttendanceLog(seed, tenantSuspended, empSuspended, clockInUtc);
+
+            await seed.SaveChangesAsync();
+        }
+
+        // Build the job's DI graph on the APP role (RLS enforced) with Rls:Enabled=true, so the runner sets the GUC.
+        await using var provider = BuildAutoClockOutRlsJobProvider();
+        var job = new AutoClockOutJob(provider.GetRequiredService<IServiceScopeFactory>());
+        await job.RunAsync();
+
+        // Verify with the BYPASSRLS owner + IgnoreQueryFilters so the assertions can see BOTH tenants' rows (an
+        // unset GUC / cross-tenant bleed cannot hide the failure from the check).
+        await using (var verify = OwnerAwareDb(_ownerConnString, new MutableTenantContext()))
+        {
+            var activeLog = await verify.AttendanceLogs.IgnoreQueryFilters().SingleAsync(a => a.Id == activeLogId);
+            var suspendedLog = await verify.AttendanceLogs.IgnoreQueryFilters().SingleAsync(a => a.Id == suspendedLogId);
+
+            // (a) ACTIVE's log closed INSIDE the runner-set GUC — a missing GUC fail-closes to 0 rows (test #2) and
+            //     would leave it open.
+            activeLog.ClockOut.Should().NotBeNull(
+                "the sweep ran inside the runner-set GUC; without it hrm_app fail-closes to 0 rows and closes nothing");
+            activeLog.Status.Should().Be("ANOMALY");
+
+            // (b) minutes reflect ACTIVE's OWN shift (120 break → 479), not the tenant fallback (60 → 539, which
+            //     would mean ResolveForEmployeeAsync fail-closed) nor SUSPENDED's shift (30 → 569, a cross-tenant bleed).
+            activeLog.TotalWorkMinutes.Should().Be(479,
+                "ResolveForEmployeeAsync read ACTIVE's own shift under the GUC (120 break → 479); 539 == shift read fail-closed, 569 == cross-tenant bleed");
+
+            // (c) SUSPENDED's log untouched — no cross-tenant over-close.
+            suspendedLog.ClockOut.Should().BeNull(
+                "a suspended tenant is not swept and its rows are never visible to ACTIVE's GUC-scoped sweep");
+            suspendedLog.TotalWorkMinutes.Should().BeNull();
+        }
+
+        // (d) The wired TenantJobRunner sets the GUC so a job body on hrm_app sees ONLY ACTIVE's rows even with
+        //     IgnoreQueryFilters (RLS is the sole isolation) — mirrors test #9, using the job's own DI graph.
+        using (var scope = provider.CreateScope())
+        {
+            var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var seenActive = -1;
+            await runner.RunForTenantAsync(tenantActive, "acjob-active",
+                async _ => seenActive = await db.Employees.IgnoreQueryFilters().CountAsync());
+            seenActive.Should().Be(1,
+                "the runner set the GUC to ACTIVE, so RLS caps the job body to ACTIVE's single employee (0 would mean the GUC was never set → fail-closed)");
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// DF-63-rls: the job resolves ITenantJobRunner + AppDbContext + IShiftService from the per-tenant scope it
+    /// creates, so the DI graph must register the concrete TenantContext (the runner flips it via SetTenant), the
+    /// AppDbContext on the hrm_app connection (RLS enforced), the real runner + shift service, and Rls:Enabled=true
+    /// so RunForTenantAsync sets the app.current_tenant GUC around the sweep. Mirrors the InMemory job provider.
+    /// </summary>
+    private ServiceProvider BuildAutoClockOutRlsJobProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddScoped<ITenantContext, HRM.Infrastructure.Services.TenantContext>();
+        services.AddDbContext<AppDbContext>(o => o
+            .UseNpgsql(_appConnString, n => n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+            .UseSnakeCaseNamingConvention()
+            .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+        services.AddSingleton(Substitute.For<ICurrentUser>());
+        services.AddScoped<IShiftService, HRM.Infrastructure.Services.ShiftService>();
+        services.AddScoped<ITenantJobRunner, HRM.Infrastructure.Services.TenantJobRunner>();
+        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Rls:Enabled"] = "true" })
+            .Build());
+        return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Seeds a tenant with one employee (Dept + JobTitle parents), a tenant AttendanceSettings row (the shift-not-
+    /// resolved fallback break) and a FR-5 default shift carrying the discriminating explicit AutoBreakMinutes.
+    /// TenantId is stamped explicitly on every row; the owner (BYPASSRLS) is used for the write. UserId is left
+    /// null (the fk_employees_users_user_id FK is nullable), so no User parent is needed.
+    /// </summary>
+    private static void SeedAutoClockOutTenant(AppDbContext db, Guid tenantId, string subdomain,
+        TenantStatus status, Guid employeeId, int shiftAutoBreak, int settingsAutoBreak)
+    {
+        db.Tenants.Add(new Tenant { Id = tenantId, Subdomain = subdomain, Name = subdomain, Status = status });
+
+        var deptId = Guid.NewGuid();
+        var jobTitleId = Guid.NewGuid();
+        db.Departments.Add(new Department
+        {
+            Id = deptId, TenantId = tenantId, Name = "Dept", Code = "GEN", IsActive = true, IsDeleted = false,
+        });
+        db.JobTitles.Add(new JobTitle
+        {
+            Id = jobTitleId, TenantId = tenantId, TitleName = "Title", IsActive = true, IsDeleted = false,
+        });
+        db.Employees.Add(new Employee
+        {
+            Id = employeeId, TenantId = tenantId, EmployeeNo = $"{subdomain}-1",
+            FirstName = "Emp", LastName = subdomain, Email = $"{subdomain}@example.com",
+            Status = EmployeeStatus.Active, DepartmentId = deptId, JobTitleId = jobTitleId,
+        });
+
+        // Tenant AttendanceSettings — the break used ONLY if the shift is not resolved (the 539 fallback).
+        db.AttendanceSettings.Add(new AttendanceSettings
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId,
+            AutoBreakThresholdMinutes = 180, AutoBreakMinutes = settingsAutoBreak,
+        });
+
+        // FR-5 tenant-default shift carrying the discriminating explicit auto-break override (DF-56 knob).
+        db.Shifts.Add(new Shift
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = tenantId, Name = "General",
+            Type = ShiftType.Single, StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+            WorkingDays = new List<int> { 1, 2, 3, 4, 5 }, IsDefault = true, IsActive = true,
+            AutoBreakMinutes = shiftAutoBreak,
+        });
+    }
+
+    /// <summary>Seeds an OPEN attendance log (ClockOut null) at a fixed UTC instant for a deterministic span.</summary>
+    private static Guid SeedOpenAttendanceLog(AppDbContext db, Guid tenantId, Guid employeeId, DateTime clockInUtc)
+    {
+        var id = BaseEntity.NewUuidV7();
+        db.AttendanceLogs.Add(new AttendanceLog
+        {
+            Id = id, TenantId = tenantId, EmployeeId = employeeId,
+            ClockIn = clockInUtc, Source = "WEB",
+        });
+        return id;
+    }
 
     private static string WithRole(string baseConnString, string user, string password) =>
         new NpgsqlConnectionStringBuilder(baseConnString) { Username = user, Password = password }.ToString();
