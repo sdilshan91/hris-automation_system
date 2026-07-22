@@ -452,6 +452,7 @@ public sealed class LeaveCarryForwardServiceTests
     // ── DF-65: year-end sweep must not leave a superseded prior-year bucket for expiry to re-forfeit ──
 
     [Fact]
+    [Trait("TC", "TC-LV-151")] // DF-65 double-forfeiture regression (manifests through the carry-forward/expiry rules, US-LV-008)
     public async Task YearEndSweep_SupersedesPriorCarryBucket_SoExpiryDoesNotDoubleForfeit_DF65()
     {
         // A leave type whose carried days stay valid a FULL year (expiryMonths=12) — the reachable DF-65
@@ -498,6 +499,7 @@ public sealed class LeaveCarryForwardServiceTests
     /// on its own.
     /// </summary>
     [Fact]
+    [Trait("TC", "TC-LV-151")] // DF-65 double-forfeiture regression (carry-forward/expiry rules, US-LV-008)
     public async Task YearEndSweep_AllCarriedNothingForfeited_StillSupersedesPriorBucket_DF65()
     {
         // entitlement 3 + carry-in 5 = 8 unused; limit 10 -> carry 8, forfeit 0 (the (a) branch is skipped).
@@ -525,6 +527,7 @@ public sealed class LeaveCarryForwardServiceTests
     /// is bumped by the full carried draw and neither portion is later re-forfeited by expiry.
     /// </summary>
     [Fact]
+    [Trait("TC", "TC-LV-151")] // DF-65 double-forfeiture regression (carry-forward/expiry rules, US-LV-008)
     public async Task YearEndSweep_EncashableForfeit_ThreadsTwoPooledDraws_NoDoubleForfeit_DF65()
     {
         // entitlement 3 + carry-in 5 = 8 unused; limit 5 -> carry 5, forfeit 3. Encashable, cap 1 -> encash 1,

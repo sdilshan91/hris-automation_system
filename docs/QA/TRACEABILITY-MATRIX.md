@@ -771,7 +771,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | Cross-cutting (LV-006) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-021, TC-LV-ISO-022, TC-LV-ISO-023, TC-LV-ISO-024 | 4 | -- |
 | US-LV-007 | Holiday Calendar Management Per Tenant | Must Have | TC-LV-129, TC-LV-130, TC-LV-131, TC-LV-132, TC-LV-133, TC-LV-134, TC-LV-135, TC-LV-136, TC-LV-137, TC-LV-138, TC-LV-139, TC-LV-140, TC-LV-141, TC-LV-142, TC-LV-143, TC-LV-144, TC-LV-145, TC-LV-146, TC-LV-147, TC-LV-148 | 20 | 4/4 AC covered |
 | Cross-cutting (LV-007) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-025, TC-LV-ISO-026, TC-LV-ISO-027, TC-LV-ISO-028 | 4 | -- |
-| US-LV-008 | Leave Carry-Forward and Expiry Rules | Should Have | TC-LV-149, TC-LV-150, TC-LV-151, TC-LV-152, TC-LV-153, TC-LV-154, TC-LV-155, TC-LV-156, TC-LV-157, TC-LV-158, TC-LV-159, TC-LV-160, TC-LV-161, TC-LV-162, TC-LV-163, TC-LV-164, TC-LV-165, TC-LV-166, TC-LV-167, TC-LV-168 | 20 | 5/5 AC covered |
+| US-LV-008 | Leave Carry-Forward and Expiry Rules | Should Have | TC-LV-149, TC-LV-150, TC-LV-151, TC-LV-152, TC-LV-153, TC-LV-154, TC-LV-155, TC-LV-156, TC-LV-157, TC-LV-158, TC-LV-159, TC-LV-160, TC-LV-161, TC-LV-162, TC-LV-163, TC-LV-164, TC-LV-165, TC-LV-166, TC-LV-167, TC-LV-168, TC-LV-269 | 21 | 5/5 AC covered |
 | Cross-cutting (LV-008) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-029, TC-LV-ISO-030, TC-LV-ISO-031, TC-LV-ISO-032 | 4 | -- |
 | US-LV-009 | Team Leave Calendar View | Should Have | TC-LV-169, TC-LV-170, TC-LV-171, TC-LV-172, TC-LV-173, TC-LV-174, TC-LV-175, TC-LV-176, TC-LV-177, TC-LV-178, TC-LV-179, TC-LV-180, TC-LV-181, TC-LV-182, TC-LV-183, TC-LV-184, TC-LV-185, TC-LV-186, TC-LV-187, TC-LV-188 | 20 | 4/4 AC covered |
 | Cross-cutting (LV-009) | Multi-tenant isolation (mandatory) | Critical | TC-LV-ISO-033, TC-LV-ISO-034, TC-LV-ISO-035, TC-LV-ISO-036 | 4 | -- |
@@ -982,6 +982,7 @@ n### Coverage Summary (Core HR -- US-CHR-010)
 | TC-LV-166 | Multiple leave types each carry-forward per their own config | Functional | High | US-LV-008 | FR-1, FR-2 |
 | TC-LV-167 | Leave-year boundary -- fiscal-year (CONDITIONAL; calendar-year verified) | Functional | High | US-LV-008 | BR-3 (fiscal-year CONDITIONAL on tenant config) |
 | TC-LV-168 | Preview filters + dashboard line items (carry-forward/expired, expiring-soon) | Functional | High | US-LV-008 | AC-5, Section 8 (US-LV-006 integration) |
+| TC-LV-269 | Encashment-gate vs year-end forfeiture ceiling parity — aligned agree / divergence == the accrual-vs-entitlement gap (DF-62-parity, accepted edge) | Functional | Medium | US-LV-008 | BR-1 (forfeit math); related US-PAY-010 encashment gate |
 | TC-LV-ISO-029 | Carry-forward data in Tenant A invisible to Tenant B | Security | Critical | US-LV-008 | NFR-2 |
 | TC-LV-ISO-030 | Year-end job processes each tenant in isolation (no cross-tenant carry-forward) | Security | Critical | US-LV-008 | NFR-2 |
 | TC-LV-ISO-031 | EF global query filters block cross-tenant ledger/balance access | Security | Critical | US-LV-008 | NFR-2, Section 7 |
