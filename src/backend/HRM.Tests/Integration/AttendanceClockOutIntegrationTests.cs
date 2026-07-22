@@ -358,6 +358,142 @@ public sealed class AttendanceClockOutIntegrationTests
         orphanLog.Status.Should().Be("ANOMALY");
     }
 
+    /// <summary>
+    /// DF-63: the auto-clock-out job must apply DF-56's explicit per-shift work-minute knobs to the minutes it
+    /// stores for a system-closed session — not just the tenant/location policy. The employee resolves (via the
+    /// FR-5 tenant-default shift) to a shift whose AutoBreakMinutes override (120) differs from the tenant policy
+    /// (60); with a fixed 599-min gross span the auto-closed TotalWorkMinutes must reflect the SHIFT's break
+    /// (599 - 120 = 479), NOT the tenant's (599 - 60 = 539). Before DF-63 the job passed no shift and stored 539.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-162")]
+    public async Task AutoClockOutJob_AppliesResolvedShiftKnobs_ToSystemClosedMinutes_DF63()
+    {
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using (var db = new AppDbContext(options, ctx))
+        {
+            // Tenant default policy: auto-break 60 min beyond a 180-min threshold (the pre-DF-63 result).
+            db.AttendanceSettings.Add(new AttendanceSettings
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                AutoBreakThresholdMinutes = 180, AutoBreakMinutes = 60,
+            });
+            // FR-5 tenant-default shift carrying an EXPLICIT larger auto-break (120) — the discriminating knob.
+            // Its AutoBreakThresholdMinutes is left null, so the threshold still falls back to the tenant's 180.
+            db.Shifts.Add(new Shift
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, Name = "General",
+                Type = ShiftType.Single, StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+                WorkingDays = new List<int> { 1, 2, 3, 4, 5 }, IsDefault = true, IsActive = true,
+                AutoBreakMinutes = 120,
+            });
+            db.SaveChanges();
+        }
+
+        // Open log clocked in yesterday 14:00 UTC → closed at yesterday 23:59:59 → fixed 599-min gross span.
+        var clockInUtc = DateTime.UtcNow.Date.AddDays(-1).AddHours(14);
+        var logId = SeedOpenLogAt(_tenantA, _employeeA, clockInUtc);
+
+        SeedTenantRow(_tenantA);
+
+        var provider = BuildJobProvider();
+        var job = new AutoClockOutJob(provider.GetRequiredService<IServiceScopeFactory>());
+        await job.RunAsync();
+
+        var verifyCtx = new MutableTenantContext { TenantId = _tenantA };
+        using var verify = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options, verifyCtx);
+
+        var log = verify.AttendanceLogs.Single(a => a.Id == logId);
+        log.Status.Should().Be("ANOMALY");
+        log.TotalWorkMinutes.Should().Be(
+            479, "the auto-close applied the resolved shift's 120-min auto-break, not the tenant's 60 (which would give 539)");
+    }
+
+    /// <summary>
+    /// DF-63 (FR-7 assignment path): proves the auto-close resolves the RIGHT shift PER EMPLOYEE in one sweep —
+    /// not just the tenant-default fallback. Employee X carries an explicit EmployeeShift assignment to a shift
+    /// with AutoBreakMinutes=90 (→ 599 - 90 = 509); employee Y (no assignment) falls to the FR-5 default shift
+    /// with AutoBreakMinutes=120 (→ 479). The tenant policy (60 → 539) is a third distinct value, so each of the
+    /// three resolution outcomes maps to a unique number: if the assignment join broke, X would drop to the
+    /// default (479) or tenant (539) and the 509 assertion reds.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-162")]
+    public async Task AutoClockOutJob_ResolvesAssignedShiftPerEmployee_AcrossOneSweep_DF63()
+    {
+        var assignedEmp = Guid.NewGuid();
+        var assignedShiftId = BaseEntity.NewUuidV7();
+
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using (var db = new AppDbContext(options, ctx))
+        {
+            db.Employees.Add(new Employee
+            {
+                Id = assignedEmp, TenantId = _tenantA, UserId = Guid.NewGuid(),
+                EmployeeNo = "ASG-1", FirstName = "Xavier", LastName = "X", Email = "x@x.com",
+                DateOfJoining = new DateTime(2020, 1, 1),
+                DepartmentId = Guid.NewGuid(), JobTitleId = Guid.NewGuid(),
+                EmploymentType = EmploymentType.FullTime, Status = EmployeeStatus.Active, IsActive = true,
+            });
+            // Tenant policy (the neither-shift fallback): break 60 → 539.
+            db.AttendanceSettings.Add(new AttendanceSettings
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                AutoBreakThresholdMinutes = 180, AutoBreakMinutes = 60,
+            });
+            // FR-5 default shift (employee Y): break 120 → 479.
+            db.Shifts.Add(new Shift
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, Name = "General",
+                Type = ShiftType.Single, StartTime = new TimeOnly(9, 0), EndTime = new TimeOnly(17, 0),
+                WorkingDays = new List<int> { 1, 2, 3, 4, 5 }, IsDefault = true, IsActive = true,
+                AutoBreakMinutes = 120,
+            });
+            // Non-default shift assigned to employee X: break 90 → 509 (the discriminating knob).
+            db.Shifts.Add(new Shift
+            {
+                Id = assignedShiftId, TenantId = _tenantA, Name = "Assigned",
+                Type = ShiftType.Single, StartTime = new TimeOnly(8, 0), EndTime = new TimeOnly(16, 0),
+                WorkingDays = new List<int> { 1, 2, 3, 4, 5 }, IsDefault = false, IsActive = true,
+                AutoBreakMinutes = 90,
+            });
+            db.EmployeeShifts.Add(new EmployeeShift
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA,
+                EmployeeId = assignedEmp, ShiftId = assignedShiftId,
+                EffectiveFrom = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-30)), EffectiveTo = null,
+            });
+            db.SaveChanges();
+        }
+
+        var clockInUtc = DateTime.UtcNow.Date.AddDays(-1).AddHours(14);   // fixed 599-min gross span
+        var assignedLogId = SeedOpenLogAt(_tenantA, assignedEmp, clockInUtc);
+        var defaultLogId = SeedOpenLogAt(_tenantA, _employeeA, clockInUtc);
+
+        SeedTenantRow(_tenantA);
+
+        var provider = BuildJobProvider();
+        var job = new AutoClockOutJob(provider.GetRequiredService<IServiceScopeFactory>());
+        await job.RunAsync();
+
+        var verifyCtx = new MutableTenantContext { TenantId = _tenantA };
+        using var verify = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options, verifyCtx);
+
+        var assignedLog = verify.AttendanceLogs.Single(a => a.Id == assignedLogId);
+        var defaultLog = verify.AttendanceLogs.Single(a => a.Id == defaultLogId);
+
+        assignedLog.Status.Should().Be("ANOMALY");
+        defaultLog.Status.Should().Be("ANOMALY");
+        assignedLog.TotalWorkMinutes.Should().Be(
+            509, "employee X's calc used the ASSIGNED shift's 90-min break (not the 120 default → 479, nor tenant 60 → 539)");
+        defaultLog.TotalWorkMinutes.Should().Be(
+            479, "employee Y has no assignment → the FR-5 default shift's 120-min break");
+    }
+
     /// <summary>Seeds an open clock-in for an employee at a fixed UTC instant (deterministic gross span).</summary>
     private Guid SeedOpenLogAt(Guid tenantId, Guid employeeId, DateTime clockInUtc)
     {
@@ -409,6 +545,10 @@ public sealed class AttendanceClockOutIntegrationTests
         services.AddLogging();
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        // DF-63: the job now resolves IShiftService to apply per-shift work-minute knobs to the auto-closed
+        // minutes. ShiftService needs ICurrentUser; its resolution path is read-only so a bare substitute suffices.
+        services.AddSingleton(Substitute.For<ICurrentUser>());
+        services.AddScoped<IShiftService, ShiftService>();
         // RLS increment 2c: AutoClockOutJob wraps its per-tenant body in ITenantJobRunner — register the real
         // runner + an empty IConfiguration (Rls:Enabled defaults false → runs the work directly, no tx/GUC).
         services.AddScoped<ITenantJobRunner, TenantJobRunner>();
