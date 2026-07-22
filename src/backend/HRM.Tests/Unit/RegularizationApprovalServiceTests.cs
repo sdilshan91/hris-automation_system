@@ -61,6 +61,42 @@ public sealed class RegularizationApprovalServiceTests
     private ShiftService ShiftSvc(AppDbContext db)
         => new(db, _tenantContext, _currentUser, Substitute.For<ILogger<ShiftService>>());
 
+    /// <summary>DF-64: a service wired with a REAL OvertimeService sharing the SAME db context.</summary>
+    private RegularizationApprovalService ServiceWithOvertime(AppDbContext db)
+        => new(db, _tenantContext, _currentUser, ShiftSvc(db), _logger,
+            overtimeService: new OvertimeService(db, _tenantContext, _currentUser,
+                Substitute.For<ILogger<OvertimeService>>()));
+
+    /// <summary>DF-64: seeds a tenant AttendanceSettings row with deterministic overtime knobs.</summary>
+    private void SeedOvertimeSettings()
+    {
+        using var db = Db();
+        db.AttendanceSettings.Add(new AttendanceSettings
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = _tenantId,
+            StandardWorkMinutes = 480, OvertimeMinimumThresholdMinutes = 0, MaxDailyOvertimeMinutes = 600,
+            MaxWeeklyOvertimeMinutes = 3000, AutoBreakThresholdMinutes = 360, AutoBreakMinutes = 60,
+            RequireOvertimePreApproval = false,
+            WeekdayOvertimeMultiplier = 1.5m, WeekendOvertimeMultiplier = 2m, HolidayOvertimeMultiplier = 2.5m,
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>DF-64: seeds an auto-closed (ANOMALY) attendance log with NO overtime record.</summary>
+    private Guid SeedAutoClosedLog(Guid employeeId, DateOnly date, int inHour, int outHour)
+    {
+        using var db = Db();
+        var id = BaseEntity.NewUuidV7();
+        db.AttendanceLogs.Add(new AttendanceLog
+        {
+            Id = id, TenantId = _tenantId, EmployeeId = employeeId,
+            ClockIn = At(date, inHour), ClockOut = At(date, outHour),
+            Status = "ANOMALY", Source = "SYSTEM",
+        });
+        db.SaveChanges();
+        return id;
+    }
+
     private void SeedOrg()
     {
         using var db = Db();
@@ -453,5 +489,126 @@ public sealed class RegularizationApprovalServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
+    }
+
+    // ── DF-64: a regularized OT day must produce a payable OvertimeRecord ──
+
+    /// <summary>DF-64: seeds an existing auto-detected OvertimeRecord for a log (a prior clock-out's record).</summary>
+    private Guid SeedAutoDetectedOtRecord(
+        Guid logId, Guid employeeId, DateOnly date, int minutes,
+        string status = OvertimeStatus.Pending, bool payrollReady = false)
+    {
+        using var db = Db();
+        var id = BaseEntity.NewUuidV7();
+        db.OvertimeRecords.Add(new OvertimeRecord
+        {
+            Id = id, TenantId = _tenantId, EmployeeId = employeeId,
+            AttendanceLogId = logId, Date = date, OvertimeMinutes = minutes,
+            ApprovedMinutes = status == OvertimeStatus.Approved ? minutes : null, Multiplier = 1.5m,
+            Type = OvertimeType.AutoDetected, Status = status, IsPayrollReady = payrollReady,
+            Reason = "Auto-detected overtime on clock-out.", CalculationBasis = "seed",
+        });
+        db.SaveChanges();
+        return id;
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-006-64")]
+    public async Task Approve_RegularizedOtDay_CreatesPayableOvertimeRecord_DF64()
+    {
+        var date = Yesterday;
+        SeedOvertimeSettings();
+        // An auto-closed ANOMALY day (8:00 -> system 23:00) with NO overtime record — the DF-64 gap.
+        var logId = SeedAutoClosedLog(_reportId, date, inHour: 8, outHour: 23);
+        // The employee regularizes the clock-out to 20:00 -> 8-20 = 720 gross, 60 break -> 660 net -> OT 180.
+        var regId = SeedPending(_reportId, RegularizationType.MissedClockOut, date,
+            requestedOut: At(date, 20), linkedLogId: logId);
+
+        using (var db = Db())
+            (await ServiceWithOvertime(db).ApproveAsync(regId, "Approved OT")).IsSuccess.Should().BeTrue();
+
+        using var verify = Db();
+        var ot = verify.OvertimeRecords.Should().ContainSingle().Subject;
+        ot.AttendanceLogId.Should().Be(logId);
+        ot.OvertimeMinutes.Should().Be(180, "660 net - 480 standard = 180 OT minutes");
+        ot.Type.Should().Be(OvertimeType.AutoDetected);
+        ot.Status.Should().Be(OvertimeStatus.Pending, "the record enters the NORMAL OT approval flow, not auto-approved");
+        ot.IsPayrollReady.Should().BeFalse("Pending OT is not payroll-ready until separately approved");
+
+        verify.AttendanceLogs.Single(l => l.Id == logId).OvertimeMinutes
+            .Should().Be(180, "the log and the payable record agree");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-006-64")]
+    public async Task Approve_RegularizationEliminatesOvertime_RemovesStaleAutoDetectedRecord_DF64()
+    {
+        var date = Yesterday;
+        SeedOvertimeSettings();
+        // A day that previously had OT (8-20) with an auto-detected record from a prior clock-out...
+        var logId = SeedAutoClosedLog(_reportId, date, inHour: 8, outHour: 20);
+        SeedAutoDetectedOtRecord(logId, _reportId, date, minutes: 180);
+        // ...is regularized DOWN to a short day (8-15 = 420 gross, 60 break -> 360 net < 480 standard -> no OT).
+        var regId = SeedPending(_reportId, RegularizationType.MissedClockOut, date,
+            requestedOut: At(date, 15), linkedLogId: logId);
+
+        using (var db = Db())
+            (await ServiceWithOvertime(db).ApproveAsync(regId, "Corrected down")).IsSuccess.Should().BeTrue();
+
+        using var verify = Db();
+        verify.OvertimeRecords.Where(o => o.AttendanceLogId == logId && o.Type == OvertimeType.AutoDetected)
+            .Should().BeEmpty("the correction eliminated the overtime, so the stale auto-detected record is removed");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-006-64")]
+    public async Task Approve_RegularizationChangesOvertime_ReplacesRecord_NoDuplicate_DF64()
+    {
+        var date = Yesterday;
+        SeedOvertimeSettings();
+        // A day with an EXISTING auto-detected OT record of 120 (a prior clock-out's value)...
+        var logId = SeedAutoClosedLog(_reportId, date, inHour: 8, outHour: 23);
+        SeedAutoDetectedOtRecord(logId, _reportId, date, minutes: 120);
+        // ...is regularized to 8-20 -> 660 net -> OT 180. The stale 120 must be REPLACED, not duplicated.
+        var regId = SeedPending(_reportId, RegularizationType.MissedClockOut, date,
+            requestedOut: At(date, 20), linkedLogId: logId);
+
+        using (var db = Db())
+            (await ServiceWithOvertime(db).ApproveAsync(regId, "Corrected up")).IsSuccess.Should().BeTrue();
+
+        using var verify = Db();
+        var ot = verify.OvertimeRecords
+            .Where(o => o.AttendanceLogId == logId && o.Type == OvertimeType.AutoDetected)
+            .Should().ContainSingle("the prior auto-detected record is replaced, not duplicated").Subject;
+        ot.OvertimeMinutes.Should().Be(180, "the record carries the RECOMPUTED overtime, not the stale 120");
+        ot.Status.Should().Be(OvertimeStatus.Pending, "a changed OT record re-enters the approval flow");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-006-64")]
+    public async Task Approve_RegularizationOnDayWithApprovedOt_PreservesApprovedRecord_DF64()
+    {
+        var date = Yesterday;
+        SeedOvertimeSettings();
+        var logId = SeedAutoClosedLog(_reportId, date, inHour: 8, outHour: 20);
+        // A manager already APPROVED this day's OT (payroll-ready). Deleting it would drop paid OT AND
+        // cascade-delete its immutable OvertimeApprovalHistory — the guard must preserve it.
+        var approvedId = SeedAutoDetectedOtRecord(logId, _reportId, date, minutes: 120,
+            status: OvertimeStatus.Approved, payrollReady: true);
+        // A LATER same-day regularization is approved (to 22:00 -> would recompute to more OT).
+        var regId = SeedPending(_reportId, RegularizationType.MissedClockOut, date,
+            requestedOut: At(date, 22), linkedLogId: logId);
+
+        using (var db = Db())
+            (await ServiceWithOvertime(db).ApproveAsync(regId, "Late correction")).IsSuccess.Should().BeTrue();
+
+        using var verify = Db();
+        var records = verify.OvertimeRecords.Where(o => o.AttendanceLogId == logId).ToList();
+        records.Should().ContainSingle("the approved record is preserved, not replaced by a new pending one");
+        var ot = records.Single();
+        ot.Id.Should().Be(approvedId, "the SAME approved record survives the later time correction");
+        ot.Status.Should().Be(OvertimeStatus.Approved, "an approved OT decision is not silently re-opened");
+        ot.OvertimeMinutes.Should().Be(120, "the approved value is untouched");
+        ot.IsPayrollReady.Should().BeTrue("the payroll-ready approved OT stands");
     }
 }
