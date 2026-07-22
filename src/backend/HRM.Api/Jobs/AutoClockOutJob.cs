@@ -74,6 +74,10 @@ public sealed class AutoClockOutJob
 
         var runner = scope.ServiceProvider.GetRequiredService<ITenantJobRunner>();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // DF-63: resolve the employee's assigned shift so DF-56's explicit per-shift work-minute knobs apply to
+        // the auto-closed minutes too (they governed the manual clock-out path but not this backstop). Shares the
+        // scope's tenant-scoped AppDbContext, so it runs inside the same tenant context/GUC the runner sets below.
+        var shiftService = scope.ServiceProvider.GetRequiredService<IShiftService>();
 
         // RLS increment 2c: run the per-tenant body via the shared runner so it sets the tenant context (and,
         // gated on Rls:Enabled, the app.current_tenant GUC) — keeping the scan inside the RLS backstop.
@@ -86,6 +90,26 @@ public sealed class AutoClockOutJob
         // Read-only: LoadAllAsync never creates a settings row as a side effect (this is the safety-net job).
         // A location with no override (or a tenant with no rows) resolves to null → the code-default fallback.
         var policyByLocation = await AttendancePolicyResolver.LoadAllAsync(dbContext, CancellationToken.None);
+
+        // DF-63: memoize the resolved shift per (employee, clock-in date) so a page with repeat employees doesn't
+        // re-run the assignment→rotation resolution. A null value is cached too (no shift → tenant/code default).
+        var shiftByEmployeeDate = new Dictionary<(Guid EmployeeId, DateOnly Date), Shift?>();
+
+        async Task<Shift?> ResolveShiftAsync(Guid employeeId, DateOnly date)
+        {
+            var key = (employeeId, date);
+            if (shiftByEmployeeDate.TryGetValue(key, out var cached))
+                return cached;
+
+            Shift? shift = null;
+            var resolved = await shiftService.ResolveForEmployeeAsync(employeeId, date, CancellationToken.None);
+            if (!resolved.IsFailure && resolved.Value is { } dto)
+                shift = await dbContext.Shifts.AsNoTracking()
+                    .FirstOrDefaultAsync(s => s.Id == dto.Id);
+
+            shiftByEmployeeDate[key] = shift;
+            return shift;
+        }
 
         while (true)
         {
@@ -122,8 +146,13 @@ public sealed class AutoClockOutJob
                 var settings = AttendancePolicyResolver.For(policyByLocation, locationId)
                                ?? new AttendanceSettings { TenantId = tenantId };
 
+                // DF-63: resolve against the clock-in's UTC date — the same UTC-day basis this job already uses for
+                // the close boundary above (tenant-timezone infra is still deferred; revisit both together when it
+                // lands). A null shift / all-null-knob shift → byte-identical to the pre-DF-63 tenant-policy math.
+                var shift = await ResolveShiftAsync(log.EmployeeId, DateOnly.FromDateTime(log.ClockIn));
+
                 var calc = AttendanceCalculator.Calculate(
-                    log.ClockIn, systemClockOut, settings, isSystemClosed: true);
+                    log.ClockIn, systemClockOut, settings, isSystemClosed: true, shift: shift);
 
                 log.ClockOut = systemClockOut;
                 log.ClockOutIp = null;
