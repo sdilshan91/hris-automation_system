@@ -308,20 +308,14 @@ public sealed class LopService : ILopService
                         };
                         _dbContext.LeaveRequests.Add(leaveReq);
 
-                        _dbContext.LeaveLedgerEntries.Add(new LeaveLedger
-                        {
-                            Id = BaseEntity.NewUuidV7(),
-                            TenantId = _tenantContext.TenantId,
-                            EntryType = LedgerEntryType.Used,
-                            EmployeeId = employee.Id,
-                            LeaveTypeId = request.LeaveTypeId,
-                            LeaveYear = leaveYear,
-                            LeaveRequestId = leaveReq.Id,
-                            Amount = -1m,
-                            BalanceAfter = balance - 1m,
-                            Description = $"Compulsory leave ({leaveType.Name}) on {date:yyyy-MM-dd}",
-                            OccurredAt = DateTime.UtcNow,
-                        });
+                        // DF-19 / ISSUE-045: draw the balance down FIFO — carry-forward bucket first —
+                        // and bump the bucket's ConsumedDays so the year-end expiry job accounts for the
+                        // compulsory day instead of over-forfeiting it. Shared split; nets to −1.
+                        await PooledLeaveLedger.AppendDeductionAsync(
+                            _dbContext, _tenantContext.TenantId, employee.Id, request.LeaveTypeId, leaveYear,
+                            totalDays: 1m, leaveReq.Id, balance,
+                            $"Compulsory leave ({leaveType.Name}) on {date:yyyy-MM-dd}",
+                            DateTime.UtcNow, LedgerEntryType.Used, cancellationToken);
                     }
                     else
                     {
@@ -506,22 +500,15 @@ public sealed class LopService : ILopService
             lopRequest.Status = LeaveRequestStatus.Approved;
             lopRequest.Reason = request.Reason ?? lopRequest.Reason;
 
-            var ledger = new LeaveLedger
-            {
-                Id = BaseEntity.NewUuidV7(),
-                TenantId = _tenantContext.TenantId,
-                EntryType = LedgerEntryType.Used,
-                EmployeeId = lopRequest.EmployeeId,
-                LeaveTypeId = targetType.Id,
-                LeaveYear = leaveYear,
-                LeaveRequestId = lopRequest.Id,
-                Amount = -lopRequest.TotalDays,
-                BalanceAfter = projected,
-                Description = $"LOP converted to {targetType.Name}: {lopRequest.TotalDays} day(s)",
-                OccurredAt = DateTime.UtcNow,
-            };
-            _dbContext.LeaveLedgerEntries.Add(ledger);
-            ledgerEntryId = ledger.Id;
+            // DF-19 / ISSUE-045: draw the balance down FIFO — carry-forward bucket first — and bump the
+            // bucket's ConsumedDays so the year-end expiry job accounts for the converted days instead of
+            // over-forfeiting them. Shared split; nets to −TotalDays, final BalanceAfter == projected.
+            var deduction = await PooledLeaveLedger.AppendDeductionAsync(
+                _dbContext, _tenantContext.TenantId, lopRequest.EmployeeId, targetType.Id, leaveYear,
+                lopRequest.TotalDays, lopRequest.Id, balance,
+                $"LOP converted to {targetType.Name}: {lopRequest.TotalDays} day(s)",
+                DateTime.UtcNow, LedgerEntryType.Used, cancellationToken);
+            ledgerEntryId = deduction.FinalRow.Id;
         }
 
         // NFR-4: audit row for the override.

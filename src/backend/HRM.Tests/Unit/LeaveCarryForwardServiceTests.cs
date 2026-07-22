@@ -146,6 +146,21 @@ public sealed class LeaveCarryForwardServiceTests
         db.SaveChanges();
     }
 
+    /// <summary>
+    /// DF-19 / ISSUE-045: records carry-forward-pool consumption on the tracking bucket the way the
+    /// leave-approval deduction now does — by incrementing the PERSISTED ConsumedDays counter (which
+    /// the expiry job reads), rather than only writing a new-year "Used" ledger row (which expiry no
+    /// longer derives from). Call after ProcessYearEnd to represent days drawn from the carried pool.
+    /// </summary>
+    private async Task ConsumeCarried(Guid leaveTypeId, decimal days)
+    {
+        using var db = CreateDbContext();
+        var tracking = await db.LeaveCarryForwardTrackings
+            .SingleAsync(t => t.EmployeeId == _employeeId && t.LeaveTypeId == leaveTypeId);
+        tracking.ConsumedDays += days;
+        await db.SaveChangesAsync();
+    }
+
     private async Task<List<LeaveLedger>> LedgerFor(Guid leaveTypeId, int year)
     {
         using var db = CreateDbContext();
@@ -285,8 +300,12 @@ public sealed class LeaveCarryForwardServiceTests
         SeedUsed(typeId, FromYear, 6m); // 8 unused -> carry 5
         await CreateService().ProcessYearEndAsync(FromYear);
 
-        // In the new year the employee uses 3 days (FIFO against the 5 carried) -> 2 remain.
+        // In the new year the employee uses 3 days FIFO against the 5 carried -> 2 remain. DF-19:
+        // that consumption is now the PERSISTED ConsumedDays counter (what the deduction path writes
+        // and what expiry reads), not a re-derived new-year Used ledger sum. The Used ledger row is
+        // also written for realism, but expiry keys off ConsumedDays.
         SeedUsed(typeId, ToYear, 3m);
+        await ConsumeCarried(typeId, 3m);
 
         // Expiry date is 2027-04-01; run the sweep after it.
         var result = await CreateService().ProcessExpiryAsync(new DateOnly(2027, 5, 1));
@@ -339,8 +358,10 @@ public sealed class LeaveCarryForwardServiceTests
         SeedUsed(typeId, FromYear, 6m); // carry 5
         await CreateService().ProcessYearEndAsync(FromYear);
 
-        // Use 5+ days in the new year -> all carried consumed, nothing to expire.
+        // Use 5 days in the new year -> all carried consumed, nothing to expire. DF-19: expressed as
+        // the PERSISTED ConsumedDays counter that the deduction path maintains and expiry reads.
         SeedUsed(typeId, ToYear, 5m);
+        await ConsumeCarried(typeId, 5m);
 
         var result = await CreateService().ProcessExpiryAsync(new DateOnly(2027, 5, 1));
 

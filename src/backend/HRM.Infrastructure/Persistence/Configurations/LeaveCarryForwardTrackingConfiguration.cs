@@ -36,6 +36,13 @@ public sealed class LeaveCarryForwardTrackingConfiguration
             .HasColumnType("numeric(7,2)")
             .IsRequired();
 
+        // DF-19 / ISSUE-045: PERSISTED FIFO consumption counter (mirrors CarriedDays precision).
+        // NOT NULL default 0; backfilled for existing rows in the LeavePoolAllocation migration.
+        builder.Property(t => t.ConsumedDays)
+            .HasColumnType("numeric(7,2)")
+            .HasDefaultValue(0m)
+            .IsRequired();
+
         builder.Property(t => t.ExpiryDate)
             .HasColumnType("date");
 
