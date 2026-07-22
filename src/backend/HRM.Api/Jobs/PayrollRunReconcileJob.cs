@@ -22,9 +22,25 @@ namespace HRM.Api.Jobs;
 /// <c>InitiatedAt</c> is older than <see cref="StaleThreshold"/> — comfortably past the sub-second fast-path
 /// window, where a still-Queued run almost certainly lost its enqueue and has no in-flight job to race.
 /// <c>ProcessAsync</c> itself refuses terminal states and only produces ReviewPending slips (it never
-/// disburses), so a re-enqueue cannot double-pay. The dropped-Rerun case (a stale ReviewPending run) is NOT
-/// auto-healed — it is status-indistinguishable from a correctly-processed run and is a manual, re-triggerable
-/// HR action with no lockout.</para>
+/// disburses), so a re-enqueue cannot double-pay.</para>
+///
+/// <para><b>DF-61 — the dropped-Rerun case IS now auto-healed.</b> A <c>RerunAsync</c> of a ReviewPending run
+/// leaves it in ReviewPending and best-effort enqueues a reprocess; a lost enqueue previously stranded it with
+/// the OLD slips, undetectably (status-indistinguishable from a correctly-processed run). It now stamps
+/// <c>ReprocessRequestedAt</c> (cleared by <c>ProcessAsync</c> on completion), so this sweep can re-enqueue
+/// exactly the stranded reruns: a correctly-processed run has a NULL marker (skipped), and a reprocess a worker
+/// has ALREADY STARTED is in <c>Processing</c> not <c>ReviewPending</c> (skipped). This closes the
+/// status-indistinguishability gap that previously made the Rerun case un-healable. The marker is reset to now
+/// on each re-enqueue to bound re-fires to once per threshold.
+///
+/// <para><b>Residual (unchanged, inherited from the Queued path).</b> Like the DF-58 Queued sweep, this relies
+/// on the same 10-min "a worker starts within the threshold" bet, NOT a hard interlock: a rerun job validly
+/// enqueued by <c>RerunAsync</c> but still QUEUED (not yet <c>Processing</c>) past <see cref="StaleThreshold"/>
+/// would be re-enqueued a second time. <c>ProcessRunJob</c> has no <c>DisableConcurrentExecution</c> and
+/// <c>PayrollRun</c> no concurrency token, so two concurrent <c>ProcessAsync</c> could duplicate slips (never
+/// double-PAY — <c>ProcessAsync</c> replace-cleans and only produces ReviewPending slips). DF-61 neither
+/// introduces nor fixes this shared concurrency window — closing it (a runId-scoped
+/// <c>DisableConcurrentExecution</c> or an xmin token) is a separate decision tracked as DF-61-conc.</para>
 /// </summary>
 public sealed class PayrollRunReconcileJob
 {
@@ -89,6 +105,31 @@ public sealed class PayrollRunReconcileJob
                             "(InitiatedAt older than {ThresholdMinutes}m — the post-commit enqueue was likely lost)",
                             runId, tenantId, StaleThreshold.TotalMinutes);
                     }
+
+                    // DF-61: also re-enqueue a ReviewPending run whose reprocess was REQUESTED (RerunAsync stamped
+                    // ReprocessRequestedAt) but whose enqueue was dropped. The marker makes this distinguishable
+                    // where the raw status could not: a correctly-processed run has a NULL marker (skipped), and a
+                    // reprocess a worker has ALREADY STARTED is in Processing, not ReviewPending (skipped). Reset
+                    // the marker to now on re-enqueue so the next sweep won't re-fire for another StaleThreshold,
+                    // bounding re-enqueues while the reprocess job gets a chance to run + clear it. (Same 10-min
+                    // "worker starts in time" bet as the Queued path above — not a hard interlock; see class doc.)
+                    var staleReruns = await dbContext.PayrollRuns
+                        .Where(r => r.Status == PayrollRunStatus.ReviewPending
+                                    && r.ReprocessRequestedAt != null
+                                    && r.ReprocessRequestedAt < cutoff)
+                        .ToListAsync(ct);
+
+                    foreach (var run in staleReruns)
+                    {
+                        scheduler.Enqueue(tenantId, subdomain, run.Id);
+                        run.ReprocessRequestedAt = _timeProvider.GetUtcNow().UtcDateTime;
+                        Log.Warning(
+                            "PayrollRunReconcileJob: re-enqueued stale reprocess-requested run {RunId} for tenant " +
+                            "{TenantId} (ReprocessRequestedAt older than {ThresholdMinutes}m — the RerunAsync enqueue was likely lost)",
+                            run.Id, tenantId, StaleThreshold.TotalMinutes);
+                    }
+                    if (staleReruns.Count > 0)
+                        await dbContext.SaveChangesAsync(ct);
                 }, cancellationToken);
             }
             catch (Exception ex)
