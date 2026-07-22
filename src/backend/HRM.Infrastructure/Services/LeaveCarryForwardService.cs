@@ -174,8 +174,18 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
         }
 
         // ── Forfeiture: encash (BR-5) or expire (BR-2/AC-4) ──
+        // DF-65 (a): route the forfeiture through the SAME PooledLeaveLedger choke point every other
+        // consumption path uses (DF-19), keyed to fromYear — so the carried-pool portion of the forfeit
+        // draws from the still-Active carry bucket that landed INTO fromYear and bumps its ConsumedDays.
+        // This is belt-and-suspenders with the explicit supersede below (the authoritative fix); it keeps
+        // the ConsumedDays counter honest and pool-tags the forfeit rows, consistent with DF-19.
         if (outcome.ForfeitedDays > 0m)
         {
+            // AppendDeductionAsync does NOT save and chains BalanceAfter from the balance passed in, so read
+            // fromYear's running balance ONCE and thread each call's FinalRow.BalanceAfter into the next.
+            decimal forfeitBalance = await GetLedgerBalanceAsync(
+                employee.Id, leaveType.Id, fromYear, cancellationToken);
+
             if (leaveType.Encashable)
             {
                 // BR-5: encashable leave types may encash the forfeitable balance instead of expiring it.
@@ -186,27 +196,31 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
 
                 if (encashable > 0m)
                 {
-                    await AppendLedgerAsync(
-                        employee, leaveType.Id, fromYear, LedgerEntryType.Encashed, -encashable,
+                    var enc = await PooledLeaveLedger.AppendDeductionAsync(
+                        _dbContext, employee.TenantId, employee.Id, leaveType.Id, fromYear, encashable,
+                        leaveRequestId: null, forfeitBalance,
                         $"Encashment of forfeitable balance at {fromYear} year-end: {encashable} days",
-                        yearEndUtc, cancellationToken);
+                        yearEndUtc, LedgerEntryType.Encashed, cancellationToken);
+                    forfeitBalance = enc.FinalRow.BalanceAfter;
                 }
 
                 decimal residual = outcome.ForfeitedDays - encashable;
                 if (residual > 0m)
                 {
-                    await AppendLedgerAsync(
-                        employee, leaveType.Id, fromYear, LedgerEntryType.Expired, -residual,
+                    await PooledLeaveLedger.AppendDeductionAsync(
+                        _dbContext, employee.TenantId, employee.Id, leaveType.Id, fromYear, residual,
+                        leaveRequestId: null, forfeitBalance,
                         $"Forfeiture at {fromYear} year-end (over encashment cap): {residual} days",
-                        yearEndUtc, cancellationToken);
+                        yearEndUtc, LedgerEntryType.Expired, cancellationToken);
                 }
             }
             else
             {
-                await AppendLedgerAsync(
-                    employee, leaveType.Id, fromYear, LedgerEntryType.Expired, -outcome.ForfeitedDays,
+                await PooledLeaveLedger.AppendDeductionAsync(
+                    _dbContext, employee.TenantId, employee.Id, leaveType.Id, fromYear, outcome.ForfeitedDays,
+                    leaveRequestId: null, forfeitBalance,
                     $"Forfeiture at {fromYear} year-end: {outcome.ForfeitedDays} days",
-                    yearEndUtc, cancellationToken);
+                    yearEndUtc, LedgerEntryType.Expired, cancellationToken);
             }
         }
 
@@ -227,6 +241,22 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
                 : CarryForwardTrackingStatus.Consumed, // nothing carried -> nothing left to expire
         };
         _dbContext.LeaveCarryForwardTrackings.Add(tracking);
+
+        // DF-65 (b, authoritative fix): terminalize any still-Active bucket carried from a PRIOR year INTO
+        // fromYear. This sweep supersedes it — its remaining days were folded into the carry-forward and
+        // forfeiture above — so leaving it Active would let ProcessExpiryAsync re-forfeit the SAME days
+        // (double forfeiture, employee detriment; deterministic when CarryForwardExpiryMonths >= 12, and
+        // the ONLY guard for the no-forfeit-all-carried case the pool-routed forfeit (a) cannot reach). EF
+        // returns the same tracked bucket the forfeit above may have bumped, so this composes cleanly.
+        var superseded = await _dbContext.LeaveCarryForwardTrackings
+            .Where(t => t.EmployeeId == employee.Id
+                        && t.LeaveTypeId == leaveType.Id
+                        && t.ToYear == fromYear
+                        && t.Status == CarryForwardTrackingStatus.Active)
+            .ToListAsync(cancellationToken);
+        foreach (var prior in superseded)
+            prior.Status = CarryForwardTrackingStatus.Consumed;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return true;

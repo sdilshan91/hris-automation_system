@@ -161,6 +161,47 @@ public sealed class LeaveCarryForwardServiceTests
         await db.SaveChangesAsync();
     }
 
+    /// <summary>DF-65: seeds a PRIOR-year carry bucket (carried FROM fromYear INTO toYear) directly.</summary>
+    private void SeedPriorBucket(
+        Guid leaveTypeId, int fromYear, int toYear, decimal carried, DateOnly expiryDate)
+    {
+        using var db = CreateDbContext();
+        db.LeaveCarryForwardTrackings.Add(new LeaveCarryForwardTracking
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            EmployeeId = _employeeId,
+            LeaveTypeId = leaveTypeId,
+            FromYear = fromYear,
+            ToYear = toYear,
+            CarriedDays = carried,
+            ConsumedDays = 0m,
+            ExpiredDays = 0m,
+            ExpiryDate = expiryDate,
+            Status = CarryForwardTrackingStatus.Active,
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>DF-65: seeds the CarryForward credit row that a prior bucket wrote INTO the given year.</summary>
+    private void SeedCarryIn(Guid leaveTypeId, int year, decimal days)
+    {
+        using var db = CreateDbContext();
+        db.LeaveLedgerEntries.Add(new LeaveLedger
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            EntryType = LedgerEntryType.CarryForward,
+            EmployeeId = _employeeId,
+            LeaveTypeId = leaveTypeId,
+            LeaveYear = year,
+            Amount = days,
+            BalanceAfter = days,
+            OccurredAt = new DateTime(year, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+        db.SaveChanges();
+    }
+
     private async Task<List<LeaveLedger>> LedgerFor(Guid leaveTypeId, int year)
     {
         using var db = CreateDbContext();
@@ -406,5 +447,109 @@ public sealed class LeaveCarryForwardServiceTests
 
         (await TrackingFor(typeId)).Should().BeEmpty();
         (await LedgerFor(typeId, ToYear)).Should().NotContain(l => l.EntryType == LedgerEntryType.CarryForward);
+    }
+
+    // ── DF-65: year-end sweep must not leave a superseded prior-year bucket for expiry to re-forfeit ──
+
+    [Fact]
+    public async Task YearEndSweep_SupersedesPriorCarryBucket_SoExpiryDoesNotDoubleForfeit_DF65()
+    {
+        // A leave type whose carried days stay valid a FULL year (expiryMonths=12) — the reachable DF-65
+        // config: a bucket carried INTO the closing year is still Active at that year's close (its expiry
+        // lands 2027-01-01, AFTER the 2026 close), so no monthly expiry terminalized it first.
+        var typeId = SeedLeaveType("Annual", annual: 3m, carryLimit: 5m, expiryMonths: 12, encashable: false);
+
+        // B1: 5 days carried from 2025 INTO 2026 (ToYear == FromYear), un-consumed, expiring 2027-01-01,
+        // plus the matching carry-in credit so the 2026 unused balance actually sees those 5 days.
+        SeedPriorBucket(typeId, fromYear: 2025, toYear: FromYear, carried: 5m, expiryDate: new DateOnly(2027, 1, 1));
+        SeedCarryIn(typeId, FromYear, 5m);
+
+        // 2026 unused = entitlement 3 + carry-in 5 = 8; limit 5 → carry 5 into 2027, forfeit 3.
+        await CreateService().ProcessYearEndAsync(FromYear);
+
+        var b1 = (await TrackingFor(typeId)).Single(t => t.ToYear == FromYear);
+        // (b) authoritative fix: the sweep terminalized the superseded prior-year bucket.
+        b1.Status.Should().Be(CarryForwardTrackingStatus.Consumed,
+            "the year-end sweep supersedes the prior-year carry bucket, so expiry must skip it");
+        // (a) belt-and-suspenders: the pool-routed forfeit bumped its ConsumedDays by the forfeited carried portion.
+        b1.ConsumedDays.Should().Be(3m,
+            "the forfeit routed through PooledLeaveLedger drew the 3 forfeited days from the carried pool");
+
+        var expiredBySweep = (await LedgerFor(typeId, FromYear))
+            .Where(l => l.EntryType == LedgerEntryType.Expired).Sum(l => -l.Amount);
+        expiredBySweep.Should().Be(3m, "the sweep forfeits exactly unused(8) - limit(5) = 3");
+
+        // Monthly expiry runs AFTER the 2026 close (2027-02-01 >= B1.ExpiryDate 2027-01-01). WITHOUT the
+        // supersede, B1 is Active and expiry re-forfeits its remaining days (total forfeit > 3 — 5 with (a)
+        // still bumping ConsumedDays by 3, 8 with neither fix; the DF-65 double-forfeit, employee detriment).
+        // WITH it, B1 is terminal → nothing to re-forfeit.
+        var expiredCount = (await CreateService().ProcessExpiryAsync(new DateOnly(2027, 2, 1))).Value;
+        expiredCount.Should().Be(0, "the superseded bucket is terminal, so expiry does not re-forfeit its days");
+
+        var totalExpired = (await LedgerFor(typeId, FromYear))
+            .Where(l => l.EntryType == LedgerEntryType.Expired).Sum(l => -l.Amount);
+        totalExpired.Should().Be(3m, "the carried days are forfeited ONCE by the sweep, never a second time by expiry");
+    }
+
+    /// <summary>
+    /// DF-65 — the case fix (a) CANNOT reach: everything carries forward, NOTHING is forfeited
+    /// (unused &lt;= limit), so the pool-routed forfeit never runs. Only the (b) supersede stops the prior
+    /// bucket from being wholly re-forfeited by expiry — a pure day-loss. This proves (b) is load-bearing
+    /// on its own.
+    /// </summary>
+    [Fact]
+    public async Task YearEndSweep_AllCarriedNothingForfeited_StillSupersedesPriorBucket_DF65()
+    {
+        // entitlement 3 + carry-in 5 = 8 unused; limit 10 -> carry 8, forfeit 0 (the (a) branch is skipped).
+        // (A positive entitlement is required — LeaveCarryForwardCalculator.AppliesTo skips zero-entitlement types.)
+        var typeId = SeedLeaveType("Annual", annual: 3m, carryLimit: 10m, expiryMonths: 12, encashable: false);
+        SeedPriorBucket(typeId, fromYear: 2025, toYear: FromYear, carried: 5m, expiryDate: new DateOnly(2027, 1, 1));
+        SeedCarryIn(typeId, FromYear, 5m);
+
+        await CreateService().ProcessYearEndAsync(FromYear);
+
+        var b1 = (await TrackingFor(typeId)).Single(t => t.ToYear == FromYear);
+        b1.Status.Should().Be(CarryForwardTrackingStatus.Consumed, "(b) supersedes the prior bucket even with no forfeit");
+        b1.ConsumedDays.Should().Be(0m, "nothing was forfeited, so the (a) pool-routed forfeit never ran");
+        (await LedgerFor(typeId, FromYear)).Should().NotContain(l => l.EntryType == LedgerEntryType.Expired);
+
+        // WITHOUT (b), B1 (Active, remaining 5) is re-forfeited here — the full 5 carried days are lost.
+        var expiredCount = (await CreateService().ProcessExpiryAsync(new DateOnly(2027, 2, 1))).Value;
+        expiredCount.Should().Be(0, "the superseded bucket is terminal — its carried days live on ONLY in the new-year bucket");
+        (await LedgerFor(typeId, FromYear)).Should().NotContain(l => l.EntryType == LedgerEntryType.Expired);
+    }
+
+    /// <summary>
+    /// DF-65 — the encashable forfeit path: (a) threads the running balance across TWO pooled draws
+    /// (Encashed, then Expired residual over the cap), both from the same prior bucket, so its ConsumedDays
+    /// is bumped by the full carried draw and neither portion is later re-forfeited by expiry.
+    /// </summary>
+    [Fact]
+    public async Task YearEndSweep_EncashableForfeit_ThreadsTwoPooledDraws_NoDoubleForfeit_DF65()
+    {
+        // entitlement 3 + carry-in 5 = 8 unused; limit 5 -> carry 5, forfeit 3. Encashable, cap 1 -> encash 1,
+        // expire residual 2. Both draws come from the prior bucket's carried pool.
+        var typeId = SeedLeaveType(
+            "Annual", annual: 3m, carryLimit: 5m, expiryMonths: 12, encashable: true, maxEncash: 1m);
+        SeedPriorBucket(typeId, fromYear: 2025, toYear: FromYear, carried: 5m, expiryDate: new DateOnly(2027, 1, 1));
+        SeedCarryIn(typeId, FromYear, 5m);
+
+        await CreateService().ProcessYearEndAsync(FromYear);
+
+        var yearLedger = await LedgerFor(typeId, FromYear);
+        yearLedger.Where(l => l.EntryType == LedgerEntryType.Encashed).Sum(l => -l.Amount)
+            .Should().Be(1m, "encashment is capped at MaxEncashDays=1");
+        yearLedger.Where(l => l.EntryType == LedgerEntryType.Expired).Sum(l => -l.Amount)
+            .Should().Be(2m, "the 2-day residual over the encashment cap expires");
+
+        var b1 = (await TrackingFor(typeId)).Single(t => t.ToYear == FromYear);
+        b1.ConsumedDays.Should().Be(3m, "both pooled draws (1 encashed + 2 expired) came from the carried pool");
+        b1.Status.Should().Be(CarryForwardTrackingStatus.Consumed, "(b) supersedes the prior bucket");
+
+        var expiredCount = (await CreateService().ProcessExpiryAsync(new DateOnly(2027, 2, 1))).Value;
+        expiredCount.Should().Be(0, "the superseded bucket is terminal — no second forfeit of the encashed/expired days");
+        (await LedgerFor(typeId, FromYear))
+            .Where(l => l.EntryType == LedgerEntryType.Expired).Sum(l => -l.Amount)
+            .Should().Be(2m, "expiry adds no further forfeiture");
     }
 }
