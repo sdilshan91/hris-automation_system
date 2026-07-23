@@ -12,13 +12,13 @@ namespace HRM.Infrastructure.Security;
 /// <param name="Property">CLR property name (nameof) — lets tests assert the converter is actually wired.</param>
 /// <param name="IncludeInStartupBackfill">
 /// Whether <c>DbInitializer.EncryptSensitiveFieldsAtRestAsync</c> back-fills legacy PLAINTEXT values in this
-/// column on startup. <b>true</b> for the original P3-4 pip/recommendation columns (they had a plaintext
-/// history that the back-fill migrated). <b>false</b> for columns that were BORN encrypted (added with the
-/// converter already applied, so no plaintext window ever existed — e.g. <c>employees.national_id</c>,
-/// ISSUE-293/migration 20260718201107): excluding them keeps the startup back-fill byte-identical to its
-/// pre-registry behaviour. Every column, regardless of this flag, IS scanned by the key-rotation
-/// re-encryption sweep and counted in the key-usage report (any plaintext residue surfaces there as the
-/// <c>(plaintext)</c> pseudo key rather than being silently ignored).
+/// column on startup. <b>true</b> for all currently-registered columns: the original P3-4 pip/recommendation
+/// columns (which had a real plaintext history the back-fill migrated) AND <c>employees.national_id</c>
+/// (ISSUE-293/migration 20260718201107 — born encrypted, so the scan is a no-op today, but included as safe
+/// idempotent defence-in-depth per DF-enc-nationalid-backfill: any residue that ever bypassed the converter is
+/// healed at boot). The flag exists so a future born-encrypted column can opt OUT if a startup scan is
+/// undesirable. Every column, regardless of this flag, is also scanned by the key-rotation re-encryption sweep
+/// and counted in the key-usage report (plaintext surfaces there as the <c>(plaintext)</c> pseudo key).
 /// </param>
 public sealed record EncryptedField(
     string Table, string Column, string Entity, string Property, bool IncludeInStartupBackfill);
@@ -63,8 +63,7 @@ public static class EncryptedFieldRegistry
         // Still INCLUDED in the startup back-fill (DF-enc-nationalid-backfill, user-approved): the back-fill is a
         // no-op today (every row already `enc:v1:%`), but on a PII column it is safe, idempotent defence-in-depth —
         // any residue that ever bypassed the converter is HEALED at boot instead of only surfaced in the report.
-        // excluded from the startup back-fill (keeps DbInitializer byte-identical to its pre-registry column
-        // set). It IS in the rotation sweep — without it, retiring an old key would break every national_id.
+        // It is also in the rotation sweep — without it, retiring an old key would break every national_id.
         new("employees", "national_id", nameof(Employee), nameof(Employee.NationalId), IncludeInStartupBackfill: true),
     ];
 
