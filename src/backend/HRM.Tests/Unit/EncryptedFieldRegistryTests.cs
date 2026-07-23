@@ -49,22 +49,21 @@ public sealed class EncryptedFieldRegistryTests
                 ("recommendation", "bonus_percent", true),
                 ("recommendation", "increment_amount", true),
                 ("recommendation", "increment_percent", true),
-                // ISSUE-293: born-encrypted (no plaintext history) → in the rotation sweep but NOT the
-                // startup back-fill, keeping DbInitializer byte-identical to its pre-registry column set.
-                ("employees", "national_id", false),
+                // ISSUE-293 / DF-enc-nationalid-backfill: born-encrypted, but INCLUDED in the startup back-fill
+                // as safe idempotent defence-in-depth on a PII column (no-op today; heals any residue at boot).
+                ("employees", "national_id", true),
             });
     }
 
     [Fact]
-    public void StartupBackfillFields_is_the_original_p34_set_without_national_id()
+    public void StartupBackfillFields_covers_the_p34_set_plus_national_id()
     {
         var backfill = EncryptedFieldRegistry.StartupBackfillFields.ToList();
 
-        backfill.Should().HaveCount(8);
-        backfill.Should().NotContain(f => f.Column == "national_id",
-            "employees.national_id was BORN encrypted — including it would change the pinned "
-            + "DbInitializer back-fill behaviour");
-        backfill.Select(f => f.Table).Distinct().Should().BeEquivalentTo("pip", "recommendation");
+        backfill.Should().HaveCount(9);
+        backfill.Should().Contain(f => f.Column == "national_id",
+            "DF-enc-nationalid-backfill: national_id is now healed at boot (defence-in-depth on a PII column)");
+        backfill.Select(f => f.Table).Distinct().Should().BeEquivalentTo("pip", "recommendation", "employees");
     }
 
     // ── 2. Registry ↔ EF model binding (every entry names a real, converter-carrying property) ──

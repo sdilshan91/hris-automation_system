@@ -29,7 +29,7 @@ NOT encrypted (aggregate arithmetic, not individual PII). The authoritative list
 |-------|---------|-----------------------|
 | `pip` | `reason`, `final_outcome_notes`, `escalation_notes` | yes (had plaintext history) |
 | `recommendation` | `current_compensation`, `bonus_amount`, `bonus_percent`, `increment_amount`, `increment_percent` | yes (had plaintext history) |
-| `employees` | `national_id` (ISSUE-293) | no — born encrypted (no plaintext window); still in the rotation sweep + report |
+| `employees` | `national_id` (ISSUE-293) | yes (DF-enc-nationalid-backfill) — born encrypted so it is a no-op today, but included as safe idempotent defence-in-depth: any residue that ever bypassed the converter is healed at boot, not merely reported |
 
 **Stored format:** `enc:v1:{keyId}:{base64(nonce ‖ ciphertext ‖ tag)}`. The `keyId` is stored **with** the
 value, so a value written under a retired key still decrypts for as long as that key stays in the ring — this
