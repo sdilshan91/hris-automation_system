@@ -59,10 +59,13 @@ public static class EncryptedFieldRegistry
         new("recommendation", "increment_percent", nameof(Recommendation), nameof(Recommendation.IncrementPercent), IncludeInStartupBackfill: true),
 
         // ISSUE-293: Employee.NationalId PII — BORN encrypted (column added as `text` with the converter in the
-        // same release, migration 20260718201107_Employee_NationalId), so it has no plaintext history and is
+        // same release, migration 20260718201107_Employee_NationalId), so no plaintext history exists in practice.
+        // Still INCLUDED in the startup back-fill (DF-enc-nationalid-backfill, user-approved): the back-fill is a
+        // no-op today (every row already `enc:v1:%`), but on a PII column it is safe, idempotent defence-in-depth —
+        // any residue that ever bypassed the converter is HEALED at boot instead of only surfaced in the report.
         // excluded from the startup back-fill (keeps DbInitializer byte-identical to its pre-registry column
         // set). It IS in the rotation sweep — without it, retiring an old key would break every national_id.
-        new("employees", "national_id", nameof(Employee), nameof(Employee.NationalId), IncludeInStartupBackfill: false),
+        new("employees", "national_id", nameof(Employee), nameof(Employee.NationalId), IncludeInStartupBackfill: true),
     ];
 
     /// <summary>The subset the startup plaintext back-fill processes (the original, pinned P3-4 column set).</summary>

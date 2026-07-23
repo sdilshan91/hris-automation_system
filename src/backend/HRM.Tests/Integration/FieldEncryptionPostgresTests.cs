@@ -37,17 +37,31 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
     private readonly IFieldEncryptor _encryptor = BuildEncryptor();
     private string _cs = null!;
 
+    // STATIC key (not per-call random): EF caches the model + its encryption converter process-wide, so a key
+    // that differs between test instances makes a value encrypted under instance A's key fail to decrypt under
+    // instance B's cached converter (AuthenticationTagMismatch) when facts run together. Deterministic = consistent.
+    private static readonly string _key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
     private static IFieldEncryptor BuildEncryptor()
     {
-        var key = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Encryption:ActiveKeyId"] = "k1",
-                ["Encryption:Keys:k1"] = key,
+                ["Encryption:Keys:k1"] = _key,
             })
             .Build();
-        return new AesGcmFieldEncryptor(config);
+        // Wrapped in a DISTINCT type so EncryptorAwareModelCacheKeyFactory (keys on the encryptor's GetType().Name)
+        // gives THIS class its own cached EF model. Otherwise it shares one process-wide cached converter with the
+        // other AesGcm-based PG class (FieldEncryptionReencryptPostgresTests) — and their different key material
+        // tag-mismatches whichever class didn't build the model first, when both run in the same test process.
+        return new TypeIsolatedFieldEncryptor(new AesGcmFieldEncryptor(config));
+    }
+
+    private sealed class TypeIsolatedFieldEncryptor(IFieldEncryptor inner) : IFieldEncryptor
+    {
+        public string? Encrypt(string? plaintext) => inner.Encrypt(plaintext);
+        public string? Decrypt(string? stored) => inner.Decrypt(stored);
     }
 
     public async Task InitializeAsync()

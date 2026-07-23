@@ -15,10 +15,10 @@
 //   5. The sweep is per-tenant via ITenantJobRunner (the AutoClockOutJob cross-tenant pattern — under RLS-ON
 //      the GUC gets set, so the scan can never silently fail-closed to 0 rows) and DELIBERATELY includes a
 //      Suspended tenant: its ciphertext must move off the old key too, or retiring the key destroys its data.
-//   6. The REGISTRY-driven startup back-fill: plaintext in a StartupBackfillFields column (pip.reason) is
-//      encrypted by DbInitializer.EncryptSensitiveFieldsAtRestAsync, while plaintext in the EXCLUDED
-//      employees.national_id column is left byte-identical (the pinned pre-registry behaviour) but still
-//      SURFACES in the usage report under the "(plaintext)" pseudo key — visible, never silently ignored.
+//   6. The REGISTRY-driven startup back-fill: plaintext in ANY StartupBackfillFields column (pip.reason AND —
+//      per DF-enc-nationalid-backfill — employees.national_id) is healed by DbInitializer under the active key;
+//      the usage report SURFACES the residue under the "(plaintext)" pseudo key BEFORE the heal (visible, never
+//      silently ignored) and shows zero after.
 //
 // Runs against a throwaway postgres:17-alpine container (mirrors FieldEncryptionPostgresTests). The agent
 // verify gate has no Docker, so this arm is executed by the orchestrator's Postgres run.
@@ -180,7 +180,7 @@ public sealed class FieldEncryptionReencryptPostgresTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Registry_backfill_encrypts_pip_plaintext_but_leaves_born_encrypted_national_id_and_reports_it()
+    public async Task Registry_backfill_encrypts_both_pip_and_national_id_plaintext_and_report_surfaces_it()
     {
         var tenantId = Guid.NewGuid();
         await SeedTenantRowAsync(tenantId, "reenc-bf", TenantStatus.Active);
@@ -190,9 +190,23 @@ public sealed class FieldEncryptionReencryptPostgresTests : IAsyncLifetime
         await using (var db = Db(tenantId))
         {
             pipId = await AddPipAsync(db, tenantId, employeeId, "placeholder");
-            // Model a pre-P3-4 row (plaintext pip.reason) and a hypothetical plaintext national_id.
+            // Model a pre-P3-4 row (plaintext pip.reason) and a hypothetical plaintext national_id (a row that
+            // ever bypassed the born-encrypted converter — the residue DF-enc-nationalid-backfill now heals).
             await RawUpdateAsync(db, "pip", "reason", pipId, "Legacy plaintext reason.");
             await RawUpdateAsync(db, "employees", "national_id", employeeId, "SL-PLAINTEXT-1");
+        }
+
+        // BEFORE the back-fill: the usage report SURFACES the plaintext national_id under the "(plaintext)"
+        // pseudo key — never silently ignored (the visibility guarantee the report exists for).
+        await using (var provider = BuildProvider())
+        {
+            var before = await provider.GetRequiredService<IFieldEncryptionMaintenanceService>()
+                .GetKeyUsageReportAsync();
+            before.Counts.Should().Contain(c =>
+                c.Table == "employees" && c.Column == "national_id"
+                && c.KeyId == FieldEncryptionMaintenanceService.PlaintextKeyId && c.Count == 1,
+                "exactly this test's one plaintext national_id row exists — an exact count keeps the "
+                + "report's arithmetic honest");
         }
 
         await using (var db = Db(tenantId))
@@ -201,22 +215,25 @@ public sealed class FieldEncryptionReencryptPostgresTests : IAsyncLifetime
                 db, _ring, NullLogger.Instance, CancellationToken.None);
         }
 
-        // pip.reason is a StartupBackfillFields column → encrypted (registry-driven back-fill still works).
+        // AFTER the back-fill: BOTH StartupBackfillFields columns are healed under the active key —
+        // pip.reason (always was) AND employees.national_id (DF-enc-nationalid-backfill: now included).
         (await RawScalarAsync(Db(tenantId), "pip", "reason", pipId)).Should().StartWith("enc:v1:k2:");
+        (await RawScalarAsync(Db(tenantId), "employees", "national_id", employeeId)).Should().StartWith("enc:v1:k2:");
 
-        // employees.national_id is EXCLUDED from the startup back-fill (born-encrypted; pinned pre-registry
-        // behaviour) → byte-identical plaintext ...
-        (await RawScalarAsync(Db(tenantId), "employees", "national_id", employeeId)).Should().Be("SL-PLAINTEXT-1");
+        // ...and it decrypts back to the original plaintext (heal is lossless, not a clobber).
+        await using (var db = Db(tenantId))
+            (await db.Employees.SingleAsync(e => e.Id == employeeId)).NationalId.Should().Be("SL-PLAINTEXT-1");
 
-        // ... but the usage report SURFACES it under the "(plaintext)" pseudo key — never silently ignored.
-        await using var provider = BuildProvider();
-        var report = await provider.GetRequiredService<IFieldEncryptionMaintenanceService>()
-            .GetKeyUsageReportAsync();
-        report.Counts.Should().Contain(c =>
-            c.Table == "employees" && c.Column == "national_id"
-            && c.KeyId == FieldEncryptionMaintenanceService.PlaintextKeyId && c.Count == 1,
-            "exactly this test's one plaintext national_id row exists — an exact count keeps the "
-            + "report's arithmetic honest");
+        // The report now shows ZERO plaintext national_id rows — the residue is gone, not merely reported.
+        await using (var provider = BuildProvider())
+        {
+            var after = await provider.GetRequiredService<IFieldEncryptionMaintenanceService>()
+                .GetKeyUsageReportAsync();
+            after.Counts.Should().NotContain(c =>
+                c.Table == "employees" && c.Column == "national_id"
+                && c.KeyId == FieldEncryptionMaintenanceService.PlaintextKeyId && c.Count > 0,
+                "the startup back-fill healed the plaintext national_id, so none remains");
+        }
     }
 
     [Fact]
