@@ -30,6 +30,12 @@ public static class DependencyInjection
         // AppDbContext's constructor.
         services.AddSingleton<IFieldEncryptor, AesGcmFieldEncryptor>();
 
+        // Key-rotation ops (P3-4 follow-up): the bulk re-encryption sweep + per-keyId usage report over the
+        // shared EncryptedFieldRegistry columns (runbook "step 4" — Security/README.md). Singleton: holds only
+        // the scope factory, the singleton encryptor, config snapshots and a logger; per-tenant scoped services
+        // (AppDbContext, ITenantJobRunner) are resolved from a fresh scope per tenant inside each run.
+        services.AddSingleton<IFieldEncryptionMaintenanceService, FieldEncryptionMaintenanceService>();
+
         // Tenant context (scoped per request)
         services.AddScoped<ITenantContext, TenantContext>();
         services.AddScoped<ICurrentUser, CurrentUser>();
