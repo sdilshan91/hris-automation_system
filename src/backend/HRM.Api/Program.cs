@@ -453,6 +453,11 @@ try
     builder.Services.AddScoped<HRM.Application.Common.Interfaces.IPayrollReportExportJobScheduler, HRM.Api.Jobs.HangfirePayrollReportExportJobScheduler>();
     builder.Services.AddScoped<HRM.Api.Jobs.PayrollReportExportCleanupJob>();
 
+    // Key-rotation ops: the on-demand bulk re-encryption sweep (enqueued by POST
+    // /api/v1/system/encryption/reencrypt) + the weekly key-age watchdog (registered Cron.Weekly below).
+    builder.Services.AddScoped<HRM.Api.Jobs.ReencryptFieldKeyJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.EncryptionKeyAgeWatchdogJob>();
+
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
         .AddPolicyHandler(GetRetryPolicy())
@@ -844,6 +849,16 @@ try
             "onboarding-overdue-task-sweep",
             job => job.RunAsync(CancellationToken.None),
             "0 9 * * *"); // 09:00 UTC daily
+
+        // Key-rotation ops: weekly CHECK of the QUARTERLY field-encryption key cadence — upserts first-seen for
+        // the active Encryption:ActiveKeyId and WARNs ([EncryptionKeyAge]) once its age reaches
+        // Encryption:RotationCadenceDays (default 90). System-scope only (no tenant data). The re-encryption
+        // sweep itself (ReencryptFieldKeyJob) is deliberately NOT scheduled — it is enqueued on demand via
+        // POST /api/v1/system/encryption/reencrypt right after an ops rotation (Security/README.md).
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.EncryptionKeyAgeWatchdogJob>(
+            "encryption-key-age-watchdog",
+            job => job.RunAsync(),
+            Cron.Weekly);
     }
 
     app.Run();

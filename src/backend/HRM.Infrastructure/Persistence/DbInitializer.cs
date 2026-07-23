@@ -225,27 +225,17 @@ public static class DbInitializer
     }
 
     /// <summary>
-    /// The columns that P3-4 moved behind <see cref="IFieldEncryptor"/> — the sensitive PIP free-text notes and the
-    /// per-employee Recommendation compensation figures (now stored as encrypted <c>text</c>). Deliberately EXCLUDES
-    /// the RecommendationBudget pool amounts (aggregate arithmetic, not individual PII).
-    /// </summary>
-    private static readonly (string Table, string[] Columns)[] EncryptedColumns =
-    {
-        ("pip", new[] { "reason", "final_outcome_notes", "escalation_notes" }),
-        ("recommendation", new[]
-        {
-            "current_compensation", "bonus_amount", "bonus_percent", "increment_amount", "increment_percent",
-        }),
-    };
-
-    /// <summary>
-    /// P3-4 — idempotent, one-time back-fill that encrypts any existing plaintext values in the columns listed in
-    /// <see cref="EncryptedColumns"/>. A raw SQL migration cannot run the app encryptor, so this runs in code after
-    /// <see cref="MigrateAsync"/>: for each column it reads rows whose value is non-null and does NOT already start
-    /// with <c>enc:v1:</c>, encrypts the raw value via <paramref name="encryptor"/>, and writes it back — so it is
-    /// SAFE to run on every startup (already-encrypted values are skipped by the <c>NOT LIKE 'enc:v1:%'</c> filter).
-    /// Tenant-agnostic (raw SQL over the base tables, no query filter). Relational-only: on the InMemory provider the
-    /// value converters already encrypt on write and there is no distinct raw stored form to back-fill.
+    /// P3-4 — idempotent, one-time back-fill that encrypts any existing plaintext values in the encrypted-column
+    /// set. The column list comes from the shared <see cref="Security.EncryptedFieldRegistry"/> (its
+    /// <c>StartupBackfillFields</c> subset — behaviour-identical to the private list this replaced), the SAME
+    /// registry the key-rotation re-encryption sweep consumes, so the two paths cannot drift (a future encrypted
+    /// field added to one cannot silently miss the other — the DF-19 lesson). A raw SQL migration cannot run the
+    /// app encryptor, so this runs in code after <see cref="MigrateAsync"/>: for each column it reads rows whose
+    /// value is non-null and does NOT already start with <c>enc:v1:</c>, encrypts the raw value via
+    /// <paramref name="encryptor"/>, and writes it back — so it is SAFE to run on every startup
+    /// (already-encrypted values are skipped by the <c>NOT LIKE 'enc:v1:%'</c> filter). Tenant-agnostic (raw SQL
+    /// over the base tables, no query filter). Relational-only: on the InMemory provider the value converters
+    /// already encrypt on write and there is no distinct raw stored form to back-fill.
     /// </summary>
     public static async Task EncryptSensitiveFieldsAtRestAsync(
         AppDbContext db, IFieldEncryptor encryptor, ILogger logger, CancellationToken ct)
@@ -264,12 +254,9 @@ public static class DbInitializer
         try
         {
             var total = 0;
-            foreach (var (table, columns) in EncryptedColumns)
+            foreach (var field in Security.EncryptedFieldRegistry.StartupBackfillFields)
             {
-                foreach (var column in columns)
-                {
-                    total += await BackfillColumnAsync(connection, table, column, encryptor, ct);
-                }
+                total += await BackfillColumnAsync(connection, field.Table, field.Column, encryptor, ct);
             }
 
             if (total > 0)
@@ -288,7 +275,8 @@ public static class DbInitializer
 
     /// <summary>
     /// Encrypts every not-yet-encrypted value in one column. Table/column names come from the constant
-    /// <see cref="EncryptedColumns"/> list (no external input — no injection surface); the value is parameterized.
+    /// <see cref="Security.EncryptedFieldRegistry"/> (no external input — no injection surface); the value is
+    /// parameterized.
     /// </summary>
     private static async Task<int> BackfillColumnAsync(
         DbConnection connection, string table, string column, IFieldEncryptor encryptor, CancellationToken ct)

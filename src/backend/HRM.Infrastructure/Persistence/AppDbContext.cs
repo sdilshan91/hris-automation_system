@@ -207,6 +207,11 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // shared, platform-wide key ring (IDataProtectionKeyContext).
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
+    // Key-rotation ops: first-seen timestamp per field-encryption ActiveKeyId (drives the quarterly
+    // EncryptionKeyAgeWatchdogJob). SYSTEM-scope like DataProtectionKeys above — NOT a BaseEntity, no
+    // tenant_id, no query filter, no RLS policy (the key is platform-wide).
+    public DbSet<EncryptionKeyActivation> EncryptionKeyActivations => Set<EncryptionKeyActivation>();
+
     // US-TRN-001: training catalog + course enrollments (tenant-scoped).
     public DbSet<TrainingCourse> TrainingCourses => Set<TrainingCourse>();
     public DbSet<CourseEnrollment> CourseEnrollments => Set<CourseEnrollment>();
@@ -236,6 +241,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
         // per-employee compensation columns. Kept in the entity configurations (static ApplyEncryption) but invoked
         // here because they need this context's injected IFieldEncryptor (the configs are parameterless so the
         // ApplyConfigurationsFromAssembly scan above is unaffected).
+        // ⚠ DRIFT RULE: every column encrypted here MUST also be listed in Security.EncryptedFieldRegistry —
+        // that registry drives BOTH the startup plaintext back-fill AND the key-rotation re-encryption sweep;
+        // a column missing there is never re-encrypted, and retiring an old key would destroy its data.
         Configurations.PipConfiguration.ApplyEncryption(modelBuilder.Entity<Pip>(), _fieldEncryptor);
         Configurations.RecommendationConfiguration.ApplyEncryption(modelBuilder.Entity<Recommendation>(), _fieldEncryptor);
         // ISSUE-293: Employee.NationalId PII encrypted at rest (same wiring rule — a converter in the

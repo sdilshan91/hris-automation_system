@@ -6,20 +6,30 @@ code in this folder — read it before generating, rotating, or retiring an encr
 
 - **Encryptor:** [`AesGcmFieldEncryptor.cs`](AesGcmFieldEncryptor.cs) (registered singleton).
 - **EF wiring:** [`../Persistence/Converters/EncryptedFieldConverters.cs`](../Persistence/Converters/EncryptedFieldConverters.cs)
-  + `PipConfiguration` / `RecommendationConfiguration`.
+  + `PipConfiguration` / `RecommendationConfiguration` / `EmployeeConfiguration` (ISSUE-293).
+- **Column registry (single source of truth):** [`EncryptedFieldRegistry.cs`](EncryptedFieldRegistry.cs) —
+  BOTH the startup back-fill AND the rotation re-encryption sweep enumerate it, so the two paths cannot
+  drift. ⚠ **Every newly-encrypted column MUST be added there** or rotation will never re-encrypt it and
+  retiring the old key destroys its data.
 - **One-time plaintext back-fill:** `DbInitializer.EncryptSensitiveFieldsAtRestAsync` (idempotent, on startup).
+- **Bulk re-encryption (rotation step 4):** [`FieldEncryptionMaintenanceService.cs`](FieldEncryptionMaintenanceService.cs)
+  via `POST /api/v1/system/encryption/reencrypt` + the `GET /api/v1/system/encryption/report` verification gate.
+- **Key-age watchdog:** `EncryptionKeyAgeWatchdogJob` (HRM.Api/Jobs, weekly) — warns when the active key
+  exceeds the quarterly cadence (`Encryption:RotationCadenceDays`, default 90).
 - **ADR / rationale:** app-side AES-GCM was chosen over pgcrypto so the InMemory test provider and EF value
   converters compose cleanly (see the P3-4 entry in `docs/QA/plans/COMPLETION-PLAN.md`).
 
 ## What is encrypted
 
 Stored as encrypted `text` columns (format below). RecommendationBudget **pool** amounts are deliberately
-NOT encrypted (aggregate arithmetic, not individual PII).
+NOT encrypted (aggregate arithmetic, not individual PII). The authoritative list is
+[`EncryptedFieldRegistry.cs`](EncryptedFieldRegistry.cs); as of today:
 
-| Table | Columns |
-|-------|---------|
-| `pip` | `reason`, `final_outcome_notes`, `escalation_notes` |
-| `recommendation` | `current_compensation`, `bonus_amount`, `bonus_percent`, `increment_amount`, `increment_percent` |
+| Table | Columns | In startup back-fill? |
+|-------|---------|-----------------------|
+| `pip` | `reason`, `final_outcome_notes`, `escalation_notes` | yes (had plaintext history) |
+| `recommendation` | `current_compensation`, `bonus_amount`, `bonus_percent`, `increment_amount`, `increment_percent` | yes (had plaintext history) |
+| `employees` | `national_id` (ISSUE-293) | no — born encrypted (no plaintext window); still in the rotation sweep + report |
 
 **Stored format:** `enc:v1:{keyId}:{base64(nonce ‖ ciphertext ‖ tag)}`. The `keyId` is stored **with** the
 value, so a value written under a retired key still decrypts for as long as that key stays in the ring — this
@@ -50,39 +60,44 @@ openssl rand -base64 32
 
 ## Rotation SOP (overlap-based, zero-downtime)
 
-Rotate on a fixed cadence (recommend **annually**) and immediately on suspected compromise. Because each value
-carries its own `keyId`, rotation is a *two-phase* operation: flip the active key, then re-encrypt the backlog.
+Rotate on a fixed **quarterly** cadence and immediately on suspected compromise. The weekly
+`EncryptionKeyAgeWatchdogJob` logs a `[EncryptionKeyAge]` **WARNING** once the active key's age reaches
+`Encryption:RotationCadenceDays` (default **90**; override via config/env `Encryption__RotationCadenceDays`).
+It tracks key age in the system-scope `encryption_key_activation` table (first-seen per keyId — the config
+ring itself records nothing about *when* a key was installed). Because each value carries its own `keyId`,
+rotation is a *two-phase* operation: flip the active key, then re-encrypt the backlog.
 
 1. **Generate** a new key, e.g. `hrm-field-key-2` (see above).
 2. **Add it to the ring alongside the current key** — set `Encryption__Keys__hrm-field-key-2` **and keep**
    `Encryption__Keys__hrm-field-key-1`. Deploy/restart. (No behaviour change yet; both keys can now decrypt.)
 3. **Flip the active key:** set `Encryption__ActiveKeyId=hrm-field-key-2`. Restart. From now on **new** writes
    use key-2; existing values still decrypt under key-1 (their embedded `keyId`).
-4. **Re-encrypt the backlog under the new key.** ⚠ **This is NOT automatic.** The startup back-fill
-   (`EncryptSensitiveFieldsAtRestAsync`) only encrypts *plaintext* (`NOT LIKE 'enc:v1:%'`); it does **not**
-   re-encrypt values already encrypted under an older key. To move values off key-1 you must **rewrite** each
-   affected row so the value is re-encrypted with the active key — e.g. load and re-save the entities through
-   EF (the value converter re-encrypts on save), or run a dedicated maintenance pass over the 8 columns.
-   > **Known gap / follow-up:** there is no built-in bulk re-encryption job today. If your rotation cadence
-   > makes step 4 burdensome, build a one-shot admin/maintenance command that re-saves the `pip` +
-   > `recommendation` rows in batches (file it as a follow-up story before the first real rotation).
-5. **Verify no value still references the old key**, then **retire** it (remove `Encryption__Keys__hrm-field-key-1`
-   from the environment and restart). See the verification query below. Removing a key that any stored value
-   still references makes those rows undecryptable (`Decrypt` throws "No key '{id}' in the ring").
+4. **Re-encrypt the backlog:** `POST /api/v1/system/encryption/reencrypt` (SystemAdmin JWT — gated
+   `Tenant.Lifecycle`; in dev you can also enqueue `ReencryptFieldKeyJob` from the Hangfire dashboard). The
+   sweep enumerates **every** registry column across **all** tenants — including Suspended/Terminated and
+   soft-deleted-but-not-yet-purged ones (a restorable tenant's data must also move off the old key) —
+   re-encrypting each value stored under a non-active ring key.
+   Batched, idempotent, re-run safe; an undecryptable (corrupt) value is skipped + logged, never overwritten.
+   Runs per tenant through `ITenantJobRunner`, so it stays correct under RLS-ON (the GUC is set — a bare
+   scan would silently see 0 rows). The startup back-fill does NOT do this (it only encrypts *plaintext*).
+5. **Verify no value still references the old key:** `GET /api/v1/system/encryption/report` (same permission)
+   returns per-keyId row counts across every encrypted column; the sweep also logs BEFORE/AFTER totals
+   (`[FieldReencrypt]`). The old key's count must be **0** (plaintext residue shows under the `(plaintext)`
+   pseudo key; an undecryptable row stays visible under its embedded keyId — investigate before retiring).
+   Then **retire** it (remove `Encryption__Keys__hrm-field-key-1` from the environment and restart). Removing
+   a key that any stored value still references makes those rows undecryptable (`Decrypt` throws
+   "No key '{id}' in the ring").
 
-### Verification query (are any values still under the old key?)
+### Verification (are any values still under the old key?)
 
-Run against the app database; every count must be **0** before retiring `hrm-field-key-1`:
+Preferred: `GET /api/v1/system/encryption/report` — it is registry-driven, so it can never miss a column the
+way a hand-maintained query can. Raw-SQL equivalent per column (repeat for every
+[`EncryptedFieldRegistry`](EncryptedFieldRegistry.cs) column; every count must be **0** before retiring
+`hrm-field-key-1`):
 
 ```sql
-SELECT 'pip.reason'              AS col, count(*) FROM pip            WHERE reason               LIKE 'enc:v1:hrm-field-key-1:%'
-UNION ALL SELECT 'pip.final_outcome_notes',  count(*) FROM pip            WHERE final_outcome_notes  LIKE 'enc:v1:hrm-field-key-1:%'
-UNION ALL SELECT 'pip.escalation_notes',     count(*) FROM pip            WHERE escalation_notes     LIKE 'enc:v1:hrm-field-key-1:%'
-UNION ALL SELECT 'rec.current_compensation', count(*) FROM recommendation WHERE current_compensation LIKE 'enc:v1:hrm-field-key-1:%'
-UNION ALL SELECT 'rec.bonus_amount',         count(*) FROM recommendation WHERE bonus_amount         LIKE 'enc:v1:hrm-field-key-1:%'
-UNION ALL SELECT 'rec.bonus_percent',        count(*) FROM recommendation WHERE bonus_percent        LIKE 'enc:v1:hrm-field-key-1:%'
-UNION ALL SELECT 'rec.increment_amount',     count(*) FROM recommendation WHERE increment_amount     LIKE 'enc:v1:hrm-field-key-1:%'
-UNION ALL SELECT 'rec.increment_percent',    count(*) FROM recommendation WHERE increment_percent    LIKE 'enc:v1:hrm-field-key-1:%';
+SELECT split_part(reason, ':', 3) AS key_id, count(*)
+FROM pip WHERE reason LIKE 'enc:v1:%' GROUP BY 1;  -- and so on for each registry column
 ```
 
 ## Retention & retirement rules
@@ -99,6 +114,8 @@ UNION ALL SELECT 'rec.increment_percent',    count(*) FROM recommendation WHERE 
 | Action | Steps |
 |--------|-------|
 | First-time prod setup | Set `Encryption__ActiveKeyId` + `Encryption__Keys__{id}` (base64 32-byte) before start. |
-| Routine rotation | Add new key → flip `ActiveKeyId` → re-encrypt backlog → verify 0 → retire old key. |
+| Routine rotation (quarterly) | Add new key → flip `ActiveKeyId` → restart → `POST /api/v1/system/encryption/reencrypt` → `GET .../report` shows 0 on old key → retire old key (keep archived while backups reference it). |
 | Emergency rotation | Same, compressed; prioritise step 4 re-encryption, then retire the compromised key. |
-| Retire a key | Confirm the verification query returns all 0, then remove `Encryption__Keys__{oldId}`. |
+| Retire a key | Confirm `GET /api/v1/system/encryption/report` shows 0 for it, then remove `Encryption__Keys__{oldId}`. |
+| Watch the cadence | `EncryptionKeyAgeWatchdogJob` (weekly) warns `[EncryptionKeyAge]` at ≥ `Encryption:RotationCadenceDays` (default 90). |
+| Encrypt a NEW column | Add the converter (ApplyEncryption) **and** the [`EncryptedFieldRegistry`](EncryptedFieldRegistry.cs) entry — the registry drives back-fill, sweep and report. |
