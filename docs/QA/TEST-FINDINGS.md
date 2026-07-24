@@ -7147,3 +7147,17 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** `src/frontend/node_modules` on the shared NTFS drive was populated by a Windows `npm install`, so it held the win32 `@esbuild/*` binary; a host-Linux `npm run build` / `ng test` fails until the Linux esbuild binary is present. Worked around non-destructively with `npm install --no-save @esbuild/linux-x64@0.28.0`.
 - **Root cause:** one `node_modules` shared across Windows + Linux checkouts on the NTFS drive; esbuild ships platform-specific optional-dependency binaries.
 - **Suggested direction (NOT applied):** run the FE build/test in the Docker toolchain (the intended path), or `npm ci` fresh on Linux rather than reusing the Windows-populated tree. Related: [[project-local-dev-setup]], and the same NTFS/host root cause as [[ISSUE-323]] (CRLF).
+
+---
+
+### ISSUE-327 — Break-glass login via the MFA two-step path does not emit the `break_glass_login` audit + admin alert
+- **ID:** ISSUE-327
+- **Type:** ISSUE (BE — security-audit gap; login itself works)
+- **Severity:** MED (a designated break-glass admin who has MFA enrolled can still sign in under `sso_only`, but the security-sensitive `break_glass_login` audit event + admin notification — FR-4/NFR-2 — are NOT emitted for that login)
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Authentication / US-AUTH-016 / TC-AUTH-127 (partial) — discovered 2026-07-24 during the US-AUTH-016 build
+- **Title:** `AuthService.BreakGlassLoginAsync` audits + alerts on the single-shot / inline-`mfaCode` break-glass path, but a break-glass admin with MFA enrolled completes login via the **two-step MFA** path (`AuthService.VerifyMfaLoginAsync`), which is not break-glass-aware. The designation gate already passed at step 1, so the login succeeds — but no `break_glass_login` audit and no admin alert fire for the MFA'd case.
+- **Root cause:** the break-glass marker is not threaded from the MFA challenge (step 1) through to `VerifyMfaLoginAsync` (step 2), so step 2 can't emit the break-glass audit/notification.
+- **Impact:** incomplete security telemetry — routine-use deterrence + alerting (BR-4) is bypassed specifically for MFA-enrolled break-glass admins. No functional lockout risk.
+- **Suggested direction (NOT applied):** carry a break-glass marker into the MFA challenge → verify step (US-AUTH-005 MFA path, which US-AUTH-016 was scoped not to rebuild) so `VerifyMfaLoginAsync` emits `break_glass_login` + the admin alert. Small, contained follow-up.
