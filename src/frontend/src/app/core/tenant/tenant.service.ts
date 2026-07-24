@@ -14,6 +14,13 @@ export interface ITenantContext {
   suspensionReason?: string;
   plan?: string;
   enabledModules?: string[];
+  /**
+   * US-AUTH-016 AC-1: sign-in enforcement mode for this workspace, surfaced on the
+   * public tenant-context so the login page can render `sso_only` (Microsoft-primary
+   * + break-glass link). Optional/absent → treated as `optional`, so the login page
+   * fails safe to showing the password form until the backend surfaces this field.
+   */
+  enforcementMode?: 'optional' | 'sso_only';
   isSystemContext: boolean;
   isReserved: boolean;
   isValid: boolean;

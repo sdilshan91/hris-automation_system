@@ -27,8 +27,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025, TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-069, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-074, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077, TC-AUTH-078, TC-AUTH-079, TC-AUTH-080, TC-AUTH-081, TC-AUTH-082 | 20 | 6/6 AC covered (deep) |
 | US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028, TC-AUTH-083, TC-AUTH-084, TC-AUTH-085, TC-AUTH-086, TC-AUTH-087, TC-AUTH-088, TC-AUTH-089, TC-AUTH-090, TC-AUTH-091, TC-AUTH-092, TC-AUTH-093, TC-AUTH-094, TC-AUTH-095, TC-AUTH-096, TC-AUTH-097, TC-AUTH-098, TC-AUTH-099, TC-AUTH-100, TC-AUTH-101, TC-AUTH-102, TC-AUTH-103, TC-AUTH-104, TC-AUTH-105, TC-AUTH-106, TC-AUTH-107, TC-AUTH-108, TC-AUTH-109, TC-AUTH-110, TC-AUTH-111, TC-AUTH-112, TC-AUTH-114 | 34 | 6/6 AC covered (deep) |
 | US-AUTH-012 | Per-tenant SSO configuration | Should Have | TC-AUTH-115, TC-AUTH-116, TC-AUTH-117, TC-AUTH-118, TC-AUTH-119, TC-AUTH-120, TC-AUTH-121, TC-AUTH-122, TC-AUTH-123, TC-AUTH-124, TC-AUTH-125, TC-AUTH-ISO-005 | 12 | 7/7 AC covered |
-| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005 | 5 | -- |
-| **TOTAL** | | | **128 test cases** | **128** | **68/68 AC** |
+| US-AUTH-016 | SSO enforcement, break-glass & admin-consent onboarding | Should Have | TC-AUTH-126, TC-AUTH-127, TC-AUTH-128, TC-AUTH-129, TC-AUTH-130, TC-AUTH-131, TC-AUTH-132, TC-AUTH-133, TC-AUTH-134, TC-AUTH-135, TC-AUTH-136, TC-AUTH-ISO-006 | 12 | 7/7 AC covered |
+| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005, TC-AUTH-ISO-006 | 6 | -- |
+| **TOTAL** | | | **140 test cases** | **140** | **75/75 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -64,6 +65,18 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-124 | SSO settings UI loads < 1s and validates inline before submit | Performance | Medium | US-AUTH-012 | NFR-3 |
 | TC-AUTH-125 | Accessibility (WCAG 2.1 AA) of the Single Sign-On settings card | Accessibility | Medium | US-AUTH-012 | AC-1, AC-2 (UI) |
 | TC-AUTH-ISO-005 | SSO settings tenant isolation -- tenant A config invisible/unwritable from tenant B, even with a forged tenant id | Security | Critical | US-AUTH-012 | AC-6, NFR-2, BR-2, FR-2 |
+| TC-AUTH-126 | `sso_only` refuses ordinary local login with "requires Microsoft" message; SSO path accepted | Functional | High | US-AUTH-016 | AC-1, FR-1, NFR-4 |
+| TC-AUTH-127 | Break-glass admin local login under `sso_only` permitted + high-severity `break_glass_login` audit + admin notification within 60s | Security | Critical | US-AUTH-016 | AC-2, FR-2, FR-4, FR-7, NFR-2, BR-2, BR-4 |
+| TC-AUTH-128 | Break-glass path works even with Entra/vendor app/allow-list unreachable (anti-lockout resilience) | Security | Critical | US-AUTH-016 | AC-2, FR-2, NFR-1, BR-1 |
+| TC-AUTH-129 | Enabling `sso_only` blocked with no designated break-glass admin (or incomplete SSO config), clear explanation | Security | Critical | US-AUTH-016 | AC-3, FR-3, BR-1 |
+| TC-AUTH-130 | Ordinary non-admin user under `sso_only` refused and cannot use break-glass | Security | High | US-AUTH-016 | AC-7, FR-1, FR-2, BR-2 |
+| TC-AUTH-131 | Onboarding generates correct Microsoft admin-consent URL for the vendor multi-tenant app | Functional | High | US-AUTH-016 | AC-4, FR-5, BR-3 |
+| TC-AUTH-132 | Successful consent captures customer `tid` into allow-list, advances onboarding status, audits `sso_admin_consent_completed`; does NOT auto-enable SSO | Functional | High | US-AUTH-016 | AC-5, FR-6, FR-7, BR-3 |
+| TC-AUTH-133 | Declined/failed consent keeps SSO disabled + prior mode, audits `sso_admin_consent_failed` + remediation | Functional | High | US-AUTH-016 | AC-6, FR-7, BR-3, NFR-3 |
+| TC-AUTH-134 | Revert `sso_only` -> `optional` restores local login for everyone immediately, no data loss | Functional | High | US-AUTH-016 | AC-1, FR-8, BR-5 |
+| TC-AUTH-135 | Every enforcement change audited as `sso_enforcement_changed` with before/after + actor | Security | High | US-AUTH-016 | AC-2, FR-7 |
+| TC-AUTH-136 | Accessibility (WCAG 2.1 AA) of the enforcement sub-section + admin-consent onboarding wizard | Accessibility | Medium | US-AUTH-016 | AC-1, AC-3, AC-4 (UI) |
+| TC-AUTH-ISO-006 | SSO enforcement/onboarding tenant isolation -- tenant A's `sso_only`/onboarding never affects tenant B's login | Security | Critical | US-AUTH-016 | AC-1, BR-6, FR-1, FR-6, NFR-4 |
 
 ### US-AUTH-012 Detailed Requirements Traceability
 
@@ -94,6 +107,36 @@ This document links user stories to their corresponding test cases across all mo
 | BR-4 (only tenant-admins may view/change) | BR | TC-AUTH-122 | Direct |
 | BR-5 (`jit_default_role` not system-admin/tenant-owner) | BR | TC-AUTH-119 | Direct |
 | BR-6 (`sso_only` governs new logins, not existing sessions) | BR | TC-AUTH-120 | Direct |
+
+### US-AUTH-016 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: `sso_only` refuses ordinary local login ("requires Microsoft"); SSO/break-glass accepted | AC | TC-AUTH-126, TC-AUTH-134, TC-AUTH-136, TC-AUTH-ISO-006 | Direct |
+| AC-2: Designated break-glass admin permitted locally; high-visibility `break_glass_login` audit | AC | TC-AUTH-127, TC-AUTH-128, TC-AUTH-135 | Direct |
+| AC-3: Cannot enable `sso_only` without a designated break-glass admin (clear explanation) | AC | TC-AUTH-129, TC-AUTH-136 | Direct |
+| AC-4: Onboarding generates the correct Microsoft admin-consent URL | AC | TC-AUTH-131, TC-AUTH-136 | Direct |
+| AC-5: On consent, capture customer `tid` into allow-list, mark SSO ready, audit `sso_admin_consent_completed` | AC | TC-AUTH-132 | Direct |
+| AC-6: Failed/declined consent does not enable SSO; remediation + `sso_admin_consent_failed` audit; prior mode intact | AC | TC-AUTH-133 | Direct |
+| AC-7: Ordinary user under `sso_only` refused; cannot use break-glass | AC | TC-AUTH-130 | Direct |
+| FR-1 (`sso_only` refuses local logins; permits SSO + break-glass) | FR | TC-AUTH-126, TC-AUTH-130, TC-AUTH-ISO-006 | Direct |
+| FR-2 (break-glass admin always authenticates locally under `sso_only`) | FR | TC-AUTH-127, TC-AUTH-128, TC-AUTH-130 | Direct |
+| FR-3 (cannot enable `sso_only` without a designated break-glass admin) | FR | TC-AUTH-129 | Direct |
+| FR-4 (break-glass logins high-severity audited + admin notification) | FR | TC-AUTH-127, TC-AUTH-128 | Direct |
+| FR-5 (generate customer admin-consent URL; handle consent return) | FR | TC-AUTH-131 | Direct |
+| FR-6 (capture customer `tid` into allow-list; mark SSO ready) | FR | TC-AUTH-132, TC-AUTH-ISO-006 | Direct |
+| FR-7 (enforcement changes, consent outcomes, break-glass logins audited) | FR | TC-AUTH-127, TC-AUTH-132, TC-AUTH-133, TC-AUTH-135 | Direct |
+| FR-8 (revert to `optional` at any time, no data loss, re-enables local login) | FR | TC-AUTH-134 | Direct |
+| NFR-1 (break-glass works even if Entra/vendor app/allow-list unreachable) | NFR | TC-AUTH-128 | Direct |
+| NFR-2 (break-glass audit + notification within 60s via Hangfire) | NFR | TC-AUTH-127 | Direct |
+| NFR-3 (admin-consent completes in one session, resumable if interrupted) | NFR | TC-AUTH-133 | Direct |
+| NFR-4 (enforcement evaluation negligible overhead; cached tenant setting) | NFR | TC-AUTH-126, TC-AUTH-134, TC-AUTH-ISO-006 | Direct |
+| BR-1 (never enforceable into a no-one-can-log-in state; break-glass mandatory) | BR | TC-AUTH-128, TC-AUTH-129 | Direct |
+| BR-2 (break-glass restricted to designated admins) | BR | TC-AUTH-127, TC-AUTH-130 | Direct |
+| BR-3 (consent records `tid`; consent alone does NOT enable SSO) | BR | TC-AUTH-131, TC-AUTH-132, TC-AUTH-133 | Direct |
+| BR-4 (every break-glass login is a security-sensitive audited + notified event) | BR | TC-AUTH-127 | Direct |
+| BR-5 (reverting to `optional` restores local login for everyone immediately) | BR | TC-AUTH-134 | Direct |
+| BR-6 (enforcement/onboarding tenant-scoped; one tenant never affects another) | BR | TC-AUTH-ISO-006 | Direct |
 
 ### US-AUTH-010 Detailed Requirements Traceability
 

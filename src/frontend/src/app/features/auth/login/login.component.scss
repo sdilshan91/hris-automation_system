@@ -139,3 +139,22 @@
     hover:text-neutral-700 transition-colors mt-4 cursor-pointer
     bg-transparent border-none;
 }
+
+/* US-AUTH-016: SSO-only entry (Microsoft-primary + break-glass link) */
+.sso-only-section {
+  @apply space-y-3;
+}
+
+.sso-only-copy {
+  @apply text-sm text-neutral-600 text-center;
+}
+
+.admin-signin-link {
+  @apply block w-full text-center text-sm text-neutral-500
+    hover:text-neutral-700 transition-colors mt-1 cursor-pointer
+    bg-transparent border-none underline underline-offset-2;
+}
+
+.break-glass-hint {
+  @apply text-xs text-neutral-400 mb-1;
+}

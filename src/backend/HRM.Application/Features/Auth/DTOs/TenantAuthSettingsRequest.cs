@@ -44,4 +44,12 @@ public sealed record TenantAuthSettingsRequest
 
     /// <summary>Sign-in enforcement mode: "optional" | "sso_only" (FR-5/BR-6).</summary>
     public string? EnforcementMode { get; init; }
+
+    /// <summary>
+    /// US-AUTH-016 FR-2/FR-3 (AC-3/BR-1): the designated break-glass admin user ids (GUIDs). Null = leave
+    /// unchanged; a provided list REPLACES the stored one (send [] to clear). Each id must resolve to an active
+    /// member of this tenant with a password AND an admin/owner role (validated in the service). At least one
+    /// valid designation is required to enable <c>sso_only</c>.
+    /// </summary>
+    public List<string>? BreakGlassAdminUserIds { get; init; }
 }

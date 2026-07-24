@@ -196,6 +196,17 @@ export interface IMfaLoginVerifyRequest {
 /** SSO enforcement mode (US-AUTH-012 FR-1). */
 export type SsoEnforcementMode = 'optional' | 'sso_only';
 
+/**
+ * SSO admin-consent onboarding lifecycle (US-AUTH-016 FR-5/FR-6, data req §7).
+ * `not_started` → `consent_pending` (admin-consent URL opened) → `consented`
+ * (Entra Directory ID captured) → `enabled` (tenant admin explicitly turned SSO on).
+ */
+export type SsoOnboardingStatus =
+  | 'not_started'
+  | 'consent_pending'
+  | 'consented'
+  | 'enabled';
+
 /** Tenant-level authentication settings (US-AUTH-005 + US-AUTH-009 + US-AUTH-010 + US-AUTH-012) */
 export interface ITenantAuthSettings {
   mfaPolicy: 'off' | 'optional' | 'required';
@@ -219,6 +230,17 @@ export interface ITenantAuthSettings {
   jitEnabled?: boolean;
   jitDefaultRole?: string | null;
   enforcementMode?: SsoEnforcementMode;
+  /**
+   * US-AUTH-016 FR-2/FR-3 (BR-1): designated break-glass admin user IDs. At least
+   * one is mandatory before `sso_only` can be enabled so a tenant can never lock
+   * itself out. Optional on the wire — backend provides defaults / [] when absent.
+   */
+  breakGlassAdminUserIds?: string[];
+  /**
+   * US-AUTH-016 FR-5/FR-6: admin-consent onboarding lifecycle state. Optional;
+   * treated as `not_started` when absent.
+   */
+  ssoOnboardingStatus?: SsoOnboardingStatus;
   /**
    * Read-only entitlement flag surfaced by GET (US-AUTH-012 AC-2, US-ADM-009
    * PlanFeatureFlags.Sso). When false/absent the SSO card is shown disabled with an

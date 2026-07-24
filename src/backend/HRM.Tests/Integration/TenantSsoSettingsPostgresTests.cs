@@ -245,8 +245,9 @@ public sealed class TenantSsoSettingsPostgresTests : IAsyncLifetime
         blocked.StatusCode.Should().Be(400);
         blocked.Error.Should().Contain("break-glass");
 
-        // Provision a local (password) Tenant Admin for tenant B → break-glass path preserved.
-        await SeedLocalAdminAsync(_tenantB);
+        // US-AUTH-016: a local admin merely EXISTING is no longer enough — sso_only requires an EXPLICIT
+        // break-glass designation (AC-3/BR-1). Provision a local (password) Tenant Admin and DESIGNATE them.
+        var adminId = await SeedLocalAdminAsync(_tenantB);
 
         var allowed = await service.UpdateTenantAuthSettingsAsync(_tenantB, new TenantAuthSettingsRequest
         {
@@ -254,9 +255,86 @@ public sealed class TenantSsoSettingsPostgresTests : IAsyncLifetime
             SsoEnabled = true,
             AllowedEntraTenantIds = [tid],
             EnforcementMode = "sso_only",
+            BreakGlassAdminUserIds = [adminId.ToString()],
         }, CancellationToken.None);
 
         allowed.IsSuccess.Should().BeTrue();
+
+        // The designation persisted and onboarding advanced to "enabled" (BR-3: enabling SSO is the explicit step).
+        await using var verify = Context(_tenantB);
+        var t = await verify.Tenants.IgnoreQueryFilters().AsNoTracking().FirstAsync(x => x.Id == _tenantB);
+        t.BreakGlassAdminUserIds.Should().ContainSingle().Which.Should().Be(adminId.ToString());
+        t.SsoOnboardingStatus.Should().Be("enabled");
+
+        // FR-7: a dedicated sso_enforcement_changed audit records the optional → sso_only transition.
+        var audit = await verify.AuditLogs.IgnoreQueryFilters().AsNoTracking()
+            .Where(a => a.TenantId == _tenantB && a.EventType == "sso_enforcement_changed")
+            .ToListAsync();
+        audit.Should().ContainSingle();
+        audit[0].Detail!.Should().Contain("optional").And.Contain("sso_only");
+    }
+
+    // ── US-AUTH-016: a bogus (non-admin) break-glass designation is rejected ──────
+
+    [Fact]
+    public async Task Update_BreakGlassDesignation_MustBeLocalAdmin()
+    {
+        var service = Service(_tenantA);
+
+        // A random id that is not a member/admin of the tenant cannot be designated (false anti-lockout guard).
+        var result = await service.UpdateTenantAuthSettingsAsync(_tenantA, new TenantAuthSettingsRequest
+        {
+            MfaPolicy = "off",
+            AllowedEmailDomains = ["contoso.com"],
+            BreakGlassAdminUserIds = [Guid.NewGuid().ToString()],
+        }, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.Error.Should().Contain("active local (password) administrator");
+    }
+
+    // ── US-AUTH-016 AC-5/AC-6: admin-consent capture + failure ────────────────────
+
+    [Fact]
+    public async Task CaptureAdminConsent_AddsTid_SetsConsented_WithoutEnablingSso_AndAudits()
+    {
+        var service = Service(_tenantA);
+        var customerTid = Guid.NewGuid().ToString();
+
+        var result = await service.CaptureAdminConsentAsync("acme", customerTid, "203.0.113.7", "xUnit", CancellationToken.None);
+        result.IsSuccess.Should().BeTrue();
+
+        await using var verify = Context(_tenantA);
+        var t = await verify.Tenants.IgnoreQueryFilters().AsNoTracking().FirstAsync(x => x.Id == _tenantA);
+        t.AllowedEntraTenantIds.Should().Contain(customerTid, "AC-5: the captured directory id lands in the allow-list");
+        t.SsoOnboardingStatus.Should().Be("consented");
+        t.SsoEnabled.Should().BeFalse("BR-3: consent alone must not enable SSO");
+
+        var audit = await verify.AuditLogs.IgnoreQueryFilters().AsNoTracking()
+            .Where(a => a.TenantId == _tenantA && a.EventType == "sso_admin_consent_completed")
+            .ToListAsync();
+        audit.Should().ContainSingle();
+        audit[0].Detail!.Should().Contain(customerTid);
+    }
+
+    [Fact]
+    public async Task RecordAdminConsentFailure_KeepsPriorMode_AndAudits()
+    {
+        var service = Service(_tenantA);
+
+        var result = await service.RecordAdminConsentFailureAsync("acme", "access_denied", "203.0.113.9", "xUnit", CancellationToken.None);
+        result.IsSuccess.Should().BeTrue();
+
+        await using var verify = Context(_tenantA);
+        var t = await verify.Tenants.IgnoreQueryFilters().AsNoTracking().FirstAsync(x => x.Id == _tenantA);
+        t.SsoEnabled.Should().BeFalse("AC-6: a failed consent must not enable SSO");
+        t.SsoEnforcementMode.Should().Be("optional", "AC-6: prior mode intact");
+
+        var audit = await verify.AuditLogs.IgnoreQueryFilters().AsNoTracking()
+            .Where(a => a.TenantId == _tenantA && a.EventType == "sso_admin_consent_failed")
+            .ToListAsync();
+        audit.Should().ContainSingle();
     }
 
     // ── AC-6/NFR-2: tenant isolation of the settings ──────────────────────────
@@ -344,7 +422,7 @@ public sealed class TenantSsoSettingsPostgresTests : IAsyncLifetime
         CreatedAt = DateTime.UtcNow,
     };
 
-    private async Task SeedLocalAdminAsync(Guid tenantId)
+    private async Task<Guid> SeedLocalAdminAsync(Guid tenantId)
     {
         await using var db = Context(tenantId);
 
@@ -380,6 +458,7 @@ public sealed class TenantSsoSettingsPostgresTests : IAsyncLifetime
         });
 
         await db.SaveChangesAsync();
+        return userId;
     }
 
     private AppDbContext Context(Guid tenantId)

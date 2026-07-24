@@ -35,4 +35,12 @@ public sealed record TenantAuthSettingsResponse
     /// to show the SSO card enabled vs a disabled "available on higher plans" state (AC-1/AC-2). Read-only.
     /// </summary>
     public bool SsoEntitled { get; init; }
+
+    // ── SSO enforcement + onboarding (US-AUTH-016) ────────────────────────────
+
+    /// <summary>The designated break-glass admin user ids (US-AUTH-016 FR-2/FR-3). Drives the enforcement UI.</summary>
+    public List<string> BreakGlassAdminUserIds { get; init; } = [];
+
+    /// <summary>Admin-consent onboarding progress: not_started | consent_pending | consented | enabled (US-AUTH-016 FR-5/FR-6).</summary>
+    public string SsoOnboardingStatus { get; init; } = "not_started";
 }

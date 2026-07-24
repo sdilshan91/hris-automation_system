@@ -160,5 +160,23 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
                 (c1, c2) => (c1 ?? new()).SequenceEqual(c2 ?? new()),
                 c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
                 c => c.ToList()));
+
+        // ── US-AUTH-016: break-glass designations + admin-consent onboarding status. ──
+
+        // Designated break-glass admin user ids (jsonb list; mirrors the allow-list arrays above). Default [].
+        builder.Property(t => t.BreakGlassAdminUserIds)
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'[]'::jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+            .Metadata.SetValueComparer(new ValueComparer<List<string>>(
+                (c1, c2) => (c1 ?? new()).SequenceEqual(c2 ?? new()),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList()));
+
+        builder.Property(t => t.SsoOnboardingStatus)
+            .HasMaxLength(20)
+            .HasDefaultValue("not_started");
     }
 }

@@ -80,6 +80,20 @@ public sealed class TenantAuthSettingsValidator : AbstractValidator<UpdateTenant
                 .WithMessage("Enforcement mode must be 'optional' or 'sso_only'.");
         });
 
+        // US-AUTH-016 FR-2/FR-3 (stateless part): each break-glass admin id must be a well-formed GUID. The
+        // DB-dependent rule — "the id is an active local (password) admin of this tenant" and the sso_only
+        // precondition — is enforced in AuthService.UpdateTenantAuthSettingsAsync.
+        When(x => x.Request.BreakGlassAdminUserIds is not null, () =>
+        {
+            RuleFor(x => x.Request.BreakGlassAdminUserIds!)
+                .Must(list => list.Count <= MaxListEntries)
+                .WithMessage($"At most {MaxListEntries} break-glass admins are allowed.");
+
+            RuleForEach(x => x.Request.BreakGlassAdminUserIds!)
+                .Must(id => Guid.TryParse(id, out _))
+                .WithMessage("Each break-glass admin id must be a valid user id (GUID).");
+        });
+
         // FR-6/BR-5 (privilege ceiling, stateless part): the JIT default role, when supplied non-empty, must not
         // be a privileged admin/owner role. ("Role exists in this tenant" is checked in the service.)
         When(x => !string.IsNullOrWhiteSpace(x.Request.JitDefaultRole), () =>
