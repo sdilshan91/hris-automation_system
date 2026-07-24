@@ -7092,3 +7092,32 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Module / US / TC:** Assets / Offboarding / Exit-interview — discovered 2026-07-17 by a backend-wide sweep for the BUG-289 class
 > **RESOLVED (2026-07-17):** After BUG-289, a full-backend audit for the same pattern (a `Kind=Unspecified` `DateTime` written to a `timestamptz` column) found **4 more confirmed write sites across 3 services** (everything else — the many `.Date` comparisons/SQL-predicates and the `EffectiveDate`/`Holiday.Date`/`OvertimeRecord.Date` writes to real `date`/`DateOnly` columns — is safe): `AssetService.cs:252` (`asset.IssueDate = line.IssueDate.Date` → `issue_date` timestamptz); `ExitInterviewService.cs:179` (`InterviewDate = input.InterviewDate.Date` → `interview_date` timestamptz); `OffboardingService.cs:82/128` (`lwd = input.LastWorkingDay.Date` → `last_working_day` timestamptz) and `:168` via `ClampDueDate` (`:438-441`, itself a 2nd independent `.Date` source → `due_date` timestamptz). All 4 fixed with the established `DateTime.SpecifyKind(<.Date>, DateTimeKind.Utc)` idiom (BulkEmployeeImport/Interview/AuditLog already use it). **Verified:** the compound Offboarding case (2 sites + ClampDueDate) is proven on real Postgres — `OffboardingInitiatePostgresTests` initiates for a Terminated employee and asserts `LastWorkingDay`/all task `DueDate`s persist at UTC (the write path used to throw); the fix is the identical, already-Postgres-proven BUG-289 pattern on audit-confirmed timestamptz columns. All 3 services' InMemory suites stay green (74/74). **Follow-up (LOW):** these columns are date-only — remodeling them to `date` would make the class structurally impossible (tracked, not done).
 > **⚠ CORRECTION + coverage completion (2026-07-17, PR #350 — TC backfill):** the original "Postgres-proven" claim covered ONLY Offboarding, and even that arm was **green theater** — `OffboardingInitiatePostgresTests` fed a `Kind=Utc` LWD, and since `.Date` preserves Kind, mutating the `SpecifyKind` did not make it throw. Corrected by feeding an **Unspecified** LWD (now mutation-kills). Asset issuance (`AssetService:253`) and Exit-interview (`ExitInterviewService:180`) had **NO real-Postgres arm at all** — the fix was asserted only by code-read of the shared idiom. Added **net-new** Testcontainers arms (`AssetExitInterviewDateKindPostgresTests`), both mutation-verified with Unspecified inputs. All three sites now genuinely Postgres-proven and bound: **TC-ONB-004-13** (asset), **TC-ONB-005-13** (offboarding), **TC-ONB-006-13** (exit). Lesson (the `.Date`-preserves-Kind theater trap) folded into [[inmemory-hides-datetimekind-timestamptz]].
+
+---
+
+### ISSUE-323 — `scripts/run-backend-tests.sh` (the ISSUE-312 aborted-run guard) is defeated by CRLF line endings on the NTFS host → the guard block never runs
+- **ID:** ISSUE-323
+- **Type:** ISSUE (TEST / INFRA — a test-integrity guard silently no-ops)
+- **Severity:** MED (defeats the ISSUE-312 protection: an aborted/partial `dotnet test` could read as green on the host-Linux path)
+- **Status:** OPEN
+- **Layer:** TEST / INFRA
+- **Module / US / TC:** platform tooling — discovered 2026-07-24 during the US-AUTH-012 verify gate
+- **Title:** The wrapper `scripts/run-backend-tests.sh` retains CRLF line endings (the working tree is a CRLF checkout from the old Windows/NTFS shared drive; `core.autocrlf=input` normalizes tracked source but this `.sh` still carries `\r`). Under `bash` on Linux every line breaks: `set -o pipefail` → `set: pipefail: invalid option name`, bare `\r` → `$'\r': command not found`, `trap … EXIT` → `trap: EXIT: invalid signal specification`, and `line 35: syntax error near unexpected token '}'`. The wrapper's validation/trap block (the part that turns an ABORTED run into a FAILED gate) therefore never executes — the gate's exit status comes from the **raw** `dotnet test`, not from the guard.
+- **Root cause:** CRLF in a shell script parsed by `bash` on Linux; the guard logic is unreachable.
+- **Evidence:** verify-gate stderr — `scripts/run-backend-tests.sh: line 17: set: pipefail: invalid option name` · `line 18: $'\r': command not found` · `line 20: trap: EXIT: invalid signal specification` · `line 35: syntax error near unexpected token '}'`. The underlying `dotnet test` still emitted a genuine full `Passed!  - Failed: 0, Passed: 4773, Skipped: 0, Total: 4773`, which was read manually — so US-AUTH-012's result stands, but only by luck (no abort occurred).
+- **Reproduction:** `bash scripts/run-backend-tests.sh src/backend/HRM.sln` on this host — the guard lines error out; a deliberately-aborted run would still return the raw exit code.
+- **Suggested direction (NOT applied):** `sed -i 's/\r$//' scripts/run-backend-tests.sh` (dos2unix) **and** add `*.sh text eol=lf` to `.gitattributes` so it cannot recur on the shared NTFS checkout. Sweep the other repo `.sh` scripts for the same CRLF defect. Related: [[project-local-dev-setup]] (autocrlf=input note).
+
+---
+
+### ISSUE-324 — Authentication `TEST-MATRIX.md` summary counts were internally inconsistent before US-AUTH-012
+- **ID:** ISSUE-324
+- **Type:** ISSUE (TEST — ledger hygiene)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** TEST
+- **Module / US / TC:** Authentication — flagged 2026-07-24 by `@qa-engineer` while adding the US-AUTH-012 TCs
+- **Title:** Pre-existing drift in `docs/QA/authentication/TEST-MATRIX.md`: the priority buckets summed to 111 while "Total Test Cases" read 116; the frontmatter `updated: 2026-06-11` yet the body already contained a 2026-07-19 TC; and there was no "Integration" row despite TC-AUTH-113/114 being integration-type.
+- **Root cause:** the module matrix counts weren't reconciled across earlier appends (out of US-AUTH-012's lane to fully fix).
+- **Evidence:** the matrix as of the US-AUTH-012 branch. The US-AUTH-012 additions were kept internally consistent and a missing Integration row was added for TC-AUTH-123.
+- **Suggested direction (NOT applied):** a matrix reconciliation pass (e.g. under `/retro` or a ledger-cleanup task) recomputing the auth priority/type/total counts from the TC files.
