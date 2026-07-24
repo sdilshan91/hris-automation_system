@@ -7154,7 +7154,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-327
 - **Type:** ISSUE (BE — security-audit gap; login itself works)
 - **Severity:** MED (a designated break-glass admin who has MFA enrolled can still sign in under `sso_only`, but the security-sensitive `break_glass_login` audit event + admin notification — FR-4/NFR-2 — are NOT emitted for that login)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (PR #447, 2026-07-24) — `VerifyMfaLoginAsync` now re-derives the break-glass gate (`IsBreakGlassMfaLoginAsync`: `sso_only` AND user ∈ `BreakGlassAdminUserIds`) from the cached SSO snapshot and reuses `EmitBreakGlassLoginAsync`, so the two-step MFA path emits the same `break_glass_login` audit + admin alert as the single-shot path. 2 regression arms (TC-AUTH-127), mutation-verified. Full suite 4790/0/0.
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-016 / TC-AUTH-127 (partial) — discovered 2026-07-24 during the US-AUTH-016 build
 - **Title:** `AuthService.BreakGlassLoginAsync` audits + alerts on the single-shot / inline-`mfaCode` break-glass path, but a break-glass admin with MFA enrolled completes login via the **two-step MFA** path (`AuthService.VerifyMfaLoginAsync`), which is not break-glass-aware. The designation gate already passed at step 1, so the login succeeds — but no `break_glass_login` audit and no admin alert fire for the MFA'd case.
