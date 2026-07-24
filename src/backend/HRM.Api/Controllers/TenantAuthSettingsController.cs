@@ -40,7 +40,7 @@ public sealed class TenantAuthSettingsController : ControllerBase
 
         if (result.IsFailure)
         {
-            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
         }
 
         return Ok(ApiResponse<TenantAuthSettingsResponse>.Ok(result.Value!));
@@ -64,7 +64,8 @@ public sealed class TenantAuthSettingsController : ControllerBase
 
         if (result.IsFailure)
         {
-            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+            // US-AUTH-012 FR-3/AC-2: surface the error code (e.g. 403 sso_not_entitled) to the client.
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
         }
 
         return Ok(ApiResponse.Ok("Tenant authentication settings updated."));

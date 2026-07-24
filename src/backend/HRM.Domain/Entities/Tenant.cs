@@ -146,6 +146,46 @@ public sealed class Tenant
     public string MfaPolicy { get; set; } = "off"; // "off" | "optional" | "required"
     public List<string> MfaRequiredRoles { get; set; } = new(); // jsonb: roles that require MFA when policy is "required"
 
+    // ── Enterprise SSO (Microsoft Entra ID) — US-AUTH-012 FR-1 ────────────────
+    // Per-tenant SSO configuration. Gated on the plan's PlanFeatureFlags.Sso (US-ADM-009). SSO is DISABLED by
+    // default for every tenant (BR-1); enabling it is an explicit, audited admin action that cannot be done with
+    // an empty allow-list (BR-3, fail-closed). These are the single source of truth consumed by US-AUTH-013
+    // (isolation) and US-AUTH-014 (matching/JIT). Client secrets/certs are PLATFORM-level, NOT stored here.
+
+    /// <summary>US-AUTH-012 FR-1/BR-1: master toggle for Entra SSO. Default false (disabled).</summary>
+    public bool SsoEnabled { get; set; }
+
+    /// <summary>
+    /// US-AUTH-012 FR-1: trusted Entra directory (tenant) IDs — the token <c>tid</c> allow-list (jsonb). A login
+    /// is admitted only when the id_token's <c>tid</c> is in this set OR its verified email domain is in
+    /// <see cref="AllowedEmailDomains"/> (fail-closed). Multiple directories are supported (CR-AUTH-001 OQ-4).
+    /// Stored as strings; each is validated as a well-formed GUID on write.
+    /// </summary>
+    public List<string> AllowedEntraTenantIds { get; set; } = new();
+
+    /// <summary>
+    /// US-AUTH-012 FR-1: verified email domains that this tenant trusts for SSO (jsonb). Used both as an admit
+    /// rule and (with <see cref="JitEnabled"/>) as the gate for just-in-time provisioning. Each entry is validated
+    /// as a syntactically valid domain on write.
+    /// </summary>
+    public List<string> AllowedEmailDomains { get; set; } = new();
+
+    /// <summary>US-AUTH-012 FR-1: opt-in just-in-time provisioning for allow-listed users. Default false.</summary>
+    public bool JitEnabled { get; set; }
+
+    /// <summary>
+    /// US-AUTH-012 FR-1/BR-5: the role assigned to JIT-provisioned users. Must be an existing tenant role and must
+    /// NOT be a privileged admin/owner role (privilege-escalation guard). Null until configured.
+    /// </summary>
+    public string? JitDefaultRole { get; set; }
+
+    /// <summary>
+    /// US-AUTH-012 FR-1/BR-6: sign-in enforcement mode — "optional" (SSO alongside local login) or "sso_only"
+    /// (SSO enforced for new logins). Default "optional". "sso_only" is accepted only when a local break-glass
+    /// admin path is preserved (AC-7, US-AUTH-016) so a tenant can never lock itself out.
+    /// </summary>
+    public string SsoEnforcementMode { get; set; } = "optional";
+
     /// <summary>
     /// Maximum number of employees allowed for this tenant's subscription plan (FR-5).
     /// Null means unlimited. TODO(subscription): move to a proper Subscription/Plan entity.

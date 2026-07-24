@@ -26,8 +26,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023, TC-AUTH-059, TC-AUTH-060, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063, TC-AUTH-064 | 8 | 5/5 AC covered (deep) |
 | US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025, TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-069, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-074, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077, TC-AUTH-078, TC-AUTH-079, TC-AUTH-080, TC-AUTH-081, TC-AUTH-082 | 20 | 6/6 AC covered (deep) |
 | US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028, TC-AUTH-083, TC-AUTH-084, TC-AUTH-085, TC-AUTH-086, TC-AUTH-087, TC-AUTH-088, TC-AUTH-089, TC-AUTH-090, TC-AUTH-091, TC-AUTH-092, TC-AUTH-093, TC-AUTH-094, TC-AUTH-095, TC-AUTH-096, TC-AUTH-097, TC-AUTH-098, TC-AUTH-099, TC-AUTH-100, TC-AUTH-101, TC-AUTH-102, TC-AUTH-103, TC-AUTH-104, TC-AUTH-105, TC-AUTH-106, TC-AUTH-107, TC-AUTH-108, TC-AUTH-109, TC-AUTH-110, TC-AUTH-111, TC-AUTH-112, TC-AUTH-114 | 34 | 6/6 AC covered (deep) |
-| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004 | 4 | -- |
-| **TOTAL** | | | **116 test cases** | **116** | **61/61 AC** |
+| US-AUTH-012 | Per-tenant SSO configuration | Should Have | TC-AUTH-115, TC-AUTH-116, TC-AUTH-117, TC-AUTH-118, TC-AUTH-119, TC-AUTH-120, TC-AUTH-121, TC-AUTH-122, TC-AUTH-123, TC-AUTH-124, TC-AUTH-125, TC-AUTH-ISO-005 | 12 | 7/7 AC covered |
+| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005 | 5 | -- |
+| **TOTAL** | | | **128 test cases** | **128** | **68/68 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -51,6 +52,48 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-ISO-003 | API rejects requests with mismatched tenant context | Security | Critical | US-AUTH-002, US-AUTH-007 | -- |
 | TC-AUTH-ISO-004 | RBAC cross-tenant isolation -- roles, permissions, and cache keys are tenant-scoped | Security | Critical | US-AUTH-006 | FR-2, FR-10, NFR-2, BR-1 |
 | TC-AUTH-114 | Lockout email branded with resolved tenant name; degrades gracefully when tenant null; AuthService plumbs login-time tenant name into the enqueued job -- ISSUE-063 | Integration | High | US-AUTH-010 | FR-8; PR #371 |
+| TC-AUTH-115 | Entitled tenant admin saves a valid SSO config -> persisted + `sso_config_updated` audit | Functional | High | US-AUTH-012 | AC-1, AC-3, FR-1, FR-2, FR-7, FR-8, BR-1 |
+| TC-AUTH-116 | SSO settings gated by plan entitlement -- section hidden/disabled + write API 403 `sso_not_entitled` | Security | High | US-AUTH-012 | AC-2, FR-3 |
+| TC-AUTH-117 | Enabling SSO with an empty allow-list rejected (fail-closed); `sso_enabled` stays false | Functional | High | US-AUTH-012 | AC-4, FR-5, BR-3 |
+| TC-AUTH-118 | Per-entry validation of `tid` (GUID) and email domains -- malformed entries rejected | Functional | High | US-AUTH-012 | AC-3, FR-4 |
+| TC-AUTH-119 | `jit_default_role` privilege-escalation guard -- privileged/non-existent roles rejected | Security | High | US-AUTH-012 | AC-5, FR-6, BR-5 |
+| TC-AUTH-120 | `enforcement_mode = sso_only` blocked without break-glass; accepted once precondition met | Security | High | US-AUTH-012 | AC-7, FR-5, BR-6 |
+| TC-AUTH-121 | Boundary -- 20 `tid`s and 20 domains accepted and persisted without degradation | Performance | Medium | US-AUTH-012 | NFR-4, FR-1 |
+| TC-AUTH-122 | Authorization -- only tenant-admin roles may view/change SSO settings | Security | High | US-AUTH-012 | BR-4, FR-2 |
+| TC-AUTH-123 | SSO settings cache invalidated on write -- login/callback path sees change immediately | Integration | High | US-AUTH-012 | NFR-1, FR-8 |
+| TC-AUTH-124 | SSO settings UI loads < 1s and validates inline before submit | Performance | Medium | US-AUTH-012 | NFR-3 |
+| TC-AUTH-125 | Accessibility (WCAG 2.1 AA) of the Single Sign-On settings card | Accessibility | Medium | US-AUTH-012 | AC-1, AC-2 (UI) |
+| TC-AUTH-ISO-005 | SSO settings tenant isolation -- tenant A config invisible/unwritable from tenant B, even with a forged tenant id | Security | Critical | US-AUTH-012 | AC-6, NFR-2, BR-2, FR-2 |
+
+### US-AUTH-012 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: Entitled admin sees SSO config section with current/default values | AC | TC-AUTH-115, TC-AUTH-124, TC-AUTH-125 | Direct |
+| AC-2: Plan lacks `Sso` -> section hidden/disabled + write returns 403 `sso_not_entitled` | AC | TC-AUTH-116, TC-AUTH-125 | Direct |
+| AC-3: `tid`/domain validated and persisted per tenant; `sso_config_updated` audit | AC | TC-AUTH-115, TC-AUTH-118 | Direct |
+| AC-4: Empty allow-list cannot enable SSO (fail-closed) | AC | TC-AUTH-117 | Direct |
+| AC-5: `jit_default_role` validated against tenant roles + privilege ceiling | AC | TC-AUTH-119 | Direct |
+| AC-6: Tenant isolation of SSO settings (A invisible/unwritable from B) | AC | TC-AUTH-ISO-005 | Direct |
+| AC-7: `sso_only` accepted only with preserved break-glass path | AC | TC-AUTH-120 | Direct |
+| FR-1 (SSO fields on `TenantAuthSettings`) | FR | TC-AUTH-115, TC-AUTH-121 | Direct |
+| FR-2 (read/write via existing controller, tenant-scoped) | FR | TC-AUTH-115, TC-AUTH-122, TC-AUTH-ISO-005 | Direct |
+| FR-3 (entire surface gated on `PlanFeatureFlags.Sso`; 403 on write) | FR | TC-AUTH-116 | Direct |
+| FR-4 (GUID/domain validation) | FR | TC-AUTH-118 | Direct |
+| FR-5 (no empty-allow-list enable; no `sso_only` without break-glass) | FR | TC-AUTH-117, TC-AUTH-120 | Direct |
+| FR-6 (`jit_default_role` validated vs roles + privilege ceiling) | FR | TC-AUTH-119 | Direct |
+| FR-7 (audit create/update with before/after, no secrets) | FR | TC-AUTH-115 | Direct |
+| FR-8 (settings are single source of truth for US-AUTH-013/014) | FR | TC-AUTH-115, TC-AUTH-123 | Direct |
+| NFR-1 (cacheable per tenant, invalidated on write) | NFR | TC-AUTH-123 | Direct |
+| NFR-2 (tenant scoping at query level; no cross-tenant read/write even forged) | NFR | TC-AUTH-ISO-005 | Direct |
+| NFR-3 (UI loads < 1s, inline validation before submit) | NFR | TC-AUTH-124 | Direct |
+| NFR-4 (>= 20 entries per list without degradation) | NFR | TC-AUTH-121 | Direct |
+| BR-1 (SSO disabled by default; enabling is audited) | BR | TC-AUTH-115 | Direct |
+| BR-2 (strictly per-tenant; no global/shared config) | BR | TC-AUTH-ISO-005 | Direct |
+| BR-3 (cannot enable without a trusted `tid`/domain) | BR | TC-AUTH-117 | Direct |
+| BR-4 (only tenant-admins may view/change) | BR | TC-AUTH-122 | Direct |
+| BR-5 (`jit_default_role` not system-admin/tenant-owner) | BR | TC-AUTH-119 | Direct |
+| BR-6 (`sso_only` governs new logins, not existing sessions) | BR | TC-AUTH-120 | Direct |
 
 ### US-AUTH-010 Detailed Requirements Traceability
 
@@ -72,7 +115,7 @@ This document links user stories to their corresponding test cases across all mo
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
-| Acceptance Criteria Coverage | 61/61 (100%) | >= 100% | PASS |
+| Acceptance Criteria Coverage | 68/68 (100%) | >= 100% | PASS |
 | US-AUTH-005 AC Coverage | 7/7 (100%) | >= 100% | PASS |
 | US-AUTH-005 FR Coverage | 10/10 (100%) | >= 100% | PASS |
 | US-AUTH-005 NFR Coverage | 3/3 covered (NFR-1, NFR-3, NFR-4) | >= 85% | PASS |
@@ -82,8 +125,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-008 Requirement Coverage | 9/9 FR + 4/4 NFR + 5/5 BR = 100% | >= 85% | PASS |
 | US-AUTH-009 Requirement Coverage | 10/10 FR + 5/5 NFR + 6/6 BR = 100% | >= 85% | PASS |
 | US-AUTH-010 Requirement Coverage | 10/10 FR + 5/5 NFR + 7/7 BR = 100% | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 23 (4 dedicated + 19 embedded) | >= 3 | PASS |
-| Security Test Cases | 50/116 (43%) | >= 30% | PASS |
+| US-AUTH-012 Requirement Coverage | 8/8 FR + 4/4 NFR + 6/6 BR = 100% | >= 85% | PASS |
+| Multi-Tenant Isolation Tests | 25 (5 dedicated + 20 embedded) | >= 3 | PASS |
+| Security Test Cases | 55/128 (43%) | >= 30% | PASS |
 | Critical Module Coverage | 100% | >= 85% | PASS |
 | API Endpoint Coverage | 31/31 (100%) | >= 90% | PASS |
 

@@ -1590,6 +1590,11 @@ public sealed class AuthService : IAuthService
             return Result<TenantAuthSettingsResponse>.Failure("Tenant not found.", 404);
         }
 
+        // US-AUTH-012 FR-8/NFR-1: SSO subset is served through the cache-aside snapshot method (the same seam the
+        // login/callback path uses); entitlement is resolved from the tenant's plan for the FE's enable/disable UI.
+        var sso = (await GetSsoSettingsAsync(tenantId, cancellationToken)).Value ?? new SsoSettingsSnapshot();
+        var ssoEntitled = await IsSsoEntitledAsync(tenant.PlanId, cancellationToken);
+
         return Result<TenantAuthSettingsResponse>.Success(new TenantAuthSettingsResponse
         {
             MfaPolicy = tenant.MfaPolicy,
@@ -1602,7 +1607,125 @@ public sealed class AuthService : IAuthService
             MaxFailedAttempts = tenant.MaxFailedAttempts,
             LockoutDurationMinutes = tenant.LockoutDurationMinutes,
             ProgressiveLockoutEnabled = tenant.ProgressiveLockoutEnabled,
+            // US-AUTH-012 FR-1/FR-2: SSO settings
+            SsoEnabled = sso.SsoEnabled,
+            AllowedEntraTenantIds = sso.AllowedEntraTenantIds,
+            AllowedEmailDomains = sso.AllowedEmailDomains,
+            JitEnabled = sso.JitEnabled,
+            JitDefaultRole = sso.JitDefaultRole,
+            EnforcementMode = sso.EnforcementMode,
+            SsoEntitled = ssoEntitled,
         });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<SsoSettingsSnapshot>> GetSsoSettingsAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        var cacheKey = SsoSettingsCacheKey(tenantId);
+
+        // Cache read is best-effort — a Redis outage falls back to the DB (mirrors the my-tenants cache).
+        try
+        {
+            var cached = await _cache.GetStringAsync(cacheKey, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(cached))
+            {
+                var snap = JsonSerializer.Deserialize<SsoSettingsSnapshot>(cached);
+                if (snap is not null)
+                {
+                    return Result<SsoSettingsSnapshot>.Success(snap);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SSO settings cache read failed for tenant {TenantId}; falling back to database", tenantId);
+        }
+
+        var tenant = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+        if (tenant is null)
+        {
+            return Result<SsoSettingsSnapshot>.Failure("Tenant not found.", 404);
+        }
+
+        var snapshot = ToSsoSnapshot(tenant);
+
+        try
+        {
+            await _cache.SetStringAsync(
+                cacheKey,
+                JsonSerializer.Serialize(snapshot),
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10) },
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SSO settings cache write failed for tenant {TenantId}", tenantId);
+        }
+
+        return Result<SsoSettingsSnapshot>.Success(snapshot);
+    }
+
+    private static string SsoSettingsCacheKey(Guid tenantId) => $"sso-settings:{tenantId}";
+
+    private static SsoSettingsSnapshot ToSsoSnapshot(Tenant tenant) => new()
+    {
+        SsoEnabled = tenant.SsoEnabled,
+        AllowedEntraTenantIds = tenant.AllowedEntraTenantIds ?? [],
+        AllowedEmailDomains = tenant.AllowedEmailDomains ?? [],
+        JitEnabled = tenant.JitEnabled,
+        JitDefaultRole = tenant.JitDefaultRole,
+        EnforcementMode = tenant.SsoEnforcementMode,
+    };
+
+    /// <summary>US-AUTH-012 FR-3: resolves the SSO entitlement from the tenant's subscription plan (US-ADM-009).</summary>
+    private async Task<bool> IsSsoEntitledAsync(string planId, CancellationToken cancellationToken)
+    {
+        var plan = await _dbContext.SubscriptionPlans
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Code == planId, cancellationToken);
+
+        return plan?.FeatureFlags.Sso ?? false;
+    }
+
+    /// <summary>
+    /// US-AUTH-012 AC-7/BR-6: a preserved local break-glass admin = at least one ACTIVE membership whose user is
+    /// active and has a password (local login capable) AND holds a Tenant Owner/Admin role. Guarantees a tenant
+    /// enforcing <c>sso_only</c> can never lock itself out (US-AUTH-016).
+    /// </summary>
+    private async Task<bool> HasLocalBreakGlassAdminAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        var adminRoles = new[]
+        {
+            PermissionCatalog.BuiltInRoles.TenantOwner,
+            PermissionCatalog.BuiltInRoles.TenantAdmin,
+        };
+
+        return await _dbContext.UserTenants
+            .IgnoreQueryFilters()
+            .AnyAsync(ut => ut.TenantId == tenantId
+                && ut.Status == UserTenantStatus.Active
+                && ut.User.IsActive
+                && ut.User.PasswordHash != null
+                && ut.UserTenantRoles.Any(utr => adminRoles.Contains(utr.Role.Name)),
+                cancellationToken);
+    }
+
+    private async Task InvalidateSsoSettingsCacheAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _cache.RemoveAsync(SsoSettingsCacheKey(tenantId), cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "SSO settings cache invalidation failed for tenant {TenantId}", tenantId);
+        }
     }
 
     public async Task<Result> UpdateTenantAuthSettingsAsync(
@@ -1623,6 +1746,97 @@ public sealed class AuthService : IAuthService
         if (tenant is null)
         {
             return Result.Failure("Tenant not found.", 404);
+        }
+
+        // ── US-AUTH-012: SSO settings write path (validated before any mutation so a failure changes nothing) ──
+        var ssoWrite = request.SsoEnabled.HasValue
+            || request.AllowedEntraTenantIds is not null
+            || request.AllowedEmailDomains is not null
+            || request.JitEnabled.HasValue
+            || request.JitDefaultRole is not null
+            || request.EnforcementMode is not null;
+
+        object? ssoBefore = null;
+        var ssoChanged = false;
+
+        if (ssoWrite)
+        {
+            // FR-3/AC-2: the entire SSO surface is gated on the plan's SSO entitlement.
+            if (!await IsSsoEntitledAsync(tenant.PlanId, cancellationToken))
+            {
+                return Result.Failure("SSO is not included in your current plan.", 403, errorCode: "sso_not_entitled");
+            }
+
+            // Merged effective state — a null request field means "leave unchanged"; a provided list REPLACES.
+            var effEnabled = request.SsoEnabled ?? tenant.SsoEnabled;
+            var effTids = (request.AllowedEntraTenantIds ?? tenant.AllowedEntraTenantIds ?? [])
+                .Select(t => t.Trim())
+                .Where(t => t.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var effDomains = (request.AllowedEmailDomains ?? tenant.AllowedEmailDomains ?? [])
+                .Select(d => d.Trim().ToLowerInvariant())
+                .Where(d => d.Length > 0)
+                .Distinct()
+                .ToList();
+            var effJitEnabled = request.JitEnabled ?? tenant.JitEnabled;
+            var effJitRole = request.JitDefaultRole is null
+                ? tenant.JitDefaultRole
+                : (string.IsNullOrWhiteSpace(request.JitDefaultRole) ? null : request.JitDefaultRole.Trim());
+            var effMode = request.EnforcementMode ?? tenant.SsoEnforcementMode;
+
+            // FR-5/BR-3 (fail-closed): SSO cannot be enabled with an empty allow-list. Authoritative merged-state
+            // guard (the validator only catches the same-request case).
+            if (effEnabled && effTids.Count == 0 && effDomains.Count == 0)
+            {
+                return Result.Failure("Add at least one trusted directory or email domain before enabling SSO.", 400);
+            }
+
+            // FR-6/BR-5: the JIT default role must exist in this tenant and must not be a privileged admin/owner role.
+            if (!string.IsNullOrWhiteSpace(effJitRole))
+            {
+                if (PermissionCatalog.BuiltInRoles.PrivilegedForJit.Contains(effJitRole))
+                {
+                    return Result.Failure("The default SSO role cannot be a privileged admin or owner role.", 400);
+                }
+
+                var roleExists = await _dbContext.Roles
+                    .IgnoreQueryFilters()
+                    .AnyAsync(r => r.TenantId == tenantId && r.Name == effJitRole, cancellationToken);
+
+                if (!roleExists)
+                {
+                    return Result.Failure($"Role '{effJitRole}' does not exist in this tenant.", 400);
+                }
+            }
+
+            // AC-7/BR-6: sso_only is accepted only when a local break-glass admin path is preserved (US-AUTH-016).
+            if (effMode == SsoEnforcementModes.SsoOnly
+                && !await HasLocalBreakGlassAdminAsync(tenantId, cancellationToken))
+            {
+                return Result.Failure(
+                    "Enable at least one local (password) admin as a break-glass path before enforcing SSO-only sign-in.",
+                    400);
+            }
+
+            // FR-7: capture the before-state for the audit trail (no secret material is stored per tenant).
+            ssoBefore = new
+            {
+                tenant.SsoEnabled,
+                tenant.AllowedEntraTenantIds,
+                tenant.AllowedEmailDomains,
+                tenant.JitEnabled,
+                tenant.JitDefaultRole,
+                EnforcementMode = tenant.SsoEnforcementMode,
+            };
+
+            tenant.SsoEnabled = effEnabled;
+            tenant.AllowedEntraTenantIds = effTids;
+            tenant.AllowedEmailDomains = effDomains;
+            tenant.JitEnabled = effJitEnabled;
+            tenant.JitDefaultRole = effJitRole;
+            tenant.SsoEnforcementMode = effMode;
+            ssoChanged = true;
         }
 
         tenant.MfaPolicy = request.MfaPolicy;
@@ -1681,11 +1895,37 @@ public sealed class AuthService : IAuthService
         await _dbContext.SaveChangesAsync(cancellationToken);
         await WriteAuditLogAsync(null, "tenant_auth_settings_updated", null, null, cancellationToken, tenantId);
 
+        // US-AUTH-012 FR-7: audit the SSO config change with before/after (no secret material) and drop the
+        // per-tenant SSO settings cache so the login/callback path sees the change immediately (NFR-1).
+        if (ssoChanged)
+        {
+            var ssoAfter = new
+            {
+                tenant.SsoEnabled,
+                tenant.AllowedEntraTenantIds,
+                tenant.AllowedEmailDomains,
+                tenant.JitEnabled,
+                tenant.JitDefaultRole,
+                EnforcementMode = tenant.SsoEnforcementMode,
+            };
+
+            await WriteAuditLogWithDetailAsync(
+                _currentUser?.UserId,
+                "sso_config_updated",
+                null,
+                null,
+                new { before = ssoBefore, after = ssoAfter },
+                cancellationToken,
+                tenantId);
+
+            await InvalidateSsoSettingsCacheAsync(tenantId, cancellationToken);
+        }
+
         _logger.LogInformation(
-            "Tenant {TenantId} auth settings updated (MFA: {Policy}, Session: idle={Idle}m abs={Abs}h max={Max} strategy={Strategy}, Lockout: maxAttempts={MaxAttempts} duration={LockoutDuration}m progressive={Progressive})",
+            "Tenant {TenantId} auth settings updated (MFA: {Policy}, Session: idle={Idle}m abs={Abs}h max={Max} strategy={Strategy}, Lockout: maxAttempts={MaxAttempts} duration={LockoutDuration}m progressive={Progressive}, SSO changed={SsoChanged})",
             tenantId, request.MfaPolicy, tenant.IdleTimeoutMinutes, tenant.AbsoluteTimeoutHours,
             tenant.MaxConcurrentSessions, tenant.ConcurrentSessionStrategy,
-            tenant.MaxFailedAttempts, tenant.LockoutDurationMinutes, tenant.ProgressiveLockoutEnabled);
+            tenant.MaxFailedAttempts, tenant.LockoutDurationMinutes, tenant.ProgressiveLockoutEnabled, ssoChanged);
 
         return Result.Success();
     }

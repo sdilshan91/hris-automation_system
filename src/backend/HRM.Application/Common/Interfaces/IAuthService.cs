@@ -37,6 +37,13 @@ public interface IAuthService
     Task<Result<TenantAuthSettingsResponse>> GetTenantAuthSettingsAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<Result> UpdateTenantAuthSettingsAsync(Guid tenantId, TenantAuthSettingsRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// US-AUTH-012 FR-8/NFR-1: the per-tenant SSO configuration for the login/callback path, served cache-aside
+    /// and invalidated on write. Returns the tenant's current SSO snapshot (disabled defaults if the tenant has
+    /// never configured SSO). 404 when the tenant does not exist.
+    /// </summary>
+    Task<Result<SsoSettingsSnapshot>> GetSsoSettingsAsync(Guid tenantId, CancellationToken cancellationToken = default);
+
     // Account lockout management (US-AUTH-010)
     Task<Result> UnlockUserAsync(Guid userId, Guid tenantId, Guid adminUserId, CancellationToken cancellationToken = default);
 

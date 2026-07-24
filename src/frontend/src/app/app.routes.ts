@@ -197,6 +197,15 @@ export const appRoutes: Routes = [
             './features/auth/mfa/tenant-auth-settings/tenant-auth-settings.component'
           ).then((m) => m.TenantAuthSettingsComponent),
       },
+      // SSO / Microsoft Entra ID settings (US-AUTH-012)
+      {
+        path: 'admin/tenant/sso-settings',
+        canActivate: [roleGuard(['Tenant Admin'])],
+        loadComponent: () =>
+          import(
+            './features/auth/sso/sso-settings/sso-settings.component'
+          ).then((m) => m.SsoSettingsComponent),
+      },
       // Session policy settings (US-AUTH-009 FR-1)
       {
         path: 'admin/tenant/session-policy',

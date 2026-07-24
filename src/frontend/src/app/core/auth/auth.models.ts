@@ -193,7 +193,10 @@ export interface IMfaLoginVerifyRequest {
   email: string;
 }
 
-/** Tenant-level authentication settings (US-AUTH-005 + US-AUTH-009 + US-AUTH-010) */
+/** SSO enforcement mode (US-AUTH-012 FR-1). */
+export type SsoEnforcementMode = 'optional' | 'sso_only';
+
+/** Tenant-level authentication settings (US-AUTH-005 + US-AUTH-009 + US-AUTH-010 + US-AUTH-012) */
 export interface ITenantAuthSettings {
   mfaPolicy: 'off' | 'optional' | 'required';
   mfaRequiredRoles: string[];
@@ -207,6 +210,21 @@ export interface ITenantAuthSettings {
   maxFailedAttempts?: number;
   lockoutDurationMinutes?: number;
   progressiveLockoutEnabled?: boolean;
+  // SSO / Microsoft Entra ID config (US-AUTH-012 FR-1) -- optional; backend provides defaults
+  // (SSO disabled by default, BR-1). Naming mirrors the existing camelCase DTO convention;
+  // the snake_case in US-AUTH-012 section 7 is the DB/column naming.
+  ssoEnabled?: boolean;
+  allowedEntraTenantIds?: string[];
+  allowedEmailDomains?: string[];
+  jitEnabled?: boolean;
+  jitDefaultRole?: string | null;
+  enforcementMode?: SsoEnforcementMode;
+  /**
+   * Read-only entitlement flag surfaced by GET (US-AUTH-012 AC-2, US-ADM-009
+   * PlanFeatureFlags.Sso). When false/absent the SSO card is shown disabled with an
+   * "Available on higher plans" badge (fail-closed). Never sent on write.
+   */
+  ssoEntitled?: boolean;
 }
 
 /** Concurrent session strategy (US-AUTH-009 FR-1) */
