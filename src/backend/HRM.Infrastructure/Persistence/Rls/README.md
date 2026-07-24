@@ -74,6 +74,16 @@ schema, repoint `DefaultConnection`→`hrm_app` + `PrivilegedConnection`→`hrm_
 `PrivilegedConnection`, set `Rls:Enabled=true`, deploy, restart. **Rollback = set `Rls:Enabled=false` +
 restart** (the reconciler `DISABLE`s enforcement; the app runs pre-RLS on whatever connection is set).
 
+> **DF-enc-rls-grant — verify `hrm_app` grants on tables created outside the default-privilege window.** `roles.sql`'s
+> `ALTER DEFAULT PRIVILEGES FOR ROLE hrm_owner` auto-grants `hrm_app` on any table a **later** `hrm_owner` migration
+> creates — so on a normal flip the `encryption_key_activation` system table (and every future table) is covered
+> automatically (verified on the dev flip: `hrm_app` holds SELECT/INSERT/UPDATE/DELETE). The one edge to check on an
+> **already-provisioned** prod DB: a table created *before* `roles.sql`'s `ALTER DEFAULT PRIVILEGES` ran won't have
+> been auto-granted. Quick check after the flip (as superuser):
+> `SELECT table_name, string_agg(privilege_type,',') FROM information_schema.role_table_grants WHERE grantee='hrm_app' GROUP BY 1 ORDER BY 1;`
+> — any `tenant_id`/system table the app writes on `DefaultConnection` (hrm_app) that is missing needs a one-off
+> `GRANT SELECT,INSERT,UPDATE,DELETE ON <table> TO hrm_app;`.
+
 ## Pre-flip checklist (carried from 2c — a hard go/no-go before any non-dev flip)
 
 - [ ] `roles.sql` run; `hrm_app` is `NOBYPASSRLS`/non-owner; `hrm_owner` owns the schema tables.
