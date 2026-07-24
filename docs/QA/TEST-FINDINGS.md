@@ -7186,3 +7186,16 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Module / US / TC:** Authentication / US-AUTH-011 / TC-AUTH-137 — flagged 2026-07-24 by `@qa-engineer`
 - **Title:** `docs/BA/authentication/US-AUTH-011.md` AC-1 specifies the request scope `"openid profile email User.Read"`, but `EntraSsoOptions.Scopes` defaults to `"openid profile email"` (no `User.Read`). The deployed config value governs; the TCs assert the configured value, not the story literal.
 - **Suggested direction (NOT applied):** decide — add `User.Read` to the deployed scope (if Graph profile reads are wanted) OR amend AC-1 to match the leaner default. BA/backend decision, not a QA edit.
+
+---
+
+### ISSUE-330 — No platform backup/retention routine exists to add the GlitchTip `gt-pgdata` volume to (US-PLT-006 AC-7)
+- **ID:** ISSUE-330
+- **Type:** ISSUE (INFRA — ops gap; blocks an AC)
+- **Severity:** MED (US-PLT-006 AC-7/FR-10 requires the GlitchTip Postgres volume `gt-pgdata` to be in the backup routine, but `ops/` has no platform-wide backup/retention routine to add it to)
+- **Status:** OPEN
+- **Layer:** INFRA
+- **Module / US / TC:** Platform / US-PLT-006 / TC-PLT-014 — flagged 2026-07-25 during the US-PLT-006 build (`@qa-engineer` + orchestrator verification: `ops/` contains only `ops/glitchtip/docker-compose.yml`, no backup script/routine)
+- **Title:** AC-7 ("add `gt-pgdata` to the backup routine") cannot be completed because there is no existing platform backup/retention routine (no `pg_dump`/backup script under `ops/`). The GlitchTip SDK wiring (AC-1..6) shipped in PR #448; AC-7 is deferred pending an ops backup routine.
+- **Root cause:** the platform has no committed DB-backup/retention automation yet (broader than GlitchTip — the app + Hangfire Postgres would want the same).
+- **Suggested direction (NOT applied):** stand up a platform backup/retention routine under `ops/` (covering the app Postgres + Hangfire + GlitchTip `gt-pgdata` volumes), then wire AC-7 into it. TC-PLT-014 asserts the check and stays `blocked` until the routine exists. Likely its own small ops story.
