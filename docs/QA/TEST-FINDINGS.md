@@ -7141,7 +7141,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-326
 - **Type:** ISSUE (INFRA — environment/toolchain)
 - **Severity:** LOW (self-inflicted to the host-run path only; the canonical FE build is Docker-on-Linux)
-- **Status:** OPEN (worked around for the session)
+- **Status:** ✅ RESOLVED (documented, 2026-07-24) — this is an environment constraint (shared `node_modules` across Windows + Linux on the NTFS drive), not a code defect, so the durable fix is procedural: the canonical FE build/test path is now documented in [docs/DEV/INSTRUCTIONS.md](../DEV/INSTRUCTIONS.md) — use the Docker `frontend` service (clean/isolated) **or** `npm ci` on Linux, never a Windows-populated `node_modules`; one-off recovery `npm install --no-save @esbuild/linux-x64`. The Docker `frontend` service already exists in `docker-compose.yml`.
 - **Layer:** INFRA
 - **Module / US / TC:** frontend toolchain — hit 2026-07-24 during the US-AUTH-012 FE verify (`@frontend-dev`)
 - **Title:** `src/frontend/node_modules` on the shared NTFS drive was populated by a Windows `npm install`, so it held the win32 `@esbuild/*` binary; a host-Linux `npm run build` / `ng test` fails until the Linux esbuild binary is present. Worked around non-destructively with `npm install --no-save @esbuild/linux-x64@0.28.0`.
