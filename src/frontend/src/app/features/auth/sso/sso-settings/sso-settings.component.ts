@@ -22,11 +22,21 @@ import { ToastrService } from 'ngx-toastr';
 import { AuthService } from '../../../../core/auth/auth.service';
 import {
   ITenantAuthSettings,
+  ITenantUser,
   SsoEnforcementMode,
+  SsoOnboardingStatus,
 } from '../../../../core/auth/auth.models';
 import { RolesService } from '../../../admin/roles/services/roles.service';
 import { IRole } from '../../../admin/roles/models/role.models';
+import { TenantService } from '../../../../core/tenant/tenant.service';
 import { environment } from '../../../../../environments/environment';
+import { SsoOnboardingWizardComponent } from '../sso-onboarding-wizard/sso-onboarding-wizard.component';
+
+/**
+ * Roles whose members qualify as designated break-glass administrators
+ * (US-AUTH-016 BR-2: restricted to admin accounts, not ordinary users).
+ */
+export const ADMIN_ROLE_NAMES = ['Tenant Admin', 'Tenant Owner'];
 
 /** Well-formed GUID (Entra directory / tenant id, US-AUTH-012 FR-4 / AC-3). */
 export const GUID_PATTERN =
@@ -83,7 +93,7 @@ export const PRIVILEGED_ROLE_NAMES = [
 @Component({
   selector: 'app-sso-settings',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, SsoOnboardingWizardComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeSlide', [
@@ -138,7 +148,7 @@ export const PRIVILEGED_ROLE_NAMES = [
           }
 
           <fieldset class="settings-body" [disabled]="!isEntitled() || isReadonly()">
-            <form [formGroup]="form" (ngSubmit)="onSave()">
+            <form [formGroup]="form" (ngSubmit)="submitSettings()">
               <!-- Enable toggle -->
               <div class="form-section">
                 <div class="toggle-row">
@@ -302,9 +312,9 @@ export const PRIVILEGED_ROLE_NAMES = [
                 </div>
               }
 
-              <!-- Enforcement mode -->
-              <div class="form-section">
-                <label class="label-notion" for="enforcementMode">Enforcement mode</label>
+              <!-- Enforcement mode (US-AUTH-016 AC-1/AC-3) -->
+              <div class="form-section enforcement-block">
+                <label class="label-notion" for="enforcementMode">Enforcement</label>
                 <p class="field-hint">
                   Choose whether local password sign-in remains available alongside SSO.
                 </p>
@@ -316,15 +326,65 @@ export const PRIVILEGED_ROLE_NAMES = [
                   <option value="optional">Optional — allow both SSO and password sign-in</option>
                   <option value="sso_only">SSO only — require Microsoft sign-in</option>
                 </select>
+
+                <!-- Reassuring break-glass safety-net copy -->
+                <div class="safety-note">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-emerald-500 flex-shrink-0" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+                  </svg>
+                  <p class="text-sm text-emerald-700">
+                    Your designated break-glass administrators can always sign in with their
+                    password, even under SSO-only — so your organization can never lock itself out.
+                  </p>
+                </div>
+
+                <!-- Break-glass admin picker (AC-3 / BR-1/BR-2) -->
+                <div class="break-glass" [class.is-required]="form.get('enforcementMode')?.value === 'sso_only' && !hasBreakGlass()">
+                  <label class="label-notion">Designated break-glass administrators</label>
+                  <p class="field-hint">
+                    These admins keep local (password) access even when SSO-only is enforced.
+                    Select at least one before requiring SSO-only sign-in.
+                  </p>
+                  @if (breakGlassCandidates().length) {
+                    <ul class="bg-list" role="group" aria-label="Break-glass administrators">
+                      @for (u of breakGlassCandidates(); track u.userId) {
+                        <li class="bg-item">
+                          <label class="bg-checkbox">
+                            <input
+                              type="checkbox"
+                              [checked]="isBreakGlassSelected(u.userId)"
+                              (change)="toggleBreakGlass(u.userId)"
+                            />
+                            <span class="bg-name">
+                              {{ u.displayName }}
+                              <span class="bg-email">{{ u.email }}</span>
+                            </span>
+                          </label>
+                        </li>
+                      }
+                    </ul>
+                  } @else {
+                    <p class="field-hint text-amber-600">
+                      No eligible administrator accounts found. Add a Tenant Admin with local
+                      credentials before enforcing SSO-only.
+                    </p>
+                  }
+                  @if (form.get('enforcementMode')?.value === 'sso_only' && !hasBreakGlass()) {
+                    <p class="field-error">
+                      Designate at least one break-glass administrator to require SSO-only sign-in.
+                    </p>
+                  }
+                </div>
+
                 @if (form.get('enforcementMode')?.value === 'sso_only') {
                   <div class="warning-box" [@fadeSlide]>
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-amber-500 flex-shrink-0" aria-hidden="true">
                       <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
                     </svg>
                     <p class="text-sm text-amber-700">
-                      SSO-only enforcement blocks password sign-in for everyone. A break-glass
-                      local admin path must stay available (US-AUTH-016) — this is enforced on
-                      save so your organization can never lock itself out.
+                      SSO-only enforcement blocks password sign-in for everyone except your
+                      designated break-glass admins. You'll be asked to confirm before this
+                      takes effect.
                     </p>
                   </div>
                 }
@@ -360,6 +420,21 @@ export const PRIVILEGED_ROLE_NAMES = [
                 </div>
               </div>
 
+              <!-- Guided onboarding wizard (US-AUTH-016 AC-4/AC-5/AC-6) -->
+              <div class="form-section">
+                <app-sso-onboarding-wizard
+                  [clientId]="ssoClientId"
+                  [allowedEntraTenantIds]="entraIds()"
+                  [subdomain]="tenantSubdomain()"
+                  [ssoEnabled]="!!form.get('ssoEnabled')?.value"
+                  [onboardingStatus]="onboardingStatus()"
+                  [disabled]="isReadonly() || !isEntitled() || isSaving()"
+                  (consentStarted)="onConsentStarted()"
+                  (directoryConfirmed)="onDirectoryConfirmed($event)"
+                  (enableSso)="onWizardEnableSso()"
+                />
+              </div>
+
               <!-- Save -->
               @if (!isReadonly() && isEntitled()) {
                 <div class="form-actions">
@@ -391,6 +466,49 @@ export const PRIVILEGED_ROLE_NAMES = [
         }
       </div>
     </div>
+
+    <!-- Guarded SSO-only confirmation dialog (US-AUTH-016 AC-1/AC-3, §8) -->
+    @if (showEnforceConfirm()) {
+      <div class="dialog-backdrop" (click)="cancelEnforcement()">
+        <div
+          class="dialog-panel"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="enforce-dialog-title"
+          aria-describedby="enforce-dialog-desc"
+          (click)="$event.stopPropagation()"
+          [@fadeSlide]
+        >
+          <div class="dialog-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-6 h-6 text-amber-500" aria-hidden="true">
+              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <h3 id="enforce-dialog-title" class="dialog-title">Require Microsoft sign-in for everyone?</h3>
+          <p id="enforce-dialog-desc" class="dialog-text">
+            After this change, ordinary users can no longer sign in with an email and password —
+            only Microsoft sign-in will be accepted. This can lock users out if your SSO
+            configuration is wrong.
+          </p>
+          <div class="dialog-safety">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-emerald-500 flex-shrink-0" aria-hidden="true">
+              <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
+            </svg>
+            <p class="text-sm text-emerald-700">
+              Your {{ breakGlassIds().length }} designated break-glass
+              {{ breakGlassIds().length === 1 ? 'administrator keeps' : 'administrators keep' }}
+              password access, so you can always get back in.
+            </p>
+          </div>
+          <div class="dialog-actions">
+            <button type="button" class="btn-secondary" (click)="cancelEnforcement()">Cancel</button>
+            <button type="button" class="btn-danger" (click)="confirmEnforcement()">
+              Require SSO-only sign-in
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [
     `
@@ -520,6 +638,81 @@ export const PRIVILEGED_ROLE_NAMES = [
       @apply mt-2 flex items-start gap-3 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3;
     }
 
+    /* ─── Enforcement + break-glass (US-AUTH-016) ─── */
+    .enforcement-block {
+      @apply rounded-lg bg-neutral-50/60 border border-neutral-100 p-4 space-y-3;
+    }
+
+    .safety-note {
+      @apply flex items-start gap-3 rounded-lg bg-emerald-50 border border-emerald-100 px-4 py-3;
+    }
+
+    .break-glass {
+      @apply rounded-lg bg-white border border-neutral-200 p-4 space-y-2;
+    }
+
+    .break-glass.is-required {
+      @apply border-red-300 ring-1 ring-red-100;
+    }
+
+    .bg-list {
+      @apply mt-1 space-y-1 list-none m-0 p-0;
+    }
+
+    .bg-item {
+      @apply rounded-md hover:bg-neutral-50 transition-colors;
+    }
+
+    .bg-checkbox {
+      @apply flex items-center gap-3 cursor-pointer px-2 py-1.5;
+    }
+
+    .bg-checkbox input {
+      @apply h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500;
+    }
+
+    .bg-name {
+      @apply text-sm text-neutral-800 flex flex-col sm:flex-row sm:items-center sm:gap-2;
+    }
+
+    .bg-email {
+      @apply text-xs text-neutral-400;
+    }
+
+    /* ─── Guarded confirmation dialog ─── */
+    .dialog-backdrop {
+      @apply fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 px-4;
+    }
+
+    .dialog-panel {
+      @apply w-full max-w-md rounded-xl bg-white p-6 shadow-xl space-y-3;
+    }
+
+    .dialog-icon {
+      @apply flex h-11 w-11 items-center justify-center rounded-full bg-amber-50;
+    }
+
+    .dialog-title {
+      @apply text-base font-semibold text-neutral-900;
+    }
+
+    .dialog-text {
+      @apply text-sm text-neutral-600;
+    }
+
+    .dialog-safety {
+      @apply flex items-start gap-3 rounded-lg bg-emerald-50 border border-emerald-100 px-4 py-3;
+    }
+
+    .dialog-actions {
+      @apply flex justify-end gap-2 pt-2;
+    }
+
+    .btn-danger {
+      @apply inline-flex items-center justify-center rounded-lg bg-red-600 px-5 py-2.5
+        text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-red-700;
+    }
+
     .onboarding-block {
       @apply rounded-lg bg-neutral-50 border border-neutral-100 p-4;
     }
@@ -612,6 +805,7 @@ export const PRIVILEGED_ROLE_NAMES = [
 export class SsoSettingsComponent implements OnInit {
   private readonly authService = inject(AuthService);
   private readonly rolesService = inject(RolesService);
+  private readonly tenantService = inject(TenantService);
   private readonly fb = inject(FormBuilder);
   private readonly toastr = inject(ToastrService);
 
@@ -624,6 +818,22 @@ export class SsoSettingsComponent implements OnInit {
   readonly entraIds = signal<string[]>([]);
   readonly domains = signal<string[]>([]);
   readonly roles = signal<IRole[]>([]);
+
+  // ─── Break-glass + onboarding (US-AUTH-016) ──────────────────
+  /** Candidate designated admins (Tenant Admin/Owner accounts) for break-glass. */
+  readonly breakGlassCandidates = signal<ITenantUser[]>([]);
+  /** Selected designated break-glass admin user IDs. */
+  readonly breakGlassIds = signal<string[]>([]);
+  /** Admin-consent onboarding lifecycle status (persisted round-trip). */
+  readonly onboardingStatus = signal<SsoOnboardingStatus>('not_started');
+  /** Whether the guarded SSO-only confirmation dialog is open. */
+  readonly showEnforceConfirm = signal(false);
+
+  /**
+   * US-AUTH-016 AC-3/BR-1: at least one designated break-glass admin is mandatory
+   * before `sso_only` can be enabled, so a tenant can never lock itself out.
+   */
+  readonly hasBreakGlass = computed(() => this.breakGlassIds().length > 0);
 
   /** JIT default-role options exclude privileged roles (BR-5 / AC-5). */
   readonly nonPrivilegedRoles = computed(() =>
@@ -651,11 +861,19 @@ export class SsoSettingsComponent implements OnInit {
   /** Full settings reference so MFA/session/lockout fields are merged back on save. */
   private currentSettings: ITenantAuthSettings | null = null;
 
+  /** Vendor multi-tenant app client id, passed to the onboarding wizard. */
+  readonly ssoClientId = environment.ssoClientId || '';
+
   readonly adminConsentUrl = computed(() => {
     const dir = this.consentDirId().trim() || 'organizations';
     const clientId = environment.ssoClientId || '{client-id}';
     return `https://login.microsoftonline.com/${dir}/adminconsent?client_id=${clientId}`;
   });
+
+  /** Resolved tenant subdomain (for the wizard's test-login challenge). */
+  tenantSubdomain(): string {
+    return this.tenantService.subdomain();
+  }
 
   ngOnInit(): void {
     this.form = this.fb.group({
@@ -672,6 +890,7 @@ export class SsoSettingsComponent implements OnInit {
 
     this.loadSettings();
     this.loadRoles();
+    this.loadBreakGlassCandidates();
   }
 
   loadSettings(): void {
@@ -684,6 +903,8 @@ export class SsoSettingsComponent implements OnInit {
         this.isEntitled.set(settings.ssoEntitled === true);
         this.entraIds.set(settings.allowedEntraTenantIds ?? []);
         this.domains.set(settings.allowedEmailDomains ?? []);
+        this.breakGlassIds.set(settings.breakGlassAdminUserIds ?? []);
+        this.onboardingStatus.set(settings.ssoOnboardingStatus ?? 'not_started');
         this.form.patchValue({
           ssoEnabled: settings.ssoEnabled ?? false,
           jitEnabled: settings.jitEnabled ?? false,
@@ -706,6 +927,38 @@ export class SsoSettingsComponent implements OnInit {
       next: (roles) => this.roles.set(roles),
       error: () => this.roles.set([]),
     });
+  }
+
+  /**
+   * Load the pool of designated-admin candidates for the break-glass picker.
+   * Non-fatal: the enforcement gate still fails closed with an empty list.
+   */
+  private loadBreakGlassCandidates(): void {
+    this.authService.getTenantUsers().subscribe({
+      next: (users) =>
+        this.breakGlassCandidates.set(
+          users.filter(
+            (u) =>
+              u.isActive &&
+              u.roles.some((r) => ADMIN_ROLE_NAMES.includes(r))
+          )
+        ),
+      error: () => this.breakGlassCandidates.set([]),
+    });
+  }
+
+  /** Toggle a designated break-glass admin in/out of the selection. */
+  toggleBreakGlass(userId: string): void {
+    this.breakGlassIds.update((ids) =>
+      ids.includes(userId)
+        ? ids.filter((x) => x !== userId)
+        : [...ids, userId]
+    );
+    this.form.markAsDirty();
+  }
+
+  isBreakGlassSelected(userId: string): boolean {
+    return this.breakGlassIds().includes(userId);
   }
 
   /** Enable toggle is blocked until the allow-list is non-empty (AC-4, fail-closed). */
@@ -781,6 +1034,84 @@ export class SsoSettingsComponent implements OnInit {
     );
   }
 
+  /**
+   * Template submit handler (US-AUTH-016 AC-1/AC-3). Applies the enforcement guards
+   * BEFORE persisting:
+   *  - `sso_only` requires ≥1 designated break-glass admin (AC-3/BR-1) — else blocked;
+   *  - enabling `sso_only` opens a guarded confirmation dialog explaining the lockout
+   *    risk + the break-glass safety net before the change commits.
+   * `onSave()` remains the plain persist path.
+   */
+  submitSettings(): void {
+    if (this.isReadonly() || !this.isEntitled() || this.isSaving()) {
+      return;
+    }
+
+    const mode = this.form.get('enforcementMode')?.value as SsoEnforcementMode;
+    if (mode === 'sso_only') {
+      if (!this.hasBreakGlass()) {
+        // AC-3: refuse to lock the tenant out; require a designated break-glass admin.
+        this.toastr.error(
+          'Designate at least one break-glass administrator before requiring SSO-only sign-in.'
+        );
+        return;
+      }
+      // Only gate the transition INTO sso_only behind the confirmation dialog.
+      const wasSsoOnly = this.currentSettings?.enforcementMode === 'sso_only';
+      if (!wasSsoOnly) {
+        this.showEnforceConfirm.set(true);
+        return;
+      }
+    }
+
+    this.onSave();
+  }
+
+  /** Guarded dialog confirm — proceed with the SSO-only enforcement change. */
+  confirmEnforcement(): void {
+    this.showEnforceConfirm.set(false);
+    this.onSave();
+  }
+
+  /** Guarded dialog cancel — abort and keep the prior enforcement mode. */
+  cancelEnforcement(): void {
+    this.showEnforceConfirm.set(false);
+    this.form.patchValue({ enforcementMode: 'optional' });
+  }
+
+  // ─── Onboarding wizard handlers (US-AUTH-016 AC-4/AC-5) ──────
+
+  /** AC-4: wizard opened admin-consent → mark onboarding pending and persist. */
+  onConsentStarted(): void {
+    this.onboardingStatus.set('consent_pending');
+    this.form.markAsDirty();
+  }
+
+  /** AC-5: wizard confirmed the captured directory id → add to allow-list, mark consented. */
+  onDirectoryConfirmed(directoryId: string): void {
+    const id = directoryId.trim().toLowerCase();
+    if (id && isEntraTenantId(id) && !this.entraIds().includes(id)) {
+      this.entraIds.update((list) => [...list, id]);
+    }
+    this.onboardingStatus.set('consented');
+    this.form.markAsDirty();
+    this.onSave();
+  }
+
+  /** AC-5 final step: enable SSO from the wizard. */
+  onWizardEnableSso(): void {
+    if (!this.canEnableSso()) {
+      this.toastr.error(
+        'Add at least one trusted directory or email domain before enabling SSO.'
+      );
+      return;
+    }
+    this.form.patchValue({ ssoEnabled: true });
+    this.onboardingStatus.set('enabled');
+    this.form.markAsDirty();
+    this.onSave();
+  }
+
   onSave(): void {
     if (this.isReadonly() || !this.isEntitled() || this.isSaving()) {
       return;
@@ -800,13 +1131,15 @@ export class SsoSettingsComponent implements OnInit {
 
     const updated: ITenantAuthSettings = {
       ...(this.currentSettings as ITenantAuthSettings),
-      ssoEnabled,
+      ssoEnabled: !!this.form.get('ssoEnabled')?.value,
       allowedEntraTenantIds: this.entraIds(),
       allowedEmailDomains: this.domains(),
       jitEnabled: !!this.form.get('jitEnabled')?.value,
       jitDefaultRole: this.form.get('jitDefaultRole')?.value || null,
       enforcementMode: this.form.get('enforcementMode')
         ?.value as SsoEnforcementMode,
+      breakGlassAdminUserIds: this.breakGlassIds(),
+      ssoOnboardingStatus: this.onboardingStatus(),
     };
     // Never echo the read-only entitlement flag back on write.
     delete updated.ssoEntitled;

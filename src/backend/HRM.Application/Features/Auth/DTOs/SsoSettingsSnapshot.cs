@@ -14,4 +14,10 @@ public sealed record SsoSettingsSnapshot
     public bool JitEnabled { get; init; }
     public string? JitDefaultRole { get; init; }
     public string EnforcementMode { get; init; } = "optional";
+
+    /// <summary>
+    /// US-AUTH-016 FR-1/FR-2 (NFR-4): the designated break-glass admin user ids, carried on the cached snapshot so
+    /// the login path can decide both the <c>sso_only</c> refusal and the break-glass allow with no extra DB hit.
+    /// </summary>
+    public List<string> BreakGlassAdminUserIds { get; init; } = [];
 }

@@ -187,6 +187,23 @@ public sealed class Tenant
     public string SsoEnforcementMode { get; set; } = "optional";
 
     /// <summary>
+    /// US-AUTH-016 FR-1/FR-2 (BR-1/BR-2): the explicitly-designated break-glass administrators — the user ids
+    /// (stringified GUIDs, jsonb) allowed to ALWAYS authenticate with local credentials via the distinct
+    /// break-glass login path, even under <c>sso_only</c> enforcement, so a tenant can never lock itself out.
+    /// At least one valid designation is mandatory before <c>sso_only</c> can be enabled (AC-3). Empty by default.
+    /// Each designated user must be an active member with a password AND an admin/owner role (validated on write).
+    /// </summary>
+    public List<string> BreakGlassAdminUserIds { get; set; } = new();
+
+    /// <summary>
+    /// US-AUTH-016 FR-5/FR-6: admin-consent onboarding progress — "not_started" | "consent_pending" |
+    /// "consented" | "enabled" (see <see cref="HRM.Domain.Authorization.SsoOnboardingStatuses"/>). Consent alone
+    /// does NOT enable SSO (BR-3): "consented" records the customer's captured Entra directory id; the admin must
+    /// still explicitly enable SSO ("enabled"). Default "not_started".
+    /// </summary>
+    public string SsoOnboardingStatus { get; set; } = "not_started";
+
+    /// <summary>
     /// Maximum number of employees allowed for this tenant's subscription plan (FR-5).
     /// Null means unlimited. TODO(subscription): move to a proper Subscription/Plan entity.
     /// </summary>

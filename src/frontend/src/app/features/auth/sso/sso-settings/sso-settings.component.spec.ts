@@ -17,7 +17,7 @@ import {
 import { FormControl } from '@angular/forms';
 import { AuthService } from '../../../../core/auth/auth.service';
 import { RolesService } from '../../../admin/roles/services/roles.service';
-import { ITenantAuthSettings } from '../../../../core/auth/auth.models';
+import { ITenantAuthSettings, ITenantUser } from '../../../../core/auth/auth.models';
 import { IRole } from '../../../admin/roles/models/role.models';
 
 const GUID_A = '11111111-1111-1111-1111-111111111111';
@@ -70,12 +70,14 @@ describe('SsoSettingsComponent', () => {
       'getTenantAuthSettings',
       'updateTenantAuthSettings',
       'hasRole',
+      'getTenantUsers',
     ]);
     rolesServiceSpy = jasmine.createSpyObj('RolesService', ['getRoles']);
 
     authServiceSpy.getTenantAuthSettings.and.returnValue(of(entitledSettings));
     authServiceSpy.updateTenantAuthSettings.and.returnValue(of(undefined));
     authServiceSpy.hasRole.and.returnValue(true);
+    authServiceSpy.getTenantUsers.and.returnValue(of([]));
     rolesServiceSpy.getRoles.and.returnValue(of(roles));
 
     await TestBed.configureTestingModule({
@@ -371,5 +373,133 @@ describe('SsoSettingsComponent', () => {
     expect(component.adminConsentUrl()).toContain('/organizations/adminconsent');
     component.consentDirectoryId.setValue(GUID_A);
     expect(component.adminConsentUrl()).toContain(`/${GUID_A}/adminconsent`);
+  });
+
+  // ─── US-AUTH-016: break-glass admins + enforcement gate ──────
+
+  function makeUser(overrides: Partial<ITenantUser>): ITenantUser {
+    return {
+      userId: 'u',
+      email: 'u@acme.com',
+      displayName: 'User',
+      roles: [],
+      isActive: true,
+      lockedUntil: null,
+      failedLoginCount: 0,
+      lastLoginAt: null,
+      ...overrides,
+    };
+  }
+
+  it('should load only active admin accounts as break-glass candidates', () => {
+    authServiceSpy.getTenantUsers.and.returnValue(
+      of([
+        makeUser({ userId: 'a1', roles: ['Tenant Admin'] }),
+        makeUser({ userId: 'a2', roles: ['Tenant Owner'] }),
+        makeUser({ userId: 'e1', roles: ['Employee'] }),
+        makeUser({ userId: 'a3', roles: ['Tenant Admin'], isActive: false }),
+      ])
+    );
+    fixture.detectChanges();
+    const ids = component.breakGlassCandidates().map((u) => u.userId);
+    expect(ids).toEqual(['a1', 'a2']);
+  });
+
+  it('toggleBreakGlass adds then removes a designated admin', () => {
+    fixture.detectChanges();
+    component.toggleBreakGlass('a1');
+    expect(component.breakGlassIds()).toContain('a1');
+    expect(component.hasBreakGlass()).toBeTrue();
+    component.toggleBreakGlass('a1');
+    expect(component.breakGlassIds()).not.toContain('a1');
+    expect(component.hasBreakGlass()).toBeFalse();
+  });
+
+  it('AC-3: submitSettings blocks sso_only when no break-glass admin is designated', () => {
+    fixture.detectChanges();
+    component.breakGlassIds.set([]);
+    component.form.patchValue({ enforcementMode: 'sso_only' });
+    component.form.markAsDirty();
+    component.submitSettings();
+    expect(component.showEnforceConfirm()).toBeFalse();
+    expect(authServiceSpy.updateTenantAuthSettings).not.toHaveBeenCalled();
+  });
+
+  it('AC-1/AC-3: submitSettings opens the guarded confirmation dialog before enabling sso_only', () => {
+    fixture.detectChanges();
+    component.breakGlassIds.set(['a1']);
+    component.form.patchValue({ enforcementMode: 'sso_only' });
+    component.form.markAsDirty();
+    component.submitSettings();
+    // Dialog gate — not persisted yet.
+    expect(component.showEnforceConfirm()).toBeTrue();
+    expect(authServiceSpy.updateTenantAuthSettings).not.toHaveBeenCalled();
+  });
+
+  it('confirmEnforcement persists sso_only with the break-glass admin list', () => {
+    fixture.detectChanges();
+    component.breakGlassIds.set(['a1']);
+    component.form.patchValue({ enforcementMode: 'sso_only' });
+    component.form.markAsDirty();
+    component.submitSettings();
+    component.confirmEnforcement();
+    expect(component.showEnforceConfirm()).toBeFalse();
+    expect(authServiceSpy.updateTenantAuthSettings).toHaveBeenCalledTimes(1);
+    const arg = authServiceSpy.updateTenantAuthSettings.calls.mostRecent()
+      .args[0] as ITenantAuthSettings;
+    expect(arg.enforcementMode).toBe('sso_only');
+    expect(arg.breakGlassAdminUserIds).toEqual(['a1']);
+  });
+
+  it('cancelEnforcement reverts to optional and does not persist', () => {
+    fixture.detectChanges();
+    component.breakGlassIds.set(['a1']);
+    component.form.patchValue({ enforcementMode: 'sso_only' });
+    component.form.markAsDirty();
+    component.submitSettings();
+    component.cancelEnforcement();
+    expect(component.showEnforceConfirm()).toBeFalse();
+    expect(component.form.get('enforcementMode')?.value).toBe('optional');
+    expect(authServiceSpy.updateTenantAuthSettings).not.toHaveBeenCalled();
+  });
+
+  it('submitSettings persists directly when staying on optional (no dialog)', () => {
+    fixture.detectChanges();
+    component.form.patchValue({ enforcementMode: 'optional' });
+    component.form.markAsDirty();
+    component.submitSettings();
+    expect(component.showEnforceConfirm()).toBeFalse();
+    expect(authServiceSpy.updateTenantAuthSettings).toHaveBeenCalledTimes(1);
+  });
+
+  // ─── US-AUTH-016: onboarding wizard handlers (AC-5) ──────────
+
+  it('onDirectoryConfirmed captures the directory id into the allow-list and persists', () => {
+    fixture.detectChanges();
+    component.onDirectoryConfirmed(GUID_B);
+    expect(component.entraIds()).toContain(GUID_B);
+    expect(component.onboardingStatus()).toBe('consented');
+    expect(authServiceSpy.updateTenantAuthSettings).toHaveBeenCalledTimes(1);
+    const arg = authServiceSpy.updateTenantAuthSettings.calls.mostRecent()
+      .args[0] as ITenantAuthSettings;
+    expect(arg.ssoOnboardingStatus).toBe('consented');
+  });
+
+  it('onWizardEnableSso enables SSO and marks onboarding enabled', () => {
+    fixture.detectChanges();
+    component.form.patchValue({ ssoEnabled: false });
+    component.onWizardEnableSso();
+    expect(component.form.get('ssoEnabled')?.value).toBeTrue();
+    expect(component.onboardingStatus()).toBe('enabled');
+    const arg = authServiceSpy.updateTenantAuthSettings.calls.mostRecent()
+      .args[0] as ITenantAuthSettings;
+    expect(arg.ssoEnabled).toBeTrue();
+    expect(arg.ssoOnboardingStatus).toBe('enabled');
+  });
+
+  it('onConsentStarted marks onboarding consent_pending', () => {
+    fixture.detectChanges();
+    component.onConsentStarted();
+    expect(component.onboardingStatus()).toBe('consent_pending');
   });
 });

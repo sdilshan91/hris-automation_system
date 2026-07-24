@@ -80,6 +80,51 @@ public sealed class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/v1/auth/break-glass-login
+    /// US-AUTH-016 (AC-2/AC-7): the distinct break-glass sign-in for designated administrators — local
+    /// email/password login permitted even under <c>sso_only</c> enforcement. Only a designated break-glass admin
+    /// is accepted; every successful break-glass login is audited (<c>break_glass_login</c>) and alerts admins.
+    /// Same request/response shape and cookie handling as <see cref="Login"/>.
+    /// </summary>
+    [HttpPost("break-glass-login")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth-login")]
+    [ProducesResponseType(typeof(ApiResponse<LoginResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> BreakGlassLogin([FromBody] LoginRequest request, CancellationToken cancellationToken)
+    {
+        var command = new BreakGlassLoginCommand(
+            request.Email,
+            request.Password,
+            request.MfaCode,
+            GetIpAddress(),
+            GetUserAgent());
+
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        var response = result.Value!;
+
+        if (response.MfaChallenge)
+        {
+            return Ok(ApiResponse<LoginResponse>.Ok(response));
+        }
+
+        if (!string.IsNullOrEmpty(response.RefreshToken))
+        {
+            SetRefreshTokenCookie(response.RefreshToken);
+        }
+
+        var bodyResponse = response with { RefreshToken = null };
+        return Ok(ApiResponse<LoginResponse>.Ok(bodyResponse));
+    }
+
+    /// <summary>
     /// POST /api/v1/auth/refresh
     /// Refreshes the access token using the httpOnly refresh token cookie.
     /// Returns new access token and rotates the refresh token cookie.

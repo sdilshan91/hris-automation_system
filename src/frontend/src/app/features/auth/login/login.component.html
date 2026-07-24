@@ -116,8 +116,48 @@
       </form>
     </div>
   } @else {
-    <!-- Standard login form -->
+    <!-- US-AUTH-016 AC-1: SSO-only workspaces lead with Microsoft + a break-glass link -->
+    @if (ssoOnly()) {
+      <div class="sso-only-section" [@fadeSlide]>
+        <p class="sso-only-copy">
+          Your organization requires signing in with Microsoft.
+        </p>
+        <button
+          type="button"
+          data-testid="sso-only-microsoft"
+          class="btn-primary w-full flex items-center justify-center gap-2"
+          (click)="startMicrosoftLogin()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" class="h-4 w-4" aria-hidden="true">
+            <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+            <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+            <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+            <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+          </svg>
+          Sign in with Microsoft
+        </button>
+
+        @if (!showBreakGlassForm()) {
+          <button
+            type="button"
+            data-testid="break-glass-link"
+            class="admin-signin-link"
+            (click)="revealBreakGlassForm()"
+          >
+            Administrator sign-in
+          </button>
+        }
+      </div>
+    }
+
+    <!-- Standard / break-glass password form -->
+    @if (!ssoOnly() || showBreakGlassForm()) {
     <form [formGroup]="loginForm" (ngSubmit)="onLoginSubmit()" class="login-form" [@fadeSlide]>
+      @if (ssoOnly()) {
+        <p class="break-glass-hint">
+          Break-glass sign-in for designated administrators.
+        </p>
+      }
       <div class="form-group">
         <label for="email" class="label-notion">Email address</label>
         <input
@@ -194,24 +234,27 @@
       </button>
 
       <!-- US-AUTH-015: Enterprise SSO entry point (Microsoft Entra ID / O365) -->
-      <div class="my-4 flex items-center gap-3 text-xs text-neutral-600">
-        <span class="h-px flex-1 bg-neutral-200"></span>
-        <span>or</span>
-        <span class="h-px flex-1 bg-neutral-200"></span>
-      </div>
-      <button
-        type="button"
-        class="w-full flex items-center justify-center gap-2 rounded-lg border border-neutral-300 bg-white py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
-        (click)="startMicrosoftLogin()"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" class="h-4 w-4" aria-hidden="true">
-          <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-          <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-          <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-          <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-        </svg>
-        Continue with Microsoft
-      </button>
+      @if (!ssoOnly()) {
+        <div class="my-4 flex items-center gap-3 text-xs text-neutral-600">
+          <span class="h-px flex-1 bg-neutral-200"></span>
+          <span>or</span>
+          <span class="h-px flex-1 bg-neutral-200"></span>
+        </div>
+        <button
+          type="button"
+          class="w-full flex items-center justify-center gap-2 rounded-lg border border-neutral-300 bg-white py-2.5 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
+          (click)="startMicrosoftLogin()"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21" class="h-4 w-4" aria-hidden="true">
+            <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+            <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+            <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+            <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+          </svg>
+          Continue with Microsoft
+        </button>
+      }
     </form>
+    }
   }
 </div>

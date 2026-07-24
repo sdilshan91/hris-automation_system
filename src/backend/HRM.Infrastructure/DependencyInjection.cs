@@ -156,6 +156,9 @@ public static class DependencyInjection
         // Lockout notification service (US-AUTH-010 FR-8)
         services.AddScoped<ILockoutNotificationService, LockoutNotificationService>();
 
+        // Break-glass login alert service (US-AUTH-016 FR-4/NFR-2)
+        services.AddScoped<IBreakGlassNotificationService, BreakGlassNotificationService>();
+
         // RBAC service
         services.AddScoped<IRoleService, RoleService>();
 

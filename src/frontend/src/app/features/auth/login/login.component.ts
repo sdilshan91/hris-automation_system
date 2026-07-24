@@ -53,6 +53,20 @@ export class LoginComponent implements OnInit {
   readonly showPassword = signal(false);
 
   /**
+   * US-AUTH-016 AC-1: when the workspace enforces `sso_only`, the login page leads
+   * with the Microsoft button and hides the password form behind a discreet
+   * "Administrator sign-in" (break-glass) link. Read defensively from the public
+   * tenant context so it fails safe to the normal password form when absent.
+   */
+  readonly ssoOnly = signal(false);
+  /** Reveals the break-glass password form under `sso_only` (BR-2 designated admins). */
+  readonly showBreakGlassForm = signal(false);
+
+  revealBreakGlassForm(): void {
+    this.showBreakGlassForm.set(true);
+  }
+
+  /**
    * US-AUTH-010 AC-2/AC-3: Distinguishes lockout errors from generic auth errors
    * so the template can render a distinct lockout banner.
    */
@@ -77,6 +91,11 @@ export class LoginComponent implements OnInit {
         [Validators.required, Validators.pattern(/^\d{6}$/)],
       ],
     });
+
+    // US-AUTH-016 AC-1: detect sso_only enforcement from the resolved tenant context
+    // (optional/absent → stays false, so the password form still renders — fail safe).
+    const enforcement = this.tenantService.tenantContext?.()?.enforcementMode;
+    this.ssoOnly.set(enforcement === 'sso_only');
 
     // US-AUTH-015: surface the SSO entry result if the backend redirected back here.
     const ssoError = this.route.snapshot.queryParamMap.get('sso_error');

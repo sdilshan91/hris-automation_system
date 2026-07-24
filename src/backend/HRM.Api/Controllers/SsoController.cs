@@ -91,6 +91,38 @@ public sealed class SsoController : ControllerBase
         return Redirect($"{origin}/auth/sso/callback?returnUrl={Uri.EscapeDataString(returnUrl)}");
     }
 
+    // ── US-AUTH-016: admin-consent onboarding ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// GET /api/v1/auth/sso/admin-consent/callback — US-AUTH-016 FR-6/AC-5/AC-6. The Microsoft admin-consent
+    /// redirect URI. On success (<c>admin_consent=True</c> + <c>tenant</c>=customer tid) captures the directory id
+    /// into the tenant allow-list and advances onboarding; on decline/error records the failure and keeps the
+    /// prior mode. Full-page browser redirect (anonymous) — the HRM tenant comes from the signed state.
+    /// </summary>
+    [HttpGet("admin-consent/callback")]
+    public async Task<IActionResult> AdminConsentCallback(
+        [FromQuery(Name = "admin_consent")] string? adminConsent,
+        [FromQuery] string? tenant,
+        [FromQuery] string? state,
+        [FromQuery] string? error,
+        [FromQuery(Name = "error_description")] string? errorDescription,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sso.CompleteAdminConsentAsync(
+            tenant, adminConsent, state, error, errorDescription, GetIpAddress(), GetUserAgent(), cancellationToken);
+
+        if (result.IsFailure)
+        {
+            // Unparseable state — we can't safely attribute the outcome to a tenant. Send to a generic error page.
+            return Redirect($"{FrontendBaseUrl()}/settings/security/sso?consent=error");
+        }
+
+        var outcome = result.Value!;
+        var origin = string.IsNullOrEmpty(outcome.ReturnOrigin) ? FrontendBaseUrl() : outcome.ReturnOrigin;
+        var status = outcome.Succeeded ? "success" : "failed";
+        return Redirect($"{origin}/settings/security/sso?consent={status}");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────
 
     private void SetRefreshTokenCookie(string token)

@@ -4,6 +4,7 @@ using HRM.Api.Controllers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
+using HRM.Application.Features.Auth.DTOs;
 using HRM.Application.Features.TenantSettings.DTOs;
 using HRM.Application.Features.TenantSettings.Queries;
 using HRM.Domain.Entities;
@@ -82,25 +83,25 @@ public sealed class TenantBrandingServeTests
     // ── FE-facing exposure: servable URL, not the raw storage path ────────────
 
     [Fact]
-    public void TenantContext_WithLogo_ExposesServableUrl_NotRawStoragePath()
+    public async Task TenantContext_WithLogo_ExposesServableUrl_NotRawStoragePath()
     {
         // The tenant context carries the RAW stored path, exactly as the middleware populated it.
         _tenantContext.LogoUrl.Returns($"/{_tenantId}/branding/logo.png");
         var controller = BuildContextController();
 
-        var response = OkValue<TenantContextResponse>(controller.Get());
+        var response = OkValue<TenantContextResponse>(await controller.Get(default));
 
         response.LogoUrl.Should().Be("https://acme.myhrm.org/api/v1/tenant/settings/branding/logo");
         response.LogoUrl.Should().NotContain(_tenantId.ToString(), "the raw storage path must never be exposed");
     }
 
     [Fact]
-    public void TenantContext_WithNoLogo_ExposesNullLogoUrl()
+    public async Task TenantContext_WithNoLogo_ExposesNullLogoUrl()
     {
         _tenantContext.LogoUrl.Returns((string?)null);
         var controller = BuildContextController();
 
-        var response = OkValue<TenantContextResponse>(controller.Get());
+        var response = OkValue<TenantContextResponse>(await controller.Get(default));
 
         response.LogoUrl.Should().BeNull("no logo → null so the FE shows its fallback");
     }
@@ -145,7 +146,17 @@ public sealed class TenantBrandingServeTests
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private TenantContextController BuildContextController()
-        => new(_tenantContext) { ControllerContext = BuildControllerContext() };
+    {
+        // US-AUTH-016: TenantContextController now reads the cached SSO snapshot to expose enforcementMode. These
+        // branding tests don't exercise SSO, so a default (optional/disabled) snapshot is sufficient.
+        var authService = Substitute.For<IAuthService>();
+        authService.GetSsoSettingsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Result<SsoSettingsSnapshot>.Success(new SsoSettingsSnapshot()));
+        return new TenantContextController(_tenantContext, authService)
+        {
+            ControllerContext = BuildControllerContext(),
+        };
+    }
 
     private static ControllerContext BuildControllerContext()
     {

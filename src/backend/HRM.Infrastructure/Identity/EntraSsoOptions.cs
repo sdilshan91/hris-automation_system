@@ -33,6 +33,11 @@ public sealed class EntraSsoOptions
     /// <c>http://localhost:5000/api/v1/auth/sso/callback</c>.</summary>
     public string RedirectUri { get; set; } = string.Empty;
 
+    /// <summary>US-AUTH-016 FR-5: the FIXED redirect URI registered for the admin-consent flow (Microsoft returns
+    /// here with <c>admin_consent</c>/<c>tenant</c>/<c>state</c> or <c>error</c>). Must be registered on the app
+    /// registration. Dev: <c>http://localhost:5000/api/v1/auth/sso/admin-consent/callback</c>.</summary>
+    public string AdminConsentRedirectUri { get; set; } = string.Empty;
+
     /// <summary>Per-HRM-tenant SSO allow-list, keyed by tenant subdomain. See class remarks.</summary>
     public Dictionary<string, EntraTenantAllowList> TenantAllowList { get; set; }
         = new(StringComparer.OrdinalIgnoreCase);
@@ -44,6 +49,14 @@ public sealed class EntraSsoOptions
         && !string.IsNullOrWhiteSpace(ClientId)
         && !string.IsNullOrWhiteSpace(ClientSecret)
         && !string.IsNullOrWhiteSpace(RedirectUri);
+
+    /// <summary>US-AUTH-016: the admin-consent URL can be BUILT without the client secret (it is just a redirect
+    /// to Microsoft), so this is a weaker gate than <see cref="IsConfigured"/> — enabled + client id +
+    /// admin-consent redirect uri.</summary>
+    public bool IsAdminConsentConfigured =>
+        Enabled
+        && !string.IsNullOrWhiteSpace(ClientId)
+        && !string.IsNullOrWhiteSpace(AdminConsentRedirectUri);
 }
 
 /// <summary>

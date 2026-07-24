@@ -28,6 +28,7 @@ public sealed class EntraSsoService : IEntraSsoService
 
     private readonly EntraSsoOptions _options;
     private readonly ITimeLimitedDataProtector _stateProtector;
+    private readonly ITimeLimitedDataProtector _adminConsentStateProtector;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ConfigurationManager<OpenIdConnectConfiguration> _oidcConfig;
     private readonly IAuthService _authService;
@@ -43,6 +44,8 @@ public sealed class EntraSsoService : IEntraSsoService
     {
         _options = options.Value;
         _stateProtector = dataProtectionProvider.CreateProtector("HRM.EntraSso.State").ToTimeLimitedDataProtector();
+        // US-AUTH-016: a distinct purpose so a login-flow state can never be replayed as an admin-consent state.
+        _adminConsentStateProtector = dataProtectionProvider.CreateProtector("HRM.EntraSso.AdminConsent").ToTimeLimitedDataProtector();
         _httpClientFactory = httpClientFactory;
         _oidcConfig = oidcConfig;
         _authService = authService;
@@ -50,6 +53,8 @@ public sealed class EntraSsoService : IEntraSsoService
     }
 
     public bool IsConfigured => _options.IsConfigured;
+
+    public bool IsAdminConsentConfigured => _options.IsAdminConsentConfigured;
 
     public async Task<Result<string>> BuildAuthorizeUrlAsync(
         string? subdomain, string? returnUrl, string? returnOrigin, CancellationToken cancellationToken = default)
@@ -232,6 +237,105 @@ public sealed class EntraSsoService : IEntraSsoService
         });
     }
 
+    // ── Admin-consent onboarding (US-AUTH-016) ────────────────────────────────────────────────
+
+    public Task<Result<string>> BuildAdminConsentUrlAsync(
+        string? subdomain, string? returnOrigin, CancellationToken cancellationToken = default)
+    {
+        if (!IsAdminConsentConfigured)
+        {
+            return Task.FromResult(Result<string>.Failure("not_configured"));
+        }
+
+        var tenant = (subdomain ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(tenant))
+        {
+            _logger.LogInformation("Admin-consent rejected: no tenant subdomain supplied.");
+            return Task.FromResult(Result<string>.Failure("tenant_required"));
+        }
+
+        var nonce = Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        var state = new AdminConsentState(
+            tenant, string.IsNullOrWhiteSpace(returnOrigin) ? string.Empty : returnOrigin!, nonce);
+
+        var protectedState = _adminConsentStateProtector.Protect(
+            JsonSerializer.Serialize(state), TimeSpan.FromMinutes(StateLifetimeMinutes));
+
+        // v2 admin-consent endpoint on the multi-tenant "organizations" authority. Consent grants the app's
+        // configured delegated/app permissions tenant-wide; only client_id + redirect + state are required.
+        var authority = _options.Authority.TrimEnd('/');
+        var query = new Dictionary<string, string?>
+        {
+            ["client_id"] = _options.ClientId,
+            ["redirect_uri"] = _options.AdminConsentRedirectUri,
+            ["scope"] = _options.Scopes,
+            ["state"] = protectedState,
+        };
+
+        var url = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString($"{authority}/adminconsent", query);
+        return Task.FromResult(Result<string>.Success(url));
+    }
+
+    public async Task<Result<AdminConsentResult>> CompleteAdminConsentAsync(
+        string? tenant, string? adminConsent, string? state, string? error, string? errorDescription,
+        string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
+    {
+        AdminConsentState? parsedState = TryUnprotectAdminConsentState(state);
+        if (parsedState is null)
+        {
+            // The state is the only trustworthy source of the HRM tenant — with no valid state we cannot safely
+            // attribute the outcome to any tenant. Fail closed (the caller redirects to a generic error page).
+            return Result<AdminConsentResult>.Failure("sso_failed");
+        }
+
+        var origin = parsedState.ReturnOrigin;
+
+        // AC-6: a declined/failed consent, or a success flag that isn't affirmatively "True", or a missing
+        // customer directory id → do NOT enable SSO; audit the failure and keep the prior mode.
+        var granted = string.Equals(adminConsent, "True", StringComparison.OrdinalIgnoreCase)
+                      && string.IsNullOrEmpty(error)
+                      && !string.IsNullOrWhiteSpace(tenant);
+
+        if (!granted)
+        {
+            var reason = !string.IsNullOrEmpty(error)
+                ? $"{error}: {errorDescription}".Trim().TrimEnd(':').Trim()
+                : "consent_declined_or_incomplete";
+            _logger.LogWarning("Admin consent NOT granted for tenant '{Subdomain}': {Reason}", parsedState.Subdomain, reason);
+            await _authService.RecordAdminConsentFailureAsync(parsedState.Subdomain, reason, ipAddress, userAgent, cancellationToken);
+            return Result<AdminConsentResult>.Success(new AdminConsentResult { ReturnOrigin = origin, Succeeded = false });
+        }
+
+        // AC-5/FR-6: capture the customer's Entra Directory id into the resolved HRM tenant's allow-list. The HRM
+        // tenant comes from the signed state's subdomain — NEVER from the consent 'tenant' (tid) itself (isolation).
+        var capture = await _authService.CaptureAdminConsentAsync(parsedState.Subdomain, tenant!.Trim(), ipAddress, userAgent, cancellationToken);
+        if (capture.IsFailure)
+        {
+            _logger.LogWarning("Admin consent capture failed for tenant '{Subdomain}': {Reason}", parsedState.Subdomain, capture.Error);
+            return Result<AdminConsentResult>.Success(new AdminConsentResult { ReturnOrigin = origin, Succeeded = false });
+        }
+
+        return Result<AdminConsentResult>.Success(new AdminConsentResult { ReturnOrigin = origin, Succeeded = true });
+    }
+
+    private AdminConsentState? TryUnprotectAdminConsentState(string? state)
+    {
+        if (string.IsNullOrEmpty(state))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<AdminConsentState>(_adminConsentStateProtector.Unprotect(state));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Admin-consent callback rejected: state could not be validated.");
+            return null;
+        }
+    }
+
     // ── Isolation guard ──────────────────────────────────────────────────────────────────────
 
     private (bool Allowed, bool JitAllowed, string? DefaultRole) CheckIsolation(string subdomain, string tid, string email)
@@ -385,4 +489,8 @@ public sealed class EntraSsoService : IEntraSsoService
 
     private sealed record SsoState(
         string Subdomain, string ReturnUrl, string ReturnOrigin, string Nonce, string CodeVerifier);
+
+    /// <summary>US-AUTH-016: the signed admin-consent state — carries the HRM tenant subdomain (the ONLY trusted
+    /// source of the HRM tenant on the callback) + the SPA origin to return to + an anti-replay nonce.</summary>
+    private sealed record AdminConsentState(string Subdomain, string ReturnOrigin, string Nonce);
 }

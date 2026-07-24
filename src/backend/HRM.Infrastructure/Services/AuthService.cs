@@ -76,12 +76,39 @@ public sealed class AuthService : IAuthService
         _myTenantsCache = myTenantsCache;
     }
 
-    public async Task<Result<LoginResponse>> LoginAsync(
+    public Task<Result<LoginResponse>> LoginAsync(
         string email,
         string password,
         string? mfaCode,
         string? ipAddress,
         string? userAgent,
+        CancellationToken cancellationToken = default)
+        => LoginInternalAsync(email, password, mfaCode, ipAddress, userAgent, breakGlass: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<Result<LoginResponse>> BreakGlassLoginAsync(
+        string email,
+        string password,
+        string? mfaCode,
+        string? ipAddress,
+        string? userAgent,
+        CancellationToken cancellationToken = default)
+        => LoginInternalAsync(email, password, mfaCode, ipAddress, userAgent, breakGlass: true, cancellationToken);
+
+    /// <summary>
+    /// Shared local-credential login core for both the standard (<paramref name="breakGlass"/> = false) and the
+    /// US-AUTH-016 break-glass (true) paths. The two differ only in SSO-enforcement handling (see
+    /// <see cref="EvaluateSsoEnforcementAsync"/>): the standard path is REFUSED under <c>sso_only</c>; the
+    /// break-glass path is permitted ONLY for a designated break-glass admin and, on success, emits the
+    /// high-severity <c>break_glass_login</c> audit + admin alert.
+    /// </summary>
+    private async Task<Result<LoginResponse>> LoginInternalAsync(
+        string email,
+        string password,
+        string? mfaCode,
+        string? ipAddress,
+        string? userAgent,
+        bool breakGlass,
         CancellationToken cancellationToken = default)
     {
         email = email.Trim().ToLowerInvariant();
@@ -263,6 +290,16 @@ public sealed class AuthService : IAuthService
             }
         }
 
+        // 5a. US-AUTH-016 (FR-1/AC-1/AC-2/AC-7): SSO enforcement decision. On the STANDARD path this refuses local
+        // logins under sso_only; on the break-glass path it permits ONLY a designated break-glass admin (BR-2).
+        // Evaluated from the cached SSO snapshot (NFR-4) — no Entra/allow-list dependency, so break-glass keeps
+        // working even when SSO is misconfigured/unreachable (NFR-1).
+        var enforcement = await EvaluateSsoEnforcementAsync(user, currentTenant.Id, breakGlass, ipAddress, userAgent, cancellationToken);
+        if (enforcement is not null)
+        {
+            return enforcement;
+        }
+
         // 5b. Policy-driven forced-enrollment check (AC-1, FR-7, BR-5)
         if (!user.MfaEnabled
             && currentTenant.MfaPolicy == "required"
@@ -349,7 +386,17 @@ public sealed class AuthService : IAuthService
         }
 
         // 7. Issue tokens via shared helper
-        return await IssueTokensAsync(user, currentTenant, userTenant, ipAddress, userAgent, cancellationToken);
+        var tokenResult = await IssueTokensAsync(user, currentTenant, userTenant, ipAddress, userAgent, cancellationToken);
+
+        // US-AUTH-016 FR-4/BR-4 (NFR-2): a completed break-glass login is a high-severity security event —
+        // audit it + alert admins. Emitted only on actual token issuance (an MFA-challenge return above exits
+        // before here), so we never alert on an incomplete login. The designation was already enforced at 5a.
+        if (breakGlass && tokenResult.IsSuccess)
+        {
+            await EmitBreakGlassLoginAsync(user, currentTenant, ipAddress, userAgent, cancellationToken);
+        }
+
+        return tokenResult;
     }
 
     public async Task<Result<RefreshTokenResponse>> RefreshTokenAsync(
@@ -1615,6 +1662,9 @@ public sealed class AuthService : IAuthService
             JitDefaultRole = sso.JitDefaultRole,
             EnforcementMode = sso.EnforcementMode,
             SsoEntitled = ssoEntitled,
+            // US-AUTH-016: enforcement designations + onboarding progress for the Security > SSO UI.
+            BreakGlassAdminUserIds = sso.BreakGlassAdminUserIds,
+            SsoOnboardingStatus = tenant.SsoOnboardingStatus,
         });
     }
 
@@ -1681,7 +1731,127 @@ public sealed class AuthService : IAuthService
         JitEnabled = tenant.JitEnabled,
         JitDefaultRole = tenant.JitDefaultRole,
         EnforcementMode = tenant.SsoEnforcementMode,
+        BreakGlassAdminUserIds = tenant.BreakGlassAdminUserIds ?? [],
     };
+
+    /// <summary>
+    /// US-AUTH-016 FR-1/AC-1/AC-2/AC-7: the SSO-enforcement gate for local logins. Returns a non-null failure to
+    /// REFUSE the login; null to proceed. Reads the cached SSO snapshot (NFR-4) — no Entra/allow-list dependency,
+    /// so the break-glass path (NFR-1) never breaks when SSO is misconfigured or unreachable.
+    ///
+    /// <para>Break-glass path: permitted ONLY when the user is a designated break-glass admin (BR-2); an
+    /// ordinary user is refused (AC-7) and audited (<c>break_glass_login_denied</c>). Standard path: refused
+    /// under <c>sso_only</c> (AC-1) with the "requires Microsoft" message, regardless of designation (a
+    /// break-glass admin must use the break-glass path). Under <c>optional</c> the standard path proceeds.</para>
+    /// </summary>
+    private async Task<Result<LoginResponse>?> EvaluateSsoEnforcementAsync(
+        User user, Guid tenantId, bool breakGlass, string? ipAddress, string? userAgent, CancellationToken cancellationToken)
+    {
+        var sso = (await GetSsoSettingsAsync(tenantId, cancellationToken)).Value ?? new SsoSettingsSnapshot();
+        var isSsoOnly = sso.EnforcementMode == SsoEnforcementModes.SsoOnly;
+        var isDesignated = sso.BreakGlassAdminUserIds.Contains(user.Id.ToString());
+
+        if (breakGlass)
+        {
+            // BR-2/AC-7: break-glass is restricted to explicitly designated admin accounts.
+            if (!isDesignated)
+            {
+                await WriteAuditLogAsync(user.Id, "break_glass_login_denied", ipAddress, userAgent, cancellationToken, tenantId);
+                return Result<LoginResponse>.Failure(
+                    "This sign-in method is restricted to designated administrators. Please contact your administrator.", 403);
+            }
+
+            // Designated → proceed (the break_glass_login audit + alert fire on successful token issuance).
+            return null;
+        }
+
+        // Standard path: under sso_only, refuse ALL local logins (AC-1) — the SSO path or the break-glass path
+        // are the only accepted routes. A designated admin who lands here is told to use Microsoft / break-glass.
+        if (isSsoOnly)
+        {
+            return Result<LoginResponse>.Failure(
+                "Your organization requires sign-in with Microsoft. Please use the 'Sign in with Microsoft' option, or contact your administrator.", 403);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// US-AUTH-016 FR-4/BR-4 (NFR-2): records the high-severity <c>break_glass_login</c> audit event (secrets
+    /// excluded) and enqueues the admin alert on Hangfire (delivered within 60s, off the login path). Primitives
+    /// only into the job so Hangfire serializes a value payload, not a service closure.
+    /// </summary>
+    private async Task EmitBreakGlassLoginAsync(User user, Tenant tenant, string? ipAddress, string? userAgent, CancellationToken cancellationToken)
+    {
+        var occurredAt = DateTime.UtcNow;
+
+        await WriteAuditLogWithDetailAsync(
+            user.Id, "break_glass_login", ipAddress, userAgent,
+            new
+            {
+                severity = "high",
+                tenantId = tenant.Id,
+                userEmail = user.Email,
+                sourceIp = ipAddress,
+                occurredAtUtc = occurredAt,
+            },
+            cancellationToken, tenant.Id);
+
+        var tenantId = tenant.Id;
+        var tenantName = tenant.Name;
+        var userId = user.Id;
+        var userEmail = user.Email;
+        var displayName = user.DisplayName;
+        _backgroundJobClient.Enqueue<IBreakGlassNotificationService>(
+            svc => svc.SendBreakGlassAlertAsync(tenantId, tenantName, userId, userEmail, displayName, ipAddress, occurredAt, default));
+
+        _logger.LogWarning("Break-glass login by admin {UserId} in tenant {TenantId} from {SourceIp}.",
+            user.Id, tenant.Id, ipAddress ?? "unknown");
+    }
+
+    /// <summary>
+    /// US-AUTH-016 FR-2/FR-3 (BR-2): from a set of candidate user ids, returns those that are VALID break-glass
+    /// admins for the tenant — an active membership whose user is active AND has a password (local-login capable)
+    /// AND holds a Tenant Owner/Admin role. This is the anti-lockout guarantee: only real local admins count.
+    /// </summary>
+    private async Task<HashSet<string>> GetValidBreakGlassAdminIdsAsync(
+        Guid tenantId, IReadOnlyCollection<string> candidateIds, CancellationToken cancellationToken)
+    {
+        if (candidateIds.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        var guids = candidateIds
+            .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+            .Where(g => g.HasValue)
+            .Select(g => g!.Value)
+            .ToList();
+
+        if (guids.Count == 0)
+        {
+            return new HashSet<string>();
+        }
+
+        var adminRoles = new[]
+        {
+            PermissionCatalog.BuiltInRoles.TenantOwner,
+            PermissionCatalog.BuiltInRoles.TenantAdmin,
+        };
+
+        var valid = await _dbContext.UserTenants
+            .IgnoreQueryFilters()
+            .Where(ut => ut.TenantId == tenantId
+                && guids.Contains(ut.UserId)
+                && ut.Status == UserTenantStatus.Active
+                && ut.User.IsActive
+                && ut.User.PasswordHash != null
+                && ut.UserTenantRoles.Any(utr => adminRoles.Contains(utr.Role.Name)))
+            .Select(ut => ut.UserId)
+            .ToListAsync(cancellationToken);
+
+        return valid.Select(id => id.ToString()).ToHashSet();
+    }
 
     /// <summary>US-AUTH-012 FR-3: resolves the SSO entitlement from the tenant's subscription plan (US-ADM-009).</summary>
     private async Task<bool> IsSsoEntitledAsync(string planId, CancellationToken cancellationToken)
@@ -1691,29 +1861,6 @@ public sealed class AuthService : IAuthService
             .FirstOrDefaultAsync(p => p.Code == planId, cancellationToken);
 
         return plan?.FeatureFlags.Sso ?? false;
-    }
-
-    /// <summary>
-    /// US-AUTH-012 AC-7/BR-6: a preserved local break-glass admin = at least one ACTIVE membership whose user is
-    /// active and has a password (local login capable) AND holds a Tenant Owner/Admin role. Guarantees a tenant
-    /// enforcing <c>sso_only</c> can never lock itself out (US-AUTH-016).
-    /// </summary>
-    private async Task<bool> HasLocalBreakGlassAdminAsync(Guid tenantId, CancellationToken cancellationToken)
-    {
-        var adminRoles = new[]
-        {
-            PermissionCatalog.BuiltInRoles.TenantOwner,
-            PermissionCatalog.BuiltInRoles.TenantAdmin,
-        };
-
-        return await _dbContext.UserTenants
-            .IgnoreQueryFilters()
-            .AnyAsync(ut => ut.TenantId == tenantId
-                && ut.Status == UserTenantStatus.Active
-                && ut.User.IsActive
-                && ut.User.PasswordHash != null
-                && ut.UserTenantRoles.Any(utr => adminRoles.Contains(utr.Role.Name)),
-                cancellationToken);
     }
 
     private async Task InvalidateSsoSettingsCacheAsync(Guid tenantId, CancellationToken cancellationToken)
@@ -1754,10 +1901,13 @@ public sealed class AuthService : IAuthService
             || request.AllowedEmailDomains is not null
             || request.JitEnabled.HasValue
             || request.JitDefaultRole is not null
-            || request.EnforcementMode is not null;
+            || request.EnforcementMode is not null
+            || request.BreakGlassAdminUserIds is not null;
 
         object? ssoBefore = null;
         var ssoChanged = false;
+        var enforcementModeChanged = false;
+        string? previousEnforcementMode = null;
 
         if (ssoWrite)
         {
@@ -1784,6 +1934,12 @@ public sealed class AuthService : IAuthService
                 ? tenant.JitDefaultRole
                 : (string.IsNullOrWhiteSpace(request.JitDefaultRole) ? null : request.JitDefaultRole.Trim());
             var effMode = request.EnforcementMode ?? tenant.SsoEnforcementMode;
+            // US-AUTH-016: a provided list REPLACES; null leaves the stored designations unchanged.
+            var effBreakGlass = (request.BreakGlassAdminUserIds ?? tenant.BreakGlassAdminUserIds ?? [])
+                .Select(s => s.Trim())
+                .Where(s => s.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             // FR-5/BR-3 (fail-closed): SSO cannot be enabled with an empty allow-list. Authoritative merged-state
             // guard (the validator only catches the same-request case).
@@ -1810,13 +1966,32 @@ public sealed class AuthService : IAuthService
                 }
             }
 
-            // AC-7/BR-6: sso_only is accepted only when a local break-glass admin path is preserved (US-AUTH-016).
-            if (effMode == SsoEnforcementModes.SsoOnly
-                && !await HasLocalBreakGlassAdminAsync(tenantId, cancellationToken))
+            // US-AUTH-016 FR-2/BR-2: when a designation list is PROVIDED, every id must resolve to a valid local
+            // (password) admin of this tenant — a bogus/non-admin designation would give a false anti-lockout
+            // guarantee. (A null list — "leave unchanged" — is not re-validated here.)
+            if (request.BreakGlassAdminUserIds is not null && effBreakGlass.Count > 0)
             {
-                return Result.Failure(
-                    "Enable at least one local (password) admin as a break-glass path before enforcing SSO-only sign-in.",
-                    400);
+                var validProvided = await GetValidBreakGlassAdminIdsAsync(tenantId, effBreakGlass, cancellationToken);
+                if (effBreakGlass.Any(id => !validProvided.Contains(id)))
+                {
+                    return Result.Failure(
+                        "Each break-glass admin must be an active local (password) administrator of this workspace.", 400);
+                }
+            }
+
+            // US-AUTH-016 FR-3/AC-3/BR-1: sso_only is accepted only when at least one DESIGNATED break-glass admin
+            // is a valid local admin — the mandatory anti-lockout path. Blocks the change with a clear explanation
+            // otherwise. Replaces the US-AUTH-012 "any local admin exists" precondition with explicit designation.
+            if (effMode == SsoEnforcementModes.SsoOnly)
+            {
+                var validBreakGlass = await GetValidBreakGlassAdminIdsAsync(tenantId, effBreakGlass, cancellationToken);
+                if (validBreakGlass.Count == 0)
+                {
+                    return Result.Failure(
+                        "Designate at least one local (password) admin as a break-glass path before enforcing SSO-only sign-in. " +
+                        "We also recommend a successful SSO test login first.",
+                        400);
+                }
             }
 
             // FR-7: capture the before-state for the audit trail (no secret material is stored per tenant).
@@ -1828,7 +2003,12 @@ public sealed class AuthService : IAuthService
                 tenant.JitEnabled,
                 tenant.JitDefaultRole,
                 EnforcementMode = tenant.SsoEnforcementMode,
+                tenant.BreakGlassAdminUserIds,
+                tenant.SsoOnboardingStatus,
             };
+
+            previousEnforcementMode = tenant.SsoEnforcementMode;
+            enforcementModeChanged = effMode != tenant.SsoEnforcementMode;
 
             tenant.SsoEnabled = effEnabled;
             tenant.AllowedEntraTenantIds = effTids;
@@ -1836,6 +2016,22 @@ public sealed class AuthService : IAuthService
             tenant.JitEnabled = effJitEnabled;
             tenant.JitDefaultRole = effJitRole;
             tenant.SsoEnforcementMode = effMode;
+            tenant.BreakGlassAdminUserIds = effBreakGlass;
+
+            // BR-3: enabling SSO is the explicit step that transitions onboarding to "enabled"; consent alone
+            // never gets here. Disabling SSO steps back to "consented" when a directory was captured, else
+            // "not_started" (revert is lossless — the allow-list itself is preserved, FR-8).
+            if (effEnabled)
+            {
+                tenant.SsoOnboardingStatus = SsoOnboardingStatuses.Enabled;
+            }
+            else if (tenant.SsoOnboardingStatus == SsoOnboardingStatuses.Enabled)
+            {
+                tenant.SsoOnboardingStatus = effTids.Count > 0
+                    ? SsoOnboardingStatuses.Consented
+                    : SsoOnboardingStatuses.NotStarted;
+            }
+
             ssoChanged = true;
         }
 
@@ -1907,6 +2103,8 @@ public sealed class AuthService : IAuthService
                 tenant.JitEnabled,
                 tenant.JitDefaultRole,
                 EnforcementMode = tenant.SsoEnforcementMode,
+                tenant.BreakGlassAdminUserIds,
+                tenant.SsoOnboardingStatus,
             };
 
             await WriteAuditLogWithDetailAsync(
@@ -1918,6 +2116,20 @@ public sealed class AuthService : IAuthService
                 cancellationToken,
                 tenantId);
 
+            // US-AUTH-016 FR-7: a dedicated, queryable enforcement-change audit (with before/after mode) whenever
+            // the sign-in enforcement mode changes — including a revert to optional (FR-8/BR-5).
+            if (enforcementModeChanged)
+            {
+                await WriteAuditLogWithDetailAsync(
+                    _currentUser?.UserId,
+                    "sso_enforcement_changed",
+                    null,
+                    null,
+                    new { before = previousEnforcementMode, after = tenant.SsoEnforcementMode },
+                    cancellationToken,
+                    tenantId);
+            }
+
             await InvalidateSsoSettingsCacheAsync(tenantId, cancellationToken);
         }
 
@@ -1926,6 +2138,124 @@ public sealed class AuthService : IAuthService
             tenantId, request.MfaPolicy, tenant.IdleTimeoutMinutes, tenant.AbsoluteTimeoutHours,
             tenant.MaxConcurrentSessions, tenant.ConcurrentSessionStrategy,
             tenant.MaxFailedAttempts, tenant.LockoutDurationMinutes, tenant.ProgressiveLockoutEnabled, ssoChanged);
+
+        return Result.Success();
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<string>> MarkAdminConsentPendingAsync(Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        var tenant = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+        if (tenant is null)
+        {
+            return Result<string>.Failure("Tenant not found.", 404);
+        }
+
+        // Only advance INTO consent_pending from a pre-enable state — never regress an already-enabled tenant.
+        if (tenant.SsoOnboardingStatus != SsoOnboardingStatuses.Enabled)
+        {
+            tenant.SsoOnboardingStatus = SsoOnboardingStatuses.ConsentPending;
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            await InvalidateSsoSettingsCacheAsync(tenantId, cancellationToken);
+        }
+
+        return Result<string>.Success(tenant.Subdomain);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> CaptureAdminConsentAsync(
+        string subdomain, string customerTid, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(customerTid, out _))
+        {
+            return Result.Failure("The Microsoft directory id returned by consent was not a valid GUID.", 400);
+        }
+
+        var tenant = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Subdomain == subdomain && !t.IsDeleted, cancellationToken);
+
+        if (tenant is null)
+        {
+            return Result.Failure("Workspace not found.", 404);
+        }
+
+        var tid = customerTid.Trim();
+        var before = new
+        {
+            AllowedEntraTenantIds = tenant.AllowedEntraTenantIds ?? [],
+            tenant.SsoOnboardingStatus,
+        };
+
+        // AC-5/FR-6/BR-3: add the captured directory id to the US-AUTH-012 allow-list (dedup, case-insensitive)
+        // and mark onboarding "consented" — WITHOUT enabling SSO (the admin still enables it explicitly). Only
+        // step onboarding forward if SSO is not already enabled (never regress an enabled tenant).
+        var ids = new List<string>(tenant.AllowedEntraTenantIds ?? []);
+        if (!ids.Any(existing => string.Equals(existing, tid, StringComparison.OrdinalIgnoreCase)))
+        {
+            ids.Add(tid);
+        }
+        tenant.AllowedEntraTenantIds = ids;
+
+        if (tenant.SsoOnboardingStatus != SsoOnboardingStatuses.Enabled)
+        {
+            tenant.SsoOnboardingStatus = SsoOnboardingStatuses.Consented;
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await WriteAuditLogWithDetailAsync(
+            null,
+            "sso_admin_consent_completed",
+            ipAddress,
+            userAgent,
+            new
+            {
+                before,
+                after = new { AllowedEntraTenantIds = ids, tenant.SsoOnboardingStatus },
+                capturedTid = tid,
+            },
+            cancellationToken,
+            tenant.Id);
+
+        await InvalidateSsoSettingsCacheAsync(tenant.Id, cancellationToken);
+
+        _logger.LogInformation("Admin consent captured for tenant {TenantId} ({Subdomain}); directory id added to allow-list.",
+            tenant.Id, subdomain);
+
+        return Result.Success();
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> RecordAdminConsentFailureAsync(
+        string subdomain, string reason, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
+    {
+        var tenant = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Subdomain == subdomain && !t.IsDeleted, cancellationToken);
+
+        if (tenant is null)
+        {
+            // Best-effort: nothing to attribute the failure to. Not an error the caller must surface.
+            _logger.LogWarning("Admin consent failure for unknown workspace '{Subdomain}': {Reason}", subdomain, reason);
+            return Result.Success();
+        }
+
+        // AC-6: prior mode intact — we do NOT enable SSO and do NOT change the enforcement mode. Just audit.
+        await WriteAuditLogWithDetailAsync(
+            null,
+            "sso_admin_consent_failed",
+            ipAddress,
+            userAgent,
+            new { reason, tenant.SsoOnboardingStatus, tenant.SsoEnforcementMode },
+            cancellationToken,
+            tenant.Id);
+
+        _logger.LogWarning("Admin consent failed for tenant {TenantId} ({Subdomain}): {Reason}. Prior mode intact.",
+            tenant.Id, subdomain, reason);
 
         return Result.Success();
     }
