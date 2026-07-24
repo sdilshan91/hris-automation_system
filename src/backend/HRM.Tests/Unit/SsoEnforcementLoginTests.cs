@@ -125,6 +125,80 @@ public sealed class SsoEnforcementLoginTests
         job.Method.Name.Should().Be(nameof(IBreakGlassNotificationService.SendBreakGlassAlertAsync));
     }
 
+    // ── ISSUE-327 / TC-AUTH-127: break-glass via the TWO-STEP MFA path also audits + alerts ──
+
+    [Fact]
+    [Trait("TC", "TC-AUTH-127")]
+    public async Task BreakGlassLogin_TwoStepMfa_ByDesignatedAdmin_UnderSsoOnly_AuditsAndAlerts()
+    {
+        // A designated break-glass admin who has MFA enrolled logs in under sso_only via the two-step MFA flow:
+        //   step 1 = break-glass-login (returns an MFA challenge, no tokens yet),
+        //   step 2 = mfa/verify (completes the login).
+        // ISSUE-327: the break_glass_login audit event + admin alert must fire on the step-2 completion, exactly
+        // as the single-shot path does — not just on the inline-mfaCode path.
+        await SeedAsync(enforcementMode: SsoEnforcementModes.SsoOnly, designateUser: true, mfaEnabled: true);
+
+        // Step 1: break-glass credentials with no MFA code → an MFA challenge, no break-glass emit yet.
+        var challenge = await CreateService().BreakGlassLoginAsync(Email, Password, null, "203.0.113.5", "xUnit", default);
+        challenge.IsSuccess.Should().BeTrue();
+        challenge.Value!.MfaChallenge.Should().BeTrue();
+        challenge.Value!.AccessToken.Should().BeNullOrEmpty("an MFA challenge issues no tokens");
+
+        using (var db0 = CreateDbContext())
+        {
+            db0.AuditLogs.IgnoreQueryFilters()
+                .Any(a => a.EventType == "break_glass_login" && a.UserId == _userId)
+                .Should().BeFalse("break-glass is audited only on completed token issuance, not on the challenge");
+        }
+
+        // Step 2: verify the TOTP code → login completes → break_glass_login audit + admin alert must fire.
+        var totp = Substitute.For<ITotpService>();
+        totp.ValidateCode(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        var verify = await CreateServiceWithTotp(totp).VerifyMfaLoginAsync(Email, "123456", "203.0.113.5", "xUnit", default);
+
+        verify.IsSuccess.Should().BeTrue();
+        verify.Value!.AccessToken.Should().NotBeNullOrEmpty();
+
+        using var db = CreateDbContext();
+        db.AuditLogs.IgnoreQueryFilters()
+            .Any(a => a.EventType == "break_glass_login" && a.UserId == _userId)
+            .Should().BeTrue("a break-glass admin completing the two-step MFA verify is still a high-severity audited event (FR-4)");
+
+        // NFR-2: the admin alert was enqueued on Hangfire from the MFA-verify path, same as the single-shot path.
+        var createCall = _backgroundJobClient.ReceivedCalls()
+            .FirstOrDefault(c => c.GetMethodInfo().Name == nameof(IBackgroundJobClient.Create));
+        createCall.Should().NotBeNull("a break-glass alert must be enqueued from the MFA-verify path");
+        var job = (Hangfire.Common.Job)createCall!.GetArguments()[0]!;
+        job.Method.Name.Should().Be(nameof(IBreakGlassNotificationService.SendBreakGlassAlertAsync));
+    }
+
+    [Fact]
+    [Trait("TC", "TC-AUTH-127")]
+    public async Task TwoStepMfa_OrdinaryUser_UnderOptional_DoesNotEmitBreakGlass()
+    {
+        // Designation gate: an ordinary MFA user (NOT designated) completing the two-step MFA verify on a normal
+        // (optional-enforcement) login must NOT trigger any break-glass telemetry. This proves the new MFA-path
+        // emit is gated on the break-glass condition, not on "any completed MFA verify".
+        await SeedAsync(enforcementMode: SsoEnforcementModes.Optional, designateUser: false, mfaEnabled: true);
+
+        var totp = Substitute.For<ITotpService>();
+        totp.ValidateCode(Arg.Any<string>(), Arg.Any<string>()).Returns(true);
+
+        var verify = await CreateServiceWithTotp(totp).VerifyMfaLoginAsync(Email, "123456", "127.0.0.1", "xUnit", default);
+
+        verify.IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        db.AuditLogs.IgnoreQueryFilters()
+            .Any(a => a.EventType == "break_glass_login")
+            .Should().BeFalse("an ordinary MFA login is not a break-glass event");
+
+        _backgroundJobClient.ReceivedCalls()
+            .Any(c => c.GetMethodInfo().Name == nameof(IBackgroundJobClient.Create))
+            .Should().BeFalse("no break-glass alert should be enqueued for an ordinary MFA login");
+    }
+
     // ── AC-7/BR-2: break-glass is restricted to designated admins ─────────────
 
     [Fact]
@@ -196,11 +270,13 @@ public sealed class SsoEnforcementLoginTests
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private AuthService CreateService() => new(
+    private AuthService CreateService() => CreateServiceWithTotp(Substitute.For<ITotpService>());
+
+    private AuthService CreateServiceWithTotp(ITotpService totpService) => new(
         CreateDbContext(),
         _jwtService,
         _tenantContext,
-        Substitute.For<ITotpService>(),
+        totpService,
         _configuration,
         new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
         Substitute.For<ILogger<AuthService>>(),
@@ -208,7 +284,7 @@ public sealed class SsoEnforcementLoginTests
 
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
-    private async Task SeedAsync(string enforcementMode, bool designateUser)
+    private async Task SeedAsync(string enforcementMode, bool designateUser, bool mfaEnabled = false)
     {
         using var db = CreateDbContext();
 
@@ -238,6 +314,10 @@ public sealed class SsoEnforcementLoginTests
             DisplayName = "Break-Glass Admin",
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(Password, workFactor: 4),
             IsActive = true,
+            MfaEnabled = mfaEnabled,
+            // Plaintext secret is fine here: AuthService's default protector is a passthrough and the TOTP
+            // service is substituted in these arms (the secret's value is never cryptographically checked).
+            MfaSecret = mfaEnabled ? "JBSWY3DPEHPK3PXP" : null,
             CreatedAt = DateTime.UtcNow,
         };
 
