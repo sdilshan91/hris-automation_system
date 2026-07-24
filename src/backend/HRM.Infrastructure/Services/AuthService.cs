@@ -1558,8 +1558,38 @@ public sealed class AuthService : IAuthService
                 .CountAsync(rc => rc.UserId == user.Id && rc.UsedAt == null, cancellationToken)
             : null;
 
-        return await IssueTokensAsync(
+        var tokenResult = await IssueTokensAsync(
             user, currentTenant, userTenant, ipAddress, userAgent, cancellationToken, recoveryCodesRemaining);
+
+        // ISSUE-327 (US-AUTH-016 FR-4/NFR-2): a designated break-glass admin who has MFA enrolled completes login
+        // through THIS two-step MFA verify, not the single-shot LoginInternalAsync path — so the high-severity
+        // break_glass_login audit + admin alert must fire here too, identically to the single-shot path. The
+        // break-glass "marker" set at step 1 is re-derived from the same cached SSO snapshot seam rather than
+        // threaded as fragile cross-request state: under sso_only the ONLY way to reach a completed MFA verify is
+        // via the break-glass step-1 (EvaluateSsoEnforcementAsync refuses every standard local login under
+        // sso_only, designated or not), so "sso_only + designated admin" is exactly the break-glass condition.
+        // Emitted only on actual token issuance; the designation gate is preserved, so an ordinary (non-designated)
+        // MFA user never triggers break-glass telemetry. Reuses EmitBreakGlassLoginAsync (no duplicated audit/notify).
+        if (tokenResult.IsSuccess && await IsBreakGlassMfaLoginAsync(user.Id, currentTenant.Id, cancellationToken))
+        {
+            await EmitBreakGlassLoginAsync(user, currentTenant, ipAddress, userAgent, cancellationToken);
+        }
+
+        return tokenResult;
+    }
+
+    /// <summary>
+    /// ISSUE-327 (US-AUTH-016 FR-4/BR-2): true when a completed two-step MFA verify is actually a break-glass login —
+    /// enforcement is <c>sso_only</c> AND the user is a designated break-glass admin. Under <c>sso_only</c> the
+    /// two-step MFA challenge can only have been issued by the break-glass step-1 (the standard path is refused for
+    /// everyone), so this re-derives the same designation gate from the cached SSO snapshot (NFR-4) instead of
+    /// threading cross-request state that a cache blip could silently lose (under-alerting a security event).
+    /// </summary>
+    private async Task<bool> IsBreakGlassMfaLoginAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var sso = (await GetSsoSettingsAsync(tenantId, cancellationToken)).Value ?? new SsoSettingsSnapshot();
+        return sso.EnforcementMode == SsoEnforcementModes.SsoOnly
+            && sso.BreakGlassAdminUserIds.Contains(userId.ToString());
     }
 
     public async Task<Result> DisableMfaAsync(
