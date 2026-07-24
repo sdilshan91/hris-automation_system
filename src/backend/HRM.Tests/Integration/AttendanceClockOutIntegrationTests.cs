@@ -23,6 +23,7 @@ using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
+using HRM.Tests.Unit;                 // internal FakeTimeProvider (same assembly)
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -246,6 +247,37 @@ public sealed class AttendanceClockOutIntegrationTests
         var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
         using var db = new AppDbContext(options, ctx);
         db.AttendanceLogs.Single(a => a.Id == logId).ClockOut.Should().BeNull();
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ATT-162")]
+    public async Task AutoClockOutJob_UsesInjectedTimeProvider_ForDayBoundary_DF63clockseam()
+    {
+        // DF-63-clockseam: the "before today's UTC start" boundary must come from the injected
+        // TimeProvider, not DateTime.UtcNow. Seed a record opened earlier TODAY (real time) — with the
+        // real clock it is LEFT OPEN (see AutoClockOutJob_LeavesTodaysOpenRecordUntouched). Drive the job
+        // with a FakeTimeProvider set to TOMORROW: the today-open record is now "overnight" and must be
+        // CLOSED. Reverting the seam to DateTime.UtcNow leaves it open and fails this arm.
+        // Clamp to minutes-since-midnight so the seed never crosses into the previous UTC day when the
+        // suite runs shortly after midnight (mirrors AutoClockOutJob_LeavesTodaysOpenRecordUntouched);
+        // otherwise in the 00:00–01:00 window a reverted seam could also close it, degrading the
+        // mutation-discrimination (test-authenticator catch).
+        var minutesSinceMidnight = (int)(DateTime.UtcNow - DateTime.UtcNow.Date).TotalMinutes;
+        var logId = SeedOpenLog(_tenantA, _employeeA, agoMinutes: Math.Min(60, minutesSinceMidnight)); // today
+        SeedTenantRow(_tenantA);
+
+        var provider = BuildJobProvider();
+        var tomorrow = new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(1));
+        var job = new AutoClockOutJob(provider.GetRequiredService<IServiceScopeFactory>(), tomorrow);
+
+        await job.RunAsync();
+
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        using var db = new AppDbContext(options, ctx);
+        var closed = db.AttendanceLogs.Single(a => a.Id == logId);
+        closed.ClockOut.Should().NotBeNull();
+        closed.Status.Should().Be("ANOMALY");
     }
 
     // ── DF-22 / ISSUE-309: per-location policy in the auto-clock-out sweep ──

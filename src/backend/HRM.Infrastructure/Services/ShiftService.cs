@@ -13,8 +13,9 @@ namespace HRM.Infrastructure.Services;
 
 /// <summary>
 /// Shift management + assignment service (US-ATT-005). All queries are tenant-scoped via
-/// ITenantContext and the EF global query filters. No Redis cache (NFR-4 deferred — no Redis in this
-/// codebase) and no PostgreSQL RLS (NFR-3 — tenant isolation is via EF filters + TenantInterceptor),
+/// ITenantContext and the EF global query filters, with PostgreSQL RLS as the enforced backstop when
+/// <c>Rls:Enabled</c> (NFR-3 — DF-63-rls proved ShiftService reads run correctly under FORCE ROW LEVEL
+/// SECURITY on the hrm_app role; see RlsIsolationPostgresTests). No Redis cache (NFR-4 deferred),
 /// consistent with the rest of the Attendance module.
 /// </summary>
 public sealed class ShiftService : IShiftService

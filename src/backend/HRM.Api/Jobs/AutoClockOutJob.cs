@@ -23,20 +23,24 @@ namespace HRM.Api.Jobs;
 public sealed class AutoClockOutJob
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly TimeProvider _timeProvider;
 
     // Page size for the per-tenant open-record scan (mirrors ProcessAbsenteeismJob batching).
     private const int PageSize = 500;
 
-    public AutoClockOutJob(IServiceScopeFactory scopeFactory)
+    // TimeProvider is trailing-optional (defaults to TimeProvider.System, no DI registration needed —
+    // mirrors AttendanceService / DF-43) so the UTC day-boundary can be driven deterministically in tests.
+    public AutoClockOutJob(IServiceScopeFactory scopeFactory, TimeProvider? timeProvider = null)
     {
         _scopeFactory = scopeFactory;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task RunAsync()
     {
         Log.Information("Starting AutoClockOutJob");
 
-        var now = DateTime.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         // Only close records whose clock-in was before today's UTC start — i.e. left open overnight.
         var todayStartUtc = new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Utc);
 
