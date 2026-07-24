@@ -5386,3 +5386,42 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 | TC-REC-007-15 | Sent offer email embeds candidate magic-link (`offer.portalUrl`=`/portal?token=`); token-issue failure still sends offer, without link | Functional | High | US-REC-007 | AC-2, FR-4, FR-5 | #384 · DF-42 (automated: RealRecruitmentNotificationServiceTests `[Trait]`) |
 | TC-REC-008-14 | Applicant candidate-portal magic-link EMAILED on request, embeds genuine `/portal?token=`; suppressed no-dispatch when no application exists | Functional | High | US-REC-008 | FR-1, BR-5 | #384 · DF-41 (automated: ApplicantPortalTokenServiceTests + PortalMagicLinkTests + ApplicantPortalIntegrationTests `[Trait]`) |
 | TC-RPT-005-13 | Upcoming-birthdays widget SQL-index-backed (month*100+day): window in/out, year-end wrap, Feb-29 fallback, status filter, interceptor keeps key in sync | Functional | High | US-RPT-005 | AC-1, BR-4 | #390 · ISSUE-285a (automated: DashboardServiceTests + DashboardIntegrationTests `[Trait]`) |
+
+## Platform Module
+
+> Cross-cutting platform / defense-in-depth stories (US-PLT). These TCs are **automated regression TCs**
+> that bind already-green xUnit arms (carrying `[Trait("TC", …)]`) to their stories — closing the
+> traceability gap where platform coverage existed only in code (DF-plt-tc-structure). The RLS + real-PG
+> field-encryption arms execute on the orchestrator's Testcontainers/HTTP-harness Postgres run (the agent
+> verify gate is Docker-less). Deviation flags: (a) US-PLT-002 FR-3's `SET LOCAL`+ambient-transaction
+> mechanism was retired for `TenantGucConnectionInterceptor` (ISSUE-277); (b) the `TC-PLT-P34` trait denotes
+> field-at-rest encryption Phase 3-4 (US-PLT-005), not RLS.
+
+### Forward Traceability (User Stories --> Test Cases)
+
+| User Story ID | User Story Title | Priority | Test Cases | TC Count | Coverage |
+|---------------|-----------------|----------|------------|----------|----------|
+| US-PLT-002 | PostgreSQL Row-Level Security as defense-in-depth tenant isolation | Should Have | TC-PLT-002-RLS | 1 | AC-1, AC-2, AC-3, AC-4, AC-6 (5/6; AC-5 migration-authoring not test-bound) |
+| US-PLT-005 | Encryption-at-rest for sensitive PII (KEK/rotation) | Must Have | TC-PLT-P34, TC-PLT-003, TC-PLT-004, TC-PLT-006, TC-PLT-007 | 5 | AC-3, AC-4 (PII/compensation columns + tenant-safe rotation; AC-1 MFA + AC-2 tenant-SMTP secrets NOT yet built) |
+| **TOTAL** | | | **6 test cases** | **6** | |
+
+### US-PLT-002 Backward Traceability (Test Case --> Requirement)
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | Requirements Covered |
+|-------------|----------------|------|----------|------------|---------------------|
+| TC-PLT-002-RLS | RLS enforces tenant isolation as a second layer beneath the EF query filter — raw SQL + `IgnoreQueryFilters` still isolated on `hrm_app`; `WITH CHECK` rejects cross-tenant writes; fail-closed on unset GUC; reconciler ENABLE/DISABLE reversible; connection routing (app vs privileged); GUC interceptor under retry + own-tx; coverage guard | Security | Critical | US-PLT-002 | AC-1, AC-2, AC-3, AC-4, AC-6, FR-1/2/4/5, NFR-2/3 (ISSUE-277; automated: RlsIsolationPostgresTests + RlsReconcilerPostgresTests + TenantGucInterceptorRlsPostgresTests + ConnectionRoutingPostgresTests + TenantJobRunnerTests `[Trait]`, real PG) |
+
+### US-PLT-005 Backward Traceability (Test Case --> Requirement)
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | Requirements Covered |
+|-------------|----------------|------|----------|------------|---------------------|
+| TC-PLT-P34 | Field-at-rest encryption (P3-4): PIP notes / recommendation compensation / employees.national_id are `enc:v1:` AES-GCM ciphertext at rest + round-trip through EF; idempotent startup back-fill | Security | Critical | US-PLT-005 | AC-3 (ISSUE-293; automated: EncryptedValueConverterTests + FieldEncryptionIntegrationTests + FieldEncryptionPostgresTests `[Trait]`, real PG for at-rest arm) |
+| TC-PLT-003 | Encrypted-field registry pins the exact at-rest column set + bidirectional model↔registry drift guards; pure per-value TryReencrypt core (old-key→active, never rewrites active/plaintext/corrupt) | Functional | High | US-PLT-005 | AC-3, AC-4 (DF-19, ISSUE-293; automated: EncryptedFieldRegistryTests `[Trait]`) |
+| TC-PLT-004 | Real-PG bulk re-encrypt sweep + key-usage retirement gate — moves old-key ciphertext to active across Active/Suspended/soft-deleted tenants (incl. national_id), heals plaintext residue, byte-stable on active rows, idempotent | Security | Critical | US-PLT-005 | AC-3, AC-4 (ISSUE-293, DF-enc-nationalid-backfill; automated: FieldEncryptionReencryptPostgresTests `[Trait]`, real PG) |
+| TC-PLT-006 | Encryption key-age watchdog: first-seen upsert (first-sight-only) + quarterly-cadence (default 90d, config-overridable) rotation-overdue WARN; key flip restarts age clock + retains retired row | Functional | High | US-PLT-005 | AC-4 (rotation ops; automated: EncryptionKeyAgeWatchdogJobTests `[Trait]`, FakeTimeProvider) |
+| TC-PLT-007 | System encryption key-rotation endpoints gated by Tenant.Lifecycle — read-only Support caller (Tenant.ViewLifecycle) is 403 on both re-encrypt trigger + report (403-not-404 proves gate-before-handler); SystemAdmin 200 | Security | High | US-PLT-005 | AC-4 (DF-enc-http-authz; automated: AdminEncryptionAuthorizationApiTests `[Trait]`, HTTP harness) |
+
+> **No `TC-PLT-005` doc:** there is no `[Trait("TC", "TC-PLT-005")]` in the code. The `employees.national_id`
+> back-fill parity a "TC-PLT-005" would nominally cover is asserted inside TC-PLT-004
+> (`FieldEncryptionReencryptPostgresTests.Registry_backfill_encrypts_both_pip_and_national_id_plaintext_and_report_surfaces_it`,
+> `[Trait("TC", "TC-PLT-004")]`).
