@@ -1,7 +1,23 @@
 # Observability Plan — OpenTelemetry + Grafana (LGTM)
 
-**Status:** Proposed · **Date:** 2026-06-26 · **Owner:** platform
-**Decisions locked:** local-dev-first / prod-ready design · Grafana **LGTM** backend · **OTel logs to Loki + keep Serilog file sink** · dashboards = **imported community + custom HRM**
+**Status:** Partially implemented (Phase 1 shipped-dormant) · **Date:** 2026-06-26 · **Updated:** 2026-07-24 · **Owner:** platform
+**Decisions locked:** local-dev-first / prod-ready design · Grafana **LGTM** backend · **OTel logs to Loki + keep Serilog file sink** · dashboards = **imported community + custom HRM** · **error tracking = self-hosted GlitchTip** ([ADR 2026-07-08](../vault/decisions/ADR-2026-07-08-saas-data-governance-posture.md))
+
+---
+
+## Implementation status (as of 2026-07-24)
+
+Recorded after the **error-monitoring feasibility study** ([advisory-reports/error-monitoring-feasibility.md](advisory-reports/error-monitoring-feasibility.md), "GlitchTip vs Datadog, given we already use Serilog"). The three monitoring pillars — **logs · metrics+traces · error-tracking** — and what is actually covered in `src/` today:
+
+| Pillar | Tool | Covered today | Remaining |
+|---|---|---|---|
+| **Logs** | Serilog (console + rolling file) | ✅ **Live** — `Program.cs` `UseSerilog`; `RequestId`/`TenantId`/`TenantSubdomain` enriched per request; daily `Logs/hrm-<date>.log` | Serilog→OTel sink to Loki (§1.4) — **not added**; file sink stays either way |
+| **Metrics + traces** | OpenTelemetry | ✅ **Coded but DORMANT** — `OpenTelemetry.* 1.16.0` + `ObservabilityExtensions.AddObservability` wired at `Program.cs`; spans for AspNetCore + HttpClient + **Npgsql** (stable, not the pre-release EF instr.) + **Redis** (gated on the shared multiplexer) + `HRM.*`; runtime metrics. **Endpoint-gated: blank `OtlpEndpoint` ⇒ Console exporter only ⇒ exports nowhere.** | Stand up the LGTM backend (Phase 2/3) + set `OtlpEndpoint`; custom domain meters (§1.6); Hangfire spans. **$0 to leave dormant** |
+| **Error tracking** | Self-hosted GlitchTip | ✅ **DECIDED** (accepted ADR) + **scaffolded** (`ops/glitchtip/docker-compose.yml`). **0% wired** — no `Sentry.*` package, no DSN config, no `@sentry/*` FE | **Phase 5 below** — wire the SDK + PII scrub + TenantId tag, run the compose |
+
+> ⚠ **Plan-vs-shipped divergence (noted, not a defect):** the shipped OTel wiring uses **Npgsql's stable built-in DB spans**, not the pre-release `OpenTelemetry.Instrumentation.EntityFrameworkCore` this doc's §1.1 sketched; it adds **Redis** spans (not in the original sketch) and has **not** added the Serilog→OTel sink (§1.4), Hangfire instrumentation, or the custom `HRM.Metrics` meters (§1.6). Treat §1.1/§1.4/§1.6 as the *remaining* backlog, not as-built.
+
+**Recommendation (from the feasibility study):** ship **GlitchTip first** (Phase 5 — highest value/effort, PII stays in-boundary), keep **Serilog as-is**, and leave the **OTel backend (Phase 2/3) deferred** until a concrete perf/latency question justifies the LGTM stack's RAM+ops cost. **Datadog rejected** — cloud egress of tenant-attributable PII contradicts the governance ADR. Full rationale + package/version evidence: [advisory-reports/error-monitoring-feasibility.md](advisory-reports/error-monitoring-feasibility.md).
 
 ---
 
@@ -96,6 +112,15 @@ Activity.Current?.SetTag("tenant.subdomain", tenant.Subdomain);
 ```
 
 **HARD GUARDRAIL — tenant id is a trace/log attribute ONLY, never a metric label.** Per-tenant on a Prometheus label = cardinality explosion. Any custom metric must be bucketed by low-cardinality dims (plan tier, module, status code) — not `tenant_id`. This is called out again in §1.5 and the dashboard notes.
+
+**Why this bites (the numbers):** Prometheus creates a *separate time series per unique label combination*, and labels multiply. A counter labelled `method`×`status`×`endpoint` can already be ~1,200 series; add a `tenant_id` with 10,000 values and it's **12M series from one metric** — not +10,000. Prometheus holds recent data in memory, so this surfaces as an **OOM a day or two after deploy**, not immediately. Division of signals: **metrics answer "is the platform healthy"; logs+traces answer "what happened to tenant 4471."**
+
+- **Loki has the same trap, subtler:** its **stream labels are the index** — `tenant_id` as a Loki *label* is the same explosion. Put it in the **log line body** and filter with LogQL at query time.
+- **Tempo is the exception:** high-cardinality attributes (incl. `tenant_id`) are genuinely fine — traces are keyed by trace ID and searched via TraceQL. This is where per-tenant/per-request detail belongs.
+
+**RLS gives you NOTHING at the telemetry layer.** The Postgres tenant boundary we enforce so carefully does not extend to logs/traces — customer names in span attributes, PII in exception messages, query params in log lines will all cross it happily. Scrubbing at the collector (Phase 2 `attributes/scrub`) is therefore **mandatory, and a compliance question to raise before go-live, not after**. Same principle as the GlitchTip `BeforeSend` scrub (Phase 5) — every egress path needs it.
+
+**Loki/Tempo have their own multi-tenancy (`X-Scope-OrgID`) — but you probably want it OFF.** That mechanism isolates data *between backend tenants* so you can hand per-customer dashboards out; with `auth_enabled: false` Loki runs single-tenant. For **our own ops team looking at one product, run single-tenant** and skip the header plumbing. Turn it on only if we actually expose per-customer dashboards. (Note: this is a *different* axis from our app's `tenant_id` — don't conflate the two.)
 
 ### 1.4 Serilog: add OTel sink + trace correlation, keep file sink
 - Keep the **file sink exactly as-is** — `@test-runner` root-causes by reading `Logs/hrm-<date>.log`. Do not remove it (the user explicitly chose "keep file sink"; removing it breaks QA).
@@ -202,11 +227,55 @@ All dashboards live in `docker/observability/grafana/dashboards/*.json` and load
 
 ---
 
+## Phase 5 — Error tracking (GlitchTip) · **recommended: do this first**
+
+Self-hosted, Sentry-API-compatible error tracker (accepted [ADR 2026-07-08](../vault/decisions/ADR-2026-07-08-saas-data-governance-posture.md); scaffolding already at `ops/glitchtip/`). **Additive to Serilog** — a new sink alongside console+file, not a replacement — and **complements** OTel (OTel = traces/metrics; GlitchTip = exception dedup/regression/alerting, which raw traces don't do well). ~1 day. Tracked as **US-PLT-006**.
+
+### 5.1 Stand up the instance (already scaffolded)
+`ops/glitchtip/docker-compose.yml` = `gt-postgres` (16, internal) + `gt-redis` (7, internal) + `migrate` + `web` (:8000) + `worker`. First run: rotate `ops/glitchtip/.env` secrets → `docker compose --env-file ops/glitchtip/.env -f ops/glitchtip/docker-compose.yml up -d` → register superuser at :8000 → create Org+Project → copy the **DSN**. Add `gt-pgdata` to the backup routine (new stateful store).
+
+### 5.2 Backend SDK (`HRM.Api`)
+Packages (pin at implement time; `Sentry.AspNetCore` 6.6.x supports .NET 10):
+```xml
+<PackageReference Include="Sentry.AspNetCore" Version="6.6.*" />
+<PackageReference Include="Sentry.Serilog" Version="6.6.*" />
+```
+- `builder.WebHost.UseSentry(o => { o.Dsn = cfg["GlitchTip:Dsn"]; o.SendDefaultPii = false; o.SetBeforeSend(Scrub); })` — DSN blank-by-default in `appsettings.json` (`"GlitchTip": { "Dsn": "" }`), real value via user-secrets/env (Critical Rule #6). **Blank DSN ⇒ SDK inert** (same safe-default pattern as OTel's `OtlpEndpoint`).
+- **PII scrub (`BeforeSend`) — mandatory:** strip request body, sensitive headers (`Authorization`, `Cookie`), query strings, and known PII fields before egress; `SendDefaultPii = false`.
+- **TenantId tag:** in `BeforeSend`/scope set `tenant_id` + `tenant_subdomain` from the scoped `ITenantContext` (same source as the Serilog enrichers in `TenantResolutionMiddleware`) → issues filterable per tenant *without* shipping raw PII.
+- Optional Serilog sink (`.WriteTo.Sentry`, `MinimumEventLevel = Error`) so `LogError` events also surface as GlitchTip issues — the Serilog file sink stays untouched.
+
+### 5.3 Frontend SDK (optional 2nd slice)
+`@sentry/angular` in `src/frontend`, DSN from `environment.ts`, a `beforeSend` scrub mirroring the backend, tenant tag from the existing `tenant/` subdomain signal. **Verify the SDK major against Angular 20 and pin** (per the `angular-developer` skill's version-check rule).
+
+### 5.4 QA verification (report-only, `@test-runner`)
+- Throw a deliberate test exception behind a dev-only endpoint → confirm the issue appears in GlitchTip with the correct stack + release.
+- Confirm the event carries `tenant_id`/`tenant_subdomain` tags and **does NOT** carry request body / `Authorization` / email PII (scrub proof).
+- Confirm blank DSN ⇒ nothing ships (inert default).
+- Cross-tenant check: two tenants' errors are tagged distinctly (tenant-isolation extends to telemetry).
+
+---
+
+## Phase 6 — Frontend RUM (Grafana Faro) — *deferred with the LGTM backend*
+
+Prometheus/Loki/Tempo have **no concept of a browser** — our Angular SPA is a blind spot in the stack above. **Grafana Faro** fills it: the Faro Web SDK captures real-user performance, errors, logs, and client-side traces from the browser and (open-source path) ships them via **Alloy** into the same LGTM backend. The SDK is framework-agnostic (Angular setup differs slightly from React; same instrumentation API).
+
+- **⚠ Overlaps GlitchTip (Phase 5) on frontend errors.** Faro's error capture and `@sentry/angular`'s do the same job. **Pick ONE for browser exceptions** — do not run both and triage duplicates. Default: GlitchTip owns errors (it's the decided error tracker); adopt Faro **only if/when** we want browser *RUM/perf* signals, and if so, disable Faro's error capture (or drop the FE Sentry slice).
+- Deferred alongside Phase 2/3 — no point standing up Faro before the LGTM backend exists to receive it.
+
+---
+
 ## Effort & sequencing
+- **Phase 5 (GlitchTip) is the recommended first slice** — highest value/effort, self-contained, and the decision + scaffolding already exist. Do it before the LGTM backend.
+- **When the LGTM backend is built, add signals in order: Prometheus+Grafana → Loki → Tempo.** ASP.NET Core emits useful meters out of the box (request rate/latency/error-rate for ~zero instrumentation) + `postgres_exporter` for pool saturation/slow queries → cheapest first value. Loki next (structured .NET logs are cheap to ship). **Tempo last, and only if actually distributed** — for a monolithic API on one Postgres, traces mostly restate what the metrics already showed. All three run single-binary on filesystem storage in one Compose file; move to S3-compatible object storage when retention hurts.
 - **Phase 1** (backend) and **Phase 2/3** (stack + dashboards) are largely independent — can run in parallel (backend-dev on instrumentation; infra/compose + dashboards alongside). They converge at Phase 4 verification.
 - Suggested order if serial: 2 → 1 → 3 → 4 (stand up the stack first so you can watch telemetry appear as you instrument).
 
 ## Open risks / watch-items
-- EF Core + Hangfire OTel instrumentation are **pre-release** — pin versions; if either is unstable, fall back to manual `ActivitySource` spans for jobs.
+- EF Core + Hangfire OTel instrumentation are **pre-release** — pin versions; if either is unstable, fall back to manual `ActivitySource` spans for jobs. (As-shipped we sidestepped EF instr. entirely — Npgsql stable spans; see the Implementation-status note at the top.)
 - `Serilog.Sinks.OpenTelemetry` duplicates logs into Loki *and* file — that's intended here, just sized accordingly.
-- 8 GB dev box: the LGTM stack + app + Postgres is memory-hungry (see [docker-local-stack] memory note). The `observability` profile keeps it opt-in; consider the single `otel-lgtm` image locally if RAM is tight.
+- 8 GB dev box: the LGTM stack + app + Postgres is memory-hungry (see [docker-local-stack] memory note). The `observability` profile keeps it opt-in; consider the single `otel-lgtm` image locally if RAM is tight. **Honest ops trade vs GlitchTip:** the full LGTM(+Faro) path is **4–5 services to operate** vs GlitchTip's one — you're buying metrics+tracing GlitchTip can't give, and paying in ops surface. This is *why* the recommendation defers it until a perf question justifies it.
+- **⚠ Version traps — most tutorials are stale (verify before copying a Compose example):**
+  - **Grafana Agent** reached **EOL 2025-11-01**; **Promtail** reached **EOL 2026-03-02** → use **Grafana Alloy** for new deployments. Any guide showing either is pre-consolidation.
+  - Loki **Simple Scalable Deployment (SSD)** mode is deprecated and slated for removal in **Loki 4.0** — several popular Compose examples still use it.
+  - **Collector choice isn't settled:** §0/Phase 2 spec the **OTel Collector**, but **Faro (Phase 6) needs Alloy's `faro.receiver`**. If we adopt Faro, standardize on **Alloy** as the single collector (it speaks OTLP *and* Faro) rather than running both. Decide at Phase 2 build time.

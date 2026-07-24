@@ -31,4 +31,11 @@ superseded versions are kept under [`plans/archive/`](plans/archive/).
 ## Dated reports / snapshots (`reports-archive/`)
 [BUG-REPORT-2026-06-19](reports-archive/BUG-REPORT-2026-06-19.md) · [QA-COVERAGE-REPORT-2026-06-19](reports-archive/QA-COVERAGE-REPORT-2026-06-19.md) · [QA-STATUS-SHEET-2026-06-23](reports-archive/QA-STATUS-SHEET-2026-06-23.md) · [MEDLOW-TRIAGE-2026-07-05](reports-archive/MEDLOW-TRIAGE-2026-07-05.md) · [PRODUCT-DECISIONS-NEEDED-2026-07-05](reports-archive/PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
 
+## Monitoring / error-tracking test approach (net-new 2026-07-24)
+How QA verifies the observability work — **US-PLT-004** (OTel) + **US-PLT-006** (GlitchTip) — is specified in the
+[observability plan](../Architecture/observability-otel-grafana-plan.md) (§Phase 4 verification + §5.4). Report-only via
+`@test-runner`: prove a thrown exception reaches GlitchTip **tagged by tenant with PII scrubbed** (request-body /
+`Authorization` / email stripped), prove blank DSN / `OtlpEndpoint` ⇒ **inert** (nothing ships), and confirm **no
+`tenant_id` leaks as a Prometheus label** (cardinality guard). Rationale: [error-monitoring-feasibility.md](../Architecture/advisory-reports/error-monitoring-feasibility.md).
+
 > Plans are living documents (Engineering-Discipline rule #6 / `/auto-heal`) — the completion plan re-sorts as reality changes.

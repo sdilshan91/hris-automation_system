@@ -118,12 +118,18 @@ bug is most dangerous. Scheduled (Karma mutation runs are slow). *Owner:* `@test
 >   validates RLS index leading-column).
 
 
-**11. Sentry + Sentry MCP.** Best-in-class error tracking for a multi-tenant SaaS; the MCP lets
-`@browser-debugger` / `@test-runner` pull the *exact* exception + release behind a failing TC instead of
-grepping Serilog files. **GATE — this is a product + data-governance decision, not just an MCP:** Sentry
-ingests exception data that on an HRM/PII platform can contain personal data, so evaluate **self-hosted
-Sentry / GlitchTip** vs SaaS, and configure PII scrubbing before adopting. Alternative path: ship
-Serilog → **Loki**, then [grafana/mcp-grafana]. *Decide first; the MCP is free once you do.*
+**11. Self-hosted GlitchTip (error tracking) + Sentry MCP.** ✅ **DECIDED — self-hosted GlitchTip**
+(Sentry-API-compatible, open source) with SDK-level PII scrubbing; **not** SaaS Sentry / Datadog — no
+third-party ingestion of PII-bearing exceptions. See [ADR 2026-07-08](../vault/decisions/ADR-2026-07-08-saas-data-governance-posture.md)
++ the feasibility study [error-monitoring-feasibility.md](../Architecture/advisory-reports/error-monitoring-feasibility.md)
+(GlitchTip **GO**, Datadog **NO** on PII egress, OTel already partially shipped). **State (2026-07-24):**
+docker-compose scaffolding exists (`ops/glitchtip/`) but the SDK is **0% wired** — no `Sentry.*` package, no
+DSN. **Recommended next: wire it — [observability plan Phase 5](../Architecture/observability-otel-grafana-plan.md#phase-5--error-tracking-glitchtip--recommended-do-this-first),
+highest value/effort of the monitoring work** (`Sentry.AspNetCore` 6.6 supports .NET 10; `BeforeSend` PII
+scrub + `tenant_id` tag). Once running, the Sentry MCP lets `@browser-debugger` / `@test-runner` pull the
+exact exception + release behind a failing TC instead of grepping Serilog files. Tracked as **US-PLT-006**.
+Alternative log path (`Serilog → Loki` + [grafana/mcp-grafana]) is the OTel/LGTM track, **complementary not
+a substitute**.
 
 **12. grafana/mcp-k6** — lets `@test-runner` author/validate k6 scripts conversationally (we have a
 `perf/` k6 harness). **GATE:** experimental + AGPL-3.0 — confirm the license is acceptable. Prefer over
