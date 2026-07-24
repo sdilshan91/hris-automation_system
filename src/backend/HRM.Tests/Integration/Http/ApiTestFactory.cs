@@ -65,6 +65,13 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
             {
                 // Throwaway Postgres container — backs both EF and Hangfire storage.
                 ["ConnectionStrings:DefaultConnection"] = _postgres.GetConnectionString(),
+                // Hermetic RLS/routing: force RLS OFF and blank the privileged connection so this harness never
+                // inherits a developer's RLS-ON machine config (user-secrets Rls:Enabled=true +
+                // PrivilegedConnection=hrm_owner@hris_dev_db). Left as-is, privileged reads (tenant resolution,
+                // Hangfire, migrations) would route to the developer's LIVE dev DB while data is seeded in this
+                // container → split-brain → login 500. RLS enforcement is covered by RlsIsolationPostgresTests.
+                ["Rls:Enabled"] = "false",
+                ["ConnectionStrings:PrivilegedConnection"] = "",
                 // Empty → SignalR uses the in-memory backplane; no Redis needed for tests.
                 ["ConnectionStrings:Redis"] = "",
                 // Runtime-generated RSA key (appsettings ships this blank). Not persisted anywhere.
