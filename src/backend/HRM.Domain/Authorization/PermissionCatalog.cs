@@ -595,6 +595,14 @@ public static class PermissionCatalog
             TenantOwner, TenantAdmin, HRManager, HROfficer,
             Manager, Employee, Recruiter, Auditor
         };
+
+        /// <summary>
+        /// US-AUTH-012 BR-5 (privilege-escalation guard): the privileged admin/owner role names that may NOT be
+        /// used as an SSO just-in-time default role. "System Admin" is a platform-level role name (not a seeded
+        /// tenant role) but is included defensively so it can never be set as a JIT ceiling. Case-insensitive.
+        /// </summary>
+        public static IReadOnlySet<string> PrivilegedForJit { get; } =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase) { TenantOwner, TenantAdmin, "System Admin" };
     }
 
     /// <summary>

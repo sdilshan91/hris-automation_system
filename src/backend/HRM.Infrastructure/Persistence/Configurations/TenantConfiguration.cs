@@ -122,5 +122,43 @@ public sealed class TenantConfiguration : IEntityTypeConfiguration<Tenant>
                 (c1, c2) => (c1 ?? new()).SequenceEqual(c2 ?? new()),
                 c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
                 c => c.ToList()));
+
+        // ── US-AUTH-012: per-tenant Entra SSO config (FR-1). SSO disabled by default (BR-1). ──
+        builder.Property(t => t.SsoEnabled)
+            .HasDefaultValue(false);
+
+        builder.Property(t => t.JitEnabled)
+            .HasDefaultValue(false);
+
+        builder.Property(t => t.JitDefaultRole)
+            .HasMaxLength(100);
+
+        builder.Property(t => t.SsoEnforcementMode)
+            .HasMaxLength(20)
+            .HasDefaultValue("optional");
+
+        // Allow-list arrays stored as jsonb (mirrors MfaRequiredRoles / EnabledModules), each with a
+        // value converter + comparer so EF change-tracks list mutations correctly.
+        builder.Property(t => t.AllowedEntraTenantIds)
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'[]'::jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+            .Metadata.SetValueComparer(new ValueComparer<List<string>>(
+                (c1, c2) => (c1 ?? new()).SequenceEqual(c2 ?? new()),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList()));
+
+        builder.Property(t => t.AllowedEmailDomains)
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'[]'::jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+            .Metadata.SetValueComparer(new ValueComparer<List<string>>(
+                (c1, c2) => (c1 ?? new()).SequenceEqual(c2 ?? new()),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList()));
     }
 }
