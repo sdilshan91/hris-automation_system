@@ -79,7 +79,11 @@ public sealed class LocalFileStorageTests : IDisposable
     {
         // A tenant dir whose name is a PREFIX of another must not let "{tenant}X/.." style tricks in;
         // the trailing-separator check guards `/base/tenantX` vs `/base/tenantXY`.
-        var act = async () => await _storage.UploadAsync(_tenant, "..\\" + _tenant.ToString("N") + "-sibling/x", Bytes("x"), "text/plain");
+        // NOTE: use "../" (forward slash) — on Linux "\" is a literal filename char, NOT a path
+        // separator, so a "..\\" payload never escapes and this arm silently passed nothing there.
+        // Use the guard's own id format (ToString(), with hyphens) so "{tenant}-sibling" is a REAL
+        // prefix-extension of the tenant dir, actually exercising the trailing-separator boundary.
+        var act = async () => await _storage.UploadAsync(_tenant, "../" + _tenant.ToString() + "-sibling/x", Bytes("x"), "text/plain");
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 }
