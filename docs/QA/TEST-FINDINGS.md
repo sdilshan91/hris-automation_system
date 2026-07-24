@@ -7114,7 +7114,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-324
 - **Type:** ISSUE (TEST — ledger hygiene)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-24) — reconciled the auth `TEST-MATRIX.md` mechanically from TC frontmatter: Total 159→**161**, priority buckets Critical 73 / High 68→**76** / Medium 13→**12** / Low 0 (now sum to 161), and rebuilt the Type Distribution from frontmatter (Functional **69**, Security **71**, Integration 2→**4** incl. the previously-orphaned **TC-AUTH-113/114**, Performance **11**, Accessibility 6 = 161). `TRACEABILITY-MATRIX.md` auth TOTAL aligned to 161 + missing TC-AUTH-113 added to US-AUTH-005. (The content-based **Category Coverage** tags — Negative/Boundary/Security/Perf/A11y Test — are not derivable from frontmatter and were left as maintained.)
 - **Layer:** TEST
 - **Module / US / TC:** Authentication — flagged 2026-07-24 by `@qa-engineer` while adding the US-AUTH-012 TCs
 - **Title:** Pre-existing drift in `docs/QA/authentication/TEST-MATRIX.md`: the priority buckets summed to 111 while "Total Test Cases" read 116; the frontmatter `updated: 2026-06-11` yet the body already contained a 2026-07-19 TC; and there was no "Integration" row despite TC-AUTH-113/114 being integration-type.
@@ -7128,7 +7128,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-325
 - **Type:** ISSUE (TEST — coverage gap)
 - **Severity:** LOW (011 is a stated dependency of US-AUTH-012/013/014/016; its callback + issuer-validator logic is currently unverified by any TC file)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (commit 1a7c0779, 2026-07-24) — authored 19 IEEE-829 TCs (TC-AUTH-137..154 + TC-AUTH-ISO-007) bound to the real EntraSsoService/SsoController OIDC implementation, covering all 7 ACs incl. the fail-closed `tid` allow-list crux and the id_token validation matrix. Surfaced [[ISSUE-328]] + [[ISSUE-329]].
 - **Layer:** TEST
 - **Module / US / TC:** Authentication / US-AUTH-011 / (none) — flagged 2026-07-24 by `@qa-engineer` while authoring the US-AUTH-012 TCs
 - **Title:** The authentication TC set jumps from US-AUTH-010 straight to the new US-AUTH-012 batch — US-AUTH-011 (OIDC foundation: challenge + callback + code-exchange + id_token validation in `EntraSsoService`, POC per PR #112) has no `docs/QA/authentication/TC-AUTH-*` cases. (The COMPLETION-PLAN references "5 `[b]` BLOCKED SSO TCs" for 011/012/013/014/016 as a plan line, but there are no TC files for 011.)

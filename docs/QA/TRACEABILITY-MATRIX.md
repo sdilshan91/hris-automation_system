@@ -20,7 +20,7 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-002 | JWT token issuance and refresh token flow | Must Have | TC-AUTH-005, TC-AUTH-006, TC-AUTH-007 | 3 | 7/7 AC covered |
 | US-AUTH-003 | User logout and token invalidation | Must Have | TC-AUTH-008, TC-AUTH-009 | 2 | 5/5 AC covered |
 | US-AUTH-004 | Password reset flow | Must Have | TC-AUTH-010, TC-AUTH-011, TC-AUTH-012 | 3 | 6/6 AC covered |
-| US-AUTH-005 | Multi-factor authentication (TOTP) | Should Have | TC-AUTH-013, TC-AUTH-014, TC-AUTH-015, TC-AUTH-029, TC-AUTH-030, TC-AUTH-031, TC-AUTH-032, TC-AUTH-033, TC-AUTH-034, TC-AUTH-035, TC-AUTH-036, TC-AUTH-037, TC-AUTH-038 | 13 | 7/7 AC covered |
+| US-AUTH-005 | Multi-factor authentication (TOTP) | Should Have | TC-AUTH-013, TC-AUTH-014, TC-AUTH-015, TC-AUTH-029, TC-AUTH-030, TC-AUTH-031, TC-AUTH-032, TC-AUTH-033, TC-AUTH-034, TC-AUTH-035, TC-AUTH-036, TC-AUTH-037, TC-AUTH-038, TC-AUTH-113 | 14 | 7/7 AC covered |
 | US-AUTH-006 | Role-based access control (RBAC) | Must Have | TC-AUTH-016, TC-AUTH-017, TC-AUTH-018, TC-AUTH-039, TC-AUTH-040, TC-AUTH-041, TC-AUTH-042, TC-AUTH-043, TC-AUTH-044, TC-AUTH-045, TC-AUTH-046, TC-AUTH-047, TC-AUTH-048, TC-AUTH-049, TC-AUTH-050 | 15 | 7/7 AC covered (deep) |
 | US-AUTH-007 | Tenant resolution from subdomain | Must Have | TC-AUTH-019, TC-AUTH-020, TC-AUTH-021, TC-AUTH-051, TC-AUTH-052, TC-AUTH-053, TC-AUTH-054, TC-AUTH-055, TC-AUTH-056, TC-AUTH-057, TC-AUTH-058 | 11 | 6/6 AC covered (deep) |
 | US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023, TC-AUTH-059, TC-AUTH-060, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063, TC-AUTH-064 | 8 | 5/5 AC covered (deep) |
@@ -30,7 +30,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-012 | Per-tenant SSO configuration | Should Have | TC-AUTH-115, TC-AUTH-116, TC-AUTH-117, TC-AUTH-118, TC-AUTH-119, TC-AUTH-120, TC-AUTH-121, TC-AUTH-122, TC-AUTH-123, TC-AUTH-124, TC-AUTH-125, TC-AUTH-ISO-005 | 12 | 7/7 AC covered |
 | US-AUTH-016 | SSO enforcement, break-glass & admin-consent onboarding | Should Have | TC-AUTH-126, TC-AUTH-127, TC-AUTH-128, TC-AUTH-129, TC-AUTH-130, TC-AUTH-131, TC-AUTH-132, TC-AUTH-133, TC-AUTH-134, TC-AUTH-135, TC-AUTH-136, TC-AUTH-ISO-006 | 12 | 7/7 AC covered |
 | Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005, TC-AUTH-ISO-006, TC-AUTH-ISO-007 | 7 | -- |
-| **TOTAL** | | | **159 test cases** | **159** | **82/82 AC** |
+| **TOTAL** | | | **161 test cases** | **161** | **82/82 AC** |
+<!-- NOTE: 161 = unique auth TC files. The per-story TC lists above sum to 164 because 3 TCs serve two user stories each (listed in both rows); the unique TOTAL is 161. -->
+
 
 ### Backward Traceability (Test Cases --> User Stories)
 
