@@ -41,7 +41,11 @@ try
             .ReadFrom.Configuration(context.Configuration)
             .ReadFrom.Services(services)
             .Enrich.FromLogContext()
-            .Enrich.WithProperty("Application", "HRM.Api");
+            .Enrich.WithProperty("Application", "HRM.Api")
+            // US-PLT-006 (AC-4/AC-5): GlitchTip Serilog sink ADDED ALONGSIDE the console+file sinks above
+            // (read from configuration). Error-level only; SendDefaultPii=false; inert when GlitchTip:Dsn is
+            // blank (the shipped default). The file sink stays the authoritative QA/RequestId root-cause log.
+            .WriteToGlitchTip(context.Configuration);
     });
 
     // ===== Shared Redis multiplexer (Redis command-spans, plan §5) =====
@@ -63,6 +67,16 @@ try
     // OTEL_EXPORTER_OTLP_ENDPOINT env var) is set; Console exporter only when blank, so the app runs with
     // no collector. See HRM.Api/Observability/ObservabilityExtensions.cs + docs/Architecture/observability-otel-grafana-plan.md.
     builder.Services.AddObservability(builder.Configuration, builder.Environment);
+
+    // ===== Error tracking (US-PLT-006: self-hosted GlitchTip, Sentry-API-compatible) =====
+    // Captures unhandled exceptions to a SELF-HOSTED GlitchTip instance with stack + release, tagged per tenant,
+    // with PII scrubbed in BeforeSend before anything leaves the process (ADR-2026-07-08 Decision 1). ADDITIVE to
+    // the OTel wiring above and the Serilog console/file sinks — it replaces neither (AC-4/AC-5). SAFE-BY-DEFAULT
+    // (AC-3): inert unless GlitchTip:Dsn is set (blank is the committed default), so no DSN ⇒ no SDK init, no
+    // network. The DSN is a secret supplied only via user-secrets/env (Critical Rule #6). See GlitchTipErrorTracking.
+    // AC-7 (ops): the GlitchTip Postgres volume (gt-pgdata, ops/glitchtip/docker-compose.yml) must be enumerated by
+    // the backup routine so error history survives a restore — no change needed in src/ for that.
+    builder.WebHost.AddGlitchTipErrorTracking(builder.Configuration);
 
     // ===== Health Checks (P3 infra probes: /health/live, /health/ready — mapped below) =====
     // Liveness = process is up (self check, no external deps, tag "live"). Readiness = downstream deps

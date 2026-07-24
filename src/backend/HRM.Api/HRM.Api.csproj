@@ -27,6 +27,14 @@
          only used when a Redis connection string is configured; otherwise the default in-memory backplane
          is used so the app starts and tests pass without Redis. -->
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.*" />
+    <!-- US-PLT-006: error tracking via self-hosted GlitchTip (Sentry-API-compatible). GlitchTip speaks the
+         Sentry protocol, so we use the mature Sentry .NET SDK. 6.7.0 is on the 6.6.0+ line that explicitly
+         adds .NET 10 support (verified 2026-07-24). SAFE-BY-DEFAULT: the SDK is only wired when GlitchTip:Dsn
+         is non-blank (blank is the shipped default), so with no DSN there is no init and no network activity.
+         Sentry.AspNetCore = ASP.NET Core integration (UseSentry + BeforeSend scrub); Sentry.Serilog = the
+         Serilog Error-level sink, added ALONGSIDE the existing console+file sinks (additive, AC-4). -->
+    <PackageReference Include="Sentry.AspNetCore" Version="6.7.0" />
+    <PackageReference Include="Sentry.Serilog" Version="6.7.0" />
   </ItemGroup>
 
   <!-- P3 observability (docs/Architecture/observability-otel-grafana-plan.md). OpenTelemetry traces + metrics.
