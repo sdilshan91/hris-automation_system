@@ -5499,13 +5499,18 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 
 ## Platform Module
 
-> Cross-cutting platform / defense-in-depth stories (US-PLT). These TCs are **automated regression TCs**
-> that bind already-green xUnit arms (carrying `[Trait("TC", …)]`) to their stories — closing the
-> traceability gap where platform coverage existed only in code (DF-plt-tc-structure). The RLS + real-PG
+> Cross-cutting platform / defense-in-depth stories (US-PLT). The US-PLT-002 / US-PLT-005 TCs are **automated
+> regression TCs** that bind already-green xUnit arms (carrying `[Trait("TC", …)]`) to their stories — closing
+> the traceability gap where platform coverage existed only in code (DF-plt-tc-structure). The RLS + real-PG
 > field-encryption arms execute on the orchestrator's Testcontainers/HTTP-harness Postgres run (the agent
-> verify gate is Docker-less). Deviation flags: (a) US-PLT-002 FR-3's `SET LOCAL`+ambient-transaction
-> mechanism was retired for `TenantGucConnectionInterceptor` (ISSUE-277); (b) the `TC-PLT-P34` trait denotes
-> field-at-rest encryption Phase 3-4 (US-PLT-005), not RLS.
+> verify gate is Docker-less). **US-PLT-006 (error tracking / GlitchTip) is net-new and 0% built** (feasibility
+> study 2026-07-24, no `Sentry.*` package yet), so its TCs (TC-PLT-008…014 + TC-PLT-ISO-001) are **forward-looking
+> `draft` specs** — each names its intended `[Trait("TC", …)]` and flips to `automated` when the SDK layer lands;
+> none may be marked `pass` without a real run. Deviation flags: (a) US-PLT-002 FR-3's `SET LOCAL`+ambient-
+> transaction mechanism was retired for `TenantGucConnectionInterceptor` (ISSUE-277); (b) the `TC-PLT-P34` trait
+> denotes field-at-rest encryption Phase 3-4 (US-PLT-005), not RLS; (c) the trait-named scheme has no running
+> counter, so US-PLT-006 continues the numeric suffix past the highest used (007) — TC-PLT-006/007 are already
+> bound to US-PLT-005, NOT reused.
 
 ### Forward Traceability (User Stories --> Test Cases)
 
@@ -5513,7 +5518,8 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 |---------------|-----------------|----------|------------|----------|----------|
 | US-PLT-002 | PostgreSQL Row-Level Security as defense-in-depth tenant isolation | Should Have | TC-PLT-002-RLS | 1 | AC-1, AC-2, AC-3, AC-4, AC-6 (5/6; AC-5 migration-authoring not test-bound) |
 | US-PLT-005 | Encryption-at-rest for sensitive PII (KEK/rotation) | Must Have | TC-PLT-P34, TC-PLT-003, TC-PLT-004, TC-PLT-006, TC-PLT-007 | 5 | AC-3, AC-4 (PII/compensation columns + tenant-safe rotation; AC-1 MFA + AC-2 tenant-SMTP secrets NOT yet built) |
-| **TOTAL** | | | **6 test cases** | **6** | |
+| US-PLT-006 | Error tracking via self-hosted GlitchTip (Sentry-API-compatible) | Should Have | TC-PLT-008, TC-PLT-009, TC-PLT-010, TC-PLT-011, TC-PLT-012, TC-PLT-013, TC-PLT-014, TC-PLT-ISO-001 | 8 | AC-1, AC-2, AC-3, AC-4, AC-5, AC-7 + multi-tenant (AC-6 optional/phase-2 as a deferred slice; all `draft` — SDK 0% built) |
+| **TOTAL** | | | **14 test cases** | **14** | |
 
 ### US-PLT-002 Backward Traceability (Test Case --> Requirement)
 
@@ -5535,3 +5541,20 @@ Cross-module epic per `docs/superpowers/specs/2026-07-14-tenant-location-configu
 > back-fill parity a "TC-PLT-005" would nominally cover is asserted inside TC-PLT-004
 > (`FieldEncryptionReencryptPostgresTests.Registry_backfill_encrypts_both_pip_and_national_id_plaintext_and_report_surfaces_it`,
 > `[Trait("TC", "TC-PLT-004")]`).
+
+### US-PLT-006 Backward Traceability (Test Case --> Requirement)
+
+> **Forward-looking / `draft`:** the Sentry/GlitchTip SDK layer is 0% wired (feasibility study 2026-07-24), so
+> these bind no green arm yet — each row names its **intended** `[Trait("TC", …)]` and flips to `automated`
+> once the SDK lands. Numbers continue past 007 (006/007 are US-PLT-005's), no id collision.
+
+| Test Case ID | Test Case Title | Type | Priority | User Story | Requirements Covered |
+|-------------|----------------|------|----------|------------|---------------------|
+| TC-PLT-008 | Unhandled exception captured in GlitchTip with stack trace + release/version + `tenant_id`/`tenant_subdomain` tags | Functional | High | US-PLT-006 | AC-1, FR-3, FR-5, FR-6, BR-5 (draft; intended `[Trait("TC","TC-PLT-008")]`) |
+| TC-PLT-009 | **CRUX SECURITY:** `BeforeSend` scrubs request body / `Authorization` / cookies-session / email / national ID; `SendDefaultPii=false`; negative arm asserts national-ID + email sentinels ABSENT from the event | Security | Critical | US-PLT-006 | AC-2, FR-3, FR-4, NFR-1, BR-2 (draft; intended `[Trait("TC","TC-PLT-009")]`) |
+| TC-PLT-010 | Fail-safe: blank DSN ⇒ SDK inert (no init/network), app unaffected; unreachable DSN never crashes; DSN blank in committed config, secret only via user-secrets/env | Security | High | US-PLT-006 | AC-3, FR-7, FR-8, NFR-3, BR-3, Critical Rule #6 (draft; intended `[Trait("TC","TC-PLT-010")]`) |
+| TC-PLT-011 | Telemetry in-boundary + additive: GlitchTip sink composes alongside Serilog console+file (file stays the RequestId QA log); no third-party cloud egress | Integration | High | US-PLT-006 | AC-4, FR-2, NFR-2, BR-1, BR-4 (draft; intended `[Trait("TC","TC-PLT-011")]`) |
+| TC-PLT-012 | Serilog Sentry sink at Error level + ASP.NET Core `UseSentry`; Info/Warning NOT captured; OTel wiring left intact | Integration | High | US-PLT-006 | AC-5, FR-2, FR-3, NFR-4, BR-4 (draft; intended `[Trait("TC","TC-PLT-012")]`) |
+| TC-PLT-013 | *(phase-2/optional)* Angular `@sentry/angular` client capture with backend-mirrored scrub + subdomain-derived tenant tag | E2E | Low | US-PLT-006 | AC-6, FR-9 (blocked — deferred phase-2 FE slice; intended `@TC-PLT-013` Playwright) |
+| TC-PLT-014 | GlitchTip Postgres volume (`gt-pgdata`) enumerated by the backup/retention routine so error history survives restore | Functional | Medium | US-PLT-006 | AC-7, FR-10, NFR-5 (draft; ops/config check; intended `@TC-PLT-014`) |
+| TC-PLT-ISO-001 | Two tenants' captured errors each carry only their OWN `tenant_id`/`tenant_subdomain`; no cross-attribution under interleaved requests | Security | High | US-PLT-006 | AC-1, FR-5, BR-5, Critical Rule #1 (draft; multi-tenant isolation; intended `[Trait("TC","TC-PLT-ISO-001")]`) |

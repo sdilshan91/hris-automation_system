@@ -26,6 +26,7 @@
     "@microsoft/signalr": "^10.0.0",
     "@ngx-translate/core": "^16.0.0",
     "@ngx-translate/http-loader": "^16.0.0",
+    "@sentry/angular": "10.68.0",
     "chart.js": "^4.5.1",
     "ngx-toastr": "^19.0.0",
     "rxjs": "~7.8.0",

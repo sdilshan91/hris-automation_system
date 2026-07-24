@@ -24,6 +24,7 @@ import { tenantInterceptor } from './core/interceptors/tenant.interceptor';
 import { apiEnvelopeInterceptor } from './core/interceptors/api-envelope.interceptor';
 import { TenantService } from './core/tenant/tenant.service';
 import { AuthService } from './core/auth/auth.service';
+import { setSentryTenant } from './core/monitoring/sentry';
 
 /**
  * App bootstrap initializer (blocks rendering until resolved).
@@ -44,7 +45,14 @@ function initializeApp(
   tenantService: TenantService,
   authService: AuthService
 ): () => Promise<void> {
-  return () => tenantService.resolve().then(() => authService.restoreSession());
+  return () =>
+    tenantService.resolve().then(() => {
+      // US-PLT-006 AC-6: tag client-side error events with the resolved tenant so
+      // GlitchTip issues are filterable per tenant (no-op when the SDK is inert).
+      const tenant = tenantService.tenantContext();
+      setSentryTenant(tenant.subdomain, tenant.tenantId);
+      return authService.restoreSession();
+    });
 }
 
 export const appConfig: ApplicationConfig = {
