@@ -7099,7 +7099,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-323
 - **Type:** ISSUE (TEST / INFRA — a test-integrity guard silently no-ops)
 - **Severity:** MED (defeats the ISSUE-312 protection: an aborted/partial `dotnet test` could read as green on the host-Linux path)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-24) — stripped CRLF from all 3 tracked CRLF `.sh` files (`run-backend-tests.sh`, `run-backend-tests.test.sh`, `perf/scripts/04-bulk-import-boundary.sh`) and added `.gitattributes` (`*.sh text eol=lf`) so it can't recur on the NTFS checkout. **Verified:** `bash -n` passes, and the guard's own self-test `run-backend-tests.test.sh` now passes all 4 cases incl. `aborted-but-reported-passed-exit0 → gate exit 1` (the ISSUE-312 scenario) — the guard genuinely fails an aborted-but-green run again.
 - **Layer:** TEST / INFRA
 - **Module / US / TC:** platform tooling — discovered 2026-07-24 during the US-AUTH-012 verify gate
 - **Title:** The wrapper `scripts/run-backend-tests.sh` retains CRLF line endings (the working tree is a CRLF checkout from the old Windows/NTFS shared drive; `core.autocrlf=input` normalizes tracked source but this `.sh` still carries `\r`). Under `bash` on Linux every line breaks: `set -o pipefail` → `set: pipefail: invalid option name`, bare `\r` → `$'\r': command not found`, `trap … EXIT` → `trap: EXIT: invalid signal specification`, and `line 35: syntax error near unexpected token '}'`. The wrapper's validation/trap block (the part that turns an ABORTED run into a FAILED gate) therefore never executes — the gate's exit status comes from the **raw** `dotnet test`, not from the guard.

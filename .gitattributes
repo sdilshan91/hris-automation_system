@@ -1,0 +1,5 @@
+# Shell scripts run under bash on Linux/Docker — they MUST be checked out with LF.
+# On the shared NTFS drive a CRLF checkout otherwise breaks them at runtime
+# (e.g. `set -o pipefail\r` → invalid option; syntax error near `}`), which silently
+# defeated the ISSUE-312 aborted-run guard in scripts/run-backend-tests.sh (see ISSUE-323).
+*.sh text eol=lf
