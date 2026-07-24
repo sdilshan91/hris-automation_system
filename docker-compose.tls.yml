@@ -1,0 +1,25 @@
+# Opt-in TLS + subdomain reverse proxy overlay (Linux/Docker).
+# Adds an nginx container that terminates TLS for *.myhrm.org and proxies to the
+# backend/frontend containers, so you can browse https://<tenant>.myhrm.org locally.
+#
+# Bring up (alongside the base stack):
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+#
+# One-time host setup for BROWSER use (not needed for curl --resolve/--cacert tests):
+#   1. /etc/hosts:  127.0.0.1 myhrm.org e2e.myhrm.org platform.myhrm.org admin.myhrm.org
+#   2. Trust the CA: sudo cp local-dev/certs/ca.crt /usr/local/share/ca-certificates/hrm-dev-ca.crt && sudo update-ca-certificates
+name: hris
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "443:443"
+      - "8081:80"
+    volumes:
+      - ./local-dev/certs:/etc/nginx/certs:ro
+      - ./local-dev/nginx.docker.conf:/etc/nginx/nginx.conf:ro
+    restart: unless-stopped
