@@ -7161,3 +7161,28 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Root cause:** the break-glass marker is not threaded from the MFA challenge (step 1) through to `VerifyMfaLoginAsync` (step 2), so step 2 can't emit the break-glass audit/notification.
 - **Impact:** incomplete security telemetry — routine-use deterrence + alerting (BR-4) is bypassed specifically for MFA-enrolled break-glass admins. No functional lockout risk.
 - **Suggested direction (NOT applied):** carry a break-glass marker into the MFA challenge → verify step (US-AUTH-005 MFA path, which US-AUTH-016 was scoped not to rebuild) so `VerifyMfaLoginAsync` emits `break_glass_login` + the admin alert. Small, contained follow-up.
+
+---
+
+### ISSUE-328 — US-AUTH-011 SSO audit-event names may not be written as structured audit records (unverified)
+- **ID:** ISSUE-328
+- **Type:** ISSUE (BE — observability/audit; needs confirmation)
+- **Severity:** MED (the US-AUTH-011 ACs specify named audit events — `sso_login_succeeded`, `sso_state_invalid`, `sso_token_validation_failed`, `sso_idp_error` per FR-8 — but `EntraSsoService` emits `ILogger` Warning/Error with reasons; whether these exact names are persisted as structured **audit records** was not confirmed)
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Authentication / US-AUTH-011 / TC-AUTH-140/144/148/149 — flagged 2026-07-24 by `@qa-engineer` while authoring the US-AUTH-011 TCs (ISSUE-325)
+- **Title:** `EntraSsoService.CompleteSignInAsync`/`TryUnprotectState`/`ValidateMicrosoftIssuer`/`CheckIsolation` log failures via `ILogger`, but `AuthService.SsoSignInAsync` (the success/audit path) was not read, so it is unconfirmed whether the AC-named audit events are written to the tenant audit log (US-NTF-004) as structured records vs. only app-log lines.
+- **Root cause:** unknown pending a read of `AuthService.SsoSignInAsync` + the audit-write wiring.
+- **Suggested direction (NOT applied):** confirm the SSO paths write the AC-named events as audit records (or add them). TC-AUTH-140/144/148/149 assert the named event as the expected outcome — a naming/absence mismatch will surface as a finding under `/test-all`, not a blocker.
+
+---
+
+### ISSUE-329 — US-AUTH-011 scope drift: AC-1 specifies `User.Read` but `EntraSsoOptions.Scopes` default omits it
+- **ID:** ISSUE-329
+- **Type:** ISSUE (BE/BA — spec-vs-config drift)
+- **Severity:** LOW
+- **Status:** OPEN (needs-decision)
+- **Layer:** BE
+- **Module / US / TC:** Authentication / US-AUTH-011 / TC-AUTH-137 — flagged 2026-07-24 by `@qa-engineer`
+- **Title:** `docs/BA/authentication/US-AUTH-011.md` AC-1 specifies the request scope `"openid profile email User.Read"`, but `EntraSsoOptions.Scopes` defaults to `"openid profile email"` (no `User.Read`). The deployed config value governs; the TCs assert the configured value, not the story literal.
+- **Suggested direction (NOT applied):** decide — add `User.Read` to the deployed scope (if Graph profile reads are wanted) OR amend AC-1 to match the leaner default. BA/backend decision, not a QA edit.

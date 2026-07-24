@@ -26,10 +26,11 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-008 | Cross-tenant user switching | Should Have | TC-AUTH-022, TC-AUTH-023, TC-AUTH-059, TC-AUTH-060, TC-AUTH-061, TC-AUTH-062, TC-AUTH-063, TC-AUTH-064 | 8 | 5/5 AC covered (deep) |
 | US-AUTH-009 | Session management and concurrent limits | Should Have | TC-AUTH-024, TC-AUTH-025, TC-AUTH-065, TC-AUTH-066, TC-AUTH-067, TC-AUTH-068, TC-AUTH-069, TC-AUTH-070, TC-AUTH-071, TC-AUTH-072, TC-AUTH-073, TC-AUTH-074, TC-AUTH-075, TC-AUTH-076, TC-AUTH-077, TC-AUTH-078, TC-AUTH-079, TC-AUTH-080, TC-AUTH-081, TC-AUTH-082 | 20 | 6/6 AC covered (deep) |
 | US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028, TC-AUTH-083, TC-AUTH-084, TC-AUTH-085, TC-AUTH-086, TC-AUTH-087, TC-AUTH-088, TC-AUTH-089, TC-AUTH-090, TC-AUTH-091, TC-AUTH-092, TC-AUTH-093, TC-AUTH-094, TC-AUTH-095, TC-AUTH-096, TC-AUTH-097, TC-AUTH-098, TC-AUTH-099, TC-AUTH-100, TC-AUTH-101, TC-AUTH-102, TC-AUTH-103, TC-AUTH-104, TC-AUTH-105, TC-AUTH-106, TC-AUTH-107, TC-AUTH-108, TC-AUTH-109, TC-AUTH-110, TC-AUTH-111, TC-AUTH-112, TC-AUTH-114 | 34 | 6/6 AC covered (deep) |
+| US-AUTH-011 | Entra OIDC authentication foundation | Should Have | TC-AUTH-137, TC-AUTH-138, TC-AUTH-139, TC-AUTH-140, TC-AUTH-141, TC-AUTH-142, TC-AUTH-143, TC-AUTH-144, TC-AUTH-145, TC-AUTH-146, TC-AUTH-147, TC-AUTH-148, TC-AUTH-149, TC-AUTH-150, TC-AUTH-151, TC-AUTH-152, TC-AUTH-153, TC-AUTH-154, TC-AUTH-ISO-007 | 19 | 7/7 AC covered |
 | US-AUTH-012 | Per-tenant SSO configuration | Should Have | TC-AUTH-115, TC-AUTH-116, TC-AUTH-117, TC-AUTH-118, TC-AUTH-119, TC-AUTH-120, TC-AUTH-121, TC-AUTH-122, TC-AUTH-123, TC-AUTH-124, TC-AUTH-125, TC-AUTH-ISO-005 | 12 | 7/7 AC covered |
 | US-AUTH-016 | SSO enforcement, break-glass & admin-consent onboarding | Should Have | TC-AUTH-126, TC-AUTH-127, TC-AUTH-128, TC-AUTH-129, TC-AUTH-130, TC-AUTH-131, TC-AUTH-132, TC-AUTH-133, TC-AUTH-134, TC-AUTH-135, TC-AUTH-136, TC-AUTH-ISO-006 | 12 | 7/7 AC covered |
-| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005, TC-AUTH-ISO-006 | 6 | -- |
-| **TOTAL** | | | **140 test cases** | **140** | **75/75 AC** |
+| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005, TC-AUTH-ISO-006, TC-AUTH-ISO-007 | 7 | -- |
+| **TOTAL** | | | **159 test cases** | **159** | **82/82 AC** |
 
 ### Backward Traceability (Test Cases --> User Stories)
 
@@ -77,6 +78,25 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-135 | Every enforcement change audited as `sso_enforcement_changed` with before/after + actor | Security | High | US-AUTH-016 | AC-2, FR-7 |
 | TC-AUTH-136 | Accessibility (WCAG 2.1 AA) of the enforcement sub-section + admin-consent onboarding wizard | Accessibility | Medium | US-AUTH-016 | AC-1, AC-3, AC-4 (UI) |
 | TC-AUTH-ISO-006 | SSO enforcement/onboarding tenant isolation -- tenant A's `sso_only`/onboarding never affects tenant B's login | Security | Critical | US-AUTH-016 | AC-1, BR-6, FR-1, FR-6, NFR-4 |
+| TC-AUTH-137 | SSO challenge builds a correct signed single-use redirect to Entra `organizations` (client_id, response_type, fixed redirect_uri, scope, nonce, PKCE S256, state) | Functional | Critical | US-AUTH-011 | AC-1, FR-1, FR-3, NFR-3, BR-2, BR-4 |
+| TC-AUTH-138 | Valid callback completes the OIDC round-trip (state->tenant, code exchange, id_token validation) and terminates in the app JWT + refresh, redirect to originating subdomain | Functional | Critical | US-AUTH-011 | AC-2, AC-3, AC-4, FR-2, FR-3, FR-4, FR-5, FR-6, BR-1 |
+| TC-AUTH-139 | Tenant resolved from the signed `state`, NEVER from the token `tid`; a valid token with a foreign-tenant state is rejected | Security | Critical | US-AUTH-011 | AC-2, FR-3, FR-5, BR-1 |
+| TC-AUTH-140 | Tampered/missing/forged/replayed `state` rejected fail-closed, no token, `sso_state_invalid` audit | Security | Critical | US-AUTH-011 | AC-5, FR-3, NFR-3, NFR-5 |
+| TC-AUTH-141 | Expired `state` (past 10-min lifetime) rejected fail-closed | Security | High | US-AUTH-011 | AC-5, NFR-3 |
+| TC-AUTH-142 | Fail-closed isolation crux -- an Entra `tid` NOT in the resolved tenant's allow-list is REJECTED (cross-tenant entry blocked) | Security | Critical | US-AUTH-011 | AC-6, FR-5, FR-9, BR-1, BR-5 |
+| TC-AUTH-143 | Tenant with NO allow-list entry (or empty allow rules) can never complete SSO (fail-closed default) | Security | Critical | US-AUTH-011 | AC-6, FR-9, BR-5 |
+| TC-AUTH-144 | Custom issuer validator rejects any id_token whose `iss` != `login.microsoftonline.com/{tid}/v2.0` for its own `tid` | Security | Critical | US-AUTH-011 | AC-3, AC-6, FR-5 |
+| TC-AUTH-145 | id_token validation rejects bad signature, wrong audience, expired lifetime, and nonce mismatch (four cases) | Security | Critical | US-AUTH-011 | AC-3, AC-6, FR-5, NFR-5 |
+| TC-AUTH-146 | Validated id_token missing `tid`/`oid`/verified-email rejected fail-closed | Security | High | US-AUTH-011 | AC-6, FR-5 |
+| TC-AUTH-147 | Code-exchange failure (invalid/expired/used code, token-endpoint error, no id_token) yields no token | Functional | High | US-AUTH-011 | AC-3, FR-4, NFR-5 |
+| TC-AUTH-148 | Microsoft OIDC error/cancellation -> no token, local lockout counter untouched, friendly redirect | Functional | High | US-AUTH-011 | AC-7, BR-3 |
+| TC-AUTH-149 | No id_token/access_token/code/client_secret/code_verifier ever written to logs; secret not in committed config | Security | High | US-AUTH-011 | NFR-5, NFR-2, FR-8 |
+| TC-AUTH-150 | Microsoft JWKS keys cached/auto-refreshed, not fetched per callback (warm lookup <= 5ms) | Performance | Medium | US-AUTH-011 | NFR-1, NFR-4 |
+| TC-AUTH-151 | Registering the OIDC/SSO scheme leaves default bearer-JWT API protection unchanged | Integration | High | US-AUTH-011 | FR-7, BR-1 |
+| TC-AUTH-152 | Challenge with no/unresolved tenant rejected (`tenant_required`), never redirects to Microsoft | Functional | High | US-AUTH-011 | AC-1, FR-3 |
+| TC-AUTH-153 | When SSO not configured, challenge + callback fail closed (`not_configured`) with no token | Security | High | US-AUTH-011 | BR-5, NFR-2 |
+| TC-AUTH-154 | SSO-originated session behaves identically to local login for refresh, RBAC, and logout | Functional | High | US-AUTH-011 | AC-4, FR-6, BR-1 |
+| TC-AUTH-ISO-007 | Cross-directory SSO isolation -- a valid Entra user from directory A cannot enter tenant B's workspace (state+allow-list+query-filter+cache) | Security | Critical | US-AUTH-011 | AC-2, AC-6, FR-3, FR-5, FR-9, BR-1 |
 
 ### US-AUTH-012 Detailed Requirements Traceability
 
@@ -168,8 +188,9 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-008 Requirement Coverage | 9/9 FR + 4/4 NFR + 5/5 BR = 100% | >= 85% | PASS |
 | US-AUTH-009 Requirement Coverage | 10/10 FR + 5/5 NFR + 6/6 BR = 100% | >= 85% | PASS |
 | US-AUTH-010 Requirement Coverage | 10/10 FR + 5/5 NFR + 7/7 BR = 100% | >= 85% | PASS |
+| US-AUTH-011 Requirement Coverage | 9/9 FR + 5/5 NFR + 5/5 BR = 100% | >= 85% | PASS |
 | US-AUTH-012 Requirement Coverage | 8/8 FR + 4/4 NFR + 6/6 BR = 100% | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 25 (5 dedicated + 20 embedded) | >= 3 | PASS |
+| Multi-Tenant Isolation Tests | 29 (6 dedicated + 23 embedded) | >= 3 | PASS |
 | Security Test Cases | 55/128 (43%) | >= 30% | PASS |
 | Critical Module Coverage | 100% | >= 85% | PASS |
 | API Endpoint Coverage | 31/31 (100%) | >= 90% | PASS |
