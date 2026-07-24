@@ -7121,3 +7121,29 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Root cause:** the module matrix counts weren't reconciled across earlier appends (out of US-AUTH-012's lane to fully fix).
 - **Evidence:** the matrix as of the US-AUTH-012 branch. The US-AUTH-012 additions were kept internally consistent and a missing Integration row was added for TC-AUTH-123.
 - **Suggested direction (NOT applied):** a matrix reconciliation pass (e.g. under `/retro` or a ledger-cleanup task) recomputing the auth priority/type/total counts from the TC files.
+
+---
+
+### ISSUE-325 — US-AUTH-011 (Entra OIDC authentication foundation) has no IEEE-829 test cases
+- **ID:** ISSUE-325
+- **Type:** ISSUE (TEST — coverage gap)
+- **Severity:** LOW (011 is a stated dependency of US-AUTH-012/013/014/016; its callback + issuer-validator logic is currently unverified by any TC file)
+- **Status:** OPEN
+- **Layer:** TEST
+- **Module / US / TC:** Authentication / US-AUTH-011 / (none) — flagged 2026-07-24 by `@qa-engineer` while authoring the US-AUTH-012 TCs
+- **Title:** The authentication TC set jumps from US-AUTH-010 straight to the new US-AUTH-012 batch — US-AUTH-011 (OIDC foundation: challenge + callback + code-exchange + id_token validation in `EntraSsoService`, POC per PR #112) has no `docs/QA/authentication/TC-AUTH-*` cases. (The COMPLETION-PLAN references "5 `[b]` BLOCKED SSO TCs" for 011/012/013/014/016 as a plan line, but there are no TC files for 011.)
+- **Root cause:** 011 shipped as a POC (PR #112) ahead of its QA lane; TC authoring for the SSO cluster is being done story-by-story and 011's batch hasn't been written.
+- **Suggested direction (NOT applied):** author the US-AUTH-011 TC batch (challenge/callback/code-exchange/id_token-validation, incl. the fail-closed `tid` issuer-validator path that US-AUTH-013 depends on) when the SSO cluster is QA'd. Blocks nothing today — the US-AUTH-012 specs are self-contained.
+
+---
+
+### ISSUE-326 — Host-Linux FE build/test relies on a Windows-populated `node_modules` (win32 esbuild binary)
+- **ID:** ISSUE-326
+- **Type:** ISSUE (INFRA — environment/toolchain)
+- **Severity:** LOW (self-inflicted to the host-run path only; the canonical FE build is Docker-on-Linux)
+- **Status:** OPEN (worked around for the session)
+- **Layer:** INFRA
+- **Module / US / TC:** frontend toolchain — hit 2026-07-24 during the US-AUTH-012 FE verify (`@frontend-dev`)
+- **Title:** `src/frontend/node_modules` on the shared NTFS drive was populated by a Windows `npm install`, so it held the win32 `@esbuild/*` binary; a host-Linux `npm run build` / `ng test` fails until the Linux esbuild binary is present. Worked around non-destructively with `npm install --no-save @esbuild/linux-x64@0.28.0`.
+- **Root cause:** one `node_modules` shared across Windows + Linux checkouts on the NTFS drive; esbuild ships platform-specific optional-dependency binaries.
+- **Suggested direction (NOT applied):** run the FE build/test in the Docker toolchain (the intended path), or `npm ci` fresh on Linux rather than reusing the Windows-populated tree. Related: [[project-local-dev-setup]], and the same NTFS/host root cause as [[ISSUE-323]] (CRLF).
