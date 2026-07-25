@@ -70,3 +70,7 @@ local-dev/nginx.zip
 
 # GlitchTip local secrets
 ops/glitchtip/.env
+
+# Platform DB backups (ISSUE-330) — never commit dumps
+ops/backup/dumps/
+ops/backup/*.log

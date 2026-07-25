@@ -7193,7 +7193,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-330
 - **Type:** ISSUE (INFRA — ops gap; blocks an AC)
 - **Severity:** MED (US-PLT-006 AC-7/FR-10 requires the GlitchTip Postgres volume `gt-pgdata` to be in the backup routine, but `ops/` has no platform-wide backup/retention routine to add it to)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-25) — stood up a platform backup/retention routine at [`ops/backup/`](../../ops/backup/): `backup.sh` dumps the **app DB** (incl. the Hangfire schema — same Postgres) **and** the **GlitchTip DB** (the `gt-pgdata` volume, AC-7) as timestamped gzipped `pg_dump`s with configurable retention; `restore.sh` + `README.md` cover restore + cron. **Smoke-tested live** — both dumps produced (app 155K, GlitchTip 57K), valid gzip + valid `pg_dump` headers. Dumps gitignored. (Prod hardening — off-site/encrypted retention, PITR, restore drills — documented as future scope in the README.)
 - **Layer:** INFRA
 - **Module / US / TC:** Platform / US-PLT-006 / TC-PLT-014 — flagged 2026-07-25 during the US-PLT-006 build (`@qa-engineer` + orchestrator verification: `ops/` contains only `ops/glitchtip/docker-compose.yml`, no backup script/routine)
 - **Title:** AC-7 ("add `gt-pgdata` to the backup routine") cannot be completed because there is no existing platform backup/retention routine (no `pg_dump`/backup script under `ops/`). The GlitchTip SDK wiring (AC-1..6) shipped in PR #448; AC-7 is deferred pending an ops backup routine.

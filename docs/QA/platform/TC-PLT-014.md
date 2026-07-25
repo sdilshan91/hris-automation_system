@@ -26,6 +26,8 @@ platform's persistent volumes.
 - `ops/glitchtip/docker-compose.yml` exists and declares the `gt-pgdata` volume backing `gt-postgres`.
 - A backup/retention routine (script or config) exists that enumerates the volumes/databases to back up.
 
+> **Implementation status (2026-07-25, ISSUE-330 RESOLVED):** the routine now exists at [`ops/backup/`](../../../ops/backup/) — `backup.sh` dumps the `gt-postgres` DB (the `gt-pgdata` volume) alongside the app DB, with retention + `restore.sh`. Steps 1–2 are satisfied (smoke-tested: valid `pg_dump` produced). Step 3 (full backup→restore drill recovering issue history) remains a manual ops drill.
+
 ## 4. Test Data
 | Field | Value | Notes |
 |-------|-------|-------|
