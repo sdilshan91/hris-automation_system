@@ -7168,7 +7168,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-328
 - **Type:** ISSUE (BE — observability/audit; needs confirmation)
 - **Severity:** MED (the US-AUTH-011 ACs specify named audit events — `sso_login_succeeded`, `sso_state_invalid`, `sso_token_validation_failed`, `sso_idp_error` per FR-8 — but `EntraSsoService` emits `ILogger` Warning/Error with reasons; whether these exact names are persisted as structured **audit records** was not confirmed)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (PR #450, 2026-07-25) — **verified + fixed.** Verification: success WAS audited (`sso_login`) but the failure paths were ILogger-only. Fix: added structured `audit_logs` writes for `sso_idp_error` / `sso_token_validation_failed` / `sso_state_invalid` via new `IAuthService.RecordSsoFailureAsync`, with security-correct tenant attribution (resolved-tenant from trusted signed-state where known; **system-level null-tenant** where the state itself is untrustworthy — deliberately NOT falling back to the ambient `_tenantContext`). Success renamed `sso_login` → `sso_login_succeeded` to match the AC (grep-confirmed sole consumer). 7 mutation-meaningful arms; full suite 4807/0/0.
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-011 / TC-AUTH-140/144/148/149 — flagged 2026-07-24 by `@qa-engineer` while authoring the US-AUTH-011 TCs (ISSUE-325)
 - **Title:** `EntraSsoService.CompleteSignInAsync`/`TryUnprotectState`/`ValidateMicrosoftIssuer`/`CheckIsolation` log failures via `ILogger`, but `AuthService.SsoSignInAsync` (the success/audit path) was not read, so it is unconfirmed whether the AC-named audit events are written to the tenant audit log (US-NTF-004) as structured records vs. only app-log lines.
