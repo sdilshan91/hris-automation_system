@@ -2290,6 +2290,41 @@ public sealed class AuthService : IAuthService
         return Result.Success();
     }
 
+    /// <inheritdoc />
+    public async Task RecordSsoFailureAsync(
+        string eventType, string? subdomain, string reason,
+        string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
+    {
+        // Resolve the tenant only from a TRUSTED subdomain (from the signed state). An unknown subdomain, or none
+        // at all (state-invalid), yields a null tenantId → a system-level audit row. We never fabricate a tenant.
+        Guid? tenantId = null;
+        if (!string.IsNullOrWhiteSpace(subdomain))
+        {
+            var tenant = await _dbContext.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Subdomain == subdomain && !t.IsDeleted, cancellationToken);
+            tenantId = tenant?.Id;
+        }
+
+        // Written directly (not via WriteAuditLogWithDetailAsync) so a system-level failure is recorded with a
+        // genuinely null TenantId — the shared helper falls back to the ambient _tenantContext, which would wrongly
+        // attribute a state-invalid failure to whatever tenant the callback host happened to resolve to. Detail
+        // carries only a non-PII reason code (no tokens/codes/secrets).
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            UserId = null,
+            EventType = eventType,
+            Detail = JsonSerializer.Serialize(new { reason }),
+            IpAddress = ipAddress,
+            UserAgent = userAgent,
+            CreatedAt = DateTime.UtcNow,
+        });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     #endregion
 
     #region Session Management (US-AUTH-009)
@@ -2622,7 +2657,9 @@ public sealed class AuthService : IAuthService
             user.UpdatedAt = DateTime.UtcNow;
         }
 
-        await WriteAuditLogAsync(user.Id, "sso_login", identity.IpAddress, identity.UserAgent, cancellationToken, tenant.Id);
+        // ISSUE-328: AC-named success event (US-AUTH-011 FR-8 / TC-AUTH-140). Renamed from "sso_login" to match the
+        // ACs/TCs — the only consumer was this write site (no other src/, FE, SQL, or test reference).
+        await WriteAuditLogAsync(user.Id, "sso_login_succeeded", identity.IpAddress, identity.UserAgent, cancellationToken, tenant.Id);
 
         return await IssueTokensAsync(user, tenant, userTenant, identity.IpAddress, identity.UserAgent, cancellationToken);
     }

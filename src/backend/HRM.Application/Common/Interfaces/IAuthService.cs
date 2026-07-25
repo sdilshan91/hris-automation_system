@@ -79,6 +79,19 @@ public interface IAuthService
     /// </summary>
     Task<Result> RecordAdminConsentFailureAsync(string subdomain, string reason, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// ISSUE-328 (US-AUTH-011 FR-8): records a STRUCTURED audit row for an SSO sign-in/consent FAILURE using the
+    /// AC-named event — <c>sso_idp_error</c> (Entra returned an error/deny), <c>sso_token_validation_failed</c>
+    /// (code-exchange rejected / id_token invalid / nonce mismatch / missing required claims), or
+    /// <c>sso_state_invalid</c> (the signed single-use <c>state</c> could not be validated) — so the failure is
+    /// visible in the tenant audit trail (US-NTF-004/005), not only the app log. Tenant attribution: when
+    /// <paramref name="subdomain"/> is a TRUSTED source of the HRM tenant (e.g. it came from the signed state
+    /// AFTER a successful parse, as for token-validation failures) the row is attributed to that tenant; when it
+    /// is null/empty (the state itself could not be validated) a SYSTEM-LEVEL row (null TenantId) is written
+    /// rather than trusting an unverified subdomain. Never records tokens/codes/secrets.
+    /// </summary>
+    Task RecordSsoFailureAsync(string eventType, string? subdomain, string reason, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
+
     // Account lockout management (US-AUTH-010)
     Task<Result> UnlockUserAsync(Guid userId, Guid tenantId, Guid adminUserId, CancellationToken cancellationToken = default);
 
