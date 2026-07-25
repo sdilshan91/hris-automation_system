@@ -7181,7 +7181,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-329
 - **Type:** ISSUE (BE/BA — spec-vs-config drift)
 - **Severity:** LOW
-- **Status:** OPEN (needs-decision)
+- **Status:** ✅ RESOLVED (2026-07-25) — **decision: drop `User.Read`** (amend the AC, not the config). Verified nothing in `src/backend` calls Microsoft Graph (`GraphServiceClient`/`graph.microsoft`/`User.Read` — no real usage); the OIDC flow consumes id_token claims only, so `User.Read` (a Graph scope) was dead. Amended US-AUTH-011 AC-1 to `openid profile email` to match the shipped `EntraSsoOptions.Scopes` default. Re-add `User.Read` only if a Graph profile/photo call is later introduced. TC-AUTH-137 already asserts the *configured* scope, so no TC change needed.
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-011 / TC-AUTH-137 — flagged 2026-07-24 by `@qa-engineer`
 - **Title:** `docs/BA/authentication/US-AUTH-011.md` AC-1 specifies the request scope `"openid profile email User.Read"`, but `EntraSsoOptions.Scopes` defaults to `"openid profile email"` (no `User.Read`). The deployed config value governs; the TCs assert the configured value, not the story literal.
