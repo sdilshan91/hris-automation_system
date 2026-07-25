@@ -129,6 +129,11 @@ public sealed class EntraSsoService : IEntraSsoService
         {
             // User cancelled consent, or Entra rejected the request (e.g. admin consent required).
             _logger.LogWarning("SSO callback returned error '{Error}': {Description}", error, errorDescription);
+            // ISSUE-328: audit the IdP error. Entra echoes the signed state on error redirects — when it parses,
+            // it is a trusted source of the HRM tenant; otherwise record a system-level failure (null tenant).
+            var idpSubdomain = string.IsNullOrEmpty(state) ? null : TryUnprotectState(state)?.Subdomain;
+            var idpReason = string.IsNullOrWhiteSpace(errorDescription) ? error! : $"{error}: {errorDescription}";
+            await _authService.RecordSsoFailureAsync("sso_idp_error", idpSubdomain, idpReason, ipAddress, userAgent, cancellationToken);
             return Result<SsoSignInResult>.Failure("access_denied");
         }
 
@@ -140,6 +145,9 @@ public sealed class EntraSsoService : IEntraSsoService
         SsoState? parsedState = TryUnprotectState(state);
         if (parsedState is null)
         {
+            // ISSUE-328: the state is the ONLY trusted source of the HRM tenant; with none we cannot attribute this
+            // to a tenant, so record a SYSTEM-LEVEL failure (null tenant) rather than trusting the request.
+            await _authService.RecordSsoFailureAsync("sso_state_invalid", null, "state_could_not_be_validated", ipAddress, userAgent, cancellationToken);
             return Result<SsoSignInResult>.Failure("sso_failed");
         }
 
@@ -158,6 +166,8 @@ public sealed class EntraSsoService : IEntraSsoService
         var idToken = await ExchangeCodeAsync(config.TokenEndpoint, code, parsedState.CodeVerifier, cancellationToken);
         if (idToken is null)
         {
+            // ISSUE-328: the code exchange failed — attribute to the tenant from the (validated) state.
+            await _authService.RecordSsoFailureAsync("sso_token_validation_failed", parsedState.Subdomain, "code_exchange_failed", ipAddress, userAgent, cancellationToken);
             return Result<SsoSignInResult>.Failure("sso_failed");
         }
 
@@ -178,6 +188,7 @@ public sealed class EntraSsoService : IEntraSsoService
         if (!validation.IsValid)
         {
             _logger.LogWarning(validation.Exception, "SSO callback rejected: id_token validation failed.");
+            await _authService.RecordSsoFailureAsync("sso_token_validation_failed", parsedState.Subdomain, "id_token_validation_failed", ipAddress, userAgent, cancellationToken);
             return Result<SsoSignInResult>.Failure("sso_failed");
         }
 
@@ -187,6 +198,7 @@ public sealed class EntraSsoService : IEntraSsoService
         if (!jwt.TryGetPayloadValue<string>("nonce", out var tokenNonce) || tokenNonce != parsedState.Nonce)
         {
             _logger.LogWarning("SSO callback rejected: nonce mismatch.");
+            await _authService.RecordSsoFailureAsync("sso_token_validation_failed", parsedState.Subdomain, "nonce_mismatch", ipAddress, userAgent, cancellationToken);
             return Result<SsoSignInResult>.Failure("sso_failed");
         }
 
@@ -198,6 +210,7 @@ public sealed class EntraSsoService : IEntraSsoService
         if (string.IsNullOrEmpty(tid) || string.IsNullOrEmpty(oid) || string.IsNullOrEmpty(email))
         {
             _logger.LogWarning("SSO callback rejected: id_token missing tid/oid/email claims.");
+            await _authService.RecordSsoFailureAsync("sso_token_validation_failed", parsedState.Subdomain, "missing_required_claims", ipAddress, userAgent, cancellationToken);
             return Result<SsoSignInResult>.Failure("sso_failed");
         }
 
@@ -285,6 +298,8 @@ public sealed class EntraSsoService : IEntraSsoService
         {
             // The state is the only trustworthy source of the HRM tenant — with no valid state we cannot safely
             // attribute the outcome to any tenant. Fail closed (the caller redirects to a generic error page).
+            // ISSUE-328: record a SYSTEM-LEVEL failure (null tenant) — we will not trust an unverified subdomain.
+            await _authService.RecordSsoFailureAsync("sso_state_invalid", null, "admin_consent_state_could_not_be_validated", ipAddress, userAgent, cancellationToken);
             return Result<AdminConsentResult>.Failure("sso_failed");
         }
 
