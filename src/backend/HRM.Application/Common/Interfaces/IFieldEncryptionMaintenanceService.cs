@@ -40,12 +40,24 @@ public sealed record EncryptionKeyUsageCountDto(string Table, string Column, str
 /// The key-retirement verification report: how many stored values sit under each ring key (plus the
 /// <c>(plaintext)</c> pseudo key for unencrypted residue), per column and totalled.
 /// </summary>
+/// <param name="MfaSecretsLegacyPlaintext">
+/// SYSTEM-SCOPE count, kept DELIBERATELY SEPARATE from the AES-GCM registry section (<see cref="Counts"/> /
+/// <see cref="TotalsByKeyId"/>): the number of <c>users.mfa_secret</c> rows that are non-null and NOT yet
+/// DataProtection-protected — i.e. legacy plaintext awaiting the US-PLT-005 (Scope A) startup back-fill.
+/// <para><b>Why this is not another registry column:</b> <c>mfa_secret</c> is protected by ASP.NET Data
+/// Protection, NOT the AES-GCM <c>EncryptedFieldRegistry</c>, and it must STAY that way — <c>users</c> has no
+/// <c>tenant_id</c>, but the registry sweep hard-codes <c>WHERE tenant_id = …</c>, so a registry entry would
+/// throw <c>42703 column "tenant_id" does not exist</c> (and attaching an <c>IEncryptedValueConverter</c> would
+/// trip the reverse drift guard forcing registry membership). It is therefore counted here, tenant-agnostic and
+/// visibly apart from the ring-key totals, so nobody mistakes it for an AES-GCM field.</para>
+/// </param>
 public sealed record EncryptionKeyUsageReportDto(
     string ActiveKeyId,
     DateTime GeneratedAtUtc,
     int TenantsScanned,
     IReadOnlyList<EncryptionKeyUsageCountDto> Counts,
-    IReadOnlyDictionary<string, int> TotalsByKeyId);
+    IReadOnlyDictionary<string, int> TotalsByKeyId,
+    int MfaSecretsLegacyPlaintext);
 
 /// <summary>Outcome of one <see cref="IFieldEncryptionMaintenanceService.ReencryptAsync"/> run.</summary>
 public sealed record FieldReencryptionSummaryDto(

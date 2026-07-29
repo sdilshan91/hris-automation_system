@@ -30,6 +30,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using OtpNet;
@@ -145,6 +146,155 @@ public sealed class MfaSecretProtectorTests
         using var final = Db();
         (await final.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId))
             .MfaEnabled.Should().BeTrue();
+    }
+
+    // ========================================================================
+    // US-PLT-005 (Scope A) — IsProtected detection + the legacy back-fill that upgrades plaintext rows.
+    // ========================================================================
+
+    // -------- TC-PLT-005-01: IsProtected TRUE for a real Protect() output --------
+    // Paired with the FALSE theory below, this pins DISCRIMINATION: a hard-coded `false` fails here, a
+    // hard-coded `true` fails the theory — neither constant can satisfy both arms.
+    [Fact]
+    public void IsProtected_ReturnsTrue_ForProtectedOutput_PLT005()
+    {
+        var protector = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+
+        var stored = protector.Protect("JBSWY3DPEHPK3PXP");
+
+        protector.IsProtected(stored).Should().BeTrue("a value this protector produced is not legacy plaintext");
+    }
+
+    // -------- TC-PLT-005-02: IsProtected FALSE for anything this protector did not produce --------
+    [Theory]
+    [InlineData("JBSWY3DPEHPK3PXP")]         // a raw base32 TOTP secret (the real legacy shape)
+    [InlineData("")]                          // empty — not a valid protected payload
+    [InlineData("not-base64url-!@#$ junk")]  // arbitrary non-base64url junk
+    public void IsProtected_ReturnsFalse_ForLegacyPlaintext_PLT005(string legacy)
+    {
+        var protector = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+
+        protector.IsProtected(legacy).Should().BeFalse(
+            "legacy plaintext (undecryptable by this protector) must be reported as NOT protected");
+    }
+
+    // -------- TC-PLT-005-03: a foreign-key-ring payload is also "not protected" (mirrors Unprotect's tolerance) --------
+    // IsProtected must agree with Unprotect about what "legacy" means: a value Unprotect would pass through
+    // (foreign key ring) must be reported as unprotected here, or the back-fill and the auth path would disagree.
+    [Fact]
+    public void IsProtected_ReturnsFalse_ForForeignKeyRingPayload_PLT005()
+    {
+        var alien = new MfaSecretProtector(DataProtectionProvider.Create("some-other-app"));
+        var mine = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+
+        var protectedByAlien = alien.Protect("JBSWY3DPEHPK3PXP");
+
+        mine.IsProtected(protectedByAlien).Should().BeFalse();
+        mine.Unprotect(protectedByAlien).Should().Be(protectedByAlien, "the two must never disagree about 'legacy'");
+    }
+
+    // -------- TC-PLT-005-04: PlaintextFieldProtector.IsProtected is always false (it protects nothing) --------
+    [Fact]
+    public void PlaintextProtector_IsProtected_AlwaysFalse_PLT005()
+    {
+        PlaintextFieldProtector.Instance.IsProtected("anything").Should().BeFalse();
+        PlaintextFieldProtector.Instance.IsProtected("").Should().BeFalse();
+    }
+
+    // -------- TC-PLT-005-05: the back-fill upgrades a legacy plaintext row LOSSLESSLY (real EF change-tracking) --------
+    // Load-bearing: after the upgrade the stored value must (a) no longer be plaintext and (b) still Unprotect to
+    // the ORIGINAL secret — proving the row can still authenticate. Uses InMemory (mfa_secret has NO value
+    // converter, so InMemory holds a genuine raw plaintext form) exercised through the REAL AppDbContext change
+    // tracker; the real-Postgres arm lives in MfaSecretBackfillPostgresTests.
+    [Fact]
+    public async Task Backfill_UpgradesLegacyPlaintextRow_Lossless_PLT005()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var protector = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+        const string legacySecret = "JBSWY3DPEHPK3PXP";
+        var userId = Guid.NewGuid();
+
+        using (var seed = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            seed.Users.Add(new User { Id = userId, Email = "legacy@acme.com", MfaEnabled = true, MfaSecret = legacySecret });
+            await seed.SaveChangesAsync();
+        }
+
+        using (var run = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            await DbInitializer.BackfillLegacyMfaSecretsAsync(run, protector, NullLogger.Instance, CancellationToken.None);
+        }
+
+        using var check = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
+        var stored = (await check.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret!;
+        stored.Should().NotBe(legacySecret, "the legacy plaintext secret must be encrypted at rest after the back-fill");
+        protector.IsProtected(stored).Should().BeTrue();
+        protector.Unprotect(stored).Should().Be(legacySecret,
+            "the upgrade must be lossless — the user must still authenticate with the same TOTP secret");
+    }
+
+    // -------- TC-PLT-005-06: the back-fill is idempotent — a second run never double-wraps --------
+    [Fact]
+    public async Task Backfill_IsIdempotent_NoDoubleWrap_PLT005()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var protector = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+        const string legacySecret = "JBSWY3DPEHPK3PXP";
+        var userId = Guid.NewGuid();
+
+        using (var seed = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            seed.Users.Add(new User { Id = userId, Email = "idem@acme.com", MfaEnabled = true, MfaSecret = legacySecret });
+            await seed.SaveChangesAsync();
+        }
+
+        // First run: upgrades the row.
+        using (var run1 = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            await DbInitializer.BackfillLegacyMfaSecretsAsync(run1, protector, NullLogger.Instance, CancellationToken.None);
+        }
+
+        string afterFirst;
+        using (var check1 = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            afterFirst = (await check1.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret!;
+        }
+
+        // Second run: the row is already protected, so it must be left BYTE-IDENTICAL (never re-wrapped).
+        using (var run2 = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            await DbInitializer.BackfillLegacyMfaSecretsAsync(run2, protector, NullLogger.Instance, CancellationToken.None);
+        }
+
+        using var check2 = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
+        var afterSecond = (await check2.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret!;
+        afterSecond.Should().Be(afterFirst, "an already-protected row must not be re-wrapped on the second run");
+        protector.Unprotect(afterSecond).Should().Be(legacySecret,
+            "Unprotect must still yield the ORIGINAL plaintext — proof there was no double-wrapping");
+    }
+
+    // -------- TC-PLT-005-07: a user with a null MfaSecret is left untouched --------
+    [Fact]
+    public async Task Backfill_LeavesNullMfaSecretUntouched_PLT005()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var protector = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+        var userId = Guid.NewGuid();
+
+        using (var seed = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            seed.Users.Add(new User { Id = userId, Email = "nomfa@acme.com", MfaEnabled = false, MfaSecret = null });
+            await seed.SaveChangesAsync();
+        }
+
+        using (var run = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            await DbInitializer.BackfillLegacyMfaSecretsAsync(run, protector, NullLogger.Instance, CancellationToken.None);
+        }
+
+        using var check = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
+        (await check.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret
+            .Should().BeNull("a user with no MFA secret must not be given one");
     }
 
     private static AuthService CreateAuthService(

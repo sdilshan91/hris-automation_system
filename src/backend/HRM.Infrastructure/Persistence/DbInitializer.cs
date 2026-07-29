@@ -44,6 +44,12 @@ public static class DbInitializer
         var fieldEncryptor = scope.ServiceProvider.GetRequiredService<IFieldEncryptor>();
         await EncryptSensitiveFieldsAtRestAsync(dbContext, fieldEncryptor, logger, cancellationToken);
 
+        // US-PLT-005 (Scope A): upgrade any LEGACY PLAINTEXT MFA secret (users.mfa_secret) to the
+        // DataProtection-encrypted form. Runs alongside the field-encryption back-fill above and is likewise a
+        // no-op once every row is already protected.
+        var fieldProtector = scope.ServiceProvider.GetRequiredService<IFieldProtector>();
+        await BackfillLegacyMfaSecretsAsync(dbContext, fieldProtector, logger, cancellationToken);
+
         await SeedAsync(dbContext, logger, cancellationToken);
 
         // DEV/TEST-ONLY: seed the E2E business tenant + owner login. Gated strictly to Development so it
@@ -313,6 +319,54 @@ public static class DbInitializer
         }
 
         return pending.Count;
+    }
+
+    /// <summary>
+    /// US-PLT-005 (Scope A) — idempotent startup back-fill that UPGRADES any legacy plaintext MFA secret to the
+    /// DataProtection-encrypted form. Motivation: <see cref="IFieldProtector.Unprotect"/> deliberately TOLERATES
+    /// legacy plaintext (it returns an undecryptable value unchanged so a pre-encryption enrollment still
+    /// verifies) — but that tolerance means a plaintext secret would otherwise stay plaintext at rest FOREVER,
+    /// because nothing ever re-wraps it. This pass closes that gap: for every user whose stored secret is not
+    /// already protected it writes back the <see cref="IFieldProtector.Protect"/>ed form, so a raw DB read can no
+    /// longer disclose a TOTP secret.
+    ///
+    /// <para>SAFE to run on EVERY startup — that is the whole point of <see cref="IFieldProtector.IsProtected"/>:
+    /// an already-encrypted row is skipped, so the pass never double-wraps and becomes a no-op once healed.</para>
+    ///
+    /// <para><c>users</c> is a GLOBAL table — <c>User</c> is NOT a <c>BaseEntity</c> and has no <c>tenant_id</c>,
+    /// so there is deliberately NO tenant predicate (the MFA secret is tenant-agnostic identity data). Unlike the
+    /// sibling <see cref="EncryptSensitiveFieldsAtRestAsync"/> back-fill (raw SQL filtered by an <c>enc:v1:</c>
+    /// prefix), this one uses EF change-tracking and decides membership via <see cref="IFieldProtector.IsProtected"/>
+    /// in code, because the DataProtection payload is opaque — there is no prefix to filter on in SQL. It is NOT
+    /// gated to relational providers: <c>mfa_secret</c> has no EF value converter, so even the InMemory store holds
+    /// a genuine raw plaintext form that needs the same heal. The row set is only the MFA-enrolled users
+    /// (<c>MfaSecret != null</c>), which is small, so a single materialized list matches the sibling's idiom.</para>
+    /// </summary>
+    public static async Task BackfillLegacyMfaSecretsAsync(
+        AppDbContext db, IFieldProtector protector, ILogger logger, CancellationToken ct)
+    {
+        var mfaUsers = await db.Users
+            .IgnoreQueryFilters()
+            .Where(u => u.MfaSecret != null)
+            .ToListAsync(ct);
+
+        var upgraded = 0;
+        foreach (var user in mfaUsers)
+        {
+            if (protector.IsProtected(user.MfaSecret!))
+                continue;
+
+            user.MfaSecret = protector.Protect(user.MfaSecret!);
+            upgraded++;
+        }
+
+        if (upgraded > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "US-PLT-005: upgraded {Count} legacy plaintext MFA secret(s) to encrypted-at-rest storage "
+                + "(idempotent back-fill).", upgraded);
+        }
     }
 
     private static async Task SeedAsync(AppDbContext db, ILogger logger, CancellationToken ct)

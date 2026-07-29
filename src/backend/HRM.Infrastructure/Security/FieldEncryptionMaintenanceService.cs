@@ -60,6 +60,7 @@ public sealed class FieldEncryptionMaintenanceService : IFieldEncryptionMaintena
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IFieldEncryptor _encryptor;
+    private readonly IFieldProtector _mfaSecretProtector;
     private readonly ILogger<FieldEncryptionMaintenanceService> _logger;
     private readonly TimeProvider _time;
     private readonly string _activeKeyId;
@@ -69,10 +70,16 @@ public sealed class FieldEncryptionMaintenanceService : IFieldEncryptionMaintena
         IFieldEncryptor encryptor,
         IConfiguration configuration,
         ILogger<FieldEncryptionMaintenanceService> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IFieldProtector? mfaSecretProtector = null)
     {
         _scopeFactory = scopeFactory;
         _encryptor = encryptor;
+        // Trailing-optional seam (same idiom as the clock): the real host injects the DataProtection-backed
+        // MfaSecretProtector; a test provider that doesn't register one falls back to the no-op protector, under
+        // which the legacy-plaintext count is simply always-zero-eligible — safe because such providers seed no
+        // users.mfa_secret rows.
+        _mfaSecretProtector = mfaSecretProtector ?? PlaintextFieldProtector.Instance;
         _logger = logger;
         _time = timeProvider ?? TimeProvider.System; // repo pattern: trailing-optional clock seam
         // Read once: the active key is fixed for the process lifetime (the rotation runbook flips ActiveKeyId
@@ -134,7 +141,35 @@ public sealed class FieldEncryptionMaintenanceService : IFieldEncryptionMaintena
             }, cancellationToken);
         }
 
-        return BuildReport(tenants.Count, cells);
+        // SYSTEM-SCOPE, deliberately OUTSIDE the per-tenant loop and the registry: users.mfa_secret is a global
+        // (no tenant_id) DataProtection-protected column, not an AES-GCM registry field (see the DTO's remarks).
+        var mfaLegacyPlaintext = await CountLegacyPlaintextMfaSecretsAsync(cancellationToken);
+
+        return BuildReport(tenants.Count, cells, mfaLegacyPlaintext);
+    }
+
+    /// <summary>
+    /// US-PLT-005 (Scope A) visibility: counts <c>users.mfa_secret</c> rows that are non-null and NOT yet
+    /// DataProtection-protected (legacy plaintext awaiting the startup back-fill). <c>users</c> is a GLOBAL table
+    /// (no <c>tenant_id</c>, RLS-exempt like <c>tenants</c>), so there is deliberately NO tenant predicate and no
+    /// <c>ITenantJobRunner</c> wrapper. The protected form is opaque (no <c>enc:v1:</c> prefix), so "protected?"
+    /// cannot be decided in SQL — the non-null secrets are materialized and classified in code via
+    /// <see cref="IFieldProtector.IsProtected"/>. Relational-only, consistent with the rest of this service.
+    /// </summary>
+    private async Task<int> CountLegacyPlaintextMfaSecretsAsync(CancellationToken ct)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        if (!db.Database.IsRelational())
+            return 0;
+
+        var secrets = await db.Users
+            .IgnoreQueryFilters()
+            .Where(u => u.MfaSecret != null)
+            .Select(u => u.MfaSecret!)
+            .ToListAsync(ct);
+
+        return secrets.Count(s => !_mfaSecretProtector.IsProtected(s));
     }
 
     public async Task<FieldReencryptionSummaryDto> ReencryptAsync(CancellationToken cancellationToken = default)
@@ -286,7 +321,9 @@ public sealed class FieldEncryptionMaintenanceService : IFieldEncryptionMaintena
     }
 
     private EncryptionKeyUsageReportDto BuildReport(
-        int tenantsScanned, Dictionary<(string Table, string Column, string KeyId), int> cells)
+        int tenantsScanned,
+        Dictionary<(string Table, string Column, string KeyId), int> cells,
+        int mfaSecretsLegacyPlaintext)
     {
         var counts = cells
             .OrderBy(c => c.Key.Table).ThenBy(c => c.Key.Column).ThenBy(c => c.Key.KeyId)
@@ -296,7 +333,7 @@ public sealed class FieldEncryptionMaintenanceService : IFieldEncryptionMaintena
             .GroupBy(c => c.KeyId)
             .ToDictionary(g => g.Key, g => g.Sum(c => c.Count), StringComparer.Ordinal);
         return new EncryptionKeyUsageReportDto(
-            _activeKeyId, _time.GetUtcNow().UtcDateTime, tenantsScanned, counts, totals);
+            _activeKeyId, _time.GetUtcNow().UtcDateTime, tenantsScanned, counts, totals, mfaSecretsLegacyPlaintext);
     }
 
     private static void Accumulate(
