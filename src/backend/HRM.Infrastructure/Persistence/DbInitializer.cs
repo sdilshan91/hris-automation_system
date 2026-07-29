@@ -415,7 +415,14 @@ public static class DbInitializer
         // US-NTF-002: seed the platform system-default email templates for every catalog event (BR-2).
         await SeedSystemNotificationTemplatesAsync(db, logger, ct);
 
-        var defaultEnabledModules = PermissionCatalog.ByModule.Keys.OrderBy(module => module).ToList();
+        // ISSUE-335: this MUST come from PlanModules — the canonical product-module vocabulary — and not from
+        // PermissionCatalog.ByModule.Keys, which is a list of PERMISSION PREFIXES (Audit, CustomField, Roles,
+        // Tenant, ...). The two sets overlap enough to look right and are not interchangeable: the permission
+        // list has no CoreHR/Asset/CustomReportBuilder/PublicCareersPage and calls Reporting "Reports". Because
+        // nothing read enabled_modules until US-ADM-012, the mismatch sat in seeded data undetected; a module
+        // gate reading it would have denied every request for the seeded tenants. PlanModulesSeedDriftTests
+        // pins this.
+        var defaultEnabledModules = PlanModules.All.ToList();
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Subdomain == DefaultTenantSubdomain, ct);
@@ -912,7 +919,10 @@ public static class DbInitializer
     /// </summary>
     private static async Task SeedE2EDevTenantAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
-        var enabledModules = PermissionCatalog.ByModule.Keys.OrderBy(module => module).ToList();
+        // ISSUE-335: canonical product modules, NOT permission prefixes — see the note on the platform-tenant
+        // seed above. The E2E tenant is the one the Playwright suite drives, so seeding the wrong vocabulary
+        // here would break every E2E run the moment module gating ships.
+        var enabledModules = PlanModules.All.ToList();
 
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
