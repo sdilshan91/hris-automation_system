@@ -7580,3 +7580,18 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** add a 14th key to `PlanModules.All`, provision a tenant holding it, and observe the FE guard fail open for every module while the BE continues to gate.
 - **Severity rationale:** MED — it is precisely the drift class that caused ISSUE-335 (two vocabularies, nothing asserting the link, invisible because nothing read the column). Shipping the fix for that bug while re-introducing its shape one layer up would be a poor trade.
 - **Suggested direction (NOT applied):** (1) cheap and immediate — a FE spec asserting `module.guard.ts`'s key set equals `plan.models.ts`'s `CANONICAL_MODULES`, closing two of three; (2) the real fix — a generated or contract-tested shared list, e.g. a BE test that serializes `PlanModules.All` to a fixture the FE spec reads, so a backend addition fails the frontend build. Mirrors the both-direction `EncryptedFieldRegistry` drift guards, which are the established pattern here for exactly this.
+
+---
+
+### ISSUE-354 — `Tenant.MaxEmployees` snapshot is never refreshed when a plan's numeric limits change
+- **ID:** ISSUE-354
+- **Type:** ISSUE (denormalized snapshot drift)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-009, US-ADM-012 / — surfaced by `@backend-dev` as an OUT-OF-LANE flag while building the ISSUE-342 sweep, 2026-07-30
+- **Title:** The ISSUE-342 plan-write sweep recomputes `Tenant.EnabledModules` when a plan's module list changes, but deliberately does **not** refresh the denormalized `Tenant.MaxEmployees` snapshot when a plan's numeric limits change. That snapshot can therefore drift from its plan indefinitely — the same class of staleness ISSUE-342 fixed for modules, left in place for limits.
+- **Root cause:** `Tenant.MaxEmployees` is a provisioning-time denormalization retained as a fallback; the sweep was scoped to the module list. Confidence **90%**.
+- **Why it is LOW and not MED:** enforcement is **not** affected. `EmployeeService.CheckPlanLimitAsync` resolves the limit **live** by `PlanId` through `PlanLimitResolver` (override → plan → snapshot), so the plan value wins and the stale snapshot is only ever consulted as a last-resort fallback when the plan lookup yields nothing. The drift is latent, not enforced-upon. Note this is **not** true of the invite path — `UserManagementService` reads the raw snapshot and bypasses the resolver entirely, which is [[ISSUE-338]]; the two findings compound, and fixing ISSUE-338 also removes most of this one's exposure.
+- **Reproduction steps:** change a plan's `MaxEmployees`; observe `tenants.max_employees` for tenants on that plan is unchanged.
+- **Suggested direction (NOT applied):** either retire the `Tenant.MaxEmployees` snapshot entirely (once ISSUE-338 stops reading it raw, nothing depends on it for enforcement), or refresh it in the same sweep on any plan edit that changes a numeric limit. Retiring it is the cleaner end state — a denormalization with exactly one live consumer, which itself should not be using it, is not earning its keep.
