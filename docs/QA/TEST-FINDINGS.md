@@ -7301,3 +7301,190 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** `docker exec hris-postgres-1 psql -U developer -d hris_dev_db -tAc "select subdomain, enabled_modules from tenants order by subdomain;"` and compare against `PlanModules.All`.
 - **Severity rationale:** HIGH rather than MED because the failure mode is a total-denial outage for affected tenants, it is invisible to every current test (nothing reads the column), and the seeded vocabulary is what a *fresh* environment gets — so a new deployment starts broken rather than degrading over time.
 - **Suggested direction (NOT applied):** three parts. (1) Fix `DbInitializer` to seed from `PlanModules.All`, not `PermissionCatalog.ByModule.Keys`. (2) Add a CLI EF migration that normalizes existing rows — remap `Reports`→`Reporting`, drop the non-module permission-group entries, add the missing canonical keys. (3) Independently, make the gate **fail OPEN on an unrecognized key vocabulary** (if none of a tenant's stored values parse as a `PlanModules` key, treat the tenant as fully entitled rather than fully denied) — a belt-and-braces guard so a future drift degrades to "not enforced" instead of "total outage". Also consider a startup drift guard asserting every stored value is a valid `PlanModules` key, mirroring the both-direction `EncryptedFieldRegistry` guards.
+
+---
+
+> **AUTO-HEAL BATCH 2026-07-30.** The eight findings below (ISSUE-336..343) were all surfaced as
+> `OUT-OF-LANE:` flags by sub-agents earlier in this session, or by the US-ADM-012 read-only seam survey,
+> and were **not filed at the time** — they lived only in agent reports and a scratchpad spec. That is a
+> violation of Engineering-Discipline rule #6 (never silently drop an out-of-lane discovery) and of the
+> `/auto-heal` protocol, which requires filing to this ledger and folding into the COMPLETION-PLAN. Filed
+> retrospectively here so they are tracked rather than lost. None has been fixed.
+
+### ISSUE-336 — MFA back-fill re-wraps a row whose Data-Protection key is genuinely MISSING; the "acceptable" rationale is asserted nowhere
+- **ID:** ISSUE-336
+- **Type:** ISSUE (design-intent not pinned by a test)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Platform / US-PLT-005 (Scope A) / TC-PLT-005-03, TC-PLT-005-10 — surfaced by `@test-authenticator` during the US-PLT-005 auditor pass, 2026-07-29
+- **Title:** `MfaSecretProtector.IsProtected` returns `false` for a value protected under a key no longer in the ring (it cannot decrypt, so it is indistinguishable from legacy plaintext). `DbInitializer.BackfillLegacyMfaSecretsAsync` therefore re-`Protect`s it, permanently double-encrypting a secret whose plaintext is already unrecoverable.
+- **Root cause:** `IsProtected` is defined as "can this protector decrypt it", which conflates "never protected" with "protected under a lost key". Confidence **95%** — the behaviour follows directly from `TryUnprotect`'s catch of `CryptographicException`/`FormatException`.
+- **Reproduction steps:** protect a value with key ring A; present it to a protector backed by ring B; `IsProtected` → false; run the back-fill → the value is wrapped again.
+- **Severity rationale:** LOW because such a row's MFA was already broken (the secret cannot be recovered by anyone, so the user must re-enrol either way) — re-wrapping loses nothing of value. It is filed because the reasoning currently exists only in prose (a code comment and a commit message), so a future change to this branch has no test telling it what the intended behaviour was. The counterpart case that DOES matter — a *rotated but still present* key must not cause churn — IS pinned, by TC-PLT-005-10.
+- **Suggested direction (NOT applied):** either add an arm pinning the documented re-wrap behaviour, or make the back-fill skip values that look like a Data-Protection payload but fail to decrypt, and surface them as a distinct "unrecoverable" count on the encryption report so an operator can see them.
+
+---
+
+### ISSUE-337 — US-AUTH-014's 7 new test cases have ZERO bound automated arms
+- **ID:** ISSUE-337
+- **Type:** ISSUE (TEST — coverage)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE-test
+- **Module / US / TC:** Authentication / US-AUTH-014 / TC-AUTH-155..160, TC-AUTH-ISO-008 — surfaced by `@qa-engineer` when closing ISSUE-332, 2026-07-29
+- **Title:** ISSUE-332 closed the *traceability* gap by authoring 7 IEEE-829 TCs, but no xUnit arms bind to them — every one is `status: draft`. US-AUTH-014's match / account-link / JIT-provisioning logic, which is security-critical (it is the path that auto-creates user accounts from an external IdP assertion), still has effectively no automated regression coverage.
+- **Root cause:** authoring TCs and writing the `.cs` arms are different lanes; the TC pass deliberately stopped at the lane boundary. Confidence **100%** — stated explicitly in the authoring agent's own out-of-lane flag.
+- **Reproduction steps:** `grep -rl "TC-AUTH-15[5-9]\|TC-AUTH-160\|TC-AUTH-ISO-008" src/backend/HRM.Tests/` → expected empty.
+- **Severity rationale:** MED — closing ISSUE-332 makes the traceability matrix *look* complete, which is arguably worse than the original gap: a reader now sees seven bound TCs and reasonably infers the story is covered. The TCs are executable-by-design (6 of 7 need no live IdP), so this is buildable work, not a blocked one.
+- **Suggested direction (NOT applied):** add `SsoSignInMatchLinkJitTests` driving `AuthService.SsoSignInAsync` with a synthesized `SsoIdentity` (the pattern `SsoFailureAuditWriteTests` already uses), binding each arm via `[Trait("TC", ...)]`, then flip those TCs `draft → automated`.
+
+---
+
+### ISSUE-338 — Invite-time employee-limit check bypasses `PlanLimitResolver`, so plan edits and per-tenant overrides are silently ignored
+- **ID:** ISSUE-338
+- **Type:** BUG (entitlement enforcement inconsistency)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-012, US-ADM-009 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
+- **Title:** `max_employees` is enforced at two sites that disagree. `EmployeeService.CheckPlanLimitAsync` (`:1111-1149`) resolves properly through `PlanLimitResolver` (override → plan → tenant snapshot). `UserManagementService` (`:370-387`) reads **`Tenant.MaxEmployees` raw**, so a `PlanLimitOverride` granting a tenant extra headroom, or an admin raising the plan's `MaxEmployees`, has no effect on the invite path.
+- **Root cause:** the invite-time check predates `PlanLimitResolver` and was never migrated. Confidence **90%** — both call sites read directly.
+- **Reproduction steps:** create a `PlanLimitOverride` for `max_employees` above the tenant's snapshot value; add employees up to the snapshot; direct creation succeeds via `EmployeeService`, while inviting a user still fails against the stale snapshot.
+- **Severity rationale:** MED — a paying tenant granted an override can still be blocked from inviting users, and the two paths give contradictory answers for the same limit. Not data-corrupting, but it makes overrides untrustworthy, which is the whole point of the override table.
+- **Suggested direction (NOT applied):** repoint `UserManagementService` at the same `PlanLimitResolver` idiom `EmployeeService` uses, and add an arm asserting an override raises the invite ceiling.
+
+---
+
+### ISSUE-339 — Custom-field cap ignores the plan column and the override key entirely
+- **ID:** ISSUE-339
+- **Type:** BUG (half-wired entitlement)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR / US-CHR-012, US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
+- **Title:** A custom-field cap IS enforced (403 at `CustomFieldService.cs:180`), but it resolves from `Tenant.MaxCustomFields ?? 20` (`:778-785`, which carries a literal `TODO(subscription): Replace with plan-tier lookup`). `SubscriptionPlan.MaxCustomFieldsPerEntity` and the registered `max_custom_fields_per_entity` limit key are therefore **dead** — configurable in the admin UI, with no runtime effect.
+- **Root cause:** the cap was built before `PlanLimitResolver` and the TODO was never closed. Confidence **95%**.
+- **Reproduction steps:** set `MaxCustomFieldsPerEntity` on a plan to a value different from the tenant's `MaxCustomFields`; observe the enforced cap follows the tenant column, not the plan.
+- **Severity rationale:** MED — an admin changing a plan's custom-field allowance sees no effect, and the STATUS.md claim that the cap is "unenforced" is itself wrong (it is enforced, just from the wrong source), which has been misdirecting planning.
+- **Suggested direction (NOT applied):** route through `PlanLimitResolver` with the `max_custom_fields_per_entity` key using the standard override → plan → tenant-snapshot tail; keep 20 as the final default.
+
+---
+
+### ISSUE-340 — Storage quota counts only employee documents, ignoring three other size-bearing tables
+- **ID:** ISSUE-340
+- **Type:** ISSUE (incomplete enforcement)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-012 (AC-3/AC-4), US-CHR-008 / (BUG-114 lineage) — surfaced by the US-ADM-012 seam survey, 2026-07-30
+- **Title:** `EmployeeDocumentService.EnforceStorageQuotaAsync` (`:203-251`) resolves `max_storage_gb` correctly and hard-blocks at 403 with an 80% soft warning, but sums **only** `EmployeeDocuments.FileSizeBytes`. `HrReportExport.FileSizeBytes`, `PayrollReportExport.FileSizeBytes` and `PayrollSlip.PdfFileSizeBytes` are excluded, so real tenant storage is undercounted.
+- **Root cause:** BUG-114 (PR #332) scoped the fix to the upload path that surfaced it. Confidence **90%**.
+- **Reproduction steps:** generate large payroll/report exports for a tenant, then compare the quota check's computed usage against the true sum across all four tables.
+- **Severity rationale:** MED — a tenant can exceed its contracted storage without ever tripping the gate, and the AC-4 usage gauge (once built) would report a number that does not match reality. No correctness or isolation risk.
+- **Suggested direction (NOT applied):** widen the usage sum to all four size-bearing tables behind one shared helper, so the quota gate and the AC-4 usage gauge cannot drift apart.
+
+---
+
+### ISSUE-341 — No admin endpoint exists to change a tenant's plan after provisioning
+- **ID:** ISSUE-341
+- **Type:** GAP (missing capability)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-009, US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
+- **Title:** `AdminTenantsController` exposes Provision / List / CheckSubdomain / ListPlans / UnlockUser only. There is no route to move an existing tenant onto a different plan — upgrades and downgrades are a manual DB `UPDATE` today.
+- **Root cause:** US-ADM-009 built plan *definition* management but not plan *assignment* to an existing tenant. Confidence **85%** (controller enumerated; a route could exist elsewhere, none found).
+- **Reproduction steps:** attempt to change `techoneglobal` from its current plan to `enterprise` through any API surface.
+- **Severity rationale:** MED — upgrade is the core commercial motion of a SaaS product, and it currently requires database access. It also makes US-ADM-012's entitlement work hard to exercise end-to-end, since there is no supported way to flip a tenant's entitlements.
+- **Suggested direction (NOT applied):** add `PUT /api/v1/system/tenants/{id}/plan` under `Plan.Manage`, writing `Tenant.PlanId` and recomputing `Tenant.EnabledModules` from the new plan (which interacts directly with ISSUE-335 and ISSUE-342).
+
+---
+
+### ISSUE-342 — Plan edits never reach running tenants; US-ADM-009 AC-3 is false for modules
+- **ID:** ISSUE-342
+- **Type:** BUG (cache/propagation)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-009 (AC-3), US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
+- **Title:** `SubscriptionPlanService` has **no `IDistributedCache` dependency at all** (`:24-35`) and its own class doc states the Redis plan cache / 60s propagation (NFR-1/NFR-4) is DEFERRED. The tenant-resolution cache (`t:subdomain:{sub}`, 5-min TTL) is invalidated only by `TenantLifecycleService` on suspend/terminate/reactivate. Consequently a System Admin disabling a module on a plan changes nothing at runtime for up to 5 minutes — **and in fact never**, because `Tenant.EnabledModules` is a provisioning-time snapshot that no code path recomputes.
+- **Root cause:** deliberate deferral of the plan cache, compounded by `EnabledModules` being a denormalized snapshot with no recompute trigger. Confidence **90%**.
+- **Reproduction steps:** edit a plan's `enabled_modules`; observe the affected tenants' `tenants.enabled_modules` and `ITenantContext.EnabledModules` are unchanged indefinitely.
+- **Severity rationale:** MED now, HIGH once gating ships — US-ADM-009 AC-3 ("existing tenants immediately benefit") reads as satisfied but is false for modules, though true for limits (which are read live). Any module gate built without fixing this would enforce entitlements that an admin cannot actually change.
+- **Suggested direction (NOT applied):** on plan write, invalidate `t:subdomain:*` for affected tenants and recompute their `EnabledModules`; note the cache is keyed by subdomain, not tenant id, so this needs a subdomain lookup per affected tenant. NFR-1 allows 60s of slack.
+
+---
+
+### ISSUE-343 — Limit-breach responses are split between 403 and 409 with no rule
+- **ID:** ISSUE-343
+- **Type:** ISSUE (API contract inconsistency)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
+- **Title:** Plan-limit breaches return different status codes by accident of authorship: 403 for `storage_quota_exceeded` and the employee limit (the latter with no error code at all), 409 for `workflow_limit_reached` and `plan_limit_reached`. A client cannot handle "you hit a plan limit" generically.
+- **Root cause:** each limit gate was written independently with no shared convention. Confidence **95%**.
+- **Reproduction steps:** breach the workflow limit (409) and the storage quota (403) and compare responses.
+- **Severity rationale:** LOW — every individual response is well-formed and carries a message; only cross-endpoint consistency suffers.
+- **Suggested direction (NOT applied):** standardise on **403** with a machine-readable `code` (entitlement semantics, and US-ADM-012 AC-3 asks for an upgrade message). **Deliberately NOT done inside US-ADM-012:** changing the two existing 409s breaks committed frontend specs (`workflow.service.spec.ts:114`, `workflow-editor.component.spec.ts:204`), so it needs its own change with the FE updated in lockstep. New gates in US-ADM-012 use 403; this finding tracks retrofitting the old ones.
+
+---
+
+### ISSUE-344 — Platform monitoring reports "Redis: Not configured" while the health check pings the same Redis for real
+- **ID:** ISSUE-344
+- **Type:** BUG (stale code + stale doc-comment → wrong status shown to an operator)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-002 / TC-ADM-002-* — surfaced by the US-PLT-004 premise verification, 2026-07-30
+- **Title:** `PlatformMonitoringService.ResolveRedisHealth()` (`:346-357`) unconditionally returns `NotConfigured`, justified by a doc-comment (`:28-30`, `:347-348`) asserting "NO Redis client / IDistributedCache is registered in DI in this codebase". That assertion is **false**: `Program.cs:51-59` registers a shared `IConnectionMultiplexer` backing `IDistributedCache` and the SignalR backplane, and `Program.cs:103-104` registers a real Redis health check. So the System Admin dashboard shows "Redis: Not configured" at the same moment `/health/ready` is successfully pinging Redis.
+- **Root cause:** the method and its doc-comment predate the Redis introduction and were never revisited. Confidence **95%** — both the comment's claim and the contradicting registrations were read directly.
+- **Reproduction steps:** with Redis running, call the platform monitoring endpoint and compare its Redis status against `GET /health/ready`.
+- **Severity rationale:** MED — it misreports infrastructure state to the operator whose job is watching infrastructure state, and it does so with false confidence (a comment explaining why it *must* be NotConfigured). Cheap to fix.
+- **Suggested direction (NOT applied):** inject `HealthCheckService` (or the multiplexer) and return the real status; delete the stale comment. Treat the whole `PlatformMonitoringService` class docblock (`:20-30`) as untrustworthy — it also claims "no OpenTelemetry metrics", which is likewise false.
+
+---
+
+### ISSUE-345 — OpenTelemetry is described as "dormant" but console-exports 100% of spans and metrics, with no kill-switch
+- **ID:** ISSUE-345
+- **Type:** ISSUE (performance / cost; documentation materially misleading)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Platform / US-PLT-004 / (none) — surfaced by the US-PLT-004 premise verification, 2026-07-30
+- **Title:** `docs/BA/STATUS.md` and the COMPLETION-PLAN describe the OTel instrumentation as "coded but **DORMANT** — blank `OtlpEndpoint` ⇒ Console-only, no backend". "Console-only" is not dormant: `ObservabilityExtensions.cs:87-90` and `:104-107` register `AddConsoleExporter()` for **both** traces and metrics when the endpoint is blank, and there is **no `SetSampler` call anywhere** in the file — so every request produces a fully-recorded span serialized to stdout at 100% sampling. In Docker that is written to the container log on every request.
+- **Root cause:** the fallback exporter was chosen for local visibility; the "dormant/zero-cost" framing was then written into the ledgers and repeated. The observability plan (L73) specified an `Enabled` kill-switch and (L87-88) a `ParentBasedSampler`; **neither shipped**. Confidence **90%**.
+- **Reproduction steps:** run the API with a blank `OpenTelemetry:OtlpEndpoint`, issue requests, observe span + metric output on stdout.
+- **Severity rationale:** MED — not a correctness bug, but it is a per-request allocation and stdout write in every environment including production, and the ledgers actively tell a reader it costs nothing. There is currently no way to turn it off short of pointing it at a real OTLP endpoint.
+- **Suggested direction (NOT applied):** add the planned `Enabled` flag (or drop to a no-op exporter when the endpoint is blank), and add the planned sampler. Reuse the `GlitchTipErrorTracking.cs` blank-DSN-⇒-inert pattern, which is the established safe-by-default style in this codebase.
+
+---
+
+### ISSUE-346 — `/health/ready` exists and is tested, but nothing consumes it; backend/frontend have no compose healthcheck
+- **ID:** ISSUE-346
+- **Type:** ISSUE (ops wiring gap)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** OPS
+- **Module / US / TC:** Platform / US-PLT-004 (AC-2) / — surfaced by the US-PLT-004 premise verification, 2026-07-30
+- **Title:** Health endpoints are fully built (`Program.cs:85-105` registration incl. Postgres readiness and Redis-as-Degraded, `:612-623` tag-filtered mapping plus a `/health` back-compat alias, anonymous bypass in `TenantResolutionMiddleware.cs:60-61`, integration tests in `HealthCheckApiTests.cs`). But `docker-compose.yml` defines healthchecks only for `postgres`, `redis` and `clamav`; the `backend` (`:39-50`) and `frontend` (`:52-60`) services have none, so nothing ever calls `/health/ready`.
+- **Root cause:** the endpoint and the compose file were built at different times. Confidence **95%**.
+- **Reproduction steps:** `docker inspect hris-backend-1 --format '{{.State.Health}}'` → no health state.
+- **Severity rationale:** LOW — orchestration convenience, not correctness. Worth doing because it is ~15 minutes and makes container restarts and `depends_on: service_healthy` meaningful.
+- **Suggested direction (NOT applied):** add a `healthcheck:` to the backend service targeting `/health/ready`, and make the frontend `depends_on` it with `condition: service_healthy`.
+
+---
+
+### ISSUE-347 — Observability plan prescribes an env var the shipped code does not read
+- **ID:** ISSUE-347
+- **Type:** ISSUE (doc/impl drift — a trap for the next implementer)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** DOC
+- **Module / US / TC:** Platform / US-PLT-004 / — surfaced by the US-PLT-004 premise verification, 2026-07-30
+- **Title:** `docs/Architecture/observability-otel-grafana-plan.md` (L171) instructs the Phase-2 implementer to set `OBSERVABILITY__OTLPENDPOINT=http://otel-collector:4317`, and sketches a config section named `Observability` (L141-147). The shipped code reads **`OpenTelemetry:OtlpEndpoint`** (`ObservabilityExtensions.cs:44`, `appsettings.json:108-110`) with a fallback to the standard `OTEL_EXPORTER_OTLP_ENDPOINT` (`:47-48`). Following the plan verbatim sets a variable nothing reads, and the collector silently receives nothing.
+- **Root cause:** the config key was renamed during implementation; the plan was not updated. Confidence **100%** — both names read directly. `docker.env.example` contains no OTel variable at all.
+- **Reproduction steps:** set `OBSERVABILITY__OTLPENDPOINT` and observe the exporter still falls back to console.
+- **Severity rationale:** LOW today (nobody has attempted Phase 2), but it is precisely the kind of drift that costs an afternoon of "why is my collector empty".
+- **Suggested direction (NOT applied):** correct the plan to `OpenTelemetry__OtlpEndpoint`, and add the variable to `docker.env.example`.
