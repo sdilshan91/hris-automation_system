@@ -4,7 +4,7 @@ user_story: US-AUTH-016
 module: Authentication
 priority: medium
 type: accessibility
-status: draft
+status: blocked
 created: 2026-07-24
 ---
 

@@ -7199,3 +7199,37 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Title:** AC-7 ("add `gt-pgdata` to the backup routine") cannot be completed because there is no existing platform backup/retention routine (no `pg_dump`/backup script under `ops/`). The GlitchTip SDK wiring (AC-1..6) shipped in PR #448; AC-7 is deferred pending an ops backup routine.
 - **Root cause:** the platform has no committed DB-backup/retention automation yet (broader than GlitchTip — the app + Hangfire Postgres would want the same).
 - **Suggested direction (NOT applied):** stand up a platform backup/retention routine under `ops/` (covering the app Postgres + Hangfire + GlitchTip `gt-pgdata` volumes), then wire AC-7 into it. TC-PLT-014 asserts the check and stays `blocked` until the routine exists. Likely its own small ops story.
+
+---
+
+### ISSUE-331 — Running backend container is a STALE build predating PR #444/#446; US-AUTH-012 & US-AUTH-016 SSO surface is absent from the live stack
+- **ID:** ISSUE-331
+- **Type:** ISSUE (INFRA — deployment drift; blocks live QA of two shipped stories)
+- **Severity:** MED (not a product defect — source code is correct and its bound automated tests are 56/56 green; but the *running* stack cannot exercise the US-AUTH-012/016 API/UI surface, so live re-test of those stories is blocked until the container is rebuilt)
+- **Status:** OPEN
+- **Layer:** INFRA
+- **Module / US / TC:** Authentication / US-AUTH-012, US-AUTH-016 / TC-AUTH-115..136, TC-AUTH-ISO-005/006 — found 2026-07-29 during the SSO blocked-row re-run (`@test-runner`, REPORT-ONLY)
+- **Title:** `hris-backend-1` (image `hris-backend`, created 2026-07-25T09:40Z) does not contain the US-AUTH-012 (PR #444, merged 2026-07-24 20:50) or US-AUTH-016 (PR #446, merged 2026-07-24 22:07) code, despite the source tree on `test/local-subdomains` containing both. Live SSO config/enforcement/onboarding cannot be probed against `:5000`.
+- **Root cause:** the deployed image was built from a commit/branch state that predates the two SSO PRs being present in the build context (or the container was not rebuilt after those PRs landed). Confidence 95%. Evidence is mechanical and consistent across four independent probes (below); this is deployment drift, not an application bug.
+- **Reproduction steps / evidence:**
+  1. `POST /api/v1/auth/break-glass-login` (US-AUTH-016 route, source `AuthController.cs:89`) → **HTTP 404** (route absent from binary). `POST /api/v1/tenant/sso/onboarding/admin-consent` (source `SsoOnboardingController.cs:36`) → **HTTP 404**. `GET /api/v1/auth/sso/admin-consent/callback` (source `SsoController.cs:102`) → **HTTP 404**.
+  2. `GET /api/v1/tenant/auth-settings` (platform, admin JWT) → **HTTP 200** but returns the **OLD session-policy DTO** (`{mfaPolicy, idleTimeoutMinutes, maxConcurrentSessions, concurrentSessionStrategy, maxFailedAttempts, lockoutDurationMinutes…}`) — NOT the US-AUTH-012 SSO DTO (`ssoEnabled/allowedEntraTenantIds/allowedEmailDomains/enforcementMode/jitEnabled/jitDefaultRole`). The deployed controller is the pre-#444 version.
+  3. `__EFMigrationsHistory` latest = `20260723160658_AddEncryptionKeyActivation`. The SSO migrations `20260724141126_AddTenantSsoSettings` and `20260724155348_AddTenantSsoEnforcementOnboarding` are **not applied**. `information_schema.columns` for `tenants` has **none** of `sso_enabled, allowed_entra_tenant_ids, allowed_email_domains, jit_enabled, jit_default_role, sso_enforcement_mode`.
+  4. Only `20260623070019_AddUserEntraSsoIdentity` (the older US-AUTH-011 foundation) is present — consistent with the US-AUTH-011 challenge endpoint working live while US-AUTH-012/016 do not exist.
+- **Severity rationale:** contained to the local environment; the shipped code is verified correct by its bound xUnit + Testcontainers-Postgres suites (56/56 green this run). Blast radius = QA can't do a *live* API/UI confirmation of US-AUTH-012/016 until the container is rebuilt from current `test/local-subdomains`. No user-facing production impact implied.
+- **Suggested direction (NOT applied):** rebuild/redeploy `hris-backend` from current `test/local-subdomains` HEAD (migrations auto-apply on startup via `DbInitializer`), then re-run the US-AUTH-012/016 live API arms (config CRUD, entitlement 403, enforcement login, break-glass, admin-consent onboarding) + the FE settings-card a11y/perf TCs.
+
+---
+
+### ISSUE-332 — US-AUTH-014 (SSO match/link/JIT) has ZERO bound test cases — traceability gap for a shipped story
+- **ID:** ISSUE-332
+- **Type:** ISSUE (TEST — coverage/traceability gap)
+- **Severity:** MED (violates Critical Rule #4 traceability: every AC must have a linking TC; US-AUTH-014's match/link/JIT-provisioning ACs have no `docs/QA/authentication/TC-*` bound to them, neither primary nor secondary)
+- **Status:** OPEN
+- **Layer:** TEST
+- **Module / US / TC:** Authentication / US-AUTH-014 / (none) — found 2026-07-29 during the SSO blocked-row re-run (`@test-runner`)
+- **Title:** No test case in `docs/QA/authentication/` names US-AUTH-014 in its `user_story` frontmatter or `Related Requirements`. `grep -l "US-AUTH-014" docs/QA/authentication/*.md` → 0 files. The story (existing-user match, first-time account link, and JIT provisioning on `AuthService.SsoSignInAsync`) is untested at the TC level even though the underlying logic ships and is partially unit-covered (`SsoFailureAuditWriteTests.SsoSignIn_Success_...` drives `SsoSignInAsync` with a synthesized `SsoIdentity`).
+- **Root cause:** the PR #444/#446 TC authoring (TC-AUTH-115..136 + ISO arms) covered US-AUTH-011/012/013/016 but no TC suite was authored for US-AUTH-014's match/link/JIT acceptance criteria. Confidence 90% (based on exhaustive grep; a TC could exist under a non-authentication folder, but none was found).
+- **Reproduction steps / evidence:** `for f in docs/QA/authentication/TC-AUTH-*.md; do grep -l US-AUTH-014 "$f"; done` → empty. Frontmatter scan of all 42 SSO-epic TCs shows `user_story` ∈ {US-AUTH-011, US-AUTH-012, US-AUTH-016} only; US-AUTH-013 appears secondarily in 8 TCs; US-AUTH-014 appears in none.
+- **Severity rationale:** no runtime risk, but a shipped story with acceptance criteria and zero verifying TCs is an audit/traceability hole. Much of the path also requires a completed interactive Microsoft round-trip, so even once authored, the happy-path arm will need a mock-IdP harness or an interactive login.
+- **Suggested direction (NOT applied):** author a US-AUTH-014 TC suite (existing-user match by verified email/oid, first-login account-link, JIT create with the tenant's `jit_default_role`, JIT-disabled rejection) with bound xUnit arms driving `SsoSignInAsync` via a synthesized `SsoIdentity` (as the existing audit test already does), so the logic is testable without a live Microsoft login. `@qa-engineer` task.

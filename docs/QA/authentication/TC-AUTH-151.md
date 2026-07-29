@@ -4,7 +4,7 @@ user_story: US-AUTH-011
 module: Authentication
 priority: high
 type: integration
-status: draft
+status: pass
 created: 2026-07-24
 ---
 
