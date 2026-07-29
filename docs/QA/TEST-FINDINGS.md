@@ -7488,3 +7488,79 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** set `OBSERVABILITY__OTLPENDPOINT` and observe the exporter still falls back to console.
 - **Severity rationale:** LOW today (nobody has attempted Phase 2), but it is precisely the kind of drift that costs an afternoon of "why is my collector empty".
 - **Suggested direction (NOT applied):** correct the plan to `OpenTelemetry__OtlpEndpoint`, and add the variable to `docker.env.example`.
+
+---
+
+### ISSUE-348 — US-PRF-011's headline justification is false; the "calibration dead-end trap" does not exist
+- **ID:** ISSUE-348
+- **Type:** ISSUE (story/code drift — a whole story justified by a non-existent defect)
+- **Severity:** MED (it has been directing roadmap priority for three weeks and would have funded building a fix for nothing)
+- **Status:** OPEN
+- **Layer:** DOC + BE (one-line message fix)
+- **Module / US / TC:** Performance / US-PRF-011, US-PRF-010 / TC-PRF-010-B1 — found 2026-07-30 verifying US-PRF-011's premises before building
+- **Title:** `docs/BA/STATUS.md` and `US-PRF-011.md` justify the story as *"removes the calibration dead-end trap that permanently locks US-PRF-010"*, describing a state where recommendations are blocked with `calibration_incomplete` and **"nothing can mark it complete"**. The code disagrees. `RecommendationService.cs:406-416` gates on `ManagerReviews.Any(r => r.CycleId == … && r.EmployeeId == … && r.SubmittedAt != null)` — i.e. an ordinary US-PRF-003 manager-review submit satisfies it. There is no `CalibrationStatus` enum, no `CalibrationCompletedAt` column, and no entity that can get stuck. The passing test `RecommendationServiceTests.Submit_with_calibration_enabled_requires_a_submitted_review` (`:259-269`) asserts `IsSuccess == true` with `calibration: true` — the lockout is disproved by a green test that predates the story.
+- **Also false:** "permanently blocks recommendation **generation**" — `AutoGenerateAsync` (`:186-266`) contains zero calibration references. The only `IsCalibrationEnabled` read in the whole service is at `:407`, inside `SubmitAsync`.
+- **Root cause:** the reconciliation that authored the stub read the **error string** (*"recommendations can only proceed after calibration is complete"*) rather than the **predicate** underneath it. The message says "calibration" where the check means "manager review submitted". Confidence **95%** — predicate, test and `git log -L` (unchanged since `5d5ed396`, 2026-06-16) all read directly.
+- **Reproduction steps:** run `RecommendationServiceTests.Submit_with_calibration_enabled_requires_a_submitted_review` — it passes today.
+- **Severity rationale:** MED — no runtime defect, but it is the stated reason a Must-Have story exists, and roughly half that story's value is either already delivered (see ISSUE-352) or was never real. Left unchallenged it buys a workspace to unblock something that is not blocked.
+- **Suggested direction (NOT applied):** correct the premise in `US-PRF-011.md:14-18` and `STATUS.md`; reword the misleading failure message at `RecommendationService.cs:414` to state what it actually checks ("manager review not submitted"), keeping the `calibration_incomplete` code for contract compatibility or changing both deliberately. US-PRF-011's genuinely-missing capability is the **calibrated-vs-original rating model** (AC-2) and the cohort/distribution surface (AC-1) — not an unblocker.
+
+---
+
+### ISSUE-349 — `IsCalibrationEnabled` and the presence of a Calibration phase can diverge; nothing validates them
+- **ID:** ISSUE-349
+- **Type:** BUG (missing validation — latent)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Performance / US-PRF-004, US-PRF-011 / — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** `CyclePhaseRules.Apply` (`CycleValidators.cs:15-66`) requires GoalSetting / SelfAssessment / ManagerReview phases, forbids duplicates, and enforces ordering and containment — but **nothing asserts that `AppraisalCycle.IsCalibrationEnabled == true` implies a Calibration `CyclePhase` exists, or the converse.** A cycle can therefore carry the calibration flag with no calibration window, or a calibration phase with the flag off.
+- **Root cause:** the flag and the phase row were added as independent fields with no cross-validation. Confidence **90%**.
+- **Reproduction steps:** create an appraisal cycle with `IsCalibrationEnabled = true` and no Calibration phase in the phase set — it validates and saves.
+- **Severity rationale:** MED — today it is cosmetic because nothing consumes the pairing, but it is a precondition for any calibration work: a workspace keyed off the flag would have no window to run in, and one keyed off the phase would ignore the flag. Cheap to fix now, expensive to discover later.
+- **Suggested direction (NOT applied):** add the cross-check to `CyclePhaseRules.Apply` with a clear validation message, plus an arm for each direction.
+
+---
+
+### ISSUE-350 — A Calibration phase renders as permanently 0% and is skipped by the phase-transition job
+- **ID:** ISSUE-350
+- **Type:** ISSUE (incomplete feature surface)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Performance / US-PRF-004, US-PRF-011 / — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** `CyclePhaseTransitionJob.cs:65` explicitly skips any phase that is not GoalSetting/SelfAssessment/ManagerReview, and the cycle dashboard scores Calibration as `_ => 0` (`AppraisalCycleService.cs:571-577`) with overdue suppressed (`:585-586`). So a tenant who enables calibration gets a timeline bar stuck at 0% forever and no automated phase progression.
+- **Root cause:** calibration was modelled as an enum value + toggle + phase row without any behaviour behind it. Confidence **90%**.
+- **Reproduction steps:** create a cycle with a Calibration phase and view the cycle dashboard — the calibration segment reads 0% regardless of dates.
+- **Severity rationale:** LOW — misleading UI on an opt-in toggle that no tenant appears to use, no data risk.
+- **Suggested direction (NOT applied):** fold into US-PRF-011. Note `CyclePhase` currently has **no state at all** (only type/sequence/dates), so "mark the phase complete" needs the first phase-level state in the model — a `CyclePhase.CompletedOn` is the more general fix than a calibration-specific flag on `AppraisalCycle`, and would let both the job and the dashboard stop special-casing.
+
+---
+
+### ISSUE-351 — Narrow one-way door: a completed cycle can leave an employee permanently un-recommendable
+- **ID:** ISSUE-351
+- **Type:** BUG (irrecoverable state, narrow preconditions)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Performance / US-PRF-003, US-PRF-010 / — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** This is the *real* residual behind the mythical "calibration dead-end" (ISSUE-348) — far narrower than claimed. An employee becomes permanently un-recommendable when all four hold: the cycle has `IsCalibrationEnabled = true`; the cycle has reached `Completed`; that employee's `ManagerReview.SubmittedAt` is still null; and HR manually created a Draft recommendation for them via `SaveAsync` (auto-generate cannot, since it filters `FinalScore != null`). It is then irrecoverable because both submit and reopen require an open manager-review window (`ManagerReviewService.cs:112` and `:317`), `IsPhaseOpen` requires `Status == Active` (`AppraisalCycle.cs:229-230`), and `Completed` is terminal with no outbound edge in `IsValidTransition` (`:264-274`).
+- **Root cause:** `Completed` being terminal, combined with reopen being gated on an open phase window. Confidence **85%** — the four preconditions were traced individually; no test exercises the combination.
+- **Reproduction steps:** as above — the combination is contrived, which is why it has never been hit.
+- **Severity rationale:** LOW — four simultaneous preconditions including a manual HR action on an employee whose review was never submitted. Real, but obscure.
+- **Suggested direction (NOT applied):** this is a **US-PRF-003 reopen-window problem, not a calibration-workspace problem** — do not let it justify building a committee workspace. The proportionate fix is an HR-privileged reopen path for a completed cycle (or allowing review submission when a recommendation exists for that employee).
+
+---
+
+### ISSUE-352 — US-PRF-010 AC-B1 (completed-cycles picker) is marked "not built" in three places but shipped 2026-07-08
+- **ID:** ISSUE-352
+- **Type:** ISSUE (ledger staleness — work marked open that is delivered and tested)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** DOC
+- **Module / US / TC:** Performance / US-PRF-010 (AC-B1) / TC-PRF-010-B1 — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** Three documents still record the BUG-243 follow-up "AC-B1 completed-cycles picker" as missing — `docs/BA/STATUS.md` (deferred-AC table), `docs/BA/performance/US-PRF-010.md:107` (*"Status: not built. Ref: BUG-243."*), and `docs/QA/performance/TC-PRF-010-B1.md:15`. It is fully built end to end and was verified independently: BE endpoint `GET /api/v1/tenant/performance/recommendations/cycles/completed` (`RecommendationController.cs:43-55`, permission-gated) → `GetCompletedCyclesForRecommendationsQueryHandler` (`RecommendationQueries.cs:20-45`); FE service `recommendation.service.ts:40-44` feeding a rendered picker at `recommendation-workspace.component.ts:157`; tests `RecommendationCompletedCyclesTests.cs` (3 cases) + `recommendation-workspace.component.spec.ts:66`. Shipped in commit `bcd7c333`, **two days after** the 2026-07-06 reconciliation that recorded it as missing.
+- **Root cause:** the reconciliation snapshot was never revisited after the work landed — the same class as ISSUE-335/348 and the STATUS.md drift corrected on 2026-07-29. Confidence **100%** — endpoint, handler, FE picker and tests all read directly.
+- **Reproduction steps:** `grep -n "cycles/completed" src/backend/HRM.Api/Controllers/RecommendationController.cs` and compare against `US-PRF-010.md:107`.
+- **Severity rationale:** LOW individually — but it is the fourth instance of the same failure mode, and it materially inflates the apparent size of US-PRF-011 (whose stub cites this as part of its value).
+- **Suggested direction (NOT applied):** flip all three documents to built, citing `bcd7c333`. Consider a broader sweep: every "not built"/"missing" claim written by the 2026-07-06 reconciliation should be re-verified against the code, since four of four checked so far were stale.
