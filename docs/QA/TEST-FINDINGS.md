@@ -7564,3 +7564,19 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** `grep -n "cycles/completed" src/backend/HRM.Api/Controllers/RecommendationController.cs` and compare against `US-PRF-010.md:107`.
 - **Severity rationale:** LOW individually — but it is the fourth instance of the same failure mode, and it materially inflates the apparent size of US-PRF-011 (whose stub cites this as part of its value).
 - **Suggested direction (NOT applied):** flip all three documents to built, citing `bcd7c333`. Consider a broader sweep: every "not built"/"missing" claim written by the 2026-07-06 reconciliation should be re-verified against the code, since four of four checked so far were stale.
+
+---
+
+### ISSUE-353 — The canonical module key list is duplicated in three places with nothing keeping them in lockstep
+- **ID:** ISSUE-353
+- **Type:** ISSUE (contract drift risk — the same class as the bug it guards against)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE + FE
+- **Module / US / TC:** Admin Console / US-ADM-012 (AC-1/AC-2) / TC-ADM-012-* — surfaced by `@frontend-dev` as an OUT-OF-LANE flag while building the FE gate, 2026-07-30
+- **Title:** After US-ADM-012, the canonical module vocabulary exists in **three** independent copies: `PlanModules.All` (`src/backend/HRM.Domain/Authorization/PlanModules.cs`), `CANONICAL_MODULE_KEYS` (`src/frontend/src/app/core/tenant/module.guard.ts`), and `CANONICAL_MODULES` (`src/frontend/.../features/admin/plans/plan.models.ts:122-136`). A fourth copy is frozen as a SQL literal inside the normalization migration (that one is correct and intentional — a migration must describe data as of its own point in history). Nothing asserts the three live copies agree.
+- **Why this is sharper than ordinary duplication:** the FE gate's fail-open rule is *"any token outside the canonical set means the vocabulary is untrusted, so allow"*. If the backend adds a module key and the frontend list is not updated, every tenant holding that new key trips the FE's unknown-token branch and the **entire frontend silently stops enforcing entitlement** — while the backend still enforces it. UI and API then disagree about what is enabled, which is worse than either being wrong alone. The failure is silent in both directions and looks like "it works".
+- **Root cause:** the FE deliberately does not import from the `plans` feature into `core/` (a layering inversion), and cannot import from the backend at all — so duplication was the correct local call. The gap is the missing cross-check, not the duplication. Confidence **95%**.
+- **Reproduction steps:** add a 14th key to `PlanModules.All`, provision a tenant holding it, and observe the FE guard fail open for every module while the BE continues to gate.
+- **Severity rationale:** MED — it is precisely the drift class that caused ISSUE-335 (two vocabularies, nothing asserting the link, invisible because nothing read the column). Shipping the fix for that bug while re-introducing its shape one layer up would be a poor trade.
+- **Suggested direction (NOT applied):** (1) cheap and immediate — a FE spec asserting `module.guard.ts`'s key set equals `plan.models.ts`'s `CANONICAL_MODULES`, closing two of three; (2) the real fix — a generated or contract-tested shared list, e.g. a BE test that serializes `PlanModules.All` to a fixture the FE spec reads, so a backend addition fails the frontend build. Mirrors the both-direction `EncryptedFieldRegistry` drift guards, which are the established pattern here for exactly this.
