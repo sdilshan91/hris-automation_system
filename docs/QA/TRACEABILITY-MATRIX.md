@@ -28,10 +28,11 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-010 | Account lockout after failed attempts | Must Have | TC-AUTH-026, TC-AUTH-027, TC-AUTH-028, TC-AUTH-083, TC-AUTH-084, TC-AUTH-085, TC-AUTH-086, TC-AUTH-087, TC-AUTH-088, TC-AUTH-089, TC-AUTH-090, TC-AUTH-091, TC-AUTH-092, TC-AUTH-093, TC-AUTH-094, TC-AUTH-095, TC-AUTH-096, TC-AUTH-097, TC-AUTH-098, TC-AUTH-099, TC-AUTH-100, TC-AUTH-101, TC-AUTH-102, TC-AUTH-103, TC-AUTH-104, TC-AUTH-105, TC-AUTH-106, TC-AUTH-107, TC-AUTH-108, TC-AUTH-109, TC-AUTH-110, TC-AUTH-111, TC-AUTH-112, TC-AUTH-114 | 34 | 6/6 AC covered (deep) |
 | US-AUTH-011 | Entra OIDC authentication foundation | Should Have | TC-AUTH-137, TC-AUTH-138, TC-AUTH-139, TC-AUTH-140, TC-AUTH-141, TC-AUTH-142, TC-AUTH-143, TC-AUTH-144, TC-AUTH-145, TC-AUTH-146, TC-AUTH-147, TC-AUTH-148, TC-AUTH-149, TC-AUTH-150, TC-AUTH-151, TC-AUTH-152, TC-AUTH-153, TC-AUTH-154, TC-AUTH-ISO-007 | 19 | 7/7 AC covered |
 | US-AUTH-012 | Per-tenant SSO configuration | Should Have | TC-AUTH-115, TC-AUTH-116, TC-AUTH-117, TC-AUTH-118, TC-AUTH-119, TC-AUTH-120, TC-AUTH-121, TC-AUTH-122, TC-AUTH-123, TC-AUTH-124, TC-AUTH-125, TC-AUTH-ISO-005 | 12 | 7/7 AC covered |
+| US-AUTH-014 | SSO user matching, account linking & JIT provisioning | Should Have | TC-AUTH-155, TC-AUTH-156, TC-AUTH-157, TC-AUTH-158, TC-AUTH-159, TC-AUTH-160, TC-AUTH-ISO-008 | 7 | 7/7 AC covered (authored, unexecuted) |
 | US-AUTH-016 | SSO enforcement, break-glass & admin-consent onboarding | Should Have | TC-AUTH-126, TC-AUTH-127, TC-AUTH-128, TC-AUTH-129, TC-AUTH-130, TC-AUTH-131, TC-AUTH-132, TC-AUTH-133, TC-AUTH-134, TC-AUTH-135, TC-AUTH-136, TC-AUTH-ISO-006 | 12 | 7/7 AC covered |
-| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005, TC-AUTH-ISO-006, TC-AUTH-ISO-007 | 7 | -- |
-| **TOTAL** | | | **161 test cases** | **161** | **82/82 AC** |
-<!-- NOTE: 161 = unique auth TC files. The per-story TC lists above sum to 164 because 3 TCs serve two user stories each (listed in both rows); the unique TOTAL is 161. -->
+| Cross-cutting | Multi-tenant isolation (mandatory) | Critical | TC-AUTH-ISO-001, TC-AUTH-ISO-002, TC-AUTH-ISO-003, TC-AUTH-ISO-004, TC-AUTH-ISO-005, TC-AUTH-ISO-006, TC-AUTH-ISO-007, TC-AUTH-ISO-008 | 8 | -- |
+| **TOTAL** | | | **168 test cases** | **168** | **89/89 AC** |
+<!-- NOTE: 168 = unique auth TC files (161 prior + 7 for US-AUTH-014: TC-AUTH-155..160 + TC-AUTH-ISO-008). The per-story TC lists above sum higher because 3 TCs serve two user stories each (listed in both rows) and TC-AUTH-ISO-008 is listed in both the US-AUTH-014 row and the cross-cutting row; the unique TOTAL is 168. -->
 
 
 ### Backward Traceability (Test Cases --> User Stories)
@@ -99,6 +100,43 @@ This document links user stories to their corresponding test cases across all mo
 | TC-AUTH-153 | When SSO not configured, challenge + callback fail closed (`not_configured`) with no token | Security | High | US-AUTH-011 | BR-5, NFR-2 |
 | TC-AUTH-154 | SSO-originated session behaves identically to local login for refresh, RBAC, and logout | Functional | High | US-AUTH-011 | AC-4, FR-6, BR-1 |
 | TC-AUTH-ISO-007 | Cross-directory SSO isolation -- a valid Entra user from directory A cannot enter tenant B's workspace (state+allow-list+query-filter+cache) | Security | Critical | US-AUTH-011 | AC-2, AC-6, FR-3, FR-5, FR-9, BR-1 |
+| TC-AUTH-155 | Existing user linked by Entra `oid` matched on sign-in — no duplicate, no role change; `oid` authoritative over changed email | Functional | Critical | US-AUTH-014 | AC-1, AC-6, FR-1, BR-1, BR-4, NFR-1, NFR-3 |
+| TC-AUTH-156 | First SSO sign-in bootstraps by verified email and persists the `oid` link for future logins | Functional | Critical | US-AUTH-014 | AC-2, FR-1, FR-2, BR-1, BR-6, NFR-2 |
+| TC-AUTH-157 | JIT provisioning — allow-listed user with no membership created with `jit_default_role` + audited | Functional | Critical | US-AUTH-014 | AC-4, FR-3, FR-6, BR-3, NFR-2, NFR-3 |
+| TC-AUTH-158 | JIT disabled — no matching membership REJECTED fail-closed, no account/membership created (no-account + cross-tenant-only) | Security | Critical | US-AUTH-014 | AC-3, AC-5, FR-4, FR-5, BR-5, NFR-2 |
+| TC-AUTH-159 | JIT privilege ceiling — `jit_default_role` cannot be a privileged admin/owner role (enforced at config time) | Security | Critical | US-AUTH-014 | AC-4, BR-3 (US-AUTH-012 BR-5), FR-3, FR-6 |
+| TC-AUTH-160 | SSO refuses a token for an inactive user, inactive membership, or non-active tenant (local-login parity) | Security | High | US-AUTH-014 | AC-7, FR-8, BR-4 |
+| TC-AUTH-ISO-008 | SSO match/link/JIT strictly tenant-scoped — a user matched/created under tenant A never visible or linkable from tenant B | Security | Critical | US-AUTH-014 | AC-3, FR-5, BR-2, BR-5, NFR-3 |
+
+### US-AUTH-014 Detailed Requirements Traceability
+
+| Requirement | Type | Covered By | Coverage |
+|-------------|------|------------|----------|
+| AC-1: `oid`-linked membership matched; existing roles loaded; no duplicate | AC | TC-AUTH-155 | Direct |
+| AC-2: Verified-email match links the `oid` for future logins | AC | TC-AUTH-156 | Direct |
+| AC-3: Other-tenant-only membership + JIT off → no access, no cross-link | AC | TC-AUTH-158, TC-AUTH-ISO-008 | Direct |
+| AC-4: No membership + JIT on → provisioned with `jit_default_role` + audit | AC | TC-AUTH-157 | Direct |
+| AC-5: No membership + JIT off → rejected, no account created | AC | TC-AUTH-158 | Direct |
+| AC-6: `oid` link authoritative when a different email arrives; no second account | AC | TC-AUTH-155 | Direct |
+| AC-7: Suspended membership/tenant (or inactive user) refuses SSO token | AC | TC-AUTH-160 | Direct |
+| FR-1 (match by `oid` then verified email, resolved tenant) | FR | TC-AUTH-155, TC-AUTH-156 | Direct |
+| FR-2 (persist `oid` link on first email match) | FR | TC-AUTH-156 | Direct |
+| FR-3 (JIT-create with `jit_default_role` when enabled) | FR | TC-AUTH-157 | Direct |
+| FR-4 (reject without creating any record when JIT disabled) | FR | TC-AUTH-158 | Direct |
+| FR-5 (matching strictly scoped to the resolved tenant; no cross-tenant grant/link) | FR | TC-AUTH-158, TC-AUTH-ISO-008 | Direct |
+| FR-6 (JIT only for isolation-passed, allow-listed logins) | FR | TC-AUTH-157 | Partial — upstream `JitAllowed` derivation needs a live IdP / `EntraSsoService` crafted-token test |
+| FR-7 (audit link/JIT/no-membership outcomes) | FR | TC-AUTH-156, TC-AUTH-157, TC-AUTH-158 | Direct |
+| FR-8 (suspended memberships/tenants block SSO identically to local) | FR | TC-AUTH-160 | Direct |
+| NFR-1 (indexed `oid` lookup) | NFR | TC-AUTH-155 | Indirect (functional match; index perf not load-measured) |
+| NFR-2 (transactional link/JIT; no half-created record) | NFR | TC-AUTH-157, TC-AUTH-158 | Direct |
+| NFR-3 (no duplicate membership; unique `(tenant_id, oid)`) | NFR | TC-AUTH-155, TC-AUTH-157, TC-AUTH-ISO-008 | Direct |
+| NFR-4 (JIT within the 2s callback budget) | NFR | — | Not covered — needs a live IdP/perf harness (flagged) |
+| BR-1 (`oid` durable link; email is the bootstrap matcher) | BR | TC-AUTH-155, TC-AUTH-156 | Direct |
+| BR-2 (multi-tenant memberships matched/linked independently; no role leak) | BR | TC-AUTH-ISO-008 | Direct |
+| BR-3 (JIT assigns only the configured non-privileged default role) | BR | TC-AUTH-157, TC-AUTH-159 | Direct |
+| BR-4 (SSO authenticates only; never elevates roles) | BR | TC-AUTH-155, TC-AUTH-160 | Direct |
+| BR-5 (`(tenant_id, oid)` unique — one identity → one membership per tenant) | BR | TC-AUTH-157, TC-AUTH-ISO-008 | Direct |
+| BR-6 (email match uses the verified claim) | BR | TC-AUTH-156 | Direct |
 
 ### US-AUTH-012 Detailed Requirements Traceability
 
@@ -192,7 +230,8 @@ This document links user stories to their corresponding test cases across all mo
 | US-AUTH-010 Requirement Coverage | 10/10 FR + 5/5 NFR + 7/7 BR = 100% | >= 85% | PASS |
 | US-AUTH-011 Requirement Coverage | 9/9 FR + 5/5 NFR + 5/5 BR = 100% | >= 85% | PASS |
 | US-AUTH-012 Requirement Coverage | 8/8 FR + 4/4 NFR + 6/6 BR = 100% | >= 85% | PASS |
-| Multi-Tenant Isolation Tests | 29 (6 dedicated + 23 embedded) | >= 3 | PASS |
+| US-AUTH-014 Requirement Coverage | 7/7 AC + 8/8 FR (FR-6 partial) + 3/4 NFR (NFR-4 gap) + 6/6 BR = 96% | >= 85% | PASS (authored, unexecuted) |
+| Multi-Tenant Isolation Tests | 30 (7 dedicated + 23 embedded) | >= 3 | PASS |
 | Security Test Cases | 55/128 (43%) | >= 30% | PASS |
 | Critical Module Coverage | 100% | >= 85% | PASS |
 | API Endpoint Coverage | 31/31 (100%) | >= 90% | PASS |

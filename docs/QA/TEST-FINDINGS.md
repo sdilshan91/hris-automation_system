@@ -7233,3 +7233,43 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps / evidence:** `for f in docs/QA/authentication/TC-AUTH-*.md; do grep -l US-AUTH-014 "$f"; done` → empty. Frontmatter scan of all 42 SSO-epic TCs shows `user_story` ∈ {US-AUTH-011, US-AUTH-012, US-AUTH-016} only; US-AUTH-013 appears secondarily in 8 TCs; US-AUTH-014 appears in none.
 - **Severity rationale:** no runtime risk, but a shipped story with acceptance criteria and zero verifying TCs is an audit/traceability hole. Much of the path also requires a completed interactive Microsoft round-trip, so even once authored, the happy-path arm will need a mock-IdP harness or an interactive login.
 - **Suggested direction (NOT applied):** author a US-AUTH-014 TC suite (existing-user match by verified email/oid, first-login account-link, JIT create with the tenant's `jit_default_role`, JIT-disabled rejection) with bound xUnit arms driving `SsoSignInAsync` via a synthesized `SsoIdentity` (as the existing audit test already does), so the logic is testable without a live Microsoft login. `@qa-engineer` task.
+
+---
+
+### ISSUE-333 — `FieldEncryptionReencryptPostgresTests` (3 arms) fail INTERMITTENTLY under full-suite parallel load
+- **ID:** ISSUE-333
+- **Type:** ISSUE (TEST-HEALTH — flaky/non-deterministic under load)
+- **Severity:** MED (an intermittently-red gate is worse than a reliably-red one: it trains the team to re-run until green, which is exactly how a real regression gets waved through)
+- **Status:** OPEN
+- **Layer:** BE-test
+- **Module / US / TC:** Platform / US-PLT-005 (encryption maintenance) / TC-PLT-003-adjacent — found 2026-07-29 during the US-PLT-005 Scope A verify gate
+- **Title:** Three arms in `HRM.Tests/Integration/FieldEncryptionReencryptPostgresTests` — `Sweep_and_report_include_a_soft_deleted_tenant`, `Reencrypt_sweep_moves_old_key_values_leaves_active_rows_byte_identical_and_skips_corrupt`, and `Registry_backfill_encrypts_both_pip_and_national_id_plaintext_and_report_surfaces_it` — fail on some full-suite runs and pass on others, with **identical code**.
+- **Observed data (5 runs, 2026-07-29):**
+  | Run | Scope | Result |
+  |---|---|---|
+  | feature branch, full suite (pre-audit code) | 4817 | **3 fail** (these 3) |
+  | feature branch, full suite (final code) | 4821 | **3 fail** (these 3) |
+  | `test/local-subdomains` baseline, full suite | 4807 | 4807 pass |
+  | feature branch, `~HRM.Tests.Integration` subset only | 1092 | 1092 pass |
+  | feature branch, full suite (final code, re-run) | 4821 | **4821 pass** |
+- **Root cause:** UNRESOLVED — deliberately not guessed. Confidence in any single mechanism is low (<40%). What the data DOES establish: (a) it is **not deterministic** — the same commit produced both 3-fail and all-pass full runs; (b) it is **load/concurrency-linked** — the 3 arms pass 3/3 in isolation and pass inside the 1092-test Integration subset, failing only under the full ~4820-test run; (c) the failing arms are the three heaviest in the class (each drives a multi-tenant sweep + several `GetKeyUsageReportAsync` calls against its own Testcontainers Postgres). Each test method gets its **own** container (class has `IAsyncLifetime` + a per-instance `PostgreSqlContainer`, no `IClassFixture`), so cross-test *data* interference is ruled out; container/connection resource pressure is the leading candidate. Note the failing runs also took markedly longer overall (20m18s vs the base run's 15m08s), consistent with saturation.
+- **Attribution — explicitly UNRESOLVED, and worth stating plainly:** the failures were first seen on a branch that adds one new Testcontainers class (`MfaSecretBackfillPostgresTests`) and an extra DI scope inside `GetKeyUsageReportAsync`. That made "the branch caused it" the natural hypothesis, and a single green baseline run on `test/local-subdomains` appeared to confirm it. **That inference was wrong-headed**: one green run cannot exonerate base against a flake that does not fire every time, and the branch subsequently produced a fully green 4821/4821 run. Both "pre-existing flake surfaced by extra load" and "small contribution from the new class/scope" remain live. **Do not close this by re-running until green.**
+- **Reproduction steps:** run the full backend suite (`dotnet test HRM.sln`) repeatedly on a machine running the local Docker stack; expect intermittent failure of the 3 named arms. Isolated runs (`--filter "FullyQualifiedName~FieldEncryptionReencryptPostgresTests"`) pass consistently and will NOT reproduce it.
+- **Evidence:** full logs retained during the session at `feat-full.log` / `base-full.log`; the failing runs were captured with `-v q`, which suppressed the per-assertion error text — **the single most useful next step is one reproduction captured with `--logger "console;verbosity=normal"` so the actual exception/assertion is known.** Until then the mechanism is speculation.
+- **Severity rationale:** MED not HIGH — no production code path is implicated (this is the maintenance sweep's *test*, and the sweep itself is covered by other green arms). But it degrades the project's standing claim that "the full `dotnet test` gate is now reliable" (COMPLETION-PLAN standing rules), and it sits in the same family as the already-resolved ISSUE-275 (`WorkflowRuntimeConcurrencyPostgresTests` flaking under full-suite parallel load, root-caused to ~40 Postgres Testcontainers classes migrating concurrently).
+- **Suggested direction (NOT applied):** (1) capture one failing run with full verbosity to get the real error; (2) if it is connection/container exhaustion, consider a shared container fixture for the encryption-maintenance classes rather than container-per-test-method; (3) re-check whether `GetKeyUsageReportAsync` needs its own DI scope for the system-scope count or can reuse an existing one.
+
+---
+
+### ISSUE-334 — SSO JIT-provisioning path may not emit the AC-named `sso_jit_provisioned` audit event
+- **ID:** ISSUE-334
+- **Type:** ISSUE (audit completeness / story-code drift)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Authentication / US-AUTH-014 (AC-4, FR-7) / TC-AUTH-157 step 6, TC-AUTH-156 — found 2026-07-29 while authoring the US-AUTH-014 TC suite (`@qa-engineer`)
+- **Title:** `AuthService.SsoSignInAsync`'s JIT branch appears to emit only `sso_login_succeeded`, not the distinct `sso_jit_provisioned` event that US-AUTH-014 AC-4/FR-7 names. The account-linking path (AC-2) may likewise lack a distinct `sso_account_linked` event. Consequence: a JIT-created account and an ordinary successful SSO login are indistinguishable in the audit trail — the auto-provisioning of a new user, which is the security-relevant event, leaves no dedicated record.
+- **Root cause:** story/code drift — the AC names events the implementation did not add. Confidence **70%**: the JIT branch was read but not every audit-helper overload was traced, so a differently-named or wrapped emission may exist.
+- **Reproduction steps:** drive `SsoSignInAsync` with a synthesized `SsoIdentity` for an unknown user with `JitAllowed = true`, then inspect `audit_logs` for the resulting tenant — expect `sso_login_succeeded` and check whether any `sso_jit_provisioned` row accompanies it.
+- **Severity rationale:** MED — no data loss or access-control failure, but auto-provisioning is exactly the SSO event a security reviewer looks for in an audit trail, and it is also an AC that reads as satisfied while being unimplemented.
+- **Suggested direction (NOT applied):** either add the AC-named events (`sso_jit_provisioned`, `sso_account_linked`) in `AuthService`, or make a product decision to collapse them into `sso_login_succeeded` with a discriminating field and amend US-AUTH-014 accordingly. Blocks a full pass of TC-AUTH-157; TC-AUTH-157 step 6 already instructs the executor to flag this rather than silently pass.
