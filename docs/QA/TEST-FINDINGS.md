@@ -7273,3 +7273,31 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** drive `SsoSignInAsync` with a synthesized `SsoIdentity` for an unknown user with `JitAllowed = true`, then inspect `audit_logs` for the resulting tenant — expect `sso_login_succeeded` and check whether any `sso_jit_provisioned` row accompanies it.
 - **Severity rationale:** MED — no data loss or access-control failure, but auto-provisioning is exactly the SSO event a security reviewer looks for in an audit trail, and it is also an AC that reads as satisfied while being unimplemented.
 - **Suggested direction (NOT applied):** either add the AC-named events (`sso_jit_provisioned`, `sso_account_linked`) in `AuthService`, or make a product decision to collapse them into `sso_login_succeeded` with a discriminating field and amend US-AUTH-014 accordingly. Blocks a full pass of TC-AUTH-157; TC-AUTH-157 step 6 already instructs the executor to flag this rather than silently pass.
+
+---
+
+### ISSUE-335 — `tenants.enabled_modules` holds TWO incompatible vocabularies; a module gate built on it would 403 most tenants
+- **ID:** ISSUE-335
+- **Type:** BUG (data/seed correctness — latent until something reads the column)
+- **Severity:** HIGH (latent today because nothing reads `enabled_modules`; becomes an immediate outage the moment US-ADM-012's module gate ships)
+- **Status:** OPEN
+- **Layer:** BE / data
+- **Module / US / TC:** Admin Console / US-ADM-012 (AC-1) + US-ADM-009 / (none yet) — found 2026-07-30 while verifying US-ADM-012's premises against the live DB before building
+- **Title:** `Tenant.EnabledModules` is populated from **two different, non-overlapping key vocabularies** depending on how the tenant was created. `DbInitializer` seeds it from `PermissionCatalog.ByModule.Keys` (**permission prefixes**), while `TenantProvisioningService.DeriveTenantModules` uses `PlanModules` (**canonical module keys**). The two sets are not translatable by string equality.
+- **Evidence (live `hris_dev_db`, 2026-07-30):**
+  ```
+  e2e            ["Attendance","Audit","Benefits","CustomField","Department","Employee","EmployeeDocument",
+                  "ExitInterview","Holiday","Impersonation","JobTitle","Leave","LeaveType","Location",
+                  "Monitoring","Notifications","Onboarding","Payroll","Performance","Plan","Recruitment",
+                  "Reports","Roles","Tenant","Training"]
+  platform       (identical to e2e)
+  techoneglobal  ["CoreHR","Leave","Attendance","Recruitment","Onboarding","Payroll","Performance",
+                  "Training","Asset","Benefits","Reporting","CustomReportBuilder","PublicCareersPage"]
+  ```
+  Source: `DbInitializer.cs:418` `var defaultEnabledModules = PermissionCatalog.ByModule.Keys...` applied at `:432` and `:449`; versus `TenantProvisioningService.DeriveTenantModules` (`:318-326`) which uses `PlanModules.All`.
+- **Concretely missing from the seeded vocabulary** (present in `PlanModules`, absent from `PermissionCatalog.ByModule.Keys`): **`CoreHR`**, **`Asset`**, **`Reporting`** (the seed has `Reports`), **`CustomReportBuilder`**, **`PublicCareersPage`**. The seed also contains entries that are not modules at all — `Audit`, `CustomField`, `Department`, `Employee`, `Holiday`, `Impersonation`, `JobTitle`, `Location`, `Monitoring`, `Plan`, `Roles`, `Tenant` — which are permission groups.
+- **Root cause:** `enabled_modules` has never been read by any code path, so the two writers were free to drift without anything failing. Confidence **95%** — both writers were read directly and the live data matches each exactly.
+- **Impact when US-ADM-012 ships:** a gate doing `EnabledModules.Contains(PlanModules.CoreHr)` denies **every request** for `e2e` and `platform` (CoreHR is the always-on module covering employees/departments/dashboard). That breaks the entire Playwright E2E suite and locks the platform admin out of its own console. `Asset`, `Reporting`, `CustomReportBuilder` and `PublicCareersPage` would be denied for those tenants too.
+- **Reproduction steps:** `docker exec hris-postgres-1 psql -U developer -d hris_dev_db -tAc "select subdomain, enabled_modules from tenants order by subdomain;"` and compare against `PlanModules.All`.
+- **Severity rationale:** HIGH rather than MED because the failure mode is a total-denial outage for affected tenants, it is invisible to every current test (nothing reads the column), and the seeded vocabulary is what a *fresh* environment gets — so a new deployment starts broken rather than degrading over time.
+- **Suggested direction (NOT applied):** three parts. (1) Fix `DbInitializer` to seed from `PlanModules.All`, not `PermissionCatalog.ByModule.Keys`. (2) Add a CLI EF migration that normalizes existing rows — remap `Reports`→`Reporting`, drop the non-module permission-group entries, add the missing canonical keys. (3) Independently, make the gate **fail OPEN on an unrecognized key vocabulary** (if none of a tenant's stored values parse as a `PlanModules` key, treat the tenant as fully entitled rather than fully denied) — a belt-and-braces guard so a future drift degrades to "not enforced" instead of "total outage". Also consider a startup drift guard asserting every stored value is a valid `PlanModules` key, mirroring the both-direction `EncryptedFieldRegistry` guards.
