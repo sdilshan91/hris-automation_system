@@ -31,20 +31,30 @@ public sealed class MfaSecretProtector : IFieldProtector
     public string Protect(string plaintext) => _protector.Protect(plaintext);
 
     public string Unprotect(string storedValue)
+        // Legacy plaintext (or a value protected by a now-rotated key) cannot be decrypted: use it as-is so a
+        // valid MFA check still passes rather than throwing.
+        => TryUnprotect(storedValue, out var plaintext) ? plaintext! : storedValue;
+
+    public bool IsProtected(string storedValue) => TryUnprotect(storedValue, out _);
+
+    /// <summary>
+    /// Single decrypt attempt shared by <see cref="Unprotect"/> and <see cref="IsProtected"/> so the two can
+    /// NEVER disagree about what "legacy plaintext" means (a value is legacy iff Data Protection cannot decrypt
+    /// it). The tolerated exception set lives HERE, in one place: <see cref="CryptographicException"/> covers a
+    /// wrong/rotated key or a tampered payload; <see cref="FormatException"/> covers a value that is not valid
+    /// base64url (raw legacy plaintext), which Data Protection rejects before it even attempts to decrypt.
+    /// </summary>
+    private bool TryUnprotect(string storedValue, out string? plaintext)
     {
         try
         {
-            return _protector.Unprotect(storedValue);
+            plaintext = _protector.Unprotect(storedValue);
+            return true;
         }
-        catch (CryptographicException)
+        catch (Exception ex) when (ex is CryptographicException or FormatException)
         {
-            // Legacy plaintext (or protected by a now-rotated key): use as-is so a valid MFA check still passes.
-            return storedValue;
-        }
-        catch (FormatException)
-        {
-            // Legacy plaintext that is not valid base64url — Data Protection rejects it before decrypting.
-            return storedValue;
+            plaintext = null;
+            return false;
         }
     }
 }
@@ -60,4 +70,8 @@ public sealed class PlaintextFieldProtector : IFieldProtector
     public string Protect(string plaintext) => plaintext;
 
     public string Unprotect(string storedValue) => storedValue;
+
+    /// <summary>Always false — this protector encrypts nothing, so no value it "produces" is distinguishable
+    /// from plaintext; every stored value is, by its definition, legacy plaintext.</summary>
+    public bool IsProtected(string storedValue) => false;
 }

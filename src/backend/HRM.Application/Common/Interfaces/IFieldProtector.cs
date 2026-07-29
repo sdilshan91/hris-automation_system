@@ -19,4 +19,12 @@ public interface IFieldProtector
     /// returned unchanged instead of throwing.
     /// </summary>
     string Unprotect(string storedValue);
+
+    /// <summary>True if <paramref name="storedValue"/> was produced by this protector (i.e. it is NOT legacy plaintext).</summary>
+    /// <remarks>
+    /// The counterpart to <see cref="Unprotect"/>'s legacy tolerance: it lets a back-fill DETECT the rows
+    /// <see cref="Unprotect"/> would silently pass through, so they can be upgraded instead of staying plaintext
+    /// at rest forever (US-PLT-005 Scope A). Must agree with <see cref="Unprotect"/> about what "legacy" means.
+    /// </remarks>
+    bool IsProtected(string storedValue);
 }
