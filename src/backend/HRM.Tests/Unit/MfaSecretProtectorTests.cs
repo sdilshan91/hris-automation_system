@@ -21,6 +21,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Identity;
 using HRM.Infrastructure.Persistence;
+using HRM.Infrastructure.Persistence.Configurations;
 using HRM.Infrastructure.Security;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
@@ -295,6 +296,148 @@ public sealed class MfaSecretProtectorTests
         using var check = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
         (await check.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret
             .Should().BeNull("a user with no MFA secret must not be given one");
+    }
+
+    // -------- TC-PLT-005-08: the widest possible legacy plaintext still protects INSIDE the column --------
+    // Boot-safety boundary (raised by the test-authenticator audit). The back-fill runs during startup, so if a
+    // protected payload could exceed users.mfa_secret's width, Postgres would throw during SaveChanges and take
+    // the service down on boot. Legacy plaintext predates the 200 -> 512 widening (migration 20260708055825), so
+    // 200 chars is the widest legacy value that can exist. Every other arm uses a ~16-char secret and therefore
+    // could never surface this. Asserting the LENGTH (not just losslessness) is the point: it pins the inference
+    // "200 chars protects to well under 512" as a fact instead of arithmetic in a comment.
+    [Fact]
+    public async Task Backfill_WidestLegacyPlaintext_ProtectsWithinColumnWidth_PLT005()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var protector = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+        var legacySecret = new string('A', 200); // the pre-widening column maximum
+        var userId = Guid.NewGuid();
+
+        using (var seed = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            seed.Users.Add(new User { Id = userId, Email = "wide@acme.com", MfaEnabled = true, MfaSecret = legacySecret });
+            await seed.SaveChangesAsync();
+        }
+
+        using (var run = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            await DbInitializer.BackfillLegacyMfaSecretsAsync(run, protector, NullLogger.Instance, CancellationToken.None);
+        }
+
+        using var check = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
+        var stored = (await check.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret!;
+        protector.IsProtected(stored).Should().BeTrue("the widest legacy value must still be upgraded, not skipped");
+        protector.Unprotect(stored).Should().Be(legacySecret, "the upgrade must stay lossless at the boundary");
+        stored.Length.Should().BeLessThanOrEqualTo(UserConfiguration.MfaSecretMaxLength,
+            "a protected payload wider than the column would throw at SaveChanges during application startup");
+    }
+
+    // -------- TC-PLT-005-09: an over-long protected payload is SKIPPED, not written (boot must not fail) --------
+    // The complement to TC-PLT-005-08: if the guard's precondition were ever violated, the back-fill must degrade
+    // (leave the row legacy, log, keep booting) rather than throw and abort startup. Driven by a stub protector
+    // that deliberately over-expands, since a real DataProtection payload cannot exceed the column from any
+    // legacy-width input — that is exactly why this branch needs a synthetic arm to be reachable at all.
+    [Fact]
+    public async Task Backfill_SkipsRowWhoseProtectedPayloadExceedsColumn_PLT005()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var protector = new OverExpandingProtector();
+        const string legacySecret = "JBSWY3DPEHPK3PXP";
+        var userId = Guid.NewGuid();
+
+        using (var seed = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            seed.Users.Add(new User { Id = userId, Email = "toolong@acme.com", MfaEnabled = true, MfaSecret = legacySecret });
+            await seed.SaveChangesAsync();
+        }
+
+        using (var run = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            var act = async () => await DbInitializer.BackfillLegacyMfaSecretsAsync(
+                run, protector, NullLogger.Instance, CancellationToken.None);
+            await act.Should().NotThrowAsync("a single over-long row must never abort application startup");
+        }
+
+        using var check = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
+        (await check.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret
+            .Should().Be(legacySecret,
+                "the row must be left exactly as-is — no worse than before the back-fill existed — and stay "
+                + "visible in the encryption report's legacy count");
+    }
+
+    // -------- TC-PLT-005-10: a row protected under a ROTATED-but-still-present key is left untouched --------
+    // The positive counterpart to the missing-key case: DataProtection keeps retired keys in the persisted ring
+    // for decryption, so such a row still Unprotects, IsProtected returns true, and the back-fill must NOT churn
+    // it. Without this arm, a change that started re-wrapping correctly-encrypted-under-an-older-key rows would
+    // pass every other test.
+    [Fact]
+    public async Task Backfill_LeavesRotatedButDecryptableRowUntouched_PLT005()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        // One shared ring: values protected earlier stay decryptable after further keys are created, which is
+        // precisely the rotated-but-present condition.
+        var ring = DataProtectionProvider.Create("tests");
+        var protector = new MfaSecretProtector(ring);
+        const string secret = "JBSWY3DPEHPK3PXP";
+        var protectedEarlier = protector.Protect(secret);
+        var userId = Guid.NewGuid();
+
+        using (var seed = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            seed.Users.Add(new User { Id = userId, Email = "rotated@acme.com", MfaEnabled = true, MfaSecret = protectedEarlier });
+            await seed.SaveChangesAsync();
+        }
+
+        using (var run = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            await DbInitializer.BackfillLegacyMfaSecretsAsync(run, protector, NullLogger.Instance, CancellationToken.None);
+        }
+
+        using var check = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
+        var stored = (await check.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret!;
+        stored.Should().Be(protectedEarlier, "an already-decryptable row must be left byte-identical, not re-wrapped");
+        protector.Unprotect(stored).Should().Be(secret);
+    }
+
+    // -------- TC-PLT-005-11: an EMPTY-string MfaSecret is left untouched (pinned decision, not an accident) --------
+    // The back-fill filter is `MfaSecret != null`, so an empty string reaches the loop. Wrapping "" would turn a
+    // meaningless value into a meaningless-but-opaque one and count it as "healed". Leaving it is the intended
+    // behaviour; this arm makes that a decision on record rather than emergent behaviour.
+    [Fact]
+    public async Task Backfill_LeavesEmptyStringMfaSecretUntouched_PLT005()
+    {
+        var dbName = Guid.NewGuid().ToString();
+        var protector = new MfaSecretProtector(DataProtectionProvider.Create("tests"));
+        var userId = Guid.NewGuid();
+
+        using (var seed = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            seed.Users.Add(new User { Id = userId, Email = "empty@acme.com", MfaEnabled = false, MfaSecret = string.Empty });
+            await seed.SaveChangesAsync();
+        }
+
+        using (var run = TestDbContextFactory.Create(Guid.NewGuid(), dbName))
+        {
+            await DbInitializer.BackfillLegacyMfaSecretsAsync(run, protector, NullLogger.Instance, CancellationToken.None);
+        }
+
+        using var check = TestDbContextFactory.Create(Guid.NewGuid(), dbName);
+        (await check.Users.IgnoreQueryFilters().FirstAsync(u => u.Id == userId)).MfaSecret
+            .Should().BeEmpty("an empty secret carries nothing to protect; wrapping it would only obscure that it is empty");
+    }
+
+    /// <summary>
+    /// Test double whose <see cref="Protect"/> deliberately returns a payload wider than
+    /// <see cref="UserConfiguration.MfaSecretMaxLength"/>, so the back-fill's boot-safety skip branch is
+    /// reachable. A real <see cref="MfaSecretProtector"/> cannot produce one from any legacy-width input.
+    /// </summary>
+    private sealed class OverExpandingProtector : IFieldProtector
+    {
+        public string Protect(string plaintext) => new('x', UserConfiguration.MfaSecretMaxLength + 1);
+
+        public string Unprotect(string storedValue) => storedValue;
+
+        public bool IsProtected(string storedValue) => false;
     }
 
     private static AuthService CreateAuthService(

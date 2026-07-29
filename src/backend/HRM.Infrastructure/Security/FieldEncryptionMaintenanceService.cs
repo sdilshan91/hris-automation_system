@@ -163,9 +163,12 @@ public sealed class FieldEncryptionMaintenanceService : IFieldEncryptionMaintena
         if (!db.Database.IsRelational())
             return 0;
 
+        // Empty is treated exactly like null — "no secret at all", nothing to protect. Counting it would put a
+        // row in this gauge that the back-fill deliberately never heals, i.e. permanent phantom noise. Kept in
+        // lock-step with the same filter in DbInitializer.BackfillLegacyMfaSecretsAsync.
         var secrets = await db.Users
             .IgnoreQueryFilters()
-            .Where(u => u.MfaSecret != null)
+            .Where(u => u.MfaSecret != null && u.MfaSecret != "")
             .Select(u => u.MfaSecret!)
             .ToListAsync(ct);
 

@@ -5,6 +5,7 @@ using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Notifications;
+using HRM.Infrastructure.Persistence.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -345,18 +346,48 @@ public static class DbInitializer
     public static async Task BackfillLegacyMfaSecretsAsync(
         AppDbContext db, IFieldProtector protector, ILogger logger, CancellationToken ct)
     {
+        // Empty is treated exactly like null — "no secret at all". Protecting "" would replace a visibly-empty
+        // value with an opaque blob that merely decrypts back to "", obscuring the anomaly and counting it as
+        // "healed" while healing nothing. Kept in lock-step with the same filter in
+        // FieldEncryptionMaintenanceService.CountLegacyPlaintextMfaSecretsAsync so the gauge and the back-fill
+        // never disagree about which rows are in scope.
         var mfaUsers = await db.Users
             .IgnoreQueryFilters()
-            .Where(u => u.MfaSecret != null)
+            .Where(u => u.MfaSecret != null && u.MfaSecret != "")
             .ToListAsync(ct);
 
         var upgraded = 0;
+        var skippedTooLong = 0;
         foreach (var user in mfaUsers)
         {
             if (protector.IsProtected(user.MfaSecret!))
                 continue;
 
-            user.MfaSecret = protector.Protect(user.MfaSecret!);
+            var protectedValue = protector.Protect(user.MfaSecret!);
+
+            // Boot-safety guard. This runs during application startup, so an over-long value must NOT be
+            // allowed to reach SaveChanges: Postgres would throw "value too long for type character
+            // varying(512)" and take the whole service down on boot — turning a single malformed row into a
+            // total outage. Skipping instead leaves that one secret plaintext (no worse than before this
+            // back-fill existed) while the service starts, and the row stays visible in the encryption report's
+            // MfaSecretsLegacyPlaintext count, so it is degraded-and-observable rather than silent.
+            //
+            // Expected to be unreachable in practice: legacy plaintext predates the column widening (200 -> 512,
+            // migration 20260708055825) so it is <= 200 chars, which protects to ~370. The guard exists because
+            // that is an inference about historical data, not something the code can verify.
+            if (protectedValue.Length > UserConfiguration.MfaSecretMaxLength)
+            {
+                logger.LogError(
+                    "US-PLT-005: cannot upgrade legacy MFA secret for user {UserId} — the protected payload is "
+                    + "{ActualLength} chars, over the {MaxLength}-char users.mfa_secret column. Left as legacy "
+                    + "plaintext so startup can continue; it remains counted by the encryption report. Widen the "
+                    + "column to heal this row.",
+                    user.Id, protectedValue.Length, UserConfiguration.MfaSecretMaxLength);
+                skippedTooLong++;
+                continue;
+            }
+
+            user.MfaSecret = protectedValue;
             upgraded++;
         }
 
@@ -366,6 +397,13 @@ public static class DbInitializer
             logger.LogInformation(
                 "US-PLT-005: upgraded {Count} legacy plaintext MFA secret(s) to encrypted-at-rest storage "
                 + "(idempotent back-fill).", upgraded);
+        }
+
+        if (skippedTooLong > 0)
+        {
+            logger.LogWarning(
+                "US-PLT-005: {Count} legacy MFA secret(s) could not be upgraded because the protected payload "
+                + "exceeds the column width. See the preceding errors.", skippedTooLong);
         }
     }
 

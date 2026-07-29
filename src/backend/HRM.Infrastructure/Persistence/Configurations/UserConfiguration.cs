@@ -6,6 +6,15 @@ namespace HRM.Infrastructure.Persistence.Configurations;
 
 public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 {
+    /// <summary>
+    /// Storage width of <c>users.mfa_secret</c>. Exposed as a constant because the US-PLT-005 legacy back-fill
+    /// (<c>DbInitializer.BackfillLegacyMfaSecretsAsync</c>) must reject an over-long protected payload BEFORE
+    /// writing it — that back-fill runs at application startup, so an unguarded overflow would surface as
+    /// <c>value too long for type character varying(512)</c> during boot and take the whole service down.
+    /// Keep this and the <see cref="Configure"/> mapping in lock-step; they must never drift.
+    /// </summary>
+    public const int MfaSecretMaxLength = 512;
+
     public void Configure(EntityTypeBuilder<User> builder)
     {
         builder.ToTable("users");
@@ -47,7 +56,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // US-AUTH-005 NFR-2: stores the Data-Protection-encrypted TOTP secret (a ~32-byte secret protects to
         // several hundred chars). Widened from 200 to 512 to hold the protected payload (legacy plaintext fits too).
         builder.Property(u => u.MfaSecret)
-            .HasMaxLength(512);
+            .HasMaxLength(MfaSecretMaxLength);
 
         builder.Property(u => u.MfaEnabled)
             .HasDefaultValue(false);
