@@ -31,19 +31,19 @@
 - [x] US-AUTH-002 — JWT token issuance and refresh token flow *(scaffold impl exists)*
 - [x] US-AUTH-003 — User logout and token invalidation *(scaffold impl exists)*
 - [x] US-AUTH-004 — Password reset flow *(scaffold impl exists)*
-- [~] US-AUTH-005 — Multi-factor authentication (TOTP) *(implemented; PR #1 open)*
+- [x] US-AUTH-005 — Multi-factor authentication (TOTP) *(shipped; `ITotpService` + enroll/verify/challenge live. **Deferred AC:** challenge not rate-limited; MFA secret still stored plaintext → US-PLT-005 AC-1)*
 - [x] US-AUTH-006 — Role-based access control (RBAC) per tenant *(PR #2 open)*
 - [x] US-AUTH-007 — Tenant resolution from subdomain *(PR #5 open)*
 - [x] US-AUTH-008 — Cross-tenant user switching *(merged, PR #6)*
 - [x] US-AUTH-009 — Session management and concurrent session limits *(PR #7)*
 - [x] US-AUTH-010 — Account lockout after failed attempts *(PR #8)*
-> **Enterprise SSO (Microsoft Entra ID) epic — CR-AUTH-001.** PR #112 landed a **working end-to-end POC** (challenge→callback→id_token validation→fail-closed isolation→match/JIT→app JWT + FE). Reconciled status, live test results, and remaining-work checklist: **[SSO-EPIC-STATUS-AND-TODO.md](authentication/SSO-EPIC-STATUS-AND-TODO.md)**. Gated on `PlanFeatureFlags.Sso`; stays feature-flagged off in prod until 012 (DB-backed isolation) lands per BR-5.
-- [~] US-AUTH-011 — Entra OIDC authentication foundation *(**POC built, PR #112**: challenge + callback + code-exchange + full id_token validation in `EntraSsoService`; live-verified AC-1/AC-2/AC-5/AC-7. Prod form gated on 012/013-DB)*
-- [ ] US-AUTH-012 — Per-tenant SSO configuration *(**REAL GAP** — allow-list still in appsettings; move to DB-backed `TenantAuthSettings`. The genuine next build)*
-- [~] US-AUTH-013 — Tenant-scoped tid/domain validation & isolation *(**logic built, PR #112**: `CheckIsolation` + custom per-tid issuer validator, fail-closed; config-driven. DB form delivered by 012; **Must Have** — gates 011 to prod)*
-- [~] US-AUTH-014 — User matching, account linking & JIT provisioning *(**built, PR #112**: `AuthService.SsoSignInAsync` — oid→email bootstrap→JIT)*
-- [~] US-AUTH-015 — "Sign in with Microsoft" frontend *(**built, PR #112**: button + `sso-callback` route + auth wiring. Per-tenant gating + sso_only UX land with 012/016)*
-- [ ] US-AUTH-016 — SSO enforcement, break-glass & admin-consent onboarding *(**REAL GAP** — no enforcement_mode/break-glass/admin-consent yet)*
+> **Enterprise SSO (Microsoft Entra ID) epic — CR-AUTH-001.** PR #112 landed a **working end-to-end POC** (challenge→callback→id_token validation→fail-closed isolation→match/JIT→app JWT + FE). Reconciled status, live test results, and remaining-work checklist: **[SSO-EPIC-STATUS-AND-TODO.md](authentication/SSO-EPIC-STATUS-AND-TODO.md)**. Gated on `PlanFeatureFlags.Sso`. **EPIC COMPLETE (2026-07-28)** — 011/013/014/015 (#112) + 012 (#444) + 016 (#446); the BR-5 prod gate is satisfied (DB-backed per-tenant isolation shipped). Remaining SSO work is **test-ledger only**: the 5 `[b]` TCs in `TEST-STATUS.md` were blocked on "not implemented" and need a re-run.
+- [x] US-AUTH-011 — Entra OIDC authentication foundation *(**PR #112** challenge + callback + code-exchange + full id_token validation in `EntraSsoService`; live-verified AC-1/AC-2/AC-5/AC-7. Prod form completed by 012/013-DB. Structured SSO failure audit events → ISSUE-328 RESOLVED (PR #450); dead `User.Read` scope dropped (ISSUE-329). TCs authored under ISSUE-325.)*
+- [x] US-AUTH-012 — Per-tenant SSO configuration *(**SHIPPED — PR #444**: `Tenant.sso_enabled`/`allowed_entra_tenant_ids`/`allowed_email_domains`/`jit_enabled`/`jit_default_role`/`enforcement_mode` + EF migration `AddTenantSsoSettings`; `403 sso_not_entitled` entitlement gate; validators; `sso_config_updated` audit + per-tenant `SsoSettingsSnapshot` cache; FE tenant-admin SSO page + 27 Karma specs; 12 IEEE-829 TCs)*
+- [x] US-AUTH-013 — Tenant-scoped tid/domain validation & isolation *(**PR #112** `CheckIsolation` + custom per-tid issuer validator, fail-closed; **DB-backed form delivered by 012 (#444)** — allow-list now reads `TenantAuthSettings`, not appsettings)*
+- [x] US-AUTH-014 — User matching, account linking & JIT provisioning *(**PR #112**: `AuthService.SsoSignInAsync` — oid→email bootstrap→JIT; JIT now gated by the per-tenant `jit_enabled`/`jit_default_role` from 012)*
+- [x] US-AUTH-015 — "Sign in with Microsoft" frontend *(**PR #112** button + `sso-callback` route + auth wiring; **per-tenant gating + `sso_only` UX delivered with 012 (#444) / 016 (#446)**)*
+- [x] US-AUTH-016 — SSO enforcement, break-glass & admin-consent onboarding *(**SHIPPED — PR #446**: `enforcement_mode` login enforcement (`SsoLoginEnforcementPostgresTests`), `BreakGlassLoginCommand` + `IBreakGlassNotificationService`, admin-consent onboarding URL. Break-glass MFA-path audit gap → ISSUE-327 RESOLVED (PR #447). Redirect model recorded in the 2026-07-28 SSO multi-tenant ADR.)*
 
 ## 2. Core HR (12 stories)
 - [x] US-CHR-001 — Add new employee with personal information *(PR #11)*
@@ -58,7 +58,7 @@
 - [x] US-CHR-010 — Bulk employee import via CSV/Excel *(PR #20)*
 - [x] US-CHR-011 — Employee reporting structure *(PR #21)*
 - [x] US-CHR-012 — Custom fields per tenant *(PR #22)*
-- [ ] US-CHR-013 — Employee FTE & work arrangement *(location-calendar epic; spec 2026-07-14)*
+- [x] US-CHR-013 — Employee FTE & work arrangement *(**SHIPPED — CAL-6, PR #316**: `Employee.Fte` + proration (closes US-LV-002 AC-K1) · `FteScaledOvertimeBase` (default off) · `Employee.WorkArrangement` + Remote geofence exemption + FE employee-form. TCs TC-CHR-326/327/328/329 + TC-ATT-152 authored; **not yet executed** — see TEST-STATUS.)*
 
 ## 3. Leave Management (12 stories)
 - [x] US-LV-001 — Configure leave types per tenant *(PR #23)*
@@ -85,7 +85,7 @@
 - [x] US-ATT-008 — Late arrival and early departure tracking *(PR #46)*
 - [x] US-ATT-009 — Attendance integration with payroll *(PR #47)*
 - [x] US-ATT-010 — Attendance dashboard and reports *(PR #48)*
-- [ ] US-ATT-011 — Location-aware working calendar & location-scoped attendance policy *(location-calendar epic; spec 2026-07-14)*
+- [x] US-ATT-011 — Location-aware working calendar & location-scoped attendance policy *(**SHIPPED — CAL-1/4a/4b/5, PRs #310/#313/#314/#315**: AC-1+AC-2 `Location.DefaultShiftId` + four-tier `ShiftScheduleResolver` (Employee→Location→Tenant→Mon–Fri) · AC-3 `AttendanceSettings.LocationId` + `AttendancePolicyResolver` + tenant/per-location CRUD · AC-4/FR-5 effective-dated holiday-exclusion payroll denominator. TCs TC-ATT-145..156 + ISO-014/015/016 authored; **not yet executed** — see TEST-STATUS. Residual: BUG-287 (default-shift delete guard).)*
 
 ## 5. Recruitment (10 stories) — COMPLETE ✅
 - [x] US-REC-001 — Create and publish job vacancy *(PR #49)*
@@ -114,21 +114,21 @@
 
 ### QA-Surfaced Dev Backlog (from 2026-06-30 isolation + FE testing — fixes/implementations needed to unblock tests)
 > These are dev tasks (fixes or unbuilt features) found during the P3 testing campaign. Full detail in [docs/QA/TEST-FINDINGS.md](../QA/TEST-FINDINGS.md). Hand to a fix cycle / `/implement-story`; not auto-picked.
-- [ ] **FIX BUG-003 (CRIT, systemic cross-tenant)** — validate the JWT `tenant_id` claim against the subdomain-resolved tenant (root `TenantResolutionMiddleware` / US-AUTH-007). Unblocks/clears the cross-tenant read+write isolation arms across every module.
-- [ ] **FIX BUG-107 (HIGH, security)** — impersonation destructive-op blocklist misses `ForcePasswordReset`/`DeactivateUser`/`AssignUserRoles`/`EditUserRoles`; they execute during a full SystemAdmin impersonation. Add them to the hard-block list.
-- [ ] **FIX BUG-106 (MED)** — suspended-tenant Tenant Admin/Owner not exempt from the 451 gate → can't reach the read-only suspension landing/export (AC-2 unmet).
-- [ ] **FIX BUG-104 + ISSUE-217 (HIGH/MED, one root)** — FE↔BE route mismatch `/tenant/exports` (FE) vs `/tenant/data-exports` (BE); breaks the Data Export UI and the terminating-tenant grace export allowlist.
-- [ ] **FIX FE render/contract bugs from the sweep** — BUG-097 (no silent session-restore → reload logs out), BUG-099 (Employee Directory render crash), BUG-100 (Custom Fields render crash), BUG-101/102 (carry-forward NaN / apply-leave empty dropdown), BUG-098 (leave-type null-color null-deref). See TEST-FINDINGS.md BUG-096..104.
-- [ ] **BUILD deferred Admin monitoring KPIs** (TC-ADM-002-14..18 `[DEFERRED]`) — aggregate error-rate %, P95 latency, SLA-uptime %, storage/API-call/email usage gauges. Unblocks those TCs.
-- [ ] **FIX systemic a11y classes (from P3c-FE deep-a11y, 2026-06-30/07-01)** — these recur on EVERY module's pages, so each is one shared fix:
-  - **BUG-096** — `#a3a3a3` (Tailwind `neutral-400`) muted text + green trend-pill fail WCAG AA contrast app-wide → darken the design token(s).
-  - **BUG-109** — **every hand-rolled overlay/drawer/modal** (payroll run, attendance regularization, etc.) asserts `aria-modal` but doesn't make the background inert, trap focus, move initial focus, or close on Esc → adopt Angular CDK `Dialog`/`overlay` (focus-trap + `cdkTrapFocus` + inert background) for all overlays.
-  - **BUG-108** — focusable `aria-hidden` file inputs nested in `role="button"` drop-zones (upload controls) → `tabindex="-1"` on the hidden input / unnest.
-  - **BUG-110** — `role="tablist"` containing non-`tab` children (statutory fiscal-year selector class) → correct ARIA roles.
-  - **BUG-111** — dynamic char-counters lack `aria-live`/`role="status"` → add live region.
-  - **BUG-112** — `overflow-x-auto` scroll regions lack `tabindex="0"` → make keyboard-scrollable.
-- [ ] **BUILD/FIX Core HR functional gaps (P3c-functional, 2026-07-01)** — **BUG-113 HIGH** (employee Create/Edit API has no `LocationId` → employee↔location linking impossible, per-location count always 0, deactivation-guard is dead code — wire `LocationId` into `CreateEmployeeCommand`/`UpdateEmployeeProfileRequest`), **BUG-114 MED** (tenant storage quota `MaxStorageGb` never enforced — no usage sum/gate), ~~**ISSUE-218 MED**~~ ✅ **DONE via DF-8 (#410)** — reporting-manager/chain now exposed on `GET /employees/{id}` (BUG-113/114 remain open).
-- [ ] **(tracked above) US-PLT-002 RLS** — unblocks the 19 `[DEFERRED]` RLS/at-rest-encryption isolation TCs; env precondition now met.
+>
+> **⚠ RECONCILED 2026-07-28** — this section was badly stale: it listed 18 items as open that the #119–#382 campaigns had already fixed. Each was re-checked against its finding status in `TEST-FINDINGS.md`. **Only 2 items remain open.** The cleared items are kept below (struck through, with their closing PR) so the section stays auditable rather than silently shrinking.
+
+**▶ STILL OPEN (2):**
+- [ ] **FIX BUG-098 (MED, FE)** — `getContrastTextColor(hex)` in `leave-type.models.ts:127-128` calls `.replace('#','')` with no null guard; `leave_types.color` is nullable (8 of 13 null for acme) → `TypeError` per null-color row on the Leave-types config page **and** the employee leave-application picker. One-line null-coalesce + a spec arm feeding `color: null`. US-LV-001 / US-LV-003.
+- [ ] **BUILD deferred Admin monitoring KPIs** (TC-ADM-002-14..18 `[DEFERRED]`) — aggregate error-rate %, P95 latency, SLA-uptime %, storage/API-call/email usage gauges. **Blocked on US-PLT-004** (the metrics don't exist until the OTel meters + LGTM backend do); US-ADM-002 currently returns hardcoded nulls.
+
+**✅ CLEARED (verified against TEST-FINDINGS.md, 2026-07-28):**
+- ~~BUG-003 (CRIT cross-tenant JWT-vs-subdomain)~~ RESOLVED PR #119 — systemic `TenantAccessGuardMiddleware`. *(Formal closure still wants a live `/verify-fix --iso` re-run — parked as a verify task, not a build task.)*
+- ~~BUG-107 (HIGH impersonation blocklist)~~ RESOLVED PR #125 · ~~BUG-106 (suspended-tenant 451 exemption)~~ RESOLVED PR #130
+- ~~BUG-104 + ISSUE-217 (`/tenant/exports` route mismatch)~~ RESOLVED PR #146 / #331
+- ~~BUG-097 (session restore)~~ #260 · ~~BUG-099 (Directory crash)~~ #132 · ~~BUG-100 (Custom Fields crash)~~ `46d7ebb2` · ~~BUG-101 (carry-forward NaN)~~ #159 · ~~BUG-102 (apply-leave dropdown)~~ #145
+- ~~Systemic a11y classes~~ — BUG-096 RESOLVED #368 (contrast token); BUG-108/109/110/111/112 RESOLVED #295. *(Residual: **ISSUE-296** — ~16 hand-rolled `role="dialog"` overlays still lack a shared focus-trap wrapper; tracked in the P7 tail, not here.)*
+- ~~BUG-113 (employee↔location `LocationId`)~~ RESOLVED #261 · ~~BUG-114 (`MaxStorageGb` quota)~~ RESOLVED #332 · ~~ISSUE-218 (reporting chain)~~ RESOLVED via DF-8 #410
+- ~~US-PLT-002 RLS~~ — code COMPLETE, policies proven on real Postgres (Docker + native), committed **OFF**; the 19 `[DEFERRED]` isolation TCs are unblocked whenever the flag is flipped. Prod flip is an **ops** step, not a dev task.
 
 ## 6. Payroll (13 stories) — COMPLETE ✅
 - [x] US-PAY-001 — Configure salary structure and components *(PR #63)*
@@ -205,12 +205,29 @@
 ---
 
 ## Tally
+
+> **RECONCILED 2026-07-28** (counts re-derived mechanically from the per-module rows above, which remain the
+> source of truth). Prior tally text claimed "In progress: 1 / 5 net-new remain" while 6 rows sat at `[~]` and
+> the SSO + location-calendar epics had shipped unrecorded. Current mechanical count: **`[x]` 120 · `[ ]` 4 · `[~]` 1**.
+
+**▶ Everything remaining, in one place:**
+| # | Item | Kind | Blocked on |
+|---|------|------|-----------|
+| 1 | **US-PLT-005** — encryption-at-rest for MFA/TOTP secret (AC-1, **HIGH**) + tenant SMTP/IdP secrets (AC-2) | net-new story | — *(next build)* |
+| 2 | **US-ADM-012** — plan/module governance enforcement (403 disabled-module APIs, usage limits) | net-new story | — |
+| 3 | **US-PLT-004** — observability NFRs (LGTM backend · Serilog→OTel sink · `HRM.*` meters · health live/ready) | net-new story | — *(unblocks US-ADM-002 KPIs)* |
+| 4 | **US-PRF-011** — performance calibration workspace | net-new story | — *(unblocks US-PRF-010 dead-end)* |
+| 5 | **US-PLT-002** — RLS prod flip | **ops**, not dev | user's deploy step (`Rls/README.md` §3b) |
+| 6 | ~40 `[x]` stories with **unbuilt ACs** | deferred ACs | see the Deferred-AC table below |
+| 7 | P6 deferred FE (ISSUE-271/272/267), P7 LOW tail (~150 LOW + 20 ENH), BUG-098 | finding-driven | `docs/QA/TEST-FINDINGS.md` |
+
 - Total stories: **105 spine-done** + **10 net-new backlog** (reconciliation 2026-07-06) = **115 tracked**.
 - Done spine: **103** — **Authentication (10)**, **Core HR US-CHR-001..012**, **Leave US-LV-001..012**, **Attendance US-ATT-001..010**, **Recruitment US-REC-001..010**, **Payroll US-PAY-001..012** (PR #63–#74), **US-PLT-001** (#50), **Performance US-PRF-001..010** (#75–#84), **Admin Console US-ADM-001..010** (#85–#94), **Onboarding US-ONB-001..006** (#95–#100), **Notifications & Audit US-NTF-001..005** (#101–#105), **Reports & Analytics US-RPT-001..005** (#106–#110).
   - ⚠️ **BUT** ~40 of these `[x]` stories carry **unbuilt ACs** — see the **Deferred-AC Reconciliation** table below. They are not fully done; the spine is.
-- In progress: **1** (US-PLT-002 RLS Phase 4 deferred).
-- **Net-new backlog (2026-07-06 reconciliation): 10 → 5 shipped 2026-07-10, 5 remain.** SHIPPED: US-ADM-011 (#238-240), US-TRN-EPIC/001/002/003 (#241-243). REMAINING `[ ]`: US-NTF-006 (full, next), US-ADM-012 / US-PRF-011 / US-PLT-004 / US-PLT-005 (stubs).
-- **Recommended next build order (updated 2026-07-11):** US-NTF-006 (delivery layer — unblocks the most deferred ACs) → US-PLT-005 (MFA-secret encryption, HIGH) → US-PLT-002 (RLS) → US-PRF-011/US-ADM-012/US-PLT-004.
+- In progress: **1** (US-PLT-002 — RLS code complete + proven, committed OFF; only the **ops** prod flip remains).
+- **Net-new backlog (2026-07-06 reconciliation): 10 → 6 shipped, 4 remain.** SHIPPED: US-ADM-011 (#238-240), US-TRN-EPIC/001/002/003 (#241-243), US-NTF-006 (8 phases), US-PLT-006 (#448/#449). REMAINING `[ ]`: US-PLT-005 / US-ADM-012 / US-PLT-004 / US-PRF-011.
+- **Also shipped since the last tally (were never recorded here):** the **SSO epic** US-AUTH-011..016 (#112/#444/#446/#447/#450) and the **location-calendar epic** US-ATT-011 + US-CHR-013 (CAL-1..8, #310-#318).
+- **Recommended next build order (updated 2026-07-28):** **US-PLT-005** (plaintext TOTP secret is the highest-severity open item in the codebase) → **US-ADM-012** (self-contained; US-ADM-009 config already exists, just unenforced) → **US-PLT-004** (unblocks the US-ADM-002 KPI TCs) → **US-PRF-011**. Then the finding-driven tail (BUG-098, P6 FE, P7 LOW).
 
 ## Deferred-AC Reconciliation (2026-07-06) — `[x]`-done stories with UNBUILT acceptance criteria
 
