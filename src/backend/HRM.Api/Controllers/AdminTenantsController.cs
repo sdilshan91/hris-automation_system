@@ -130,4 +130,34 @@ public sealed class AdminTenantsController : ControllerBase
 
         return Ok(ApiResponse.Ok("User account unlocked successfully."));
     }
+
+    /// <summary>
+    /// PUT /api/v1/system/tenants/{id}/plan — move an existing tenant onto a different subscription plan
+    /// (ISSUE-341). Writes <c>Tenant.PlanId</c>, recomputes <c>Tenant.EnabledModules</c> from the target plan
+    /// (the same derivation as provisioning), invalidates the tenant's resolution cache, and audits
+    /// "Tenant.PlanChanged". Returns the recomputed entitlement snapshot.
+    ///
+    /// <para>Authorization is <c>Plan.Manage</c> — the SystemAdmin-only gate the plan-management routes
+    /// (<c>AdminPlansController</c>) already use, chosen over this controller's <c>Tenant.Provision</c> because
+    /// this is a plan-management action; read-only System Support (which holds <c>Plan.View</c> only) is denied.
+    /// 400 when the target plan is unknown/inactive; 403 for the system tenant (BR-2); 404 when the tenant is
+    /// absent.</para>
+    /// </summary>
+    [HttpPut("{id:guid}/plan")]
+    [RequirePermission("Plan.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<ChangeTenantPlanResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ChangePlan(
+        Guid id, [FromBody] ChangeTenantPlanRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new ChangeTenantPlanCommand(id, request.PlanCode), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ChangeTenantPlanResultDto>.Ok(result.Value!));
+    }
 }

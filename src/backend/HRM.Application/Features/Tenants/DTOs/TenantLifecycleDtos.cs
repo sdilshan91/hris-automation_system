@@ -32,6 +32,12 @@ public sealed record TenantLifecycleResultDto(
 public sealed record ChangeTenantPlanInput(Guid TenantId, string PlanCode);
 
 /// <summary>
+/// HTTP request body for <c>PUT /api/v1/system/tenants/{id}/plan</c> (ISSUE-341) — the tenant id comes from the
+/// route, only the target plan code is in the body.
+/// </summary>
+public sealed record ChangeTenantPlanRequest(string PlanCode);
+
+/// <summary>
 /// Result of a tenant plan change (ISSUE-341). Returns the recomputed entitlement snapshot so the System Admin
 /// UI can reflect the tenant's new modules without a second round-trip.
 /// </summary>
