@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard, noAuthGuard, permissionGuard, roleGuard } from './core/auth/auth.guard';
 import { mfaChallengeGuard, mfaEnrollGuard } from './core/auth/mfa.guard';
 import { tenantAvailabilityGuard } from './core/tenant/tenant.guard';
+import { moduleGuard } from './core/tenant/module.guard';
 import { AuthLayoutComponent } from './layouts/auth-layout/auth-layout.component';
 import { MainLayoutComponent } from './layouts/main-layout/main-layout.component';
 
@@ -26,7 +27,8 @@ export const appRoutes: Routes = [
   // so external applicants can browse open vacancies and apply (NFR-2).
   {
     path: 'careers',
-    canActivate: [tenantAvailabilityGuard],
+    // US-ADM-012 AC-2: the public careers page is its own gateable module.
+    canActivate: [tenantAvailabilityGuard, moduleGuard('PublicCareersPage')],
     loadChildren: () =>
       import('./features/recruitment/careers.routes').then(
         (m) => m.CAREERS_ROUTES
@@ -39,7 +41,9 @@ export const appRoutes: Routes = [
   // the tenantInterceptor, mirroring the public careers wiring above.
   {
     path: 'portal',
-    canActivate: [tenantAvailabilityGuard],
+    // US-ADM-012 AC-2: candidate portal is part of the public careers surface.
+    // NOTE: module mapping (PublicCareersPage vs Recruitment) flagged OUT-OF-LANE.
+    canActivate: [tenantAvailabilityGuard, moduleGuard('PublicCareersPage')],
     loadChildren: () =>
       import('./features/recruitment/portal.routes').then(
         (m) => m.PORTAL_ROUTES
@@ -332,6 +336,7 @@ export const appRoutes: Routes = [
             (m) => m.REPORTS_ROUTES
           ),
         canActivate: [
+          moduleGuard('Reporting'),
           roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager', 'Manager']),
         ],
       },
@@ -403,6 +408,7 @@ export const appRoutes: Routes = [
         // class). Management actions (create/edit/status/complete) are permission-gated
         // at the API and hidden in the UI for non-Manage users.
         canActivate: [
+          moduleGuard('Training'),
           permissionGuard([
             'Training.View.Own',
             'Training.View.All',
@@ -422,6 +428,7 @@ export const appRoutes: Routes = [
         // the UI). Gate the route by the SAME permission set as the nav item so
         // visibility == access (ISSUE-210 class), not admin roles.
         canActivate: [
+          moduleGuard('Benefits'),
           permissionGuard([
             'Benefits.View.Own',
             'Benefits.View.All',
@@ -437,6 +444,7 @@ export const appRoutes: Routes = [
             (m) => m.LEAVE_MANAGEMENT_ROUTES
           ),
         canActivate: [
+          moduleGuard('Leave'),
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
@@ -448,6 +456,7 @@ export const appRoutes: Routes = [
             (m) => m.LEAVE_REQUEST_ROUTES
           ),
         canActivate: [
+          moduleGuard('Leave'),
           roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
         ],
       },
@@ -459,6 +468,7 @@ export const appRoutes: Routes = [
             (m) => m.ATTENDANCE_ROUTES
           ),
         canActivate: [
+          moduleGuard('Attendance'),
           roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
         ],
       },
@@ -473,6 +483,7 @@ export const appRoutes: Routes = [
             './features/recruitment/components/careers/internal-vacancy/internal-vacancy.component'
           ).then((m) => m.InternalVacancyComponent),
         canActivate: [
+          moduleGuard('Recruitment'),
           roleGuard([
             'Employee',
             'Manager',
@@ -491,6 +502,7 @@ export const appRoutes: Routes = [
             (m) => m.RECRUITMENT_ROUTES
           ),
         canActivate: [
+          moduleGuard('Recruitment'),
           roleGuard(['Recruiter', 'HR Officer', 'HR Manager', 'Tenant Admin']),
         ],
       },
@@ -502,6 +514,7 @@ export const appRoutes: Routes = [
             (m) => m.PAYROLL_ROUTES
           ),
         canActivate: [
+          moduleGuard('Payroll'),
           roleGuard(['Tenant Admin', 'HR Officer']),
         ],
       },
@@ -513,6 +526,7 @@ export const appRoutes: Routes = [
             (m) => m.PERFORMANCE_ROUTES
           ),
         canActivate: [
+          moduleGuard('Performance'),
           roleGuard(['Manager', 'HR Officer', 'HR Manager', 'Tenant Admin']),
         ],
       },
@@ -527,6 +541,7 @@ export const appRoutes: Routes = [
             (m) => m.MY_REVIEW_ROUTES
           ),
         canActivate: [
+          moduleGuard('Performance'),
           roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
         ],
       },
@@ -541,6 +556,7 @@ export const appRoutes: Routes = [
             (m) => m.MY_PAYSLIPS_ROUTES
           ),
         canActivate: [
+          moduleGuard('Payroll'),
           roleGuard(['Employee', 'Manager', 'HR Officer', 'Tenant Admin']),
         ],
       },
@@ -573,6 +589,7 @@ export const appRoutes: Routes = [
       // caller's identity + tenant). FR-1.
       {
         path: 'onboarding/my-checklist',
+        canActivate: [moduleGuard('Onboarding')],
         loadComponent: () =>
           import(
             './features/onboarding/components/my-checklist/my-checklist.component'
@@ -584,6 +601,7 @@ export const appRoutes: Routes = [
       // roleGuard; the backend scopes to the caller's identity + tenant.
       {
         path: 'onboarding/my-assets',
+        canActivate: [moduleGuard('Onboarding')],
         loadComponent: () =>
           import(
             './features/onboarding/components/my-assets/my-assets.component'
@@ -602,6 +620,7 @@ export const appRoutes: Routes = [
             (m) => m.OFFBOARDING_ROUTES
           ),
         canActivate: [
+          moduleGuard('Onboarding'),
           roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
         ],
       },
@@ -617,6 +636,7 @@ export const appRoutes: Routes = [
             './features/onboarding/components/exit-interview-analytics/exit-interview-analytics.component'
           ).then((m) => m.ExitInterviewAnalyticsComponent),
         canActivate: [
+          moduleGuard('Onboarding'),
           roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
         ],
       },
@@ -629,6 +649,7 @@ export const appRoutes: Routes = [
       // still applies and the backend scopes to the caller's identity + tenant.
       {
         path: 'exit-interview/:offboardingId',
+        canActivate: [moduleGuard('Onboarding')],
         loadComponent: () =>
           import(
             './features/onboarding/components/exit-interview-form/exit-interview-form.component'
@@ -642,6 +663,7 @@ export const appRoutes: Routes = [
             (m) => m.ONBOARDING_ROUTES
           ),
         canActivate: [
+          moduleGuard('Onboarding'),
           roleGuard(['Tenant Admin', 'HR Officer', 'HR Manager']),
         ],
       },

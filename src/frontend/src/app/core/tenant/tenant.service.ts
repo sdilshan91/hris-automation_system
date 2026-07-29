@@ -98,6 +98,14 @@ export class TenantService {
   /** Whether this is the system admin context */
   readonly isSystemContext = computed(() => this.tenantContext().isSystemContext);
 
+  /**
+   * Modules enabled for this tenant's plan (US-ADM-012 AC-2). Sourced from
+   * GET /api/v1/tenant/context (TenantContextResponse.EnabledModules). Consumed by
+   * moduleGuard / nav filtering via isModuleEntitled(), which fails OPEN — see
+   * module.guard.ts for the exact predicate (mirrors backend PlanModules).
+   */
+  readonly enabledModules = computed(() => this.tenantContext().enabledModules ?? []);
+
   /** Whether the resolved subdomain is valid for a tenant workspace */
   readonly isValidTenant = computed(() => this.tenantContext().isValid);
 

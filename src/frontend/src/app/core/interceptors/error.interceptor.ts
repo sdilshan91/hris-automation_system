@@ -98,6 +98,22 @@ function handleForbidden(
   const message =
     error.error?.message || "You don't have permission to perform this action.";
 
+  // US-ADM-012 AC-2: a disabled module's API returns 403 with code
+  // `module_not_entitled` in the standard ApiResponse envelope. This is NOT an
+  // authorization failure — the feature simply isn't in the tenant's plan — so show
+  // a clear "not included in your plan" message instead of the generic /forbidden
+  // redirect (which reads like the user lacks permission). Keyed off `code`, not the
+  // message string, so it stays robust to message wording.
+  if (error.error?.code === 'module_not_entitled') {
+    toastr.warning(
+      message !== "You don't have permission to perform this action."
+        ? message
+        : 'This feature is not included in your current plan.',
+      'Not in your plan'
+    );
+    return;
+  }
+
   // Tenant-specific forbidden messages
   if (message.includes('suspended') || message.includes('unavailable')) {
     toastr.error(message, 'Workspace Unavailable');
