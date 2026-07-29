@@ -34,6 +34,27 @@ public static class PlanModules
     public static bool IsValid(string module) => Set.Contains(module);
 
     /// <summary>
+    /// The ONE place that derives a TENANT's <c>EnabledModules</c> snapshot from the plan's module list
+    /// (US-ADM-009 FR-6). CoreHR is always enabled; the result is deduped and kept in canonical order. A plan
+    /// with no configured modules (null/empty) falls back to the full canonical set, so "no modules recorded on
+    /// the plan" means "not restricted" — exactly matching <see cref="IsModuleEnabled"/>'s empty-list rule and
+    /// the historical provisioning behaviour.
+    ///
+    /// <para>Extracted from <c>TenantProvisioningService.DeriveTenantModules</c> so provisioning (US-ADM-001),
+    /// the plan-edit sweep (ISSUE-342) and the tenant plan-change endpoint (ISSUE-341) all recompute a tenant's
+    /// entitlements identically — the derivation cannot drift between those three call sites.</para>
+    /// </summary>
+    public static List<string> DeriveTenantModules(IEnumerable<string>? planModules)
+    {
+        var list = planModules as ICollection<string> ?? planModules?.ToList();
+        if (list is null || list.Count == 0)
+            return All.ToList();
+
+        var enabled = new HashSet<string>(list, StringComparer.Ordinal) { CoreHr };
+        return All.Where(enabled.Contains).ToList();
+    }
+
+    /// <summary>
     /// The ONE place that answers "is <paramref name="module"/> enabled for a tenant holding
     /// <paramref name="tenantModules"/>?" — used by every entitlement gate so the semantics cannot drift
     /// between call sites (US-ADM-012 AC-1).

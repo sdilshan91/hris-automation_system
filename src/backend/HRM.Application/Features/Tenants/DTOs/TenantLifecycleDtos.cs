@@ -28,6 +28,19 @@ public sealed record TenantLifecycleResultDto(
     DateTime? TerminationScheduledAt,
     string EventType);
 
+/// <summary>Input for moving an existing tenant onto a different subscription plan (ISSUE-341).</summary>
+public sealed record ChangeTenantPlanInput(Guid TenantId, string PlanCode);
+
+/// <summary>
+/// Result of a tenant plan change (ISSUE-341). Returns the recomputed entitlement snapshot so the System Admin
+/// UI can reflect the tenant's new modules without a second round-trip.
+/// </summary>
+public sealed record ChangeTenantPlanResultDto(
+    Guid TenantId,
+    string Subdomain,
+    string PlanCode,
+    IReadOnlyList<string> EnabledModules);
+
 /// <summary>A single lifecycle-history row for the System Admin timeline (US-ADM-004 — lifecycle history view).</summary>
 public sealed record TenantLifecycleEventDto(
     Guid Id,

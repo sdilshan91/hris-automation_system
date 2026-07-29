@@ -634,6 +634,12 @@ public static class DependencyInjection
         // query filter + TenantInterceptor (no RLS — deferred platform work). The welcome-email send goes through
         // ITenantWelcomeEmailService, wired to RealTenantWelcomeEmailService as of US-NTF-006 Phase 2b (see below).
         services.AddScoped<ITenantProvisioningService, TenantProvisioningService>();
+
+        // ISSUE-342/ISSUE-341: shared invalidator for the subdomain-keyed tenant-resolution cache. Owns the ONE
+        // copy of the key format that TenantResolutionMiddleware writes, so lifecycle transitions, the plan-edit
+        // sweep and the tenant plan-change endpoint drop the same cache entry. IDistributedCache is optional
+        // (null when no Redis is configured) ⇒ no-op in that case.
+        services.AddScoped<ITenantResolutionCache, TenantResolutionCache>();
         // US-NTF-006 Phase 2b: real (informational) welcome-email delivery via INotificationDispatcher
         // (tenant_welcome_trial / tenant_welcome_active, SystemAnnouncements). No set-password token — a new owner
         // uses self-service Forgot Password. Never throws — a delivery failure cannot block provisioning.

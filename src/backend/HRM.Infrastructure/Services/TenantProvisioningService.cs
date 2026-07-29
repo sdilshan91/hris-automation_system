@@ -312,18 +312,12 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
     }
 
     /// <summary>
-    /// US-ADM-009 (FR-6): the tenant's enabled modules are derived from the chosen plan. CoreHR is always
-    /// enabled; the result is deduped and kept in canonical order. A legacy plan with no configured modules
-    /// falls back to the full canonical list so existing provisioning behaviour is preserved.
+    /// US-ADM-009 (FR-6): the tenant's enabled modules are derived from the chosen plan. Delegates to the shared
+    /// <see cref="PlanModules.DeriveTenantModules"/> so provisioning, the plan-edit sweep (ISSUE-342) and the
+    /// tenant plan-change endpoint (ISSUE-341) cannot diverge (CoreHR always on; empty plan ⇒ full canonical set).
     /// </summary>
     private static List<string> DeriveTenantModules(SubscriptionPlan plan)
-    {
-        if (plan.EnabledModules is null || plan.EnabledModules.Count == 0)
-            return PlanModules.All.ToList();
-
-        var enabled = new HashSet<string>(plan.EnabledModules) { PlanModules.CoreHr };
-        return PlanModules.All.Where(enabled.Contains).ToList();
-    }
+        => PlanModules.DeriveTenantModules(plan.EnabledModules);
 
     // ── Seeding helpers (reuse PermissionCatalog + the DbInitializer conventions) ──
 
