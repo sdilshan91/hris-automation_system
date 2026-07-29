@@ -366,4 +366,19 @@ describe('LeaveTypeFormComponent helpers (pure functions)', () => {
     expect(getContrastTextColor('#ffffff')).toBe('#000000');
     expect(getContrastTextColor('#f0f0f0')).toBe('#000000');
   });
+
+  // BUG-098 regression: `leave_types.color` is nullable and real tenants carry
+  // null-color rows (8 of 13 for acme at the time of the finding). Before the
+  // guard landed in #135 this threw `Cannot read properties of null (reading
+  // 'replace')` mid-render, aborting the row on the leave-types config page and
+  // the employee leave-application picker. The guard had no test pinning it, so
+  // it could have been refactored away silently — these arms are that pin.
+  it('getContrastTextColor should not throw on a null/undefined/blank color (BUG-098)', () => {
+    const { getContrastTextColor } = leaveTypeModels;
+    expect(() => getContrastTextColor(null)).not.toThrow();
+    expect(() => getContrastTextColor(undefined)).not.toThrow();
+    expect(getContrastTextColor(null)).toBe('#000000');
+    expect(getContrastTextColor(undefined)).toBe('#000000');
+    expect(getContrastTextColor('')).toBe('#000000');
+  });
 });
