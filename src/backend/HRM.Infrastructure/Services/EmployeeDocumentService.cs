@@ -225,9 +225,11 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
             return (null, null); // unlimited
 
         var limitBytes = limitGb * 1024L * 1024L * 1024L;
-        // Cumulative usage across the tenant's non-deleted documents (the global query filter scopes to tenant).
-        var currentUsage = await _dbContext.EmployeeDocuments
-            .SumAsync(d => (long?)d.FileSizeBytes, cancellationToken) ?? 0L;
+        // ISSUE-340: cumulative usage across ALL four size-bearing tables (employee documents, HR-report exports,
+        // payroll-report exports, payslip PDFs) via the shared TenantStorageUsage helper — not just employee
+        // documents — so the quota gate and the AC-4 usage gauge read the same total. The global query filter
+        // scopes every table to the current tenant.
+        var currentUsage = await TenantStorageUsage.ComputeBytesAsync(_dbContext, cancellationToken);
         var projected = currentUsage + incomingBytes;
 
         if (projected > limitBytes)

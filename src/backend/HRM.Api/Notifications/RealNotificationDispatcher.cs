@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Api.Jobs;
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Notifications;
@@ -155,6 +156,48 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
                     case DeliveryDecisionKind.DeferredUntilQuietHoursEnd:
                         deferUntilUtc = decision.DeferUntilUtc;
                         break;
+                }
+            }
+
+            // US-ADM-012: enforce the max_email_sends_per_month plan limit. Count this tenant's emails already
+            // SENT this calendar month and block a new send once the effective cap is reached (override > plan;
+            // null = unlimited). Mandatory security emails bypass the cap — a hit marketing/notification quota must
+            // never suppress a password-reset. A blocked email writes a terminal Suppressed row (policy drop, not a
+            // failure) carrying the machine code, and is NOT enqueued.
+            if (!isMandatory)
+            {
+                var now = DateTime.UtcNow;
+                var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+                var planValue = await db.SubscriptionPlans
+                    .AsNoTracking()
+                    .Where(p => p.Code == tenant.PlanId)
+                    .Select(p => (long?)p.MaxEmailSendsPerMonth)
+                    .FirstOrDefaultAsync(ct);
+                var overrides = await db.PlanLimitOverrides
+                    .AsNoTracking()
+                    .Where(o => o.TenantId == tenantId)
+                    .ToListAsync(ct);
+                var resolvedLimit = PlanLimitResolver.Resolve(
+                    PlanLimitKeys.MaxEmailSendsPerMonth, planValue, overrides, now);
+                long? emailCap = resolvedLimit.Source == PlanLimitResolver.LimitSource.Override
+                    ? resolvedLimit.Value
+                    : planValue;
+
+                if (emailCap is { } cap)
+                {
+                    var sentThisMonth = await db.NotificationDeliveries
+                        .CountAsync(d => d.Channel == NotificationDeliveryChannel.Email
+                            && d.Status == NotificationDeliveryStatus.Sent
+                            && d.SentAt >= monthStart, ct);
+                    if (sentThisMonth >= cap)
+                    {
+                        await WriteDeliveryAsync(db, tenantId, request.RecipientUserId, notificationType, eventKey,
+                            recipientEmail, null, NotificationDeliveryStatus.Suppressed, "email_send_limit_reached", ct);
+                        _logger.LogWarning(
+                            "RealNotificationDispatcher: monthly email cap ({Cap}) reached for tenant {TenantId}; " +
+                            "email {EventKey} suppressed.", cap, tenantId, eventKey);
+                        return;
+                    }
                 }
             }
 

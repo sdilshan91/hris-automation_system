@@ -322,6 +322,59 @@ public sealed class TenantUserManagementIntegrationTests
         second.ErrorCode.Should().Be("plan_limit_reached");
     }
 
+    // ── ISSUE-338: the invite path resolves the cap via PlanLimitResolver (override > plan > snapshot), ──
+    //    not the raw Tenant.MaxEmployees snapshot. Each arm below FAILS if the check reverts to the raw snapshot.
+
+    [Fact]
+    public async Task Invite_OverrideRaisesCeilingAboveSnapshot_IsAllowed()
+    {
+        // ISSUE-338 (the user-visible bug): a purchased override that RAISES the ceiling must let an invite through
+        // that the raw snapshot would block. Snapshot=5; override grants headroom to 10.
+        // MUTATION: revert to `tenant.MaxEmployees` raw → the 6th/7th seats are blocked and this test fails.
+        using (var setup = ReadDb(_tenantA))
+        {
+            var t = await setup.Tenants.IgnoreQueryFilters().FirstAsync(x => x.Id == _tenantA);
+            t.MaxEmployees = 5;
+            setup.PlanLimitOverrides.Add(new PlanLimitOverride
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantA, LimitKey = PlanLimitKeys.MaxEmployees,
+                Value = 10, CreatedAt = DateTime.UtcNow,
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        var mediator = BuildPipeline(_tenantA, _adminUserA);
+
+        // 4 active memberships; invite three seats → 7 total, ABOVE the snapshot (5) but UNDER the override (10).
+        (await mediator.Send(new InviteUserCommand("seat5@acme.com", new[] { _employeeRoleA }))).IsSuccess.Should().BeTrue();
+        (await mediator.Send(new InviteUserCommand("seat6@acme.com", new[] { _employeeRoleA })))
+            .IsSuccess.Should().BeTrue("the override (10) must raise the invite ceiling above the snapshot (5)");
+        (await mediator.Send(new InviteUserCommand("seat7@acme.com", new[] { _employeeRoleA }))).IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Invite_PlanValueDrivesCap_NotSnapshot()
+    {
+        // ISSUE-338: an admin's plan edit must take effect at invite time. Snapshot=10, but the plan caps at 5 →
+        // the plan wins and the 6th seat is blocked.
+        // MUTATION: revert to `tenant.MaxEmployees` raw → the 6th seat is ALLOWED (snapshot 10) and this test fails.
+        using (var setup = ReadDb(_tenantA))
+        {
+            var t = await setup.Tenants.IgnoreQueryFilters().FirstAsync(x => x.Id == _tenantA);
+            t.MaxEmployees = 10;
+            t.PlanId = "pro";
+            setup.SubscriptionPlans.Add(new SubscriptionPlan { Id = Guid.NewGuid(), Code = "pro", Name = "Pro", MaxEmployees = 5 });
+            await setup.SaveChangesAsync();
+        }
+
+        var mediator = BuildPipeline(_tenantA, _adminUserA);
+
+        (await mediator.Send(new InviteUserCommand("seat5@acme.com", new[] { _employeeRoleA }))).IsSuccess.Should().BeTrue(); // 5th seat
+        var sixth = await mediator.Send(new InviteUserCommand("seat6@acme.com", new[] { _employeeRoleA }));
+        sixth.IsFailure.Should().BeTrue("the plan cap (5) must win over the snapshot (10)");
+        sixth.ErrorCode.Should().Be("plan_limit_reached");
+    }
+
     // ── Edit roles (AC-3 / BR-2) ─────────────────────────────────────────────
 
     [Fact]

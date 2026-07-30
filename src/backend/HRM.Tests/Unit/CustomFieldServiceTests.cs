@@ -13,6 +13,7 @@ using System.Text.Json;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.CustomFields.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Services;
@@ -299,6 +300,60 @@ public sealed class CustomFieldServiceTests : IDisposable
         });
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    // ── ISSUE-339: the cap resolves via PlanLimitResolver (override > plan > snapshot), NOT the raw ──
+    //    Tenant.MaxCustomFields column. Each arm FAILS if GetMaxCustomFieldsAsync reverts to `?? 20` on the snapshot.
+
+    private async Task SeedTenantWithPlan(int? planMax, int? snapshot = null, long? overrideValue = null)
+    {
+        await using var db = CreateDbContext(_tenantContext);
+        db.Tenants.Add(new Tenant
+        {
+            Id = _tenantId, Subdomain = $"test-{_tenantId.ToString()[..8]}", Name = "Test Tenant",
+            PlanId = "pro", MaxCustomFields = snapshot,
+        });
+        db.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            Id = Guid.NewGuid(), Code = "pro", Name = "Pro", MaxCustomFieldsPerEntity = planMax,
+        });
+        if (overrideValue is not null)
+            db.PlanLimitOverrides.Add(new PlanLimitOverride
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, LimitKey = PlanLimitKeys.MaxCustomFieldsPerEntity,
+                Value = overrideValue, CreatedAt = DateTime.UtcNow,
+            });
+        await db.SaveChangesAsync();
+    }
+
+    private Task<Application.Common.Models.Result<CustomFieldDefinitionDto>> CreateField(string name) =>
+        CreateService().CreateAsync(new CreateCustomFieldRequest { EntityType = "employee", FieldName = name, FieldType = "text" });
+
+    [Fact]
+    public async Task CreateAsync_PlanColumnDrivesCap_NotSnapshot()
+    {
+        // plan cap=1; snapshot=20 would allow far more.
+        // MUTATION: `tenant.MaxCustomFields ?? 20` ignores the plan (cap=20) → the 2nd field is allowed → this fails.
+        await SeedTenantWithPlan(planMax: 1, snapshot: 20);
+
+        (await CreateField("F1")).IsSuccess.Should().BeTrue();
+        var second = await CreateField("F2");
+        second.IsFailure.Should().BeTrue("the plan column (1) must drive the cap, not the snapshot (20)");
+        second.StatusCode.Should().Be(403);
+        second.Error.Should().Contain("maximum number of custom fields (1)");
+    }
+
+    [Fact]
+    public async Task CreateAsync_OverrideBeatsPlan()
+    {
+        // plan cap=5, per-tenant override=1 → effective 1.
+        // MUTATION: the raw snapshot (20) ignores BOTH the plan and the override → the 2nd field is allowed → fails.
+        await SeedTenantWithPlan(planMax: 5, snapshot: 20, overrideValue: 1);
+
+        (await CreateField("F1")).IsSuccess.Should().BeTrue();
+        var second = await CreateField("F2");
+        second.IsFailure.Should().BeTrue("the override (1) must beat the plan (5)");
+        second.StatusCode.Should().Be(403);
     }
 
     // ── Validation tests ─────────────────────────────────────────

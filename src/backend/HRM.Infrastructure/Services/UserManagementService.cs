@@ -367,13 +367,33 @@ public sealed class UserManagementService : IUserManagementService
         if (alreadyInvited)
             return InviteOneOutcome.Fail("This user already has a pending invitation.", 409, "already_invited");
 
-        // Plan user-limit (BR-5): active memberships + pending invitations vs Tenant.MaxEmployees.
+        // Plan user-limit (BR-5): active memberships + pending invitations vs the effective employee cap.
         var tenant = await _db.Tenants
             .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
         if (tenant is null)
             return InviteOneOutcome.Fail("Tenant not found.", 404, "not_found");
 
-        if (tenant.MaxEmployees is { } cap)
+        // ISSUE-338: resolve the cap with precedence override > plan > snapshot via PlanLimitResolver — the
+        // SAME idiom EmployeeService.CheckPlanLimitAsync uses — instead of reading Tenant.MaxEmployees raw.
+        // Reading the raw snapshot ignored per-tenant overrides and live plan edits, so the invite path and the
+        // direct-create path gave contradictory answers for the same limit (a purchased override that RAISES the
+        // ceiling was silently ignored here).
+        var planValue = await _db.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => (long?)p.MaxEmployees)
+            .FirstOrDefaultAsync(cancellationToken);
+        var overrides = await _db.PlanLimitOverrides
+            .AsNoTracking()
+            .Where(o => o.TenantId == tenant.Id)
+            .ToListAsync(cancellationToken);
+        var resolved = PlanLimitResolver.Resolve(
+            PlanLimitKeys.MaxEmployees, planValue, overrides, DateTime.UtcNow);
+        long? effectiveCap = resolved.Source == PlanLimitResolver.LimitSource.Override
+            ? resolved.Value                                   // override wins (null = unlimited)
+            : planValue ?? (long?)tenant.MaxEmployees;         // else plan value, else snapshot
+
+        if (effectiveCap is { } cap)
         {
             var activeCount = await _db.UserTenants
                 .CountAsync(ut => ut.Status == UserTenantStatus.Active, cancellationToken);
