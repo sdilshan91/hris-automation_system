@@ -21,8 +21,10 @@ namespace HRM.Infrastructure.Services;
 /// <para><b>REAL data only.</b> This service does NOT source per-tenant usage counters, SLA-probe history, or a
 /// request-metrics store (there is no metrics backend feeding this dashboard). Rather than fabricate numbers,
 /// it computes ONLY what real data sources support — the database, a DB connectivity probe, a Redis probe, and
-/// the Hangfire monitoring API (via <see cref="IJobQueueMonitor"/>). Everything else (error rate %, P95 latency,
-/// 24h trend series, SLA uptime, storage/API/email usage gauges, the error-rate "Attention Required" queue) is
+/// the Hangfire monitoring API (via <see cref="IJobQueueMonitor"/>). The Storage and EmailSends usage gauges ARE
+/// real (US-ADM-012 AC-4 — cumulative stored bytes across the four size-bearing tables, and month-to-date sent
+/// emails off <see cref="NotificationDelivery"/>). Everything still without a real data source (error rate %, P95
+/// latency, 24h trend series, SLA uptime, the API-calls gauge, the error-rate "Attention Required" queue) is
 /// returned as null/empty with an explicit "RequiresObservabilityPipeline" status flag. See the DTO doc
 /// comments — those fields are DEFERRED, not broken. (OpenTelemetry traces/metrics ARE wired in the API host
 /// via <c>ObservabilityExtensions</c>; they just don't feed this per-tenant dashboard.)</para>
@@ -185,22 +187,46 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         var countByTenant = employeeCounts.ToDictionary(x => x.TenantId, x => x.Count);
 
         // Fall back to the SubscriptionPlan limit by matching Tenant.PlanId == SubscriptionPlan.Code when the
-        // tenant has no MaxEmployees snapshot (older tenants provisioned before US-ADM-001 stamped it).
+        // tenant has no MaxEmployees snapshot (older tenants provisioned before US-ADM-001 stamped it). Also
+        // carry the storage / email plan limits for the AC-4 usage gauges.
         var planLimits = await _db.SubscriptionPlans
-            .Select(p => new { p.Code, p.MaxEmployees })
+            .Select(p => new { p.Code, p.MaxEmployees, p.MaxStorageGb, p.MaxEmailSendsPerMonth })
             .ToListAsync(cancellationToken);
         var limitByPlanCode = planLimits.ToDictionary(
-            p => p.Code, p => p.MaxEmployees, StringComparer.OrdinalIgnoreCase);
+            p => p.Code, StringComparer.OrdinalIgnoreCase);
+
+        // Per-tenant plan-limit overrides (cross-tenant; PlanLimitOverride has NO tenant query filter). Grouped
+        // so each tenant's gauge resolves override > plan via the shared PlanLimitResolver (US-ADM-009 FR-4).
+        var overridesByTenant = (await _db.PlanLimitOverrides
+                .ToListAsync(cancellationToken))
+            .GroupBy(o => o.TenantId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<PlanLimitOverride>)g.ToList());
+
+        // AC-4 usage gauges: real cumulative stored bytes (all four size-bearing tables) and month-to-date sent
+        // emails, per tenant. Both use the shared anti-drift helpers; both are cross-tenant grouped queries here
+        // because the monitoring service runs with no resolved tenant.
+        var storageByTenant = await TenantStorageUsage.ComputeBytesByTenantAsync(_db, cancellationToken: cancellationToken);
+        var nowUtc = DateTime.UtcNow;
+        var emailByTenant = await TenantEmailSendUsage.CountSentThisMonthByTenantAsync(_db, nowUtc, cancellationToken: cancellationToken);
 
         var summaries = new List<TenantUsageSummaryDto>(tenants.Count);
         foreach (var t in tenants)
         {
             var active = countByTenant.TryGetValue(t.Id, out var c) ? c : 0;
+            var plan = limitByPlanCode.GetValueOrDefault(t.PlanId);
 
-            int? limit = t.MaxEmployees
-                ?? (limitByPlanCode.TryGetValue(t.PlanId, out var planLimit) ? planLimit : null);
+            int? limit = t.MaxEmployees ?? plan?.MaxEmployees;
 
-            summaries.Add(BuildSummary(t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, active, limit));
+            var overrides = overridesByTenant.GetValueOrDefault(t.Id);
+            var storageGauge = BuildStorageGauge(
+                storageByTenant.GetValueOrDefault(t.Id),
+                ResolveLongLimit(PlanLimitKeys.MaxStorageGb, plan?.MaxStorageGb, overrides, nowUtc));
+            var emailGauge = BuildEmailGauge(
+                emailByTenant.GetValueOrDefault(t.Id),
+                (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
+
+            summaries.Add(BuildSummary(
+                t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, active, limit, storageGauge, emailGauge));
         }
 
         // Quota-breach queue (FR-3): tenants >= 80% on the employee limit, sorted by severity (percent) desc.
@@ -244,16 +270,30 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             .IgnoreQueryFilters()
             .CountAsync(e => e.TenantId == tenantId && e.IsActive && !e.IsDeleted, cancellationToken);
 
-        int? limit = t.MaxEmployees;
-        if (limit is null)
-        {
-            limit = await _db.SubscriptionPlans
-                .Where(p => p.Code == t.PlanId)
-                .Select(p => p.MaxEmployees)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
+        var plan = await _db.SubscriptionPlans
+            .Where(p => p.Code == t.PlanId)
+            .Select(p => new { p.MaxEmployees, p.MaxStorageGb, p.MaxEmailSendsPerMonth })
+            .FirstOrDefaultAsync(cancellationToken);
 
-        var summary = BuildSummary(t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, activeEmployees, limit);
+        int? limit = t.MaxEmployees ?? plan?.MaxEmployees;
+
+        // AC-4 usage gauges for this one tenant (same shared, anti-drift helpers; onlyTenant-scoped scans).
+        var overrides = await _db.PlanLimitOverrides
+            .Where(o => o.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
+        var nowUtc = DateTime.UtcNow;
+        var usedBytes = (await TenantStorageUsage.ComputeBytesByTenantAsync(_db, tenantId, cancellationToken))
+            .GetValueOrDefault(tenantId);
+        var emailsSent = (await TenantEmailSendUsage.CountSentThisMonthByTenantAsync(_db, nowUtc, tenantId, cancellationToken))
+            .GetValueOrDefault(tenantId);
+
+        var storageGauge = BuildStorageGauge(
+            usedBytes, ResolveLongLimit(PlanLimitKeys.MaxStorageGb, plan?.MaxStorageGb, overrides, nowUtc));
+        var emailGauge = BuildEmailGauge(
+            emailsSent, (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
+
+        var summary = BuildSummary(
+            t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, activeEmployees, limit, storageGauge, emailGauge);
         var employeeGauge = summary.Gauges.First(g => g.Resource == "Employees");
 
         // Owner email (operational, not PII per BR-2): the user assigned the Tenant Owner role for this tenant.
@@ -307,11 +347,14 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     // ── helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Builds a per-tenant usage summary. The employee gauge is REAL; storage / API-calls / email-sends gauges
-    /// are DEFERRED (Available=false, null values) — no usage counters are instrumented in this codebase.
+    /// Builds a per-tenant usage summary. The Employees, Storage and EmailSends gauges are REAL (US-ADM-012 AC-4);
+    /// ApiCalls remains DEFERRED — it needs per-request instrumentation that belongs with US-PLT-004's API-call
+    /// counter, and is honestly reported <c>Available=false</c> rather than faked. The caller supplies the
+    /// already-built Storage/Email gauges (they require per-tenant DB reads via the shared anti-drift helpers).
     /// </summary>
     private static TenantUsageSummaryDto BuildSummary(
-        Guid tenantId, string name, string subdomain, string status, string plan, int activeEmployees, int? limit)
+        Guid tenantId, string name, string subdomain, string status, string plan, int activeEmployees, int? limit,
+        UsageGaugeDto storageGauge, UsageGaugeDto emailGauge)
     {
         var percent = MonitoringClassifiers.ComputePercent(activeEmployees, limit);
         var band = percent is { } p ? MonitoringClassifiers.ClassifyBand(p) : (UsageBand?)null;
@@ -319,10 +362,10 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         var gauges = new List<UsageGaugeDto>
         {
             new("Employees", Available: true, Used: activeEmployees, Limit: limit, UsagePercent: percent, Band: band),
-            // DEFERRED gauges — no counters instrumented:
-            new("Storage", Available: false, Used: null, Limit: null, UsagePercent: null, Band: null),
+            storageGauge,
+            // DEFERRED — a real API-call gauge needs per-request instrumentation (US-PLT-004), not a fabricated number.
             new("ApiCalls", Available: false, Used: null, Limit: null, UsagePercent: null, Band: null),
-            new("EmailSends", Available: false, Used: null, Limit: null, UsagePercent: null, Band: null),
+            emailGauge,
         };
 
         return new TenantUsageSummaryDto(
@@ -337,6 +380,50 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             Band: band,
             LimitKnown: limit is not null,
             Gauges: gauges);
+    }
+
+    /// <summary>
+    /// Resolves the effective limit for a plan-limit key (override &gt; plan; null = UNLIMITED per BR-3) via the
+    /// shared <see cref="PlanLimitResolver"/>, so the gauge and any enforcement gate resolve limits identically.
+    /// </summary>
+    private static long? ResolveLongLimit(
+        string key, int? planValue, IEnumerable<PlanLimitOverride>? overrides, DateTime nowUtc)
+        => PlanLimitResolver.Resolve(key, planValue, overrides, nowUtc).Value;
+
+    /// <summary>
+    /// The REAL storage gauge (US-ADM-012 AC-4). <paramref name="usedBytes"/> is the cumulative stored bytes across
+    /// all four size-bearing tables (<see cref="TenantStorageUsage"/>); <paramref name="limitGb"/> is the resolved
+    /// <c>max_storage_gb</c> cap (null ⇒ UNLIMITED per BR-3). <c>Used</c>/<c>Limit</c> are expressed in MEGABYTES
+    /// (the gauge carries no unit field and byte counts overflow <see cref="int"/>); the percentage is computed on
+    /// exact BYTES. A null limit is represented as real usage with a null limit/percent — never a divide-by-null.
+    /// </summary>
+    private static UsageGaugeDto BuildStorageGauge(long usedBytes, long? limitGb)
+    {
+        const long bytesPerMb = 1024L * 1024L;
+        var usedMb = (int)Math.Min(usedBytes / bytesPerMb, int.MaxValue);
+
+        if (limitGb is not { } gb)
+            return new UsageGaugeDto("Storage", Available: true, Used: usedMb, Limit: null, UsagePercent: null, Band: null);
+
+        var limitBytes = gb * 1024L * bytesPerMb;
+        var limitMb = (int)Math.Min(gb * 1024L, int.MaxValue);
+        var percent = limitBytes <= 0
+            ? (usedBytes > 0 ? 100d : 0d)
+            : Math.Round((double)usedBytes / limitBytes * 100d, 1);
+        return new UsageGaugeDto("Storage", Available: true, Used: usedMb, Limit: limitMb,
+            UsagePercent: percent, Band: MonitoringClassifiers.ClassifyBand(percent));
+    }
+
+    /// <summary>
+    /// The REAL email-sends gauge (US-ADM-012 AC-4): month-to-date successful Email sends vs the resolved
+    /// <c>max_email_sends_per_month</c> cap (null ⇒ UNLIMITED per BR-3 ⇒ null percent/band, never divide-by-null).
+    /// </summary>
+    private static UsageGaugeDto BuildEmailGauge(int sentThisMonth, int? limit)
+    {
+        var percent = MonitoringClassifiers.ComputePercent(sentThisMonth, limit);
+        var band = percent is { } p ? MonitoringClassifiers.ClassifyBand(p) : (UsageBand?)null;
+        return new UsageGaugeDto("EmailSends", Available: true, Used: sentThisMonth, Limit: limit,
+            UsagePercent: percent, Band: band);
     }
 
     private async Task<bool> TryCanConnectAsync(CancellationToken cancellationToken)
