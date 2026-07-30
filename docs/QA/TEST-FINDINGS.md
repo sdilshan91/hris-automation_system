@@ -7515,6 +7515,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-349 — `IsCalibrationEnabled` and the presence of a Calibration phase can diverge; nothing validates them
 - **ID:** ISSUE-349
+- **Status update:** ⚠️ **CLOSED 2026-07-30 — PARTIALLY INVALID. This finding's premise was wrong, and acting on it broke a shipped feature.** It asserted that `IsCalibrationEnabled` and the presence of a `Calibration` phase must AGREE. They must not. `IsCalibrationEnabled` is a standalone feature flag — the Angular cycle form surfaces it as a checkbox labelled *"Calibration phase"* — while `phases[]` carries the GoalSetting/SelfAssessment/ManagerReview timeline. **Enabling calibration with no Calibration entry in `phases[]` is the NORMAL state the shipped UI produces.** The symmetric rule was implemented and immediately broke `CycleCreateWirePayloadApiTests`, the BUG-257 regression that POSTs the REAL FE payload as raw JSON through the genuine HTTP path; it would have 400'd every cycle-create where a user ticked that box. **Resolution:** kept only the coherent half — a Calibration PHASE while the feature is OFF is genuinely incoherent and is rejected. The two arms asserting the wrong rule were INVERTED to pin the correct behaviour rather than deleted. **Lesson: a finding I filed myself, from my own sweep, was wrong — the same 'read the code, not the document' discipline applies to my own output, and the regression suite is what enforced it.**
 - **Type:** BUG (missing validation — latent)
 - **Severity:** MED
 - **Status:** OPEN
