@@ -7420,7 +7420,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-343
 - **Type:** ISSUE (API contract inconsistency)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** OPEN — **retrofit DEFERRED by decision 2026-07-30 (user).** New gates use **403** with a machine-readable `code`; the two existing 409s (`workflow_limit_reached`, `plan_limit_reached`) stay as they are. Retrofitting them is a breaking change that would need `workflow.service.spec.ts:114` and `workflow-editor.component.spec.ts:204` updated in lockstep, and it does not belong bundled inside US-ADM-012. Every individual response is well-formed today; only cross-endpoint consistency suffers. This finding is the standing record until someone does the deliberate pass.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** Plan-limit breaches return different status codes by accident of authorship: 403 for `storage_quota_exceeded` and the employee limit (the latter with no error code at all), 409 for `workflow_limit_reached` and `plan_limit_reached`. A client cannot handle "you hit a plan limit" generically.
@@ -7602,7 +7602,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-355
 - **Type:** DECISION (product taxonomy)
 - **Severity:** LOW
-- **Status:** OPEN — needs a product call
+- **Status:** ✅ **DECIDED 2026-07-30 (user)** — keep offboarding + exit-interviews mapped to the **Onboarding** module. Rationale: they are the "off" half of one employee-lifecycle module, matching how the BA docs already group US-ONB-005/006. Accepted consequence: a plan without Onboarding also loses offboarding, and they cannot be sold separately without adding a `PlanModules.Offboarding` key later (which would ripple into the plan editor, the FE `CANONICAL_MODULES`, [[ISSUE-353]]'s drift guard and the normalization migration's canonical literal). No code change needed — the shipped mapping already reflects this.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012 (AC-1), US-ONB-005/006 / TC-ADM-012 — surfaced by `@backend-dev` while building the module gate, 2026-07-30
 - **Title:** `PlanModules` has an `Onboarding` key but no `Offboarding` key, while `/api/v1/offboarding` and `/api/v1/exit-interviews` are distinct route families. The gate maps both to **Onboarding**, on the reading that they are the "off" half of one Onboarding/Offboarding lifecycle module (which is how the BA docs group US-ONB-005/006).
