@@ -31,4 +31,53 @@ public static class TenantStorageUsage
 
         return documentBytes + hrReportBytes + payrollReportBytes + payslipBytes;
     }
+
+    /// <summary>
+    /// The CROSS-TENANT companion to <see cref="ComputeBytesAsync"/> for the system/admin monitoring dashboard
+    /// (US-ADM-012 AC-4): sums stored bytes across the SAME four size-bearing tables/columns, but grouped by
+    /// <c>TenantId</c> via <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{T}"/> — because the
+    /// platform-monitoring service runs with no resolved tenant (the tenant query filter is disabled there, so
+    /// the current-tenant <see cref="ComputeBytesAsync"/> would sum EVERY tenant into one bucket).
+    ///
+    /// <para>Kept in THIS class, right beside <see cref="ComputeBytesAsync"/>, so the "which four tables / which
+    /// size column" definition lives in ONE place and the enforced quota total and the displayed gauge cannot
+    /// drift apart (ISSUE-340). If a fifth size-bearing table is added, BOTH methods must gain it.</para>
+    /// </summary>
+    /// <param name="onlyTenant">When set, restricts the scan to a single tenant (the detail view); otherwise all tenants.</param>
+    public static async Task<Dictionary<Guid, long>> ComputeBytesByTenantAsync(
+        AppDbContext db, Guid? onlyTenant = null, CancellationToken cancellationToken = default)
+    {
+        var totals = new Dictionary<Guid, long>();
+
+        void Merge(IEnumerable<TenantBytes> rows)
+        {
+            foreach (var r in rows)
+                totals[r.TenantId] = totals.GetValueOrDefault(r.TenantId) + r.Bytes;
+        }
+
+        Merge(await db.EmployeeDocuments.IgnoreQueryFilters()
+            .Where(x => onlyTenant == null || x.TenantId == onlyTenant)
+            .GroupBy(x => x.TenantId)
+            .Select(g => new TenantBytes(g.Key, g.Sum(x => (long?)x.FileSizeBytes) ?? 0L))
+            .ToListAsync(cancellationToken));
+        Merge(await db.HrReportExports.IgnoreQueryFilters()
+            .Where(x => onlyTenant == null || x.TenantId == onlyTenant)
+            .GroupBy(x => x.TenantId)
+            .Select(g => new TenantBytes(g.Key, g.Sum(x => (long?)x.FileSizeBytes) ?? 0L))
+            .ToListAsync(cancellationToken));
+        Merge(await db.PayrollReportExports.IgnoreQueryFilters()
+            .Where(x => onlyTenant == null || x.TenantId == onlyTenant)
+            .GroupBy(x => x.TenantId)
+            .Select(g => new TenantBytes(g.Key, g.Sum(x => (long?)x.FileSizeBytes) ?? 0L))
+            .ToListAsync(cancellationToken));
+        Merge(await db.PayrollSlips.IgnoreQueryFilters()
+            .Where(x => onlyTenant == null || x.TenantId == onlyTenant)
+            .GroupBy(x => x.TenantId)
+            .Select(g => new TenantBytes(g.Key, g.Sum(x => (long?)x.PdfFileSizeBytes) ?? 0L))
+            .ToListAsync(cancellationToken));
+
+        return totals;
+    }
+
+    private readonly record struct TenantBytes(Guid TenantId, long Bytes);
 }
