@@ -83,3 +83,17 @@ public sealed class GetFeedback360ReportQueryHandler
     public Task<Result<Feedback360ResultsDto>> Handle(GetFeedback360ReportQuery request, CancellationToken cancellationToken)
         => _service.GetReportDataAsync(request.RevieweeEmployeeId, request.CycleId, cancellationToken);
 }
+
+/// <summary>Renders the 360 summary report as a branded PDF download (US-PRF-005 FR-7).</summary>
+public sealed record ExportFeedback360ReportQuery(Guid CycleId, Guid RevieweeEmployeeId, string? Format)
+    : IRequest<Result<PerformanceExportFile>>;
+
+public sealed class ExportFeedback360ReportQueryHandler
+    : IRequestHandler<ExportFeedback360ReportQuery, Result<PerformanceExportFile>>
+{
+    private readonly IFeedback360Service _service;
+    public ExportFeedback360ReportQueryHandler(IFeedback360Service service) => _service = service;
+
+    public Task<Result<PerformanceExportFile>> Handle(ExportFeedback360ReportQuery request, CancellationToken cancellationToken)
+        => _service.ExportReportAsync(request.RevieweeEmployeeId, request.CycleId, request.Format, cancellationToken);
+}

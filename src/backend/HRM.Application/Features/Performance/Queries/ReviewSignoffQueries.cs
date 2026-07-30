@@ -48,3 +48,17 @@ public sealed class GetReviewExportQueryHandler
     public Task<Result<ReviewExportDto>> Handle(GetReviewExportQuery request, CancellationToken cancellationToken)
         => _service.GetExportRecordAsync(request.EmployeeId, request.CycleId, cancellationToken);
 }
+
+/// <summary>Renders the complete review record as a branded PDF download (US-PRF-006 AC-4/FR-6).</summary>
+public sealed record ExportReviewRecordQuery(Guid EmployeeId, Guid CycleId, string? Format)
+    : IRequest<Result<PerformanceExportFile>>;
+
+public sealed class ExportReviewRecordQueryHandler
+    : IRequestHandler<ExportReviewRecordQuery, Result<PerformanceExportFile>>
+{
+    private readonly IReviewSignoffService _service;
+    public ExportReviewRecordQueryHandler(IReviewSignoffService service) => _service = service;
+
+    public Task<Result<PerformanceExportFile>> Handle(ExportReviewRecordQuery request, CancellationToken cancellationToken)
+        => _service.ExportRecordPdfAsync(request.EmployeeId, request.CycleId, request.Format, cancellationToken);
+}

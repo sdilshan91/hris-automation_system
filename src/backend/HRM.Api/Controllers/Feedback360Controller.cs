@@ -246,17 +246,27 @@ public sealed class Feedback360Controller : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/report
-    /// 360 summary report data for PDF export (FR-7). Same payload as /results; the dedicated route signals
-    /// export intent. PDF RENDERING IS A SEAM — see the QuestPDF-backed renderer note in the PR. HR-only.
+    /// GET /api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/report[?format=pdf]
+    /// 360 summary report (FR-7). Default returns the JSON payload (same as /results); <c>?format=pdf</c> renders
+    /// the branded PDF download (QuestPDF). HR-only — the PDF carries the SAME permission as the JSON it renders.
     /// </summary>
     [HttpGet("360/cycles/{cycleId:guid}/employees/{employeeId:guid}/report")]
     [RequirePermission("Performance.Review.All")]
     [ProducesResponseType(typeof(ApiResponse<Feedback360ResultsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetReport(Guid cycleId, Guid employeeId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetReport(
+        Guid cycleId, Guid employeeId, [FromQuery] string? format, CancellationToken cancellationToken)
     {
+        if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            var pdf = await _mediator.Send(new ExportFeedback360ReportQuery(cycleId, employeeId, format), cancellationToken);
+            if (pdf.IsFailure)
+                return StatusCode(pdf.StatusCode ?? 400, ApiResponse.Fail(pdf.Error!, pdf.ErrorCode));
+            return File(pdf.Value!.FileContent, pdf.Value!.ContentType, pdf.Value!.FileName);
+        }
+
         var result = await _mediator.Send(new GetFeedback360ReportQuery(cycleId, employeeId), cancellationToken);
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));

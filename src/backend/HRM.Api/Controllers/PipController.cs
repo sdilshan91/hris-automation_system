@@ -89,6 +89,27 @@ public sealed class PipController : ControllerBase
         => PipResult(await _mediator.Send(new GetPipQuery(pipId), cancellationToken));
 
     /// <summary>
+    /// GET /api/v1/tenant/performance/pips/{pipId}/export[?format=pdf] — the full PIP rendered as a branded PDF
+    /// download (AC-1/FR-5). Carries the SAME visibility gate as Get-by-id (employee / manager / HR / mentor);
+    /// <see cref="GetPipQuery"/>'s service path applies the FR-8 per-row visibility filter, so the PDF is never
+    /// less protected than the JSON. Defaults to pdf; any other format fails 400 invalid_format.
+    /// </summary>
+    [HttpGet("{pipId:guid}/export")]
+    [RequirePermission("Performance.Read.Self", "Performance.Review.Team", "Performance.Review.All")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Export(
+        Guid pipId, [FromQuery] string? format, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ExportPipQuery(pipId, format ?? "pdf"), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return File(result.Value!.FileContent, result.Value!.ContentType, result.Value!.FileName);
+    }
+
+    /// <summary>
     /// POST /api/v1/tenant/performance/pips — create &amp; initiate a PIP (AC-1/AC-2/FR-1). HR-only (BR-1).
     /// Enforces BR-2 (one active PIP) and BR-3 (≥30 days); notifies employee/manager/mentor; schedules reminders.
     /// </summary>

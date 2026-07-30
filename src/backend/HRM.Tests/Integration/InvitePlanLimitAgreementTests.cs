@@ -129,4 +129,42 @@ public sealed class InvitePlanLimitAgreementTests
         (await InviteSvc().InviteAsync("invite2@acme.com", new[] { _roleId }))
             .IsSuccess.Should().BeTrue();
     }
+    // ── ISSUE-354: the THIRD path enforcing the same limit ────────────────────
+    // EmployeeService was fixed under BUG-008 and the invite path under ISSUE-338, but
+    // BulkEmployeeImportService still read Tenant.MaxEmployees RAW — missed by BOTH that fix and the ISSUE-342
+    // plan-write sweep. So a tenant who PURCHASED an override could create employees one-by-one and invite
+    // users, yet was still refused on bulk import: three paths, three answers, one limit.
+    //
+    // Snapshot=1 with one active employee already present, override=5. Under the old raw-snapshot read the
+    // available slots computed to 0 and this returned 403. It must now allow the import.
+    [Fact]
+    public async Task BulkImport_HonoursOverride_NotTheStaleSnapshot_ISSUE354()
+    {
+        await SeedAsync();
+
+        // Put the tenant AT its stale snapshot cap (1 active employee) so the snapshot would refuse outright.
+        var seeded = await CreateEmployee("first@acme.com");
+        seeded.IsSuccess.Should().BeTrue("the first employee fits under both the snapshot and the override");
+
+        var csv = "first_name,last_name,email,date_of_joining,department_name,job_title_name,employment_type\n"
+                + "Bulk,One,bulk1@acme.com,2026-01-15,Eng,Engineer,Full-Time\n";
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(csv));
+
+        var result = await BulkSvc().ImportAsync(
+            stream, "import.csv", stream.Length, importUpToLimit: false, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(
+            "the tenant purchased an override raising the cap to 5, so a bulk import of one more employee must "
+            + $"be accepted — reading the stale snapshot (1) refuses it. Error was: {result.Error}");
+    }
+
+    private BulkEmployeeImportService BulkSvc()
+    {
+        var currentUser = Substitute.For<ICurrentUser>();
+        currentUser.UserId.Returns(Guid.NewGuid());
+        return new BulkEmployeeImportService(
+            Db(), _tenantContext, currentUser,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<BulkEmployeeImportService>.Instance);
+    }
+
 }

@@ -203,8 +203,8 @@ public sealed class RecommendationController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/v1/tenant/performance/recommendations/summary/export?format=csv|xlsx&amp;cycleId= — exports the
-    /// summary as a file download (FR-6, ClosedXML; PDF deferred). HR-only.
+    /// GET /api/v1/tenant/performance/recommendations/summary/export?format=csv|xlsx|pdf&amp;cycleId= — exports the
+    /// summary as a file download (FR-6, ClosedXML / QuestPDF). HR-only.
     /// </summary>
     [HttpGet("summary/export")]
     [RequirePermission("Performance.Publish.All")]

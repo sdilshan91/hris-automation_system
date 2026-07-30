@@ -181,4 +181,53 @@ public sealed class RecommendationIntegrationTests
             .Where(e => e.RecommendationId == rec.Id).ToListAsync();
         events.Should().Contain(e => e.EventType == RecommendationEventType.IntegrationRaised);
     }
+
+    // ── PDF export (FR-6, deferred-PDF work item) ───────────────────────
+
+    [Fact]
+    public async Task Export_summary_pdf_returns_a_pdf_document()
+    {
+        var a = await SeedAsync(_tenantA);
+        var noop = Substitute.For<IRecommendationIntegrationService>();
+
+        var export = await Service(_tenantA, a.HrUserId, noop, PermissionCatalog.Performance.PublishAll)
+            .ExportSummaryAsync(a.CycleId, "pdf");
+
+        export.IsSuccess.Should().BeTrue(export.Error);
+        export.Value!.ContentType.Should().Be("application/pdf");
+        export.Value!.FileName.Should().EndWith(".pdf");
+        export.Value!.FileContent.Should().NotBeEmpty();
+        System.Text.Encoding.ASCII.GetString(export.Value!.FileContent, 0, 4).Should().Be("%PDF");
+    }
+
+    [Fact]
+    public async Task Export_summary_csv_and_xlsx_still_work_unchanged()
+    {
+        var a = await SeedAsync(_tenantA);
+        var noop = Substitute.For<IRecommendationIntegrationService>();
+
+        var csv = await Service(_tenantA, a.HrUserId, noop, PermissionCatalog.Performance.PublishAll)
+            .ExportSummaryAsync(a.CycleId, "csv");
+        csv.IsSuccess.Should().BeTrue(csv.Error);
+        csv.Value!.ContentType.Should().Be("text/csv");
+
+        var xlsx = await Service(_tenantA, a.HrUserId, noop, PermissionCatalog.Performance.PublishAll)
+            .ExportSummaryAsync(a.CycleId, "xlsx");
+        xlsx.IsSuccess.Should().BeTrue(xlsx.Error);
+        xlsx.Value!.FileName.Should().EndWith(".xlsx");
+    }
+
+    [Fact]
+    public async Task Export_summary_pdf_refuses_a_non_hr_caller()
+    {
+        var a = await SeedAsync(_tenantA);
+        var noop = Substitute.For<IRecommendationIntegrationService>();
+
+        // No PublishAll → not HR → refused. The PDF path is not less protected than the CSV/XLSX it renders.
+        var forbidden = await Service(_tenantA, a.HrUserId, noop, PermissionCatalog.Performance.ReadSelf)
+            .ExportSummaryAsync(a.CycleId, "pdf");
+
+        forbidden.IsFailure.Should().BeTrue();
+        forbidden.StatusCode.Should().Be(403);
+    }
 }

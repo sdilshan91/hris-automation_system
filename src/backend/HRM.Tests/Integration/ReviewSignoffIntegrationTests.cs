@@ -372,4 +372,48 @@ public sealed class ReviewSignoffIntegrationTests
         (await checkB.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == b.ReportEmpId))
             .SignoffStatus.Should().Be(ReviewSignoffStatus.PendingEmployeeSignOff, "Tenant B was not swept");
     }
+
+    // ── PDF export of the review record (AC-4/FR-6, deferred-PDF work item) ──
+
+    [Fact]
+    public async Task Export_record_pdf_returns_a_pdf_document()
+    {
+        var s = await SeedAsync(_tenantA);
+
+        var export = await Service(_tenantA, s.ManagerUserId, PermissionCatalog.Performance.ReviewAll)
+            .ExportRecordPdfAsync(s.ReportEmpId, s.CycleId, "pdf");
+
+        export.IsSuccess.Should().BeTrue(export.Error);
+        export.Value!.ContentType.Should().Be("application/pdf");
+        export.Value!.FileName.Should().EndWith(".pdf");
+        export.Value!.FileContent.Should().NotBeEmpty();
+        System.Text.Encoding.ASCII.GetString(export.Value!.FileContent, 0, 4).Should().Be("%PDF");
+    }
+
+    [Fact]
+    public async Task Export_record_pdf_is_tenant_isolated()
+    {
+        var b = await SeedAsync(_tenantB);
+
+        // Tenant A's HR cannot render Tenant B's review record (global query filter hides B's cycle/employee).
+        var crossExport = await Service(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ExportRecordPdfAsync(b.ReportEmpId, b.CycleId, "pdf");
+
+        crossExport.IsFailure.Should().BeTrue();
+        crossExport.StatusCode.Should().BeOneOf(403, 404);
+    }
+
+    [Fact]
+    public async Task Export_record_pdf_refuses_a_caller_who_is_not_manager_or_hr()
+    {
+        var s = await SeedAsync(_tenantA);
+
+        // A Read.Self caller who is neither the direct manager nor HR is refused — the PDF is not less protected
+        // than the JSON export it renders.
+        var forbidden = await Service(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReadSelf)
+            .ExportRecordPdfAsync(s.ReportEmpId, s.CycleId, "pdf");
+
+        forbidden.IsFailure.Should().BeTrue();
+        forbidden.StatusCode.Should().Be(403);
+    }
 }

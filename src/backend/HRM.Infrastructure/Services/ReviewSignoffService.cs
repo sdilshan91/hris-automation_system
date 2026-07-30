@@ -420,9 +420,24 @@ public sealed class ReviewSignoffService : IReviewSignoffService
             Signoffs = review.Signoffs.OrderBy(s => s.SignedAt).Select(MapSignoff).ToList(),
         };
 
-        // FR-6 PDF SEAM: this returns the complete review DATA. PDF rendering (with tenant logo/branding) is a
-        // deliberate seam — the codebase has no PDF library (same decision as US-PRF-005). TODO(US-PRF PDF).
         return Result<ReviewExportDto>.Success(dto);
+    }
+
+    public async Task<Result<PerformanceExportFile>> ExportRecordPdfAsync(
+        Guid employeeId, Guid cycleId, string? format, CancellationToken cancellationToken = default)
+    {
+        var normalized = (format ?? "pdf").Trim().ToLowerInvariant();
+        if (normalized != "pdf")
+            return Result<PerformanceExportFile>.Failure("Export format must be pdf.", 400, "invalid_format");
+
+        // Reuse the authorized, tenant-filtered read path (manager/HR gate applied inside GetExportRecordAsync).
+        var data = await GetExportRecordAsync(employeeId, cycleId, cancellationToken);
+        if (data.IsFailure)
+            return Result<PerformanceExportFile>.Failure(data.Error!, data.StatusCode ?? 400, data.ErrorCode);
+
+        var bytes = Performance.PerformancePdfRenderer.RenderReviewMeeting(data.Value!, _tenantContext.PrimaryColor);
+        var fileName = $"review-record-{cycleId:N}-{employeeId:N}.pdf";
+        return Result<PerformanceExportFile>.Success(new PerformanceExportFile(bytes, fileName, "application/pdf"));
     }
 
     // ── Caller-scoped self-service (ISSUE-288) ────────────────────────

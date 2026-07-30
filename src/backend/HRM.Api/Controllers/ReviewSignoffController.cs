@@ -185,17 +185,28 @@ public sealed class ReviewSignoffController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/v1/tenant/performance/reviews/cycles/{cycleId}/employees/{employeeId}/export
-    /// The complete review record for export (AC-4/FR-6): goals, ratings, notes, sign-off timestamps and the
-    /// full immutable signature log. Returns DATA; PDF rendering is a deliberate seam (no PDF lib in repo).
+    /// GET /api/v1/tenant/performance/reviews/cycles/{cycleId}/employees/{employeeId}/export[?format=pdf]
+    /// The complete review record (AC-4/FR-6): goals, ratings, notes, sign-off timestamps and the full immutable
+    /// signature log. Default returns the JSON DATA; <c>?format=pdf</c> renders the branded PDF download
+    /// (QuestPDF). Same permission (manager/HR) either way — the PDF is not less protected than the data.
     /// </summary>
     [HttpGet("reviews/cycles/{cycleId:guid}/employees/{employeeId:guid}/export")]
     [RequirePermission("Performance.Review.Team", "Performance.Review.All")]
     [ProducesResponseType(typeof(ApiResponse<ReviewExportDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Export(Guid cycleId, Guid employeeId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Export(
+        Guid cycleId, Guid employeeId, [FromQuery] string? format, CancellationToken cancellationToken)
     {
+        if (string.Equals(format, "pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            var pdf = await _mediator.Send(new ExportReviewRecordQuery(employeeId, cycleId, format), cancellationToken);
+            if (pdf.IsFailure)
+                return StatusCode(pdf.StatusCode ?? 400, ApiResponse.Fail(pdf.Error!, pdf.ErrorCode));
+            return File(pdf.Value!.FileContent, pdf.Value!.ContentType, pdf.Value!.FileName);
+        }
+
         var result = await _mediator.Send(new GetReviewExportQuery(employeeId, cycleId), cancellationToken);
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));

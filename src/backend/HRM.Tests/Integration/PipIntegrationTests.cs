@@ -205,4 +205,69 @@ public sealed class PipIntegrationTests
         var stillPending = await Service(_tenantA, a.HrUserId, PermissionCatalog.Performance.ReviewAll).GetAsync(pip.Id);
         stillPending.Value!.AcknowledgementStatus.Should().Be(PipAcknowledgementStatus.Pending);
     }
+
+    // ── PDF export (US-PRF-008 AC-1/FR-5, deferred-PDF work item) ────────
+
+    [Fact]
+    public async Task Export_pdf_returns_a_pdf_document()
+    {
+        var a = await SeedAsync(_tenantA);
+        var pip = (await Service(_tenantA, a.HrUserId, PermissionCatalog.Performance.ReviewAll)
+            .CreateAsync(CreateInput(a.EmployeeEmpId))).Value!;
+
+        var export = await Service(_tenantA, a.HrUserId, PermissionCatalog.Performance.ReviewAll)
+            .ExportPdfAsync(pip.Id, "pdf");
+
+        export.IsSuccess.Should().BeTrue(export.Error);
+        export.Value!.ContentType.Should().Be("application/pdf");
+        export.Value!.FileName.Should().EndWith(".pdf");
+        export.Value!.FileContent.Should().NotBeEmpty();
+        // A real PDF starts with the "%PDF" magic bytes.
+        System.Text.Encoding.ASCII.GetString(export.Value!.FileContent, 0, 4).Should().Be("%PDF");
+    }
+
+    [Fact]
+    public async Task Export_pdf_is_tenant_isolated()
+    {
+        var a = await SeedAsync(_tenantA);
+        var pip = (await Service(_tenantA, a.HrUserId, PermissionCatalog.Performance.ReviewAll)
+            .CreateAsync(CreateInput(a.EmployeeEmpId))).Value!;
+
+        // Tenant B HR cannot render Tenant A's PIP as a PDF (global query filter → not found).
+        var crossExport = await Service(_tenantB, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ExportPdfAsync(pip.Id, "pdf");
+
+        crossExport.IsFailure.Should().BeTrue();
+        crossExport.StatusCode.Should().Be(404);
+    }
+
+    [Fact]
+    public async Task Export_pdf_refuses_caller_without_visibility()
+    {
+        var a = await SeedAsync(_tenantA);
+        var pip = (await Service(_tenantA, a.HrUserId, PermissionCatalog.Performance.ReviewAll)
+            .CreateAsync(CreateInput(a.EmployeeEmpId))).Value!;
+
+        // A Read.Self caller who is neither the employee, manager nor mentor is refused (FR-8) — the PDF path is
+        // NOT less protected than the JSON Get-by-id it renders.
+        var forbidden = await Service(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReadSelf)
+            .ExportPdfAsync(pip.Id, "pdf");
+
+        forbidden.IsFailure.Should().BeTrue();
+        forbidden.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task Export_rejects_a_non_pdf_format()
+    {
+        var a = await SeedAsync(_tenantA);
+        var pip = (await Service(_tenantA, a.HrUserId, PermissionCatalog.Performance.ReviewAll)
+            .CreateAsync(CreateInput(a.EmployeeEmpId))).Value!;
+
+        var bad = await Service(_tenantA, a.HrUserId, PermissionCatalog.Performance.ReviewAll)
+            .ExportPdfAsync(pip.Id, "docx");
+
+        bad.IsFailure.Should().BeTrue();
+        bad.ErrorCode.Should().Be("invalid_format");
+    }
 }

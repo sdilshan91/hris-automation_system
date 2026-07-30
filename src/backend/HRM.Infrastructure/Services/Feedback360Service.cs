@@ -304,6 +304,23 @@ public sealed class Feedback360Service : IFeedback360Service
         Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken = default)
         => BuildResultsAsync(revieweeEmployeeId, cycleId, cancellationToken);
 
+    public async Task<Result<PerformanceExportFile>> ExportReportAsync(
+        Guid revieweeEmployeeId, Guid cycleId, string? format, CancellationToken cancellationToken = default)
+    {
+        var normalized = (format ?? "pdf").Trim().ToLowerInvariant();
+        if (normalized != "pdf")
+            return Result<PerformanceExportFile>.Failure("Export format must be pdf.", 400, "invalid_format");
+
+        // Reuse the authorized, tenant-filtered read path (HR-only + anonymity enforced in the projection).
+        var data = await BuildResultsAsync(revieweeEmployeeId, cycleId, cancellationToken);
+        if (data.IsFailure)
+            return Result<PerformanceExportFile>.Failure(data.Error!, data.StatusCode ?? 400, data.ErrorCode);
+
+        var bytes = Performance.PerformancePdfRenderer.RenderFeedback360(data.Value!, _tenantContext.PrimaryColor);
+        var fileName = $"360-report-{cycleId:N}-{revieweeEmployeeId:N}.pdf";
+        return Result<PerformanceExportFile>.Success(new PerformanceExportFile(bytes, fileName, "application/pdf"));
+    }
+
     private async Task<Result<Feedback360ResultsDto>> BuildResultsAsync(
         Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken)
     {

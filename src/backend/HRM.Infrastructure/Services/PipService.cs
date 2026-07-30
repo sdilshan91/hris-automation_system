@@ -289,6 +289,23 @@ public sealed class PipService : IPipService
         return Result<PipDto>.Success(await BuildDtoAsync(pip, cancellationToken));
     }
 
+    public async Task<Result<PerformanceExportFile>> ExportPdfAsync(
+        Guid pipId, string? format, CancellationToken cancellationToken = default)
+    {
+        var normalized = (format ?? "pdf").Trim().ToLowerInvariant();
+        if (normalized != "pdf")
+            return Result<PerformanceExportFile>.Failure("Export format must be pdf.", 400, "invalid_format");
+
+        // Reuse the authorized, tenant-filtered read path (FR-8 visibility applied inside GetAsync).
+        var data = await GetAsync(pipId, cancellationToken);
+        if (data.IsFailure)
+            return Result<PerformanceExportFile>.Failure(data.Error!, data.StatusCode ?? 400, data.ErrorCode);
+
+        var bytes = Performance.PerformancePdfRenderer.RenderPip(data.Value!, _tenantContext.PrimaryColor);
+        var fileName = $"pip-{pipId:N}.pdf";
+        return Result<PerformanceExportFile>.Success(new PerformanceExportFile(bytes, fileName, "application/pdf"));
+    }
+
     // ── Employee acknowledge (BR-4) ─────────────────────────────────────
 
     public async Task<Result<PipDto>> AcknowledgeAsync(AcknowledgePipInput input, CancellationToken cancellationToken = default)

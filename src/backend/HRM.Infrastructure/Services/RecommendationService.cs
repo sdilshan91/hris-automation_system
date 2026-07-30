@@ -595,19 +595,23 @@ public sealed class RecommendationService : IRecommendationService
                 "Only HR can export the recommendation summary.", 403, "forbidden");
 
         var normalized = (format ?? "csv").Trim().ToLowerInvariant();
-        if (normalized is not ("csv" or "xlsx"))
+        if (normalized is not ("csv" or "xlsx" or "pdf"))
             return Result<RecommendationExportResult>.Failure(
-                "Export format must be one of csv, xlsx.", 400, "invalid_format");
+                "Export format must be one of csv, xlsx, pdf.", 400, "invalid_format");
 
         var cycle = await ResolveCycleAsync(cycleId, cancellationToken);
         if (cycle is null)
             return Result<RecommendationExportResult>.Failure("No appraisal cycle is available.", 404, "no_cycle");
 
         var summary = await BuildSummaryAsync(cycle, cancellationToken);
-        var (content, fileName, contentType) = normalized == "xlsx"
-            ? (RenderXlsx(summary), $"recommendations-{cycle.Name}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            : (RenderCsv(summary), $"recommendations-{cycle.Name}.csv", "text/csv");
+        var (content, fileName, contentType) = normalized switch
+        {
+            "xlsx" => (RenderXlsx(summary), $"recommendations-{cycle.Name}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            "pdf" => (Performance.PerformancePdfRenderer.RenderRecommendationSummary(summary, _tenantContext.PrimaryColor),
+                $"recommendations-{cycle.Name}.pdf", "application/pdf"),
+            _ => (RenderCsv(summary), $"recommendations-{cycle.Name}.csv", "text/csv"),
+        };
 
         return Result<RecommendationExportResult>.Success(new RecommendationExportResult
         {
