@@ -25,6 +25,10 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
     // BUG-118: optional so unit tests / non-Hangfire hosts construct the service without it (mirrors the
     // IPayrollRunJobScheduler seam). Null → the recalc is simply not enqueued.
     private readonly ILeaveEntitlementRecalcJobScheduler? _recalcScheduler;
+    // BUG-291: the accrual job now credits only the periods that have ELAPSED as of today (Monthly/Quarterly),
+    // so accrual output depends on "today". Trailing-optional (mirrors LeaveAccrualJob / ProcessLeaveYearEndJob)
+    // so production and existing InMemory fixtures keep the real clock; money-path tests inject a fixed one.
+    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Batch size for accrual processing (NFR-1: handle 5,000 employees).
@@ -44,7 +48,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         ICurrentUser currentUser,
         ILogger<LeaveEntitlementService> logger,
         ITenantLeaveYearResolver leaveYearResolver,
-        ILeaveEntitlementRecalcJobScheduler? recalcScheduler = null)
+        ILeaveEntitlementRecalcJobScheduler? recalcScheduler = null,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -52,6 +57,7 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         _leaveYearResolver = leaveYearResolver;
         _logger = logger;
         _recalcScheduler = recalcScheduler;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -751,50 +757,143 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         CancellationToken cancellationToken)
     {
         var resolution = await ResolveEntitlementAsync(employee, leaveType, leaveYear, cancellationToken);
+        var fiscalYearStartMonth = await ResolveFiscalYearStartMonthAsync(cancellationToken);
 
         // Pro-rata for mid-year joiners (FR-3, AC-4) + part-timers (US-LV-002 AC-K1 / US-CHR-013). The
         // accrual job CREDITS the ledger, so an FTE miss here is a real over-credit, not just a display bug.
-        decimal prorated = LeaveEntitlementEngine.CalculateProRata(
+        // This is the FULL-YEAR prorated entitlement; BUG-291 spreads it across the accrual periods BELOW —
+        // the pro-ration is applied ONCE here (single discount), never again per period.
+        decimal proratedAnnual = LeaveEntitlementEngine.CalculateProRata(
             resolution.BaseEntitlementDays, employee.DateOfJoining, leaveYear, fte: employee.Fte,
-            fiscalYearStartMonth: await ResolveFiscalYearStartMonthAsync(cancellationToken));
+            fiscalYearStartMonth: fiscalYearStartMonth);
 
-        // Check if an accrual entry already exists for this employee/leave type/year.
-        var existingAccrual = await _dbContext.LeaveLedgerEntries
-            .AnyAsync(l =>
+        // BUG-291: credit only the periods that have ELAPSED as of today, keyed on AccrualPeriod so each
+        // period credits exactly once. Before this the guard was year-scoped (any Accrual row for the year),
+        // so the first run credited 12/12 and every later run was skipped — a Monthly/Quarterly type behaved
+        // exactly like Yearly, and the inflated balance was encashed / paid in F&F. Yearly + Upfront resolve
+        // to a single period, so their single full-entitlement row is byte-identical to the pre-BUG-291 path.
+        var leaveYearStart = LeaveYear.StartOf(leaveYear, fiscalYearStartMonth);
+        var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
+        var (elapsedPeriods, periodsPerYear) =
+            AccrualPeriodProgress(leaveType.AccrualFrequency, leaveYearStart, today);
+        if (elapsedPeriods == 0)
+            return; // The leave year has not started yet for this tenant — nothing accrues.
+
+        // Which periods are already credited. A legacy accrual row (AccrualPeriod == null) predates BUG-291
+        // and already credited the FULL year the old way; we must NOT touch existing balances (correcting an
+        // over-credited Monthly balance downward is an employee-detriment change gated on a user decision, per
+        // DF-65). So if any un-tagged accrual exists for this year, leave it exactly as-is and do nothing.
+        var existingPeriods = await _dbContext.LeaveLedgerEntries
+            .Where(l =>
                 l.EmployeeId == employee.Id &&
                 l.LeaveTypeId == leaveType.Id &&
                 l.LeaveYear == leaveYear &&
-                l.EntryType == LedgerEntryType.Accrual,
-                cancellationToken);
+                l.EntryType == LedgerEntryType.Accrual)
+            .Select(l => l.AccrualPeriod)
+            .ToListAsync(cancellationToken);
 
-        if (existingAccrual)
-        {
-            // Already accrued for this period — skip to avoid double-crediting.
-            return;
-        }
+        if (existingPeriods.Any(p => p == null))
+            return; // Legacy full-year accrual already present — no back-fill, no re-shaping (BUG-291 / DF-65).
 
-        // Get current balance.
-        decimal currentBalance = await GetLedgerBalanceAsync(
+        var creditedPeriods = existingPeriods.Where(p => p != null).Select(p => p!.Value).ToHashSet();
+
+        decimal runningBalance = await GetLedgerBalanceAsync(
             employee.Id, leaveType.Id, leaveYear, cancellationToken);
 
-        decimal newBalance = currentBalance + prorated;
-
-        var ledgerEntry = new LeaveLedger
+        // Stagger OccurredAt by 1µs per row so that when several elapsed periods are back-filled in one run
+        // (first run of a mid-year-started year), the last-credited row deterministically sorts latest for the
+        // OccurredAt-DESC running-balance read — mirrors PooledLeaveLedger.PoolRowTickOffset (PG truncates
+        // < 1µs). For the single-period case (offset 0) OccurredAt == UtcNow, byte-identical to before.
+        var baseOccurredAt = _timeProvider.GetUtcNow().UtcDateTime;
+        int written = 0;
+        for (int period = 1; period <= elapsedPeriods; period++)
         {
-            Id = BaseEntity.NewUuidV7(),
-            TenantId = employee.TenantId,
-            EntryType = LedgerEntryType.Accrual,
-            EmployeeId = employee.Id,
-            LeaveTypeId = leaveType.Id,
-            LeaveYear = leaveYear,
-            Amount = prorated,
-            BalanceAfter = newBalance,
-            Description = $"Annual accrual ({resolution.Source}): {prorated} days",
-            OccurredAt = DateTime.UtcNow,
+            if (creditedPeriods.Contains(period))
+                continue; // Already credited this period — idempotent at period granularity.
+
+            // Per-period amount via cumulative-difference so the rows SUM to proratedAnnual with no rounding
+            // drift: cum(p) − cum(p−1), each cum rounded to the ledger's numeric(5,2) scale. cum(periodsPerYear)
+            // == proratedAnnual, so a full year of periods credits the exact annual entitlement — never over or
+            // under. For Yearly/Upfront (periodsPerYear == 1) this is simply proratedAnnual in one row.
+            decimal amount = PeriodAccrualAmount(proratedAnnual, period, periodsPerYear);
+            runningBalance += amount;
+
+            _dbContext.LeaveLedgerEntries.Add(new LeaveLedger
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = employee.TenantId,
+                EntryType = LedgerEntryType.Accrual,
+                EmployeeId = employee.Id,
+                LeaveTypeId = leaveType.Id,
+                LeaveYear = leaveYear,
+                AccrualPeriod = period,
+                Amount = amount,
+                BalanceAfter = runningBalance,
+                Description = periodsPerYear == 1
+                    // Byte-identical to the pre-BUG-291 label for Yearly/Upfront.
+                    ? $"Annual accrual ({resolution.Source}): {amount} days"
+                    : $"{leaveType.AccrualFrequency} accrual ({resolution.Source}) period {period}/{periodsPerYear}: {amount} days",
+                OccurredAt = baseOccurredAt.AddTicks(written * PeriodRowTickOffset),
+            });
+            written++;
+        }
+
+        if (written > 0)
+            await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>1µs, in ticks — the smallest OccurredAt separation that survives PostgreSQL timestamptz
+    /// microsecond truncation (mirrors <c>PooledLeaveLedger.PoolRowTickOffset</c>). Keeps back-filled
+    /// per-period accrual rows deterministically ordered for the running-balance read.</summary>
+    private const long PeriodRowTickOffset = 10;
+
+    /// <summary>
+    /// BUG-291 (crux): how many accrual periods have ELAPSED as of <paramref name="today"/> within the leave
+    /// year that starts on <paramref name="leaveYearStart"/>, and how many periods that frequency has per year.
+    ///
+    /// <para>Monthly = 12 periods (1 month each), Quarterly = 4 (3 months each), Yearly + Upfront = 1 (the
+    /// whole year, credited in a single row — byte-identical to the pre-BUG-291 behaviour). A date before the
+    /// year start yields 0 elapsed (nothing accrues yet); a date after the year end is capped at the last
+    /// period (back-filling a fully-elapsed year credits the full entitlement). Pure + framework-free so this
+    /// boundary arithmetic — the part easy to get wrong at the period edges — is unit-testable in isolation,
+    /// mirroring <see cref="LeaveYear"/> / <c>LeaveEntitlementEngine</c>.</para>
+    /// </summary>
+    internal static (int ElapsedPeriods, int PeriodsPerYear) AccrualPeriodProgress(
+        AccrualFrequency frequency, DateOnly leaveYearStart, DateOnly today)
+    {
+        int periodsPerYear = frequency switch
+        {
+            AccrualFrequency.Monthly => 12,
+            AccrualFrequency.Quarterly => 4,
+            // Yearly + Upfront both credit the whole entitlement once, at/after the year start.
+            _ => 1,
         };
 
-        _dbContext.LeaveLedgerEntries.Add(ledgerEntry);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        int monthsSinceStart = (today.Year - leaveYearStart.Year) * 12 + (today.Month - leaveYearStart.Month);
+        if (monthsSinceStart < 0)
+            return (0, periodsPerYear);          // Leave year not started yet.
+        if (monthsSinceStart > 11)
+            monthsSinceStart = 11;               // Fully-elapsed (past) year → cap at the final period.
+
+        int monthsPerPeriod = 12 / periodsPerYear;               // 1 / 3 / 12
+        int elapsed = (monthsSinceStart / monthsPerPeriod) + 1;  // 1-based
+        return (elapsed, periodsPerYear);
+    }
+
+    /// <summary>
+    /// BUG-291: the amount to credit for accrual <paramref name="period"/> (1-based), computed as the
+    /// cumulative-through-<paramref name="period"/> minus cumulative-through-previous, each cumulative rounded
+    /// to the ledger's numeric(5,2) scale. This guarantees the per-period rows SUM to exactly
+    /// <paramref name="proratedAnnual"/> after a full year (cum(periodsPerYear) == proratedAnnual) with no
+    /// rounding over/under-credit, while every individual amount stores exactly in numeric(5,2).
+    /// </summary>
+    internal static decimal PeriodAccrualAmount(decimal proratedAnnual, int period, int periodsPerYear)
+    {
+        static decimal Cumulative(decimal annual, int p, int perYear) =>
+            Math.Round(annual * p / perYear, 2, MidpointRounding.AwayFromZero);
+
+        return Cumulative(proratedAnnual, period, periodsPerYear)
+             - Cumulative(proratedAnnual, period - 1, periodsPerYear);
     }
 
     private async Task<LeaveEntitlementEngine.EntitlementResolution> ResolveEntitlementAsync(
