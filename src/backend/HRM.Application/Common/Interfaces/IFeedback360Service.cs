@@ -55,4 +55,13 @@ public interface IFeedback360Service
     /// </summary>
     Task<Result<Feedback360ResultsDto>> GetReportDataAsync(
         Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Renders the 360 summary report as a branded PDF (FR-7). Reuses <see cref="GetReportDataAsync"/> for the
+    /// data — so the SAME HR-only authorization + tenant query filter apply and anonymity (NFR-3/FR-5) is already
+    /// enforced in the projection. Only <c>pdf</c> is supported (there is no CSV/XLSX for this report); any other
+    /// format fails 400 <c>invalid_format</c>.
+    /// </summary>
+    Task<Result<PerformanceExportFile>> ExportReportAsync(
+        Guid revieweeEmployeeId, Guid cycleId, string? format, CancellationToken cancellationToken = default);
 }

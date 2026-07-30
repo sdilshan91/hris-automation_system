@@ -7576,6 +7576,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-353 — The canonical module key list is duplicated in three places with nothing keeping them in lockstep
 - **ID:** ISSUE-353
+- **Status update:** ✅ **RESOLVED 2026-07-31** — added `ModuleVocabularyContractTests` on the BACKEND side, which can read both languages: it parses `CANONICAL_MODULE_KEYS` from `module.guard.ts` and `CANONICAL_MODULES` from `plan.models.ts` and asserts each is membership-exact against `PlanModules.All`, in both directions. The existing FE `module-key-drift.spec.ts` already pinned copies 2↔3; a Karma spec cannot reach the C# copy, so the backend was the unguarded link. Mutation-verified: adding a phantom key to the FE guard fails the contract. Chose parsing the real source over a generated shared artifact deliberately — a stale generated file exhibits the very drift being guarded against, whereas reading the live file cannot go stale.
 - **Type:** ISSUE (contract drift risk — the same class as the bug it guards against)
 - **Severity:** MED
 - **Status:** OPEN
@@ -7592,6 +7593,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-354 — `Tenant.MaxEmployees` snapshot is never refreshed when a plan's numeric limits change
 - **ID:** ISSUE-354
+- **Status update:** ⚠️ **RESOLVED 2026-07-31 — and it was NOT the low-severity snapshot-tidiness item this was filed as.** `BulkEmployeeImportService.CheckPlanLimitForImportAsync` still read `Tenant.MaxEmployees` **raw**, making it the **THIRD** code path enforcing the same limit off the stale snapshot — after `EmployeeService` (fixed under BUG-008) and the invite path (fixed under [[ISSUE-338]]). **It was missed by both of those fixes AND by the [[ISSUE-342]] plan-write sweep.** User-visible effect: a tenant who PURCHASED a limit override, or whose plan was upgraded, could create employees one-by-one and invite users, but was still refused on bulk import — three paths giving three different answers about one limit. Now resolves through `PlanLimitResolver` with the same override>plan>snapshot idiom, and the error message reports the EFFECTIVE cap rather than the stale snapshot. Arm added to `InvitePlanLimitAgreementTests`. **Lesson: 'find every call site' sweeps miss things; a cross-path AGREEMENT test is what actually holds, which is why the storage helper got one under phase 4.**
 - **Type:** ISSUE (denormalized snapshot drift)
 - **Severity:** LOW
 - **Status:** OPEN

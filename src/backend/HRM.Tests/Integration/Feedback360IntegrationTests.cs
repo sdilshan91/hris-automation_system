@@ -416,4 +416,49 @@ public sealed class Feedback360IntegrationTests
         await db.SaveChangesAsync();
         return s;
     }
+
+    // ── PDF report export (FR-7, deferred-PDF work item) ────────────────
+
+    [Fact]
+    public async Task Export_report_pdf_returns_a_pdf_document()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        (await Feedback(_tenantA, s.Peer1UserId, PermissionCatalog.Performance.ViewOwn)
+            .SubmitFeedbackAsync(Fb(s.CycleId, s.RevieweeEmpId, 4))).IsSuccess.Should().BeTrue();
+
+        var export = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ExportReportAsync(s.RevieweeEmpId, s.CycleId, "pdf");
+
+        export.IsSuccess.Should().BeTrue(export.Error);
+        export.Value!.ContentType.Should().Be("application/pdf");
+        export.Value!.FileName.Should().EndWith(".pdf");
+        export.Value!.FileContent.Should().NotBeEmpty();
+        System.Text.Encoding.ASCII.GetString(export.Value!.FileContent, 0, 4).Should().Be("%PDF");
+    }
+
+    [Fact]
+    public async Task Export_report_pdf_is_tenant_isolated()
+    {
+        var b = await SeedAsync(_tenantB, minPeers: 1);
+
+        // Tenant A's HR cannot render Tenant B's 360 report (global query filter hides B's cycle/employee).
+        var crossExport = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ExportReportAsync(b.RevieweeEmpId, b.CycleId, "pdf");
+
+        crossExport.IsFailure.Should().BeTrue();
+        crossExport.StatusCode.Should().BeOneOf(403, 404);
+    }
+
+    [Fact]
+    public async Task Export_report_pdf_refuses_a_caller_without_ReviewAll()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+
+        // No Performance.Review.All → refused. The PDF is not less protected than the /results + /report JSON.
+        var forbidden = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReadSelf)
+            .ExportReportAsync(s.RevieweeEmpId, s.CycleId, "pdf");
+
+        forbidden.IsFailure.Should().BeTrue();
+        forbidden.StatusCode.Should().Be(403);
+    }
 }

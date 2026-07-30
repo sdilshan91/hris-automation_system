@@ -68,6 +68,14 @@ public interface IReviewSignoffService
     Task<Result<ReviewExportDto>> GetExportRecordAsync(
         Guid employeeId, Guid cycleId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Renders the complete review record as a branded PDF (AC-4/FR-6). Reuses <see cref="GetExportRecordAsync"/>
+    /// for the data — so the SAME manager/HR authorization + tenant query filter apply. Only <c>pdf</c> is
+    /// supported; any other format fails 400 <c>invalid_format</c>.
+    /// </summary>
+    Task<Result<PerformanceExportFile>> ExportRecordPdfAsync(
+        Guid employeeId, Guid cycleId, string? format, CancellationToken cancellationToken = default);
+
     // ── Caller-scoped self-service (ISSUE-288) ──────────────────────────
     // The employee self-view holds neither its employeeId nor a cycleId. These resolve BOTH server-side
     // (employeeId from the caller's Employee row, cycleId from the active appraisal cycle) and then reuse the

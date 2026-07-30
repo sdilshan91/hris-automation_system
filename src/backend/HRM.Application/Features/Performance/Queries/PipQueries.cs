@@ -47,3 +47,15 @@ public sealed class GetPipQueryHandler : IRequestHandler<GetPipQuery, Result<Pip
     public Task<Result<PipDto>> Handle(GetPipQuery request, CancellationToken cancellationToken)
         => _service.GetAsync(request.PipId, cancellationToken);
 }
+
+/// <summary>Renders one full PIP as a branded PDF download (US-PRF-008 AC-1/FR-5) — FR-8 visibility restricted.</summary>
+public sealed record ExportPipQuery(Guid PipId, string? Format) : IRequest<Result<PerformanceExportFile>>;
+
+public sealed class ExportPipQueryHandler : IRequestHandler<ExportPipQuery, Result<PerformanceExportFile>>
+{
+    private readonly IPipService _service;
+    public ExportPipQueryHandler(IPipService service) => _service = service;
+
+    public Task<Result<PerformanceExportFile>> Handle(ExportPipQuery request, CancellationToken cancellationToken)
+        => _service.ExportPdfAsync(request.PipId, request.Format, cancellationToken);
+}

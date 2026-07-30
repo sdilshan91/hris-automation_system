@@ -8,6 +8,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
 using HRM.Application.Features.Employees.Queries;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -995,17 +996,45 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
 
-        if (tenant?.MaxEmployees is null)
+        if (tenant is null)
+            return Result<int>.Success(requestedCount);
+
+        // ISSUE-354 / ISSUE-338: resolve the effective cap with precedence override > plan > snapshot via
+        // PlanLimitResolver — the SAME idiom as EmployeeService.CheckPlanLimitAsync and
+        // UserManagementService's invite check — instead of reading Tenant.MaxEmployees RAW.
+        //
+        // This was the THIRD code path enforcing the same limit off the stale snapshot. EmployeeService was
+        // fixed under BUG-008 and the invite path under ISSUE-338; bulk import was missed by both that fix and
+        // the ISSUE-342 plan-write sweep. The user-visible effect: a tenant who PURCHASED a limit override, or
+        // whose plan was upgraded, could create employees one-by-one and invite users, but was still refused on
+        // bulk import — three paths, three different answers about one limit.
+        var planValue = await _dbContext.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => (long?)p.MaxEmployees)
+            .FirstOrDefaultAsync(cancellationToken);
+        var overrides = await _dbContext.PlanLimitOverrides
+            .AsNoTracking()
+            .Where(o => o.TenantId == tenant.Id)
+            .ToListAsync(cancellationToken);
+
+        var resolved = PlanLimitResolver.Resolve(
+            PlanLimitKeys.MaxEmployees, planValue, overrides, DateTime.UtcNow);
+        long? effectiveCap = resolved.Source == PlanLimitResolver.LimitSource.Override
+            ? resolved.Value                                   // override wins (null = unlimited)
+            : planValue ?? (long?)tenant.MaxEmployees;         // else plan value, else snapshot
+
+        if (effectiveCap is not { } cap)
             return Result<int>.Success(requestedCount); // No limit
 
         var currentCount = await _dbContext.Employees
             .CountAsync(e => e.IsActive, cancellationToken);
 
-        int availableSlots = tenant.MaxEmployees.Value - currentCount;
+        int availableSlots = (int)Math.Max(0, cap - currentCount);
 
         if (availableSlots <= 0)
             return Result<int>.Failure(
-                $"Your plan's employee limit ({tenant.MaxEmployees.Value}) has been reached. " +
+                $"Your plan's employee limit ({cap}) has been reached. " +
                 "Please upgrade your plan or remove inactive employees.", 403);
 
         if (requestedCount <= availableSlots)
@@ -1015,7 +1044,7 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         if (!importUpToLimit)
         {
             return Result<int>.Failure(
-                $"This import would exceed your plan's employee limit ({tenant.MaxEmployees.Value}). " +
+                $"This import would exceed your plan's employee limit ({cap}). " +
                 $"Currently {currentCount} employees, attempting to import {requestedCount}. " +
                 $"Only {availableSlots} slots available. " +
                 "Set 'importUpToLimit' to true to import only up to the limit, or upgrade your plan.",

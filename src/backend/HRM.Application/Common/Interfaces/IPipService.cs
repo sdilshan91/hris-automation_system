@@ -44,6 +44,14 @@ public interface IPipService
     Task<Result<PipDto>> GetAsync(Guid pipId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Renders one full PIP as a branded PDF (AC-1/FR-5). Reuses <see cref="GetAsync"/> for the data — so the
+    /// SAME FR-8 visibility restriction + tenant query filter apply. Only <c>pdf</c> is supported; any other
+    /// format fails 400 <c>invalid_format</c>.
+    /// </summary>
+    Task<Result<PerformanceExportFile>> ExportPdfAsync(
+        Guid pipId, string? format, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Employee acknowledges PIP initiation (BR-4 — mirrors the US-PRF-006 acknowledgement). Caller must be the
     /// PIP's employee. Writes an IMMUTABLE Acknowledged event and flips the acknowledgement status.
     /// </summary>
