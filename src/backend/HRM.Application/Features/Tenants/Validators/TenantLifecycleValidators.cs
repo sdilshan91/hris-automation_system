@@ -55,3 +55,16 @@ public sealed class RestoreTenantValidator : AbstractValidator<RestoreTenantComm
     public RestoreTenantValidator()
         => RuleFor(x => x.TenantId).NotEmpty().WithMessage("A tenant id is required.");
 }
+
+/// <summary>
+/// Validates <see cref="ChangeTenantPlanCommand"/> field shape (ISSUE-341). The plan code is mandatory; whether
+/// it exists AND is active needs the DB, so that check lives in the service (400 <c>plan_invalid</c>).
+/// </summary>
+public sealed class ChangeTenantPlanValidator : AbstractValidator<ChangeTenantPlanCommand>
+{
+    public ChangeTenantPlanValidator()
+    {
+        RuleFor(x => x.TenantId).NotEmpty().WithMessage("A tenant id is required.");
+        RuleFor(x => x.PlanCode).NotEmpty().WithMessage("A plan code is required.");
+    }
+}

@@ -64,3 +64,20 @@ public sealed class RestoreTenantCommandHandler : IRequestHandler<RestoreTenantC
     public Task<Result<TenantLifecycleResultDto>> Handle(RestoreTenantCommand request, CancellationToken cancellationToken)
         => _service.RestoreAsync(new RestoreTenantInput(request.TenantId), cancellationToken);
 }
+
+// ── Change plan (ISSUE-341) ─────────────────────────────────────────────────
+
+/// <summary>
+/// Moves an existing tenant onto a different subscription plan (ISSUE-341). Thin command; the work (plan
+/// validation, module recompute, cache invalidation, audit) lives in <see cref="ITenantLifecycleService"/>.
+/// </summary>
+public sealed record ChangeTenantPlanCommand(Guid TenantId, string PlanCode) : IRequest<Result<ChangeTenantPlanResultDto>>;
+
+public sealed class ChangeTenantPlanCommandHandler : IRequestHandler<ChangeTenantPlanCommand, Result<ChangeTenantPlanResultDto>>
+{
+    private readonly ITenantLifecycleService _service;
+    public ChangeTenantPlanCommandHandler(ITenantLifecycleService service) => _service = service;
+
+    public Task<Result<ChangeTenantPlanResultDto>> Handle(ChangeTenantPlanCommand request, CancellationToken cancellationToken)
+        => _service.ChangeTenantPlanAsync(new ChangeTenantPlanInput(request.TenantId, request.PlanCode), cancellationToken);
+}

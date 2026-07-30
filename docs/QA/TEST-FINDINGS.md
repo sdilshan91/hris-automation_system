@@ -7204,6 +7204,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-331 — Running backend container is a STALE build predating PR #444/#446; US-AUTH-012 & US-AUTH-016 SSO surface is absent from the live stack
 - **ID:** ISSUE-331
+- **Status update:** ✅ **RESOLVED 2026-07-30** — backend image rebuilt from current `test/local-subdomains` and restarted. Verified live: `tenants` now has the SSO columns, `POST /api/v1/auth/break-glass-login` returns **400 (validation)** rather than 404, and the pending migrations applied — including `Platform_NormalizeTenantEnabledModules`, which normalized the `e2e` and `platform` tenants onto the canonical module vocabulary, proving [[ISSUE-335]]'s fix end-to-end on real data.
 - **Type:** ISSUE (INFRA — deployment drift; blocks live QA of two shipped stories)
 - **Severity:** MED (not a product defect — source code is correct and its bound automated tests are 56/56 green; but the *running* stack cannot exercise the US-AUTH-012/016 API/UI surface, so live re-test of those stories is blocked until the container is rebuilt)
 - **Status:** OPEN
@@ -7420,7 +7421,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-343
 - **Type:** ISSUE (API contract inconsistency)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** OPEN — **retrofit DEFERRED by decision 2026-07-30 (user).** New gates use **403** with a machine-readable `code`; the two existing 409s (`workflow_limit_reached`, `plan_limit_reached`) stay as they are. Retrofitting them is a breaking change that would need `workflow.service.spec.ts:114` and `workflow-editor.component.spec.ts:204` updated in lockstep, and it does not belong bundled inside US-ADM-012. Every individual response is well-formed today; only cross-endpoint consistency suffers. This finding is the standing record until someone does the deliberate pass.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** Plan-limit breaches return different status codes by accident of authorship: 403 for `storage_quota_exceeded` and the employee limit (the latter with no error code at all), 409 for `workflow_limit_reached` and `plan_limit_reached`. A client cannot handle "you hit a plan limit" generically.
@@ -7488,3 +7489,156 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** set `OBSERVABILITY__OTLPENDPOINT` and observe the exporter still falls back to console.
 - **Severity rationale:** LOW today (nobody has attempted Phase 2), but it is precisely the kind of drift that costs an afternoon of "why is my collector empty".
 - **Suggested direction (NOT applied):** correct the plan to `OpenTelemetry__OtlpEndpoint`, and add the variable to `docker.env.example`.
+
+---
+
+### ISSUE-348 — US-PRF-011's headline justification is false; the "calibration dead-end trap" does not exist
+- **ID:** ISSUE-348
+- **Type:** ISSUE (story/code drift — a whole story justified by a non-existent defect)
+- **Severity:** MED (it has been directing roadmap priority for three weeks and would have funded building a fix for nothing)
+- **Status:** OPEN
+- **Layer:** DOC + BE (one-line message fix)
+- **Module / US / TC:** Performance / US-PRF-011, US-PRF-010 / TC-PRF-010-B1 — found 2026-07-30 verifying US-PRF-011's premises before building
+- **Title:** `docs/BA/STATUS.md` and `US-PRF-011.md` justify the story as *"removes the calibration dead-end trap that permanently locks US-PRF-010"*, describing a state where recommendations are blocked with `calibration_incomplete` and **"nothing can mark it complete"**. The code disagrees. `RecommendationService.cs:406-416` gates on `ManagerReviews.Any(r => r.CycleId == … && r.EmployeeId == … && r.SubmittedAt != null)` — i.e. an ordinary US-PRF-003 manager-review submit satisfies it. There is no `CalibrationStatus` enum, no `CalibrationCompletedAt` column, and no entity that can get stuck. The passing test `RecommendationServiceTests.Submit_with_calibration_enabled_requires_a_submitted_review` (`:259-269`) asserts `IsSuccess == true` with `calibration: true` — the lockout is disproved by a green test that predates the story.
+- **Also false:** "permanently blocks recommendation **generation**" — `AutoGenerateAsync` (`:186-266`) contains zero calibration references. The only `IsCalibrationEnabled` read in the whole service is at `:407`, inside `SubmitAsync`.
+- **Root cause:** the reconciliation that authored the stub read the **error string** (*"recommendations can only proceed after calibration is complete"*) rather than the **predicate** underneath it. The message says "calibration" where the check means "manager review submitted". Confidence **95%** — predicate, test and `git log -L` (unchanged since `5d5ed396`, 2026-06-16) all read directly.
+- **Reproduction steps:** run `RecommendationServiceTests.Submit_with_calibration_enabled_requires_a_submitted_review` — it passes today.
+- **Severity rationale:** MED — no runtime defect, but it is the stated reason a Must-Have story exists, and roughly half that story's value is either already delivered (see ISSUE-352) or was never real. Left unchallenged it buys a workspace to unblock something that is not blocked.
+- **Suggested direction (NOT applied):** correct the premise in `US-PRF-011.md:14-18` and `STATUS.md`; reword the misleading failure message at `RecommendationService.cs:414` to state what it actually checks ("manager review not submitted"), keeping the `calibration_incomplete` code for contract compatibility or changing both deliberately. US-PRF-011's genuinely-missing capability is the **calibrated-vs-original rating model** (AC-2) and the cohort/distribution surface (AC-1) — not an unblocker.
+
+---
+
+### ISSUE-349 — `IsCalibrationEnabled` and the presence of a Calibration phase can diverge; nothing validates them
+- **ID:** ISSUE-349
+- **Type:** BUG (missing validation — latent)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Performance / US-PRF-004, US-PRF-011 / — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** `CyclePhaseRules.Apply` (`CycleValidators.cs:15-66`) requires GoalSetting / SelfAssessment / ManagerReview phases, forbids duplicates, and enforces ordering and containment — but **nothing asserts that `AppraisalCycle.IsCalibrationEnabled == true` implies a Calibration `CyclePhase` exists, or the converse.** A cycle can therefore carry the calibration flag with no calibration window, or a calibration phase with the flag off.
+- **Root cause:** the flag and the phase row were added as independent fields with no cross-validation. Confidence **90%**.
+- **Reproduction steps:** create an appraisal cycle with `IsCalibrationEnabled = true` and no Calibration phase in the phase set — it validates and saves.
+- **Severity rationale:** MED — today it is cosmetic because nothing consumes the pairing, but it is a precondition for any calibration work: a workspace keyed off the flag would have no window to run in, and one keyed off the phase would ignore the flag. Cheap to fix now, expensive to discover later.
+- **Suggested direction (NOT applied):** add the cross-check to `CyclePhaseRules.Apply` with a clear validation message, plus an arm for each direction.
+
+---
+
+### ISSUE-350 — A Calibration phase renders as permanently 0% and is skipped by the phase-transition job
+- **ID:** ISSUE-350
+- **Type:** ISSUE (incomplete feature surface)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Performance / US-PRF-004, US-PRF-011 / — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** `CyclePhaseTransitionJob.cs:65` explicitly skips any phase that is not GoalSetting/SelfAssessment/ManagerReview, and the cycle dashboard scores Calibration as `_ => 0` (`AppraisalCycleService.cs:571-577`) with overdue suppressed (`:585-586`). So a tenant who enables calibration gets a timeline bar stuck at 0% forever and no automated phase progression.
+- **Root cause:** calibration was modelled as an enum value + toggle + phase row without any behaviour behind it. Confidence **90%**.
+- **Reproduction steps:** create a cycle with a Calibration phase and view the cycle dashboard — the calibration segment reads 0% regardless of dates.
+- **Severity rationale:** LOW — misleading UI on an opt-in toggle that no tenant appears to use, no data risk.
+- **Suggested direction (NOT applied):** fold into US-PRF-011. Note `CyclePhase` currently has **no state at all** (only type/sequence/dates), so "mark the phase complete" needs the first phase-level state in the model — a `CyclePhase.CompletedOn` is the more general fix than a calibration-specific flag on `AppraisalCycle`, and would let both the job and the dashboard stop special-casing.
+
+---
+
+### ISSUE-351 — Narrow one-way door: a completed cycle can leave an employee permanently un-recommendable
+- **ID:** ISSUE-351
+- **Type:** BUG (irrecoverable state, narrow preconditions)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Performance / US-PRF-003, US-PRF-010 / — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** This is the *real* residual behind the mythical "calibration dead-end" (ISSUE-348) — far narrower than claimed. An employee becomes permanently un-recommendable when all four hold: the cycle has `IsCalibrationEnabled = true`; the cycle has reached `Completed`; that employee's `ManagerReview.SubmittedAt` is still null; and HR manually created a Draft recommendation for them via `SaveAsync` (auto-generate cannot, since it filters `FinalScore != null`). It is then irrecoverable because both submit and reopen require an open manager-review window (`ManagerReviewService.cs:112` and `:317`), `IsPhaseOpen` requires `Status == Active` (`AppraisalCycle.cs:229-230`), and `Completed` is terminal with no outbound edge in `IsValidTransition` (`:264-274`).
+- **Root cause:** `Completed` being terminal, combined with reopen being gated on an open phase window. Confidence **85%** — the four preconditions were traced individually; no test exercises the combination.
+- **Reproduction steps:** as above — the combination is contrived, which is why it has never been hit.
+- **Severity rationale:** LOW — four simultaneous preconditions including a manual HR action on an employee whose review was never submitted. Real, but obscure.
+- **Suggested direction (NOT applied):** this is a **US-PRF-003 reopen-window problem, not a calibration-workspace problem** — do not let it justify building a committee workspace. The proportionate fix is an HR-privileged reopen path for a completed cycle (or allowing review submission when a recommendation exists for that employee).
+
+---
+
+### ISSUE-352 — US-PRF-010 AC-B1 (completed-cycles picker) is marked "not built" in three places but shipped 2026-07-08
+- **ID:** ISSUE-352
+- **Type:** ISSUE (ledger staleness — work marked open that is delivered and tested)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** DOC
+- **Module / US / TC:** Performance / US-PRF-010 (AC-B1) / TC-PRF-010-B1 — found 2026-07-30 during the US-PRF-011 premise verification
+- **Title:** Three documents still record the BUG-243 follow-up "AC-B1 completed-cycles picker" as missing — `docs/BA/STATUS.md` (deferred-AC table), `docs/BA/performance/US-PRF-010.md:107` (*"Status: not built. Ref: BUG-243."*), and `docs/QA/performance/TC-PRF-010-B1.md:15`. It is fully built end to end and was verified independently: BE endpoint `GET /api/v1/tenant/performance/recommendations/cycles/completed` (`RecommendationController.cs:43-55`, permission-gated) → `GetCompletedCyclesForRecommendationsQueryHandler` (`RecommendationQueries.cs:20-45`); FE service `recommendation.service.ts:40-44` feeding a rendered picker at `recommendation-workspace.component.ts:157`; tests `RecommendationCompletedCyclesTests.cs` (3 cases) + `recommendation-workspace.component.spec.ts:66`. Shipped in commit `bcd7c333`, **two days after** the 2026-07-06 reconciliation that recorded it as missing.
+- **Root cause:** the reconciliation snapshot was never revisited after the work landed — the same class as ISSUE-335/348 and the STATUS.md drift corrected on 2026-07-29. Confidence **100%** — endpoint, handler, FE picker and tests all read directly.
+- **Reproduction steps:** `grep -n "cycles/completed" src/backend/HRM.Api/Controllers/RecommendationController.cs` and compare against `US-PRF-010.md:107`.
+- **Severity rationale:** LOW individually — but it is the fourth instance of the same failure mode, and it materially inflates the apparent size of US-PRF-011 (whose stub cites this as part of its value).
+- **Suggested direction (NOT applied):** flip all three documents to built, citing `bcd7c333`. Consider a broader sweep: every "not built"/"missing" claim written by the 2026-07-06 reconciliation should be re-verified against the code, since four of four checked so far were stale.
+
+---
+
+### ISSUE-353 — The canonical module key list is duplicated in three places with nothing keeping them in lockstep
+- **ID:** ISSUE-353
+- **Type:** ISSUE (contract drift risk — the same class as the bug it guards against)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE + FE
+- **Module / US / TC:** Admin Console / US-ADM-012 (AC-1/AC-2) / TC-ADM-012-* — surfaced by `@frontend-dev` as an OUT-OF-LANE flag while building the FE gate, 2026-07-30
+- **Title:** After US-ADM-012, the canonical module vocabulary exists in **three** independent copies: `PlanModules.All` (`src/backend/HRM.Domain/Authorization/PlanModules.cs`), `CANONICAL_MODULE_KEYS` (`src/frontend/src/app/core/tenant/module.guard.ts`), and `CANONICAL_MODULES` (`src/frontend/.../features/admin/plans/plan.models.ts:122-136`). A fourth copy is frozen as a SQL literal inside the normalization migration (that one is correct and intentional — a migration must describe data as of its own point in history). Nothing asserts the three live copies agree.
+- **Why this is sharper than ordinary duplication:** the FE gate's fail-open rule is *"any token outside the canonical set means the vocabulary is untrusted, so allow"*. If the backend adds a module key and the frontend list is not updated, every tenant holding that new key trips the FE's unknown-token branch and the **entire frontend silently stops enforcing entitlement** — while the backend still enforces it. UI and API then disagree about what is enabled, which is worse than either being wrong alone. The failure is silent in both directions and looks like "it works".
+- **Root cause:** the FE deliberately does not import from the `plans` feature into `core/` (a layering inversion), and cannot import from the backend at all — so duplication was the correct local call. The gap is the missing cross-check, not the duplication. Confidence **95%**.
+- **Reproduction steps:** add a 14th key to `PlanModules.All`, provision a tenant holding it, and observe the FE guard fail open for every module while the BE continues to gate.
+- **Severity rationale:** MED — it is precisely the drift class that caused ISSUE-335 (two vocabularies, nothing asserting the link, invisible because nothing read the column). Shipping the fix for that bug while re-introducing its shape one layer up would be a poor trade.
+- **Suggested direction (NOT applied):** (1) cheap and immediate — a FE spec asserting `module.guard.ts`'s key set equals `plan.models.ts`'s `CANONICAL_MODULES`, closing two of three; (2) the real fix — a generated or contract-tested shared list, e.g. a BE test that serializes `PlanModules.All` to a fixture the FE spec reads, so a backend addition fails the frontend build. Mirrors the both-direction `EncryptedFieldRegistry` drift guards, which are the established pattern here for exactly this.
+
+---
+
+### ISSUE-354 — `Tenant.MaxEmployees` snapshot is never refreshed when a plan's numeric limits change
+- **ID:** ISSUE-354
+- **Type:** ISSUE (denormalized snapshot drift)
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-009, US-ADM-012 / — surfaced by `@backend-dev` as an OUT-OF-LANE flag while building the ISSUE-342 sweep, 2026-07-30
+- **Title:** The ISSUE-342 plan-write sweep recomputes `Tenant.EnabledModules` when a plan's module list changes, but deliberately does **not** refresh the denormalized `Tenant.MaxEmployees` snapshot when a plan's numeric limits change. That snapshot can therefore drift from its plan indefinitely — the same class of staleness ISSUE-342 fixed for modules, left in place for limits.
+- **Root cause:** `Tenant.MaxEmployees` is a provisioning-time denormalization retained as a fallback; the sweep was scoped to the module list. Confidence **90%**.
+- **Why it is LOW and not MED:** enforcement is **not** affected. `EmployeeService.CheckPlanLimitAsync` resolves the limit **live** by `PlanId` through `PlanLimitResolver` (override → plan → snapshot), so the plan value wins and the stale snapshot is only ever consulted as a last-resort fallback when the plan lookup yields nothing. The drift is latent, not enforced-upon. Note this is **not** true of the invite path — `UserManagementService` reads the raw snapshot and bypasses the resolver entirely, which is [[ISSUE-338]]; the two findings compound, and fixing ISSUE-338 also removes most of this one's exposure.
+- **Reproduction steps:** change a plan's `MaxEmployees`; observe `tenants.max_employees` for tenants on that plan is unchanged.
+- **Suggested direction (NOT applied):** either retire the `Tenant.MaxEmployees` snapshot entirely (once ISSUE-338 stops reading it raw, nothing depends on it for enforcement), or refresh it in the same sweep on any plan edit that changes a numeric limit. Retiring it is the cleaner end state — a denormalization with exactly one live consumer, which itself should not be using it, is not earning its keep.
+
+---
+
+### ISSUE-355 — Offboarding + exit-interviews are gated under the Onboarding module (no Offboarding module exists)
+- **ID:** ISSUE-355
+- **Type:** DECISION (product taxonomy)
+- **Severity:** LOW
+- **Status:** ✅ **DECIDED 2026-07-30 (user)** — keep offboarding + exit-interviews mapped to the **Onboarding** module. Rationale: they are the "off" half of one employee-lifecycle module, matching how the BA docs already group US-ONB-005/006. Accepted consequence: a plan without Onboarding also loses offboarding, and they cannot be sold separately without adding a `PlanModules.Offboarding` key later (which would ripple into the plan editor, the FE `CANONICAL_MODULES`, [[ISSUE-353]]'s drift guard and the normalization migration's canonical literal). No code change needed — the shipped mapping already reflects this.
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-012 (AC-1), US-ONB-005/006 / TC-ADM-012 — surfaced by `@backend-dev` while building the module gate, 2026-07-30
+- **Title:** `PlanModules` has an `Onboarding` key but no `Offboarding` key, while `/api/v1/offboarding` and `/api/v1/exit-interviews` are distinct route families. The gate maps both to **Onboarding**, on the reading that they are the "off" half of one Onboarding/Offboarding lifecycle module (which is how the BA docs group US-ONB-005/006).
+- **Consequence of the choice:** a tenant on a plan without `Onboarding` also loses offboarding and exit interviews. If a customer is ever sold offboarding separately, or given onboarding without offboarding, this mapping is wrong and the plan editor has no key to express it.
+- **Root cause:** the module vocabulary predates the gate and was never asked to distinguish the two halves. Confidence **100%** — `PlanModules.All` has no Offboarding key.
+- **Alternative considered:** leave both ungated. Rejected as the default because it silently exempts a whole feature area from entitlement with no record of why; an explicit mapping plus this finding is more honest.
+- **Severity rationale:** LOW — the mapping is defensible and easily changed (one table entry). Filed because it is a **product** decision made by an implementation default, which is exactly the kind of choice that should be visible rather than buried in a route table.
+- **Suggested direction (NOT applied):** confirm the taxonomy. If offboarding should be separately sellable, add a `PlanModules.Offboarding` key (note: that ripples into the plan editor, the FE `CANONICAL_MODULES`, [[ISSUE-353]]'s drift guard, and the normalization migration's canonical literal). If not, keep the current mapping and record it in the US-ADM-012 story.
+
+---
+
+### ISSUE-356 — `CustomReportBuilder` is a sellable module with no controller, so it can never be enforced
+- **ID:** ISSUE-356
+- **Type:** GAP
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-012, US-ADM-009 / — surfaced by `@backend-dev` while building the module gate, 2026-07-30
+- **Title:** `PlanModules.CustomReportBuilder` is offered in the plan editor's module grid and can be toggled per plan, but **no controller or route implements it**. The entitlement gate therefore has nothing to map it to: toggling it on or off is a no-op at runtime.
+- **Root cause:** the module key was added to the canonical vocabulary ahead of the feature. Confidence **95%** — no controller matched a custom-report-builder route in the enumeration of every `[Route]` attribute.
+- **Severity rationale:** LOW — no runtime risk. It matters commercially: a plan can advertise a module the platform does not implement, and an admin toggling it sees no effect and no explanation.
+- **Suggested direction (NOT applied):** either build the feature, or mark the key as not-yet-available in the plan editor so it cannot be sold by accident. Note `Asset` is a related-but-different case — it HAS a surface (`/api/v1/onboarding/assets`) and IS gated, it just lacks a dedicated controller.
+
+---
+
+### BUG-291 — `AccrualFrequency` is ignored: a Monthly/Quarterly leave type credits the FULL year on the first run, and that inflated balance is paid out
+- **ID:** BUG-291
+- **Type:** BUG (money — over-credit reaching encashment and final settlement)
+- **Severity:** **HIGH**
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave Management / US-LV-002 (AC-K2 / FR-5) / TC-LV-002-* — found 2026-07-30 during the 2026-07-06 reconciliation sweep
+- **Title:** `LeaveType.AccrualFrequency` is settable by a tenant admin but **read by nothing in the accrual path**. `LeaveEntitlementService.ProcessSingleAccrualAsync` (`:747-798`) credits the **entire annual prorated entitlement in a single ledger entry**, and its idempotency guard (`:761-767`) is scoped to `(employee, leaveType, LeaveYear, EntryType == Accrual)`. So the first accrual run of the year credits 12/12 and every later run is skipped as "already accrued". A leave type configured **Monthly** or **Quarterly** therefore behaves exactly like Annual.
+- **Why this is HIGH and not the "deferred scheduling feature" the ledger called it:** the inflated balance is not cosmetic. `LeaveEncashmentService` and `RealPayrollFnFIntegration` both consume the leave ledger, so an employee who leaves in March under a Monthly-accrual policy carries a full year's balance instead of ~3/12 — and that difference is **encashed and paid out** in their final settlement. The ledger recorded this as US-LV-002 "AC-K2 accrual-frequency scheduling (FR-5)" — an unbuilt convenience. It is actually a live over-credit on a money path.
+- **Root cause:** the accrual job was built to credit annually; `AccrualFrequency` was added to the entity/DTO/UI without a consumer, and no test asserts the frequency changes behaviour. Confidence **90%** — verified by grep (zero `AccrualFrequency` reads in `LeaveEntitlementService` or the accrual job), by reading the credit + guard, and by confirming the FE exposes the setting (`leave-type-list.component.ts`) and that the balance feeds encashment/F&F.
+- **Reproduction steps:** configure a leave type with `AccrualFrequency = Monthly` and a 12-day annual entitlement; run the accrual job in January; inspect `leave_ledger` — expect one Accrual entry for the full 12 days rather than 1 day. Re-run in February: skipped. Then run an encashment or F&F settlement for that employee and observe the balance used.
+- **Severity rationale:** HIGH — real money leaves the business, it is silent (no error, the number simply looks generous), it is reachable through a setting the product already offers, and it scales with headcount. Not CRIT only because it requires the tenant to have chosen a non-Annual frequency.
+- **Suggested direction (NOT applied):** make the accrual job frequency-aware — credit `entitlement × elapsed periods / periods-per-year`, with the idempotency guard keyed on `(employee, leaveType, year, period)` rather than year alone, so each period credits exactly once. **This is a money-path change: it needs a real-Postgres arm and mutation verification**, per this repo's standing rule that InMemory masks Postgres on ledger arithmetic. Also decide the back-fill question — existing tenants on Monthly already hold over-credited balances, and silently correcting them downward is an employee-detriment change of the kind US-LV-008/DF-65 previously required an explicit user decision for.

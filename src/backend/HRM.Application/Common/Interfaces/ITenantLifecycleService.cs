@@ -31,4 +31,14 @@ public interface ITenantLifecycleService
 
     /// <summary>Lists the lifecycle-event history for a tenant, newest first (System Admin + System Support read).</summary>
     Task<Result<IReadOnlyList<TenantLifecycleEventDto>>> GetLifecycleHistoryAsync(Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-341: moves an existing tenant onto a different subscription plan (joined by string code). Validates
+    /// the target plan code exists and is active, writes <c>Tenant.PlanId</c>, recomputes
+    /// <c>Tenant.EnabledModules</c> via the shared <c>PlanModules.DeriveTenantModules</c> (same derivation as
+    /// provisioning), invalidates the tenant's subdomain-resolution cache, and writes a tenant-scoped lifecycle
+    /// event + audit row. 404 when the tenant is absent; 400 when the plan is unknown/inactive; 403 for the
+    /// system tenant (BR-2).
+    /// </summary>
+    Task<Result<ChangeTenantPlanResultDto>> ChangeTenantPlanAsync(ChangeTenantPlanInput input, CancellationToken cancellationToken = default);
 }

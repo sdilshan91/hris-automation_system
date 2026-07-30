@@ -597,6 +597,12 @@ try
     // (writes 403). System/admin context is exempt. After auth (needs ICurrentUser roles), before controllers.
     app.UseMiddleware<TenantStatusEnforcementMiddleware>();
 
+    // US-ADM-012 (AC-1): module entitlement gate. Maps the request's route prefix to its owning product module
+    // and returns 403 module_not_entitled when that module is not in the tenant's plan. Positive-list / fail-open:
+    // only mapped product-module routes can be denied; platform + CoreHR routes pass. After TenantStatusEnforcement
+    // (so a suspended/terminating tenant is handled first), before the controllers.
+    app.UseMiddleware<ModuleEntitlementMiddleware>();
+
     // Session activity tracking — debounced last_active_at update (US-AUTH-009 FR-4)
     app.UseMiddleware<SessionActivityMiddleware>();
 

@@ -90,6 +90,12 @@ public sealed class TenantSubdomainCacheInvalidationTests
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
+    // ISSUE-342: the invalidation helper moved off TenantLifecycleService into ITenantResolutionCache so the
+    // plan-edit sweep and the plan-change endpoint reuse one key format. The spy is wrapped in the REAL
+    // TenantResolutionCache rather than replaced by a mock of the new interface on purpose — these arms assert
+    // on the concrete cache KEY STRING (ExpectedKey), which is the thing that must stay in lockstep with
+    // TenantResolutionMiddleware. Substituting ITenantResolutionCache would still pass while silently no longer
+    // verifying the key format, i.e. it would weaken the test to accommodate the refactor.
     private TenantLifecycleService CreateService(IDistributedCache cache) => new(
         CreateDbContext(),
         Substitute.For<ICurrentUser>(),
@@ -97,7 +103,8 @@ public sealed class TenantSubdomainCacheInvalidationTests
         new ConfigurationBuilder().Build(),
         Substitute.For<ILogger<TenantLifecycleService>>(),
         scheduler: null,
-        cache: cache);
+        resolutionCache: new TenantResolutionCache(
+            Substitute.For<ILogger<TenantResolutionCache>>(), cache));
 
     private AppDbContext CreateDbContext() => TestDbContextFactory.Create(_tenantId, _dbName);
 

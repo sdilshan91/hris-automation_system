@@ -18,21 +18,30 @@ namespace HRM.Infrastructure.Services;
 ///
 /// <para>Key rules: code is UNIQUE + IMMUTABLE (FR-3/BR-5 — create checks uniqueness, update never touches it);
 /// archive sets IsActive=false (AC-4); delete is REJECTED when any tenant references the plan code (FR-7/BR-5);
-/// every write is audited to the system audit log (NFR-3). Limits are read live from the plan at runtime, so a
-/// plan edit benefits existing tenants immediately (AC-3) — no propagation code (Redis cache is deferred).</para>
+/// every write is audited to the system audit log (NFR-3). Numeric LIMITS are read live from the plan at runtime,
+/// so a limit edit benefits existing tenants immediately (AC-3). The MODULE list is different: each tenant carries
+/// a denormalized <c>EnabledModules</c> snapshot that the module gate reads, so a change to the plan's module list
+/// must be propagated — see <see cref="RecomputeTenantsOnPlanAsync"/> (ISSUE-342).</para>
 /// </summary>
 public sealed class SubscriptionPlanService : ISubscriptionPlanService
 {
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<SubscriptionPlanService> _logger;
+    // ISSUE-342: drops the resolution-cache entry of every tenant whose EnabledModules snapshot the plan edit
+    // recomputed, so the new entitlement is picked up within NFR-1's 60s window rather than the 5-min TTL.
+    // Optional (null in isolated tests that omit it), matching the same optional-seam pattern used by
+    // TenantLifecycleService; DI injects the shared implementation in production.
+    private readonly ITenantResolutionCache? _resolutionCache;
 
     public SubscriptionPlanService(
-        AppDbContext db, ICurrentUser currentUser, ILogger<SubscriptionPlanService> logger)
+        AppDbContext db, ICurrentUser currentUser, ILogger<SubscriptionPlanService> logger,
+        ITenantResolutionCache? resolutionCache = null)
     {
         _db = db;
         _currentUser = currentUser;
         _logger = logger;
+        _resolutionCache = resolutionCache;
     }
 
     private Guid? ActorId => _currentUser.IsAuthenticated ? _currentUser.UserId : null;
@@ -117,13 +126,32 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
             return Result.Failure("The subscription plan does not exist.", 404, "plan_not_found");
 
         var before = ToAuditState(plan);
+        // Capture the normalized module set BEFORE the edit so we only sweep when it actually changed — an
+        // unrelated edit (price, name, a numeric limit) must not churn every tenant on the plan (ISSUE-342).
+        var modulesBefore = plan.EnabledModules.ToList();
         ApplyEditableFields(plan, fields); // never touches Code (immutable, FR-3/BR-5)
         plan.UpdatedAt = DateTime.UtcNow;
 
-        WriteAudit("Plan.Updated", plan.Id, before, after: ToAuditState(plan), plan.UpdatedAt.Value);
-        await _db.SaveChangesAsync(cancellationToken);
+        // ISSUE-342: propagate a module-list change to every tenant on this plan. The recomputed tenant snapshots
+        // are staged into the SAME change tracker and committed atomically with the plan edit below (no window in
+        // which a tenant's entitlement disagrees with its plan). Order-insensitive set comparison.
+        var moduleListChanged = !new HashSet<string>(modulesBefore, StringComparer.Ordinal)
+            .SetEquals(plan.EnabledModules);
+        IReadOnlyList<string> affectedSubdomains = Array.Empty<string>();
+        if (moduleListChanged)
+            affectedSubdomains = await RecomputeTenantsOnPlanAsync(plan, cancellationToken);
 
-        _logger.LogInformation("Updated subscription plan {Code} ({PlanId}).", plan.Code, plan.Id);
+        WriteAudit("Plan.Updated", plan.Id, before, after: ToAuditState(plan), plan.UpdatedAt.Value);
+        await _db.SaveChangesAsync(cancellationToken); // plan edit + swept tenant snapshots commit together
+
+        // Best-effort, post-commit: invalidate the affected tenants' resolution-cache entries (never throws —
+        // a miss/outage just falls back to the DB within the TTL window).
+        if (affectedSubdomains.Count > 0 && _resolutionCache is not null)
+            await _resolutionCache.InvalidateManyAsync(affectedSubdomains, cancellationToken);
+
+        _logger.LogInformation(
+            "Updated subscription plan {Code} ({PlanId}); recomputed {TenantCount} tenant(s) after a module-list change={ModuleListChanged}.",
+            plan.Code, plan.Id, affectedSubdomains.Count, moduleListChanged);
         return Result.Success();
     }
 
@@ -259,6 +287,49 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
 
         _logger.LogInformation("Removed plan-limit override {OverrideId} for tenant {TenantId}.", overrideId, tenantId);
         return Result.Success();
+    }
+
+    // ── ISSUE-342: plan-edit module propagation sweep ───────────────────────────
+
+    /// <summary>
+    /// Recomputes and re-stamps <c>Tenant.EnabledModules</c> for every non-deleted tenant on this plan, using the
+    /// SAME derivation as provisioning + the plan-change endpoint (<see cref="PlanModules.DeriveTenantModules"/>)
+    /// so the three call sites cannot drift. Tenants join a plan by STRING CODE
+    /// (<c>Tenant.PlanId == plan.Code</c> — there is no FK), and this runs in the system context, so tenants are
+    /// read cross-tenant with <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{T}"/>. Returns the
+    /// affected subdomains for the post-commit cache invalidation.
+    ///
+    /// <para><b>Fail-open on a dangling PlanId:</b> the sweep is keyed by <c>plan.Code</c>, so a tenant whose
+    /// <c>PlanId</c> points at a plan that does not exist (e.g. the seeded <c>"default"</c>, which is never
+    /// seeded as a plan row) is simply never matched and its modules are left untouched — it is never crashed on
+    /// nor stripped, matching every other tenant→plan call site.</para>
+    ///
+    /// <para><b>Judgement call — synchronous, in-transaction sweep (chosen over a Hangfire job).</b> The tenant
+    /// snapshots are staged into the same <c>SaveChanges</c> as the plan edit, so the plan row and every tenant
+    /// entitlement commit atomically (no partial/eventually-consistent state). NFR-1 permits 60s propagation and
+    /// at current scale (tens–hundreds of tenants per plan) the added write latency is negligible. If a single
+    /// plan ever spans thousands of tenants, move this to a batched Hangfire job — the derivation + cache seams
+    /// are already shared, so that move is local to this method and its caller.</para>
+    /// </summary>
+    private async Task<IReadOnlyList<string>> RecomputeTenantsOnPlanAsync(
+        SubscriptionPlan plan, CancellationToken cancellationToken)
+    {
+        var tenants = await _db.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => t.PlanId == plan.Code && !t.IsDeleted)
+            .ToListAsync(cancellationToken);
+        if (tenants.Count == 0)
+            return Array.Empty<string>();
+
+        var now = DateTime.UtcNow;
+        var derived = PlanModules.DeriveTenantModules(plan.EnabledModules);
+        foreach (var tenant in tenants)
+        {
+            tenant.EnabledModules = derived.ToList(); // fresh list per tenant (jsonb column; don't share a reference)
+            tenant.UpdatedAt = now;
+        }
+
+        return tenants.Select(t => t.Subdomain).ToList();
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────────

@@ -160,7 +160,7 @@
 - [x] US-PRF-008 — Performance improvement plan (PIP) *(PR #82)*
 - [x] US-PRF-009 — Goal tracking with progress updates *(PR #83)*
 - [x] US-PRF-010 — Performance-based recommendations *(PR #84)*
-- [ ] US-PRF-011 — Performance calibration workspace *(**net-new STUB, reconciliation 2026-07-06, Theme E** — execution surface for the calibration phase; removes the calibration dead-end trap that permanently locks US-PRF-010.)*
+- [ ] US-PRF-011 — Performance calibration workspace *(**⚠ RESCOPED 2026-07-30 — the stub's justification was FALSE.** It existed to "remove the calibration dead-end trap that permanently locks US-PRF-010". No such trap exists: the gate is `ManagerReviews.Any(SubmittedAt != null)` — an ordinary manager-review submit — and a **green test predating the story** (`RecommendationServiceTests:259-269`) asserts submit succeeds with calibration enabled. Auto-generate is not gated at all. Filed as [[ISSUE-348]]. Additionally AC-B1, counted as part of this story's value, **shipped in `bcd7c333` two days after the reconciliation recorded it missing** ([[ISSUE-352]]). **Remaining real scope:** AC-2 calibrated-vs-original rating model (the only net-new capability) · AC-1 cohort/distribution surface (project off the existing dashboard) · AC-3 phase-completion state (needs the first `CyclePhase` state; prefer a general `CompletedOn` — also fixes [[ISSUE-350]]) · prerequisite [[ISSUE-349]] · a real `Performance.Calibrate` permission. **NOT in scope:** the "unblocker" and the completed-cycles picker.)*
 
 ## 8. Admin Console (10 stories) — COMPLETE ✅
 - [x] US-ADM-001 — System Admin provisions new tenant *(PR #85)*
