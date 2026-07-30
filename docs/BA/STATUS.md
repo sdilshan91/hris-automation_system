@@ -233,54 +233,41 @@
 - **Also shipped since the last tally (were never recorded here):** the **SSO epic** US-AUTH-011..016 (#112/#444/#446/#447/#450) and the **location-calendar epic** US-ATT-011 + US-CHR-013 (CAL-1..8, #310-#318).
 - **Recommended next build order (updated 2026-07-29):** ~~US-PLT-005~~ ✅ done → **US-ADM-012** (self-contained; US-ADM-009 config already exists, just unenforced) → **US-PLT-004** (unblocks the US-ADM-002 KPI TCs) → **US-PRF-011**. Then the finding-driven tail (P6 FE, P7 LOW). ⚠ **Note:** the US-PLT-005 experience — a stub story whose premises had gone stale — is a standing warning. **Grep the code per-AC before building any of the three remaining stubs**; US-ADM-012 has already been confirmed ~45% stale the same way (BUG-114 storage quota and the custom-field cap are enforced, not unenforced).
 
-## Deferred-AC Reconciliation (2026-07-06) — `[x]`-done stories with UNBUILT acceptance criteria
+## Deferred-AC Reconciliation (2026-07-06) — ⚠ **~66% OF THIS TABLE IS STALE (swept 2026-07-30)**
 
-> Source: [docs/QA/COMPLETION-PLAN-2026-07-06.md](../QA/plans/archive/COMPLETION-PLAN-2026-07-06.md) **PART II** (Themes A–M).
-> These stories stay `[x]` — their **data-layer spine is built and wired** — but the listed ACs/FRs are
-> genuinely unimplemented (almost all *outward delivery* or *cross-module seams* stubbed before the dependency
-> existed and never rewired). This is a **status-integrity** annotation, not a re-open. Where a deferred AC is
-> unblocked by a net-new story, that story is named. **Do not re-mark these fully done until the noted ACs ship.**
-
-| Story | Deferred AC / FR (unbuilt) | Why / Theme | Unblocked by |
-|---|---|---|---|
-| US-AUTH-001 | **lockout email now real-delivered ✅ (#384)** — `LockoutNotificationService` migrated onto the NTF-006 dispatcher (DF-40 DONE); login **still not** rate-limited. *(password-reset email also real-delivered ✅ NTF-006)* | rate-limit absent (D) | — |
-| US-AUTH-002 | AC-7 JWT key rotation/overlap — single static signing key | no rotation (D) | — |
-| US-AUTH-004 | password-history configured-but-**unenforced**. *(reset-email now real-delivered ✅ NTF-006)* | D | — |
-| US-AUTH-005 | challenge **not** rate-limited. ~~MFA secret stored **plaintext**~~ — **FALSE, corrected 2026-07-29**: it is Data-Protection-wrapped (PR #224); legacy rows now auto-healed (US-PLT-005 Scope A). *(MFA is TOTP — no server-side code to deliver; the "delivery" gap was moot)* | D | — |
-| US-AUTH-007 | FR-9 subdomain cache **not** invalidated on tenant status change (suspended tenant resolves Active for TTL) | D | — |
-| US-AUTH-015 | per-tenant SSO gating + `sso_only` UX deferred | lands with US-AUTH-012/016 | US-AUTH-012/016 |
-| US-CHR-001 | BUG-113 `LocationId` not wired (employee↔location link impossible). *(probation-ending notification now real-delivered ✅ NTF-006)* | E functional gap | — |
-| US-CHR-002 | **Education / Work-History / Dependents backend now EXISTS ✅ (#386)** — net-new `EmployeeEducation` / `EmployeeWorkHistory` / `EmployeeDependent` entities+tables + address columns + CRUD + `PATCH {id}/profile` save path; FE edit re-enabled off the #380 read-only state (DF-38/DF-39 DONE). Employment (dept/title/type/status) + address edit fields wired (ISSUE-320 addressed). Profile-edit **route** 404 fixed #380 (ISSUE-319 RESOLVED). | E functional gap | — |
-| US-CHR-008 | EXIF not stripped from photos; magic-byte sniff (BUG-058). *(doc-expiry notification now real-delivered ✅ NTF-006)* | D | — |
-| US-CHR-010 | **custom-field columns in import (FR-11)** — see story AC-K1. *(import-completion notification now real-delivered ✅ NTF-006)* | K | — |
-| US-CHR-011 | ~~reporting-manager/chain not on `GET /employees/{id}` (ISSUE-218)~~ **RESOLVED via DF-8 (#410)** — full reporting-chain now on `GET /employees/{id}`. *(manager-reassignment notification now real-delivered ✅ NTF-006)* | ~~E~~ ✅ | — |
-| US-CHR-012 | custom-field **cap not enforced**; custom-fields absent from bulk import | H; K | US-ADM-012 |
-| US-LV-002 | **FTE proration (BR-2)** + **accrual-frequency scheduling (FR-5)** — see story AC-K1/K2 | K | — |
-| US-LV-005 | **AC-4 multi-level routing inert** (`WorkflowInstanceId` null); **BR-4 payroll-lock hardcoded false**. *(approval/reject email now real-delivered ✅ NTF-006)* | C/E; E | US-ADM-011 |
-| US-LV-010 | AC-4 cancellation ignores payroll lock (always "not locked") | E | US-ADM-011 |
-| US-LV-011 | **AC-2 auto-LOP inert** — behind `NoOpAttendanceProvider` | E | (attendance provider wiring) |
-| US-LV-012 | **FR-1 Dept Leave-Coverage report returns empty** — see story AC-K1 | K | — |
-| US-ATT-003 | UTC-only day-boundary/late detection (wrong for non-UTC tenants). *(regularization request-notification now real-delivered ✅ NTF-006)* | J (ISSUE-065) | — |
-| US-ATT-004 | **AC-4 multi-level regularization approval inert**. *(approval/reject notification now real-delivered ✅ NTF-006)* | C | US-ADM-011 |
-| US-ATT-008 | UTC-only late/early detection (ISSUE-065). **FR-7 chronic-lateness escalation shipped ✅ (#385).** *(late-arrival alert now real-delivered ✅ NTF-006)* | J | — |
-| US-REC-002 | resume magic-byte sniff (BUG-058). *(application-confirmation email now real-delivered ✅ NTF-006)* | D | — |
-| US-REC-005 | **interview-guide attachment (FR-8)** — see story AC-K1. *(interview-schedule notification now real-delivered ✅ NTF-006)* | K | — |
-| US-REC-006 | **scorecard versioning** — see story AC-K1. *(scorecard-submitted email now real-delivered ✅ NTF-006)* | K | — |
-| US-REC-007 | **offer magic-link now embedded ✅ (#384)** — email+PDF real-delivered and a portal token is now issued/embedded at offer-send via `PortalLinkBuilder` (DF-42 DONE); **FR-10 offer-approval routing** still inert | C/E | US-ADM-011 |
-| US-REC-008 | **status-tracking magic-link email now delivered ✅ (#384)** — applicant-portal token minted+persisted and the delivering email now fires through the real dispatcher (`applicant_portal_link` event / `PortalLinkBuilder`); DF-41 DONE | — | — |
-| US-REC-010 | **AC-3 no user-account creation** *(partially shipped — FR-5 provisioning #355)*, **AC-2 no salary persistence, AC-4 no "Converted" badge (ISSUE-232)**; **FR-9 welcome-email + FR-8 onboarding trigger still deferred/log-only** (ISSUE-140 residual — only the generic "Converted" stage-change email fires) | E; B (ISSUE-140) | ISSUE-140 |
-| US-PAY-009 | **year-end tax-statement PDF (ISSUE-177)** + report PDF export | F | — |
-| US-PRF-001 | **goal-set finalize == 100% shipped ✅ (#387, BUG-056)** — `POST /tenant/performance/goals/finalize` locks the set to `GoalStatus.Finalized` (409 `goals_finalized` thereafter); goal-**read** authz self-scoped (#387/DF-18); re-open endpoint shipped ✅ **DF-46 (#393)**. See story AC-K1/K2. *(goals-set notification also real-delivered ✅ NTF-006)* | K (DONE) | — |
-| US-PRF-002 | **AC-B1 self-assessment attachment DELETE missing (BUG-243)**. *(self-rating notification now real-delivered ✅ NTF-006)* | F/BUG-243 | — |
-| US-PRF-004 | **AC-B1 cycle rating-scales endpoint missing**; **AC-B2 low-privilege "resolve active cycle" resolver missing — cross-cutting BUG-243 enabler** | F/BUG-243 | — |
-| US-PRF-005 | **360 report PDF**; **AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment missing (BUG-243)**. *(360 reviewer-assigned notifications now real-delivered ✅ NTF-006)* | F; F/BUG-243 | — |
-| US-PRF-006 | **review meeting PDF** | F | — |
-| US-PRF-007 | **dashboard PDF export** | F | — |
-| US-PRF-008 | **PIP PDF**; **AC-B1 PIP draft/pre-fill endpoint missing (BUG-243)**. *(PIP-initiated notification now real-delivered ✅ NTF-006)* | F; F/BUG-243 | — |
-| US-PRF-010 | **recommendation PDF**; **calibration dead-end trap** (permanent lockout); **AC-B1 completed-cycles picker missing (BUG-243)**; **AC-B2 team-recs = workspace reshape (BUG-243, not a gap)** | F; E; F/BUG-243 | US-PRF-011 |
-| US-ADM-002 | monitoring KPIs (error-rate/latency/SLA/usage) **hardcoded null** | I | US-PLT-004 |
-| US-ADM-006 | plan-gated enterprise-only settings absent (#17) | H | US-ADM-012 |
-| US-ADM-009 | module-gating **not enforced** (disabled-module API not 403'd, no FE guard); usage limits config-only (BUG-114) | H | US-ADM-012 |
+> **Read this before planning off the table below.** A row-by-row verification against the code on 2026-07-30
+> found that of **49** verifiable claimed-unbuilt ACs: **33 ALREADY-BUILT · 14 STILL-TRUE · 1 PARTIAL ·
+> 1 UNVERIFIABLE**. The cause is dating: this reconciliation was written **2026-07-06**, a large batch of exactly
+> these ACs landed on **2026-07-07 and 07-08**, and the table was never re-swept.
+>
+> **This is not only a planning problem — it concealed a defect.** [[BUG-291]] (HIGH, money) sat in this table
+> for three weeks labelled *"AC-K2 accrual-frequency scheduling"*, an unbuilt convenience. It was actually a live
+> over-credit: `AccrualFrequency` was ignored, a Monthly leave type credited a full year on the first accrual run,
+> and that inflated balance was **encashed and paid out** in final settlements. Treat a "deferred feature" label
+> in this table as unverified until the code confirms it.
+>
+> **Verified ALREADY-BUILT — do NOT rebuild these:**
+> - **Security, 6 of 6 stale:** login rate-limiting (`AuthController.cs:42`, `cf5bb243`) · MFA-challenge
+>   rate-limiting (`:433`) · JWT key rotation (`JwtKeyRingOptions`, `952b5fbe`) · password-history enforcement
+>   (`AuthService.cs:865`, `fd99a3bb`) · subdomain-cache invalidation on status change · EXIF strip +
+>   magic-byte sniff incl. the resume path (`ImageMetadataStripper`, `FileSignatureValidator`, `f806d890`;
+>   BUG-058 was formally closed by QA on 2026-07-16 as *"already shipped (stale ledger)"*).
+> - **Cross-module seams, 5 of 6 stale:** US-LV-005 AC-4 + BR-4 payroll-lock · US-LV-010 AC-4 · US-ATT-004 AC-4 ·
+>   US-REC-007 FR-10. All wired by US-ADM-011 — **which this very file already states 100 lines above**.
+> - **Capabilities:** US-LV-012 FR-1 Dept Leave-Coverage (real report, `7fd197a2`) · US-LV-002 FTE proration
+>   (`6c9a8790`) · US-PAY-009 report PDF · US-PRF-007 dashboard PDF (#340) · US-ATT-003/008 tenant-tz day
+>   boundaries · US-CHR-001 `LocationId` · US-CHR-012 custom-field cap · US-REC-010 AC-3 user-account creation
+>   and AC-4 Converted badge.
+>
+> **Genuinely STILL-TRUE (~14):** custom-field columns in bulk import · accrual-frequency *(now [[BUG-291]], being
+> fixed)* · auto-LOP still behind `NoOpAttendanceProvider` · interview-guide attachment · scorecard versioning ·
+> US-REC-010 AC-2 salary persistence + FR-9/FR-8 welcome/onboarding · year-end tax **PDF** (the report itself is
+> built) · 360 report PDF · review-meeting PDF · PIP PDF · recommendation PDF · US-ADM-002 monitoring KPIs ·
+> US-ADM-006 plan-gated enterprise settings. **Roughly half of that is Performance PDF rendering — one QuestPDF
+> work item, not five.**
+>
+> **Double-counted with the QA-Surfaced Dev Backlog above:** BUG-113 (`LocationId`) and BUG-114 (storage quota)
+> appear as open here while struck through as RESOLVED in the same file.
 
 ### Theme-K follow-up ACs attached to existing stories (see each story's "Follow-up ACs" section)
 | Existing story | Attached follow-up | Finding |
@@ -292,19 +279,23 @@
 | US-LV-012 | AC-K1 Dept Leave-Coverage report (empty stub) | LV-012 FR-1 |
 | US-REC-006 | AC-K1 scorecard versioning | REC-006 |
 
-### BUG-243 follow-up ACs — Performance FE→BE missing endpoints (attached 2026-07-08)
-> Verified per-item against the real controllers (`Feedback360Controller`, `SelfAssessment*Controller`,
-> `CyclesController`, `RecommendationController`, `PipController`) — only genuinely-absent routes formalized.
-> See each story's "Follow-up ACs (BUG-243 …)" section. AC-B prefix = BUG-243 backlog.
-| Existing story | Attached follow-up (AC-B) | Verdict |
-|---|---|---|
-| US-PRF-002 | AC-B1 self-assessment attachment DELETE | genuinely missing |
-| US-PRF-004 | AC-B1 cycle rating-scales endpoint · AC-B2 low-privilege active-cycle **resolver** (cross-cutting enabler) | both missing |
-| US-PRF-005 | AC-B1 reviewer full-replace PUT · AC-B2 standalone tracker · AC-B3 get-form-by-assignment | missing (B2 data exists embedded in /results) |
-| US-PRF-008 | AC-B1 PIP draft/pre-fill | genuinely missing |
-| US-PRF-010 | AC-B1 completed-cycles picker · AC-B2 team-recs | B1 missing; B2 **reshape** (workspace already serves managers) |
+### ~~BUG-243 follow-up ACs~~ — **OBSOLETE, 7 of 8 SHIPPED (verified 2026-07-30)**
 
----
+> ⚠ **This table has been removed rather than maintained.** A verification sweep against the code found that
+> **7 of its 8 rows shipped on 2026-07-08** — two days after the 2026-07-06 reconciliation that recorded them
+> as "genuinely missing". Every "genuinely missing" verdict it contained was false except the rating-scales row.
+> Keeping it would have kept sending people to rebuild working features.
+
+| Story | AC-B | Verdict 2026-07-30 | Evidence |
+|---|---|---|---|
+| US-PRF-002 | AC-B1 self-assessment attachment DELETE | ✅ **BUILT** | `SelfAssessmentAttachmentsController.cs:105-111` · commit `bcd7c333` |
+| US-PRF-004 | AC-B2 low-privilege active-cycle resolver | ✅ **BUILT** | `CyclesController.cs:53-54` (permission list widened) · `d2325a76` |
+| US-PRF-005 | AC-B1 reviewer full-replace PUT | ✅ **BUILT** | `Feedback360Controller.cs:116` · `d2325a76` |
+| US-PRF-005 | AC-B2 standalone tracker | ✅ **BUILT** | `Feedback360Controller.cs:139` · `d2325a76` |
+| US-PRF-005 | AC-B3 get-form-by-assignment | ✅ **BUILT** | `Feedback360Controller.cs:158` · `d2325a76` |
+| US-PRF-008 | AC-B1 PIP draft/pre-fill | ✅ **BUILT** | `PipController.cs:60-76` → `GetPipDraftQuery` · `536ac053` |
+| US-PRF-010 | AC-B1 completed-cycles picker | ✅ **BUILT** | `RecommendationController.cs:48-57` + FE picker + tests · `bcd7c333` ([[ISSUE-352]]) |
+| US-PRF-004 | AC-B1 cycle rating-scales endpoint | ⚠️ **PARTIAL / needs a read** | No dedicated route, but `RatingScaleMax` is already served on the low-privilege `GET /cycles/active` (`CycleDtos.cs:152`). Commit `536ac053` is titled *"…remove dead rating-scale picker"*, suggesting the FE need was deleted rather than served. **Read that commit before scheduling any work.** |
 
 ## Module → directory map
 | Module key (CLI arg) | Folder | Story prefix |

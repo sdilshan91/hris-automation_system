@@ -252,7 +252,10 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  Export (FR-8/AC-4): CSV + XLSX (ClosedXML). PDF deferred (QuestPDF seam).
+    //  Export (FR-8/AC-4): CSV + XLSX (ClosedXML) + PDF (QuestPDF — see RenderPdf below).
+    //  NOTE: this header said "PDF deferred (QuestPDF seam)" for a long time AFTER the renderer shipped in
+    //  PR #340 — 440 lines above the working RenderPdf. It was still being read as an open gap during the
+    //  2026-07-30 reconciliation sweep. Keep it accurate.
     // ══════════════════════════════════════════════════════════════
 
     public async Task<Result<PerformanceDashboardExportResult>> ExportOverviewAsync(
