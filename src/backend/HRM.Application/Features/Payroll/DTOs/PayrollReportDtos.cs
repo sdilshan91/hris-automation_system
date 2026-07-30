@@ -31,7 +31,15 @@ public enum PayrollReportType
     Ctc,
     /// <summary>FR-1g: month-over-month variance, &gt;10% changes flagged (BR-4).</summary>
     Variance,
-    /// <summary>FR-1f: year-end tax statements — DEFERRED stub (returns a documented note, no rows).</summary>
+    /// <summary>
+    /// FR-1f: year-end tax statements. **Implemented** — <c>PayrollReportService.BuildYearEndTaxStatementAsync</c>
+    /// returns real rows (Employee No / Employee / Country / Fiscal Year / Taxable Income / Income Tax Withheld)
+    /// with per-country fiscal-year resolution.
+    /// <para>This summary previously read "DEFERRED stub (returns a documented note, no rows)" long after the
+    /// report shipped. Anyone triaging from this enum would have concluded the feature was missing — which is
+    /// exactly how a stale comment turns into wasted or duplicated work. The only outstanding piece is the
+    /// per-employee PDF + bulk-ZIP at ~5,000 scale (ISSUE-177), which is separate infrastructure.</para>
+    /// </summary>
     YearEndTaxStatement,
 }
 

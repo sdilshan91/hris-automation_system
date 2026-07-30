@@ -98,6 +98,40 @@ public sealed class RoleService : IRoleService
         if (exists)
             return Result<RoleDto>.Failure($"A role named '{name}' already exists in this tenant.", 400);
 
+        // US-ADM-012: enforce the max_custom_roles plan limit on CUSTOM-role creation. Resolve override > plan
+        // via PlanLimitResolver (no tenant snapshot column exists for this key); a null resolution = unlimited.
+        // Only custom (non-built-in) roles count — the seeded system/built-in roles are not chargeable.
+        var tenant = await _dbContext.Tenants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
+        if (tenant is not null)
+        {
+            var planValue = await _dbContext.SubscriptionPlans
+                .AsNoTracking()
+                .Where(p => p.Code == tenant.PlanId)
+                .Select(p => (long?)p.MaxCustomRoles)
+                .FirstOrDefaultAsync(cancellationToken);
+            var overrides = await _dbContext.PlanLimitOverrides
+                .AsNoTracking()
+                .Where(o => o.TenantId == tenant.Id)
+                .ToListAsync(cancellationToken);
+            var resolved = PlanLimitResolver.Resolve(
+                PlanLimitKeys.MaxCustomRoles, planValue, overrides, DateTime.UtcNow);
+            long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
+                ? resolved.Value    // override wins (null = unlimited)
+                : planValue;        // else plan value (null = unlimited); no snapshot column for this key
+
+            if (limit is { } cap)
+            {
+                var currentCount = await _dbContext.Roles
+                    .CountAsync(r => r.TenantId == _tenantContext.TenantId && !r.IsBuiltIn, cancellationToken);
+                if (currentCount >= cap)
+                    return Result<RoleDto>.Failure(
+                        $"You have reached the maximum number of custom roles ({cap}) for your current plan. Upgrade to add more.",
+                        403, "custom_role_limit_reached");
+            }
+        }
+
         var role = new Role
         {
             Id = BaseEntity.NewUuidV7(),

@@ -566,7 +566,12 @@ public sealed class AttendanceService : IAttendanceService
                 ? request.CombineToUtc(request.RequestedClockOut, tenantZone) : null,
             Reason = request.Reason.Trim(),
             Status = RegularizationStatus.Pending,
-            WorkflowInstanceId = null,   // TODO(US-ADM-007): set when the Approval Workflow Engine lands.
+            // Starts null by design; the workflow instance is attached AFTER the first SaveChanges below (the
+            // runtime needs the persisted regularization id). See the US-ADM-011c block further down — when no
+            // Active Attendance workflow exists this stays null and legacy single-level approval governs (AC-11).
+            // (Previously a `TODO(US-ADM-007): set when the Approval Workflow Engine lands` — the engine landed
+            // in US-ADM-011c and the wiring is right there; the TODO was dead and read as an unwired path.)
+            WorkflowInstanceId = null,
         };
 
         _dbContext.AttendanceRegularizations.Add(regularization);

@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.CustomFields.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -772,16 +773,38 @@ public sealed class CustomFieldService : ICustomFieldService
 
     /// <summary>
     /// Gets the maximum number of custom fields allowed per entity type for this tenant.
-    /// Uses Tenant.MaxCustomFields if set; otherwise the DefaultMaxCustomFields constant.
-    /// TODO(subscription): Replace with plan-tier lookup when Subscription module exists.
+    /// ISSUE-339: resolve override &gt; plan &gt; tenant-snapshot for the <c>max_custom_fields_per_entity</c> key
+    /// via <see cref="PlanLimitResolver"/> (the same primitive the employee/storage limits use), instead of
+    /// reading <c>Tenant.MaxCustomFields</c> raw — which left the plan column <c>MaxCustomFieldsPerEntity</c> and
+    /// the registered override key dead (configurable in the admin UI, no runtime effect).
+    ///
+    /// <para>Unlike the other plan limits, custom fields keep a HARD default of 20 (<see cref="DefaultMaxCustomFields"/>)
+    /// rather than "unlimited": the cap has never had an unlimited tier, so a fully-null resolution falls back to 20.</para>
     /// </summary>
     private async Task<int> GetMaxCustomFieldsAsync(CancellationToken cancellationToken)
     {
         var tenant = await _dbContext.Tenants
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
+        if (tenant is null)
+            return DefaultMaxCustomFields;
 
-        return tenant?.MaxCustomFields ?? DefaultMaxCustomFields;
+        var planValue = await _dbContext.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => (long?)p.MaxCustomFieldsPerEntity)
+            .FirstOrDefaultAsync(cancellationToken);
+        var overrides = await _dbContext.PlanLimitOverrides
+            .AsNoTracking()
+            .Where(o => o.TenantId == tenant.Id)
+            .ToListAsync(cancellationToken);
+
+        var resolved = PlanLimitResolver.Resolve(
+            PlanLimitKeys.MaxCustomFieldsPerEntity, planValue, overrides, DateTime.UtcNow);
+        long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
+            ? resolved.Value                                    // override wins
+            : planValue ?? (long?)tenant.MaxCustomFields;       // else plan value, else snapshot
+        return limit is { } v ? (int)v : DefaultMaxCustomFields; // final hard fallback: 20
     }
 
     /// <summary>
