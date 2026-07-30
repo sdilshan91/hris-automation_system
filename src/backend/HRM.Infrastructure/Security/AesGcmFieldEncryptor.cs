@@ -70,7 +70,18 @@ public sealed class AesGcmFieldEncryptor : IFieldEncryptor
 
         _activeKeyId = options.ActiveKeyId;
         _keyRing = ring;
+
+        // ISSUE-333: the EF model cache is process-wide and the encryption converters close over THIS instance,
+        // so the cache key must distinguish rings, not just types. Key IDs only — never key material — and
+        // ordinal-sorted so two rings built from the same config in a different enumeration order still match.
+        _modelCacheDiscriminator =
+            $"{nameof(AesGcmFieldEncryptor)}:{_activeKeyId}:{string.Join(',', ring.Keys.OrderBy(k => k, StringComparer.Ordinal))}";
     }
+
+    private readonly string _modelCacheDiscriminator;
+
+    /// <inheritdoc />
+    public string ModelCacheDiscriminator => _modelCacheDiscriminator;
 
     public string? Encrypt(string? plaintext)
     {

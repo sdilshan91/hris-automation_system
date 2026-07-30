@@ -38,7 +38,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     /// <see cref="EncryptorAwareModelCacheKeyFactory"/>) so a no-op-encryptor model and the real encrypting model
     /// never collide in EF's per-context-type model cache.
     /// </summary>
-    internal string FieldEncryptorDiscriminator => _fieldEncryptor.GetType().Name;
+    // ISSUE-333: was `_fieldEncryptor.GetType().Name`, which let two AesGcmFieldEncryptors with DIFFERENT key
+    // rings share one cached EF model — the converters then decrypt with whichever ring compiled the model
+    // first. Now delegates to the encryptor's own ring-aware discriminator.
+    internal string FieldEncryptorDiscriminator => _fieldEncryptor.ModelCacheDiscriminator;
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<SubscriptionPlan> SubscriptionPlans => Set<SubscriptionPlan>();

@@ -171,8 +171,48 @@ public sealed class FieldEncryptionIntegrationTests
         using var encrypting = new AppDbContext(options, TenantContext(), _encryptor);
         using var plain = new AppDbContext(options, TenantContext()); // no encryptor ⇒ NoOpFieldEncryptor
 
-        encrypting.FieldEncryptorDiscriminator.Should().Be(nameof(AesGcmFieldEncryptor));
+        // ISSUE-333 widened this contract: the discriminator is no longer the bare type name, it now also
+        // carries the KEY-RING identity (see IFieldEncryptor.ModelCacheDiscriminator). Asserting StartWith
+        // rather than Be keeps this arm's original guarantee — an encrypting model and a plaintext model must
+        // never share a compiled EF model — without re-pinning the exact string, which is now intentionally
+        // richer. Loosening it to a bare NotBe would have been the lazy fix and would have stopped verifying
+        // that each context reports the RIGHT encryptor.
+        encrypting.FieldEncryptorDiscriminator.Should().StartWith(nameof(AesGcmFieldEncryptor));
         plain.FieldEncryptorDiscriminator.Should().Be(nameof(NoOpFieldEncryptor));
         encrypting.FieldEncryptorDiscriminator.Should().NotBe(plain.FieldEncryptorDiscriminator);
+    }
+
+    // -------- ISSUE-333: the WIRING arm — AppDbContext must consume the ring-aware discriminator --------
+    // My first pass at this fix pinned the discriminator contract on the encryptor but left the AppDbContext
+    // wiring unpinned: reverting `_fieldEncryptor.ModelCacheDiscriminator` back to `GetType().Name` — the exact
+    // original bug — kept every arm green. That is the same "looks covered but isn't" pattern this session has
+    // caught three times elsewhere, so it gets its own arm here. Mutation-verified: this fails under the revert.
+    [Fact]
+    public void Model_cache_discriminates_by_KEY_RING_not_just_type_ISSUE333()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+
+        var ringOne = new AesGcmFieldEncryptor(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Encryption:ActiveKeyId"] = "k1",
+                ["Encryption:Keys:k1"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                ["Encryption:Keys:k2"] = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
+            }).Build());
+
+        var ringTwo = new AesGcmFieldEncryptor(new ConfigurationBuilder().AddInMemoryCollection(
+            new Dictionary<string, string?>
+            {
+                ["Encryption:ActiveKeyId"] = "hrm-field-key-1",
+                ["Encryption:Keys:hrm-field-key-1"] = "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC=",
+            }).Build());
+
+        using var ctxOne = new AppDbContext(options, TenantContext(), ringOne);
+        using var ctxTwo = new AppDbContext(options, TenantContext(), ringTwo);
+
+        ctxOne.FieldEncryptorDiscriminator.Should().NotBe(ctxTwo.FieldEncryptorDiscriminator,
+            "both contexts hold an AesGcmFieldEncryptor, so a type-based key cannot separate them — yet ringTwo "
+            + "has no 'k2', and sharing a compiled model across them is exactly what produced the intermittent "
+            + "\"No key 'k2' is present in the encryption key ring\" failure (ISSUE-333)");
     }
 }

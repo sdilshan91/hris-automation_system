@@ -24,6 +24,22 @@ public interface IFieldEncryptor
     /// authentication (tampered / wrong key) throws rather than leaking a plaintext fallback.
     /// </summary>
     string? Decrypt(string? stored);
+
+    /// <summary>
+    /// Identity used by <c>EncryptorAwareModelCacheKeyFactory</c> to decide whether two <c>AppDbContext</c>
+    /// instances may share one compiled EF model. Two encryptors may share a model ONLY if this string matches.
+    ///
+    /// <para><b>Why this is not just the type name (ISSUE-333).</b> The EF model cache is process-wide, and the
+    /// encryption value converters close over a specific encryptor instance. Keying on the CLR type alone means
+    /// two <c>AesGcmFieldEncryptor</c>s holding <i>different key rings</i> share one cached model — so whichever
+    /// context compiles the model first bakes ITS converters in for the whole process, and every later context
+    /// silently decrypts with the wrong ring. In production that is harmless (one ring per process). In the test
+    /// suite it is not: classes register different rings, and under parallel load the compile order varies, which
+    /// produced an intermittent <c>CryptographicException: No key 'k2' is present in the encryption key ring</c>
+    /// in whichever class lost the race. Including the ring identity makes that collision impossible rather than
+    /// unlikely.</para>
+    /// </summary>
+    string ModelCacheDiscriminator => GetType().Name;
 }
 
 /// <summary>
