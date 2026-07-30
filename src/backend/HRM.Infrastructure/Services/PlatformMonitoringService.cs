@@ -9,6 +9,7 @@ using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace HRM.Infrastructure.Services;
 
@@ -17,17 +18,20 @@ namespace HRM.Infrastructure.Services;
 /// every tenant-scoped query uses <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{T}"/> and
 /// groups by <c>TenantId</c> — the same cross-tenant pattern as <see cref="TenantProvisioningService"/>.
 ///
-/// <para><b>REAL data only.</b> This platform does NOT run an observability pipeline (no OpenTelemetry metrics,
-/// no per-tenant Redis usage counters, no SLA-probe history, no metrics store). Rather than fabricate numbers,
-/// this service computes ONLY what real data sources support — the database, a DB connectivity probe, and the
-/// Hangfire monitoring API (via <see cref="IJobQueueMonitor"/>). Everything else (error rate %, P95 latency,
+/// <para><b>REAL data only.</b> This service does NOT source per-tenant usage counters, SLA-probe history, or a
+/// request-metrics store (there is no metrics backend feeding this dashboard). Rather than fabricate numbers,
+/// it computes ONLY what real data sources support — the database, a DB connectivity probe, a Redis probe, and
+/// the Hangfire monitoring API (via <see cref="IJobQueueMonitor"/>). Everything else (error rate %, P95 latency,
 /// 24h trend series, SLA uptime, storage/API/email usage gauges, the error-rate "Attention Required" queue) is
 /// returned as null/empty with an explicit "RequiresObservabilityPipeline" status flag. See the DTO doc
-/// comments — those fields are DEFERRED, not broken.</para>
+/// comments — those fields are DEFERRED, not broken. (OpenTelemetry traces/metrics ARE wired in the API host
+/// via <c>ObservabilityExtensions</c>; they just don't feed this per-tenant dashboard.)</para>
 ///
-/// <para><b>Redis.</b> A Redis connection string exists in config but NO Redis client / IDistributedCache is
-/// registered in DI in this codebase (the permission cache is in-memory). So Redis health is reported
-/// <see cref="DependencyHealthStatus.NotConfigured"/> rather than pinged — honest, not fabricated.</para>
+/// <para><b>Redis.</b> Redis is OPTIONAL in this codebase. When a Redis connection string is configured the
+/// shared <see cref="IConnectionMultiplexer"/> (which backs <c>IDistributedCache</c> and the SignalR backplane)
+/// is registered, so Redis health is a REAL probe (PING) — <see cref="DependencyHealthStatus.Healthy"/> or
+/// <see cref="DependencyHealthStatus.Down"/>. When no connection string is configured there is nothing to ping
+/// and it is reported <see cref="DependencyHealthStatus.NotConfigured"/> — the honest "optional and absent" state.</para>
 ///
 /// <para><b>Audit (NFR-5/AC-5).</b> Every read writes an AuditLog row (Action="Monitoring.Viewed" for the
 /// dashboard/health, "Monitoring.TenantViewed" with ResourceId=tenantId for a detail view). The audit payload
@@ -39,6 +43,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     private readonly ICurrentUser _currentUser;
     private readonly IJobQueueMonitor _jobQueue;
     private readonly IConfiguration _configuration;
+    private readonly IConnectionMultiplexer? _redis;
     private readonly ILogger<PlatformMonitoringService> _logger;
 
     public PlatformMonitoringService(
@@ -46,12 +51,16 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         ICurrentUser currentUser,
         IJobQueueMonitor jobQueue,
         IConfiguration configuration,
-        ILogger<PlatformMonitoringService> logger)
+        ILogger<PlatformMonitoringService> logger,
+        // Optional: only registered by the API host when a Redis connection string is configured (Redis is
+        // optional here). Null ⇒ no Redis wired ⇒ NotConfigured; non-null ⇒ a real PING probe.
+        IConnectionMultiplexer? redis = null)
     {
         _db = db;
         _currentUser = currentUser;
         _jobQueue = jobQueue;
         _configuration = configuration;
+        _redis = redis;
         _logger = logger;
     }
 
@@ -63,8 +72,8 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         var dbHealthy = await TryCanConnectAsync(cancellationToken);
         var databaseHealth = dbHealthy ? DependencyHealthStatus.Healthy : DependencyHealthStatus.Down;
 
-        // Redis: configured-but-not-wired in this codebase ⇒ NotConfigured (no client to ping). Honest, not faked.
-        var redisHealth = ResolveRedisHealth();
+        // Redis (optional): real PING when configured, NotConfigured when there is no connection string.
+        var redisHealth = await ResolveRedisHealthAsync(cancellationToken);
 
         // Real cross-tenant aggregates. Guard against a down DB: if we can't connect, report a Down roll-up
         // with empty aggregates rather than throwing.
@@ -344,16 +353,31 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     }
 
     /// <summary>
-    /// Redis is configured (connection string present) but NO Redis client / IDistributedCache is registered in
-    /// DI in this codebase, so there is nothing to ping — report NotConfigured. If a Redis client is wired up
-    /// later, this is where a real PING would go.
+    /// Real Redis health (ISSUE-344). Redis is OPTIONAL: when no connection string is configured there is no
+    /// multiplexer to ping ⇒ <see cref="DependencyHealthStatus.NotConfigured"/> (must NOT be reported as Down —
+    /// absence is not a failure). When configured, the shared multiplexer is PINGed: reachable ⇒ Healthy,
+    /// unreachable/timeout ⇒ Down. Mirrors the readiness health check registered in <c>Program.cs</c>.
     /// </summary>
-    private DependencyHealthStatus ResolveRedisHealth()
+    private async Task<DependencyHealthStatus> ResolveRedisHealthAsync(CancellationToken cancellationToken)
     {
-        // No Redis client / IDistributedCache is registered in DI, so there is nothing to ping regardless of
-        // whether a connection string is present. Always NotConfigured — honest, never a fabricated "Healthy".
-        _ = _configuration; // (kept injected: a real PING would read the connection string here once wired)
-        return DependencyHealthStatus.NotConfigured;
+        var redisConfigured = !string.IsNullOrWhiteSpace(
+            _configuration.GetConnectionString("Redis") ?? _configuration["Redis:ConnectionString"]);
+
+        // Genuinely not configured (Redis is optional) ⇒ NotConfigured, never Down.
+        if (!redisConfigured || _redis is null)
+            return DependencyHealthStatus.NotConfigured;
+
+        try
+        {
+            await _redis.GetDatabase().PingAsync();
+            return DependencyHealthStatus.Healthy;
+        }
+        catch (Exception ex)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _logger.LogWarning(ex, "Platform health Redis connectivity probe failed.");
+            return DependencyHealthStatus.Down;
+        }
     }
 
     /// <summary>

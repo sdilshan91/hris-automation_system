@@ -7435,6 +7435,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-344 — Platform monitoring reports "Redis: Not configured" while the health check pings the same Redis for real
 - **ID:** ISSUE-344
+- **Status update:** ✅ **RESOLVED 2026-07-30** — `PlatformMonitoringService` now probes the real Redis (optional `IConnectionMultiplexer`; PINGs when `ConnectionStrings:Redis` is set → Healthy/Down, else genuinely NotConfigured). Stale docblock claims deleted, including the separate false "no OpenTelemetry metrics" assertion. Mutation-verified: forcing NotConfigured, forcing Healthy, and a naive always-ping all die.
 - **Type:** BUG (stale code + stale doc-comment → wrong status shown to an operator)
 - **Severity:** MED
 - **Status:** OPEN
@@ -7450,6 +7451,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-345 — OpenTelemetry is described as "dormant" but console-exports 100% of spans and metrics, with no kill-switch
 - **ID:** ISSUE-345
+- **Status update:** ✅ **RESOLVED 2026-07-30** — OTel is now truly inert by default (blank endpoint + no opt-in ⇒ nothing registered), console export is an explicit `OpenTelemetry:Enabled=true` opt-in, `Enabled=false` is a hard kill-switch, and a `ParentBased(TraceIdRatioBased)` sampler is tunable via `OpenTelemetry:SamplingRatio`. **Found while closing this:** `configuration.GetValue<double?>()` THROWS on an unparseable value, so an env-var typo like `OpenTelemetry__SamplingRatio=abc` would have crashed the app at startup over a telemetry knob — now parsed raw with a fallback and clamped. That was surfaced by writing an arm for a gap the implementing agent honestly self-reported (the inline `SetSampler` survived mutation).
 - **Type:** ISSUE (performance / cost; documentation materially misleading)
 - **Severity:** MED
 - **Status:** OPEN

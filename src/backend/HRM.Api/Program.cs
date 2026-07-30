@@ -63,9 +63,10 @@ try
     builder.Services.AddInfrastructure(builder.Configuration);
 
     // ===== Observability (P3: OpenTelemetry traces + metrics) =====
-    // Endpoint-gated + safe-by-default: OTLP export when OpenTelemetry:OtlpEndpoint (or the standard
-    // OTEL_EXPORTER_OTLP_ENDPOINT env var) is set; Console exporter only when blank, so the app runs with
-    // no collector. See HRM.Api/Observability/ObservabilityExtensions.cs + docs/Architecture/observability-otel-grafana-plan.md.
+    // Inert-by-default (ISSUE-345): registers NOTHING unless enabled. Enabled when OpenTelemetry:OtlpEndpoint (or
+    // the standard OTEL_EXPORTER_OTLP_ENDPOINT) is set (⇒ OTLP export) or OpenTelemetry:Enabled=true (⇒ Console).
+    // OpenTelemetry:Enabled=false is a hard kill-switch. Traces are ParentBased/ratio sampled (OpenTelemetry:SamplingRatio,
+    // default 1.0). See HRM.Api/Observability/ObservabilityExtensions.cs + docs/Architecture/observability-otel-grafana-plan.md.
     builder.Services.AddObservability(builder.Configuration, builder.Environment);
 
     // ===== Error tracking (US-PLT-006: self-hosted GlitchTip, Sentry-API-compatible) =====
