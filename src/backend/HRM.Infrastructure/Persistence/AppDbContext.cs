@@ -137,6 +137,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<SelfAssessmentAttachment> SelfAssessmentAttachments => Set<SelfAssessmentAttachment>();
     public DbSet<ManagerReview> ManagerReviews => Set<ManagerReview>();
     public DbSet<ManagerReviewItem> ManagerReviewItems => Set<ManagerReviewItem>();
+    public DbSet<RatingCalibration> RatingCalibrations => Set<RatingCalibration>();
     public DbSet<ReviewMeetingNotes> ReviewMeetingNotes => Set<ReviewMeetingNotes>();
     public DbSet<ReviewMeetingNotesAction> ReviewMeetingNotesActions => Set<ReviewMeetingNotesAction>();
     public DbSet<ReviewSignoff> ReviewSignoffs => Set<ReviewSignoff>();
@@ -562,6 +563,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-PRF-003: ManagerReviewItem tenant isolation + soft-delete filter (NFR-2).
         modelBuilder.Entity<ManagerReviewItem>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-011: RatingCalibration tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
+        modelBuilder.Entity<RatingCalibration>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-PRF-006: ReviewMeetingNotes tenant isolation + soft-delete filter (NFR-2).

@@ -186,6 +186,59 @@ public sealed class CycleValidatorTests
         _create.TestValidate(CreateCmd(ratingScaleMax: scale)).ShouldHaveValidationErrorFor(x => x.Input.RatingScaleMax);
     }
 
+    // ── ISSUE-349: IsCalibrationEnabled ⟺ Calibration phase must agree ───
+
+    private static IReadOnlyList<CyclePhaseInput> PhasesWithCalibration() =>
+    [
+        new(CyclePhaseType.GoalSetting, Start, Start.AddDays(10)),
+        new(CyclePhaseType.SelfAssessment, Start.AddDays(11), Start.AddDays(20)),
+        new(CyclePhaseType.ManagerReview, Start.AddDays(21), Start.AddDays(30)),
+        new(CyclePhaseType.Calibration, Start.AddDays(31), Start.AddDays(40)),
+    ];
+
+    [Fact]
+    public void Create_CalibrationEnabled_ButNoCalibrationPhase_IsVALID_ISSUE349()
+    {
+        // INVERTED from "HasError" after the symmetric rule proved wrong. IsCalibrationEnabled is a standalone
+        // feature flag — the Angular cycle form surfaces it as a checkbox labelled "Calibration phase", while
+        // phases[] carries the GoalSetting/SelfAssessment/ManagerReview timeline. Enabling calibration without a
+        // Calibration entry in phases[] is the NORMAL state the shipped UI produces.
+        //
+        // The original assertion here encoded ISSUE-349's premise that the flag and the phase list are two
+        // representations of one thing. They are not. It was caught by CycleCreateWirePayloadApiTests — the
+        // BUG-257 regression pinning the REAL FE payload — which started 400'ing. Rejecting this combination
+        // would have broken every cycle-create where a user ticked that box.
+        var cmd = new CreateCycleCommand(CreateCmd().Input with { IsCalibrationEnabled = true });
+        _create.TestValidate(cmd).ShouldNotHaveValidationErrorFor("Phases");
+    }
+
+    [Fact]
+    public void Create_CalibrationDisabled_ButCalibrationPhasePresent_HasError_ISSUE349()
+    {
+        var cmd = new CreateCycleCommand(
+            CreateCmd().Input with { Phases = PhasesWithCalibration(), IsCalibrationEnabled = false });
+        _create.TestValidate(cmd).ShouldHaveValidationErrorFor("Phases");
+    }
+
+    [Fact]
+    public void Create_CalibrationEnabled_WithCalibrationPhase_IsValid_ISSUE349()
+    {
+        var cmd = new CreateCycleCommand(
+            CreateCmd().Input with { Phases = PhasesWithCalibration(), IsCalibrationEnabled = true });
+        _create.TestValidate(cmd).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Update_CalibrationEnabled_ButNoCalibrationPhase_IsVALID_ISSUE349()
+    {
+        // Inverted for the same reason as the Create arm above — see that comment.
+        var cmd = new UpdateCycleCommand(Guid.NewGuid(), new UpdateCycleInput(
+            "FY2026 Annual", Start, End, ValidPhases(),
+            Is360Enabled: false, IsCalibrationEnabled: true, IsAnonymousFeedback: false,
+            RatingScaleMax: 5, SelfWeightPercent: 30));
+        _update.TestValidate(cmd).ShouldNotHaveValidationErrorFor("Phases");
+    }
+
     // ── Update validator shares the same phase rules ─────────────────────
 
     [Fact]
