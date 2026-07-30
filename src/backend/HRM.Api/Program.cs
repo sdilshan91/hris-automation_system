@@ -45,7 +45,11 @@ try
             // US-PLT-006 (AC-4/AC-5): GlitchTip Serilog sink ADDED ALONGSIDE the console+file sinks above
             // (read from configuration). Error-level only; SendDefaultPii=false; inert when GlitchTip:Dsn is
             // blank (the shipped default). The file sink stays the authoritative QA/RequestId root-cause log.
-            .WriteToGlitchTip(context.Configuration);
+            .WriteToGlitchTip(context.Configuration)
+            // US-PLT-004 (item 1): OTLP log sink ADDED ALONGSIDE the console+file sinks. Obeys the same
+            // ObservabilityExtensions.IsEnabled guard as traces/metrics (endpoint-gated) — inert by default, so
+            // the file sink is untouched when OTel is inert. See ObservabilityExtensions.WriteToOpenTelemetry.
+            .WriteToOpenTelemetry(context.Configuration);
     });
 
     // ===== Shared Redis multiplexer (Redis command-spans, plan §5) =====

@@ -135,6 +135,12 @@ public sealed class TenantResolutionMiddleware
             tenant.LogoUrl,
             tenant.PrimaryColor);
 
+        // US-PLT-004 (item 2): stamp the current trace span with tenant tags so every downstream span in the
+        // request carries them. Null-safe: Activity.Current is null when OTel is inert (the default) — the
+        // null-conditional IS the whole guard, so this never throws and never branches on OTel state.
+        System.Diagnostics.Activity.Current?.SetTag("tenant.id", tenant.Id);
+        System.Diagnostics.Activity.Current?.SetTag("tenant.subdomain", tenant.Subdomain);
+
         // Add tenant_id to Serilog log context
         using (Serilog.Context.LogContext.PushProperty("TenantId", tenant.Id))
         using (Serilog.Context.LogContext.PushProperty("TenantSubdomain", tenant.Subdomain))

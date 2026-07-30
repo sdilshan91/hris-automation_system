@@ -1,5 +1,6 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Observability;
 using HRM.Application.Features.LeaveRequests.DTOs;
 using MediatR;
 
@@ -15,10 +16,10 @@ public sealed class CreateLeaveRequestCommandHandler
         _service = service;
     }
 
-    public Task<Result<LeaveRequestDto>> Handle(
+    public async Task<Result<LeaveRequestDto>> Handle(
         CreateLeaveRequestCommand request, CancellationToken cancellationToken)
     {
-        return _service.CreateAsync(new CreateLeaveRequestRequest
+        var result = await _service.CreateAsync(new CreateLeaveRequestRequest
         {
             LeaveTypeId = request.LeaveTypeId,
             StartDate = request.StartDate,
@@ -29,5 +30,12 @@ public sealed class CreateLeaveRequestCommandHandler
             Attachments = request.Attachments,
             ConfirmLop = request.ConfirmLop,
         }, cancellationToken);
+
+        // US-PLT-004 (item 3): leave-request-submitted meter. Count only actual submissions (success),
+        // not validation rejections. Inert when no OTel listener is attached.
+        if (result.IsSuccess)
+            HrmDomainMetrics.RecordLeaveRequestSubmitted();
+
+        return result;
     }
 }

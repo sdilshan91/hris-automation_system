@@ -1,8 +1,10 @@
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Text;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Observability;
 using HRM.Application.Features.Attendance.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -155,6 +157,10 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _logger.LogInformation(
             "ProcessPayrollRun START. RunId={RunId}, Period={Year}-{Month}, Tenant={TenantId}",
             run.Id, run.PayYear, run.PayMonth, _tenantContext.TenantId);
+
+        // US-PLT-004 (item 3): time the actual processing (past the terminal/skip guards) so the histogram
+        // measures real compute duration, not the no-op skip paths. Recorded on completion below.
+        var runTimer = Stopwatch.StartNew();
 
         // FR-7: re-running a ReviewPending run replaces its prior slips. Remove the old slips + details and
         // revert this run's Applied adjustments to Pending via the SHARED cleanup (the SAME helper the cancel
@@ -592,6 +598,11 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _logger.LogInformation(
             "ProcessPayrollRun END. RunId={RunId}, Processed={Processed}, Skipped={Skipped}, TotalNet={TotalNet}, Tenant={TenantId}",
             run.Id, processed, skipped, run.TotalNet, _tenantContext.TenantId);
+
+        // US-PLT-004 (item 3): payroll-run-duration histogram — recorded only for a run that completes to
+        // ReviewPending (the skip/terminal paths returned earlier and are not timed). Inert without a listener.
+        runTimer.Stop();
+        HrmDomainMetrics.RecordPayrollRunDuration(runTimer.Elapsed.TotalMilliseconds);
 
         return Result.Success();
     }

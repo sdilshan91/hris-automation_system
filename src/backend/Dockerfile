@@ -15,6 +15,13 @@ RUN dotnet publish HRM.Api/HRM.Api.csproj -c Release -o /app/publish /p:UseAppHo
 
 # ===== Runtime stage =====
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+# ISSUE-346: the compose healthcheck probes /health/ready, and the aspnet runtime image ships NEITHER curl NOR
+# wget (verified — `command -v` finds neither in mcr.microsoft.com/dotnet/aspnet:10.0). Without this the
+# healthcheck could never pass, `backend` would sit permanently unhealthy, and `frontend` would never start.
+# curl only, --no-install-recommends, and the apt lists are dropped in the same layer to keep the image lean.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/publish ./
 EXPOSE 5000
