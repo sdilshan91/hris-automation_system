@@ -174,7 +174,7 @@
 - [x] US-ADM-009 — Manage subscription plans *(PR #93)*
 - [x] US-ADM-010 — Tenant data export on demand *(PR #94)*
 - [x] US-ADM-011 — Approval-workflow RUNTIME engine (instances/routing/SLA-escalation/delegation) *(**SHIPPED 2026-07-10** — 011a #238 · 011b parallel+SLA+notifs #239 · 011c delegation + Attendance/Overtime/Offer wiring + read API #240. Wired US-LV-005 AC-4, US-ATT-004 AC-4, US-REC-007 FR-10. FE instance/step-chain viewer deferred → ISSUE-272 (P6).)*
-- [ ] US-ADM-012 — Plan/module governance enforcement (runtime gating + usage limits) *(**net-new STUB, reconciliation 2026-07-06, Theme H** — US-ADM-009 config not enforced; disabled-module APIs not 403'd, limits config-only (BUG-114).)*
+- [x] US-ADM-012 — Plan/module governance enforcement *(**DONE 2026-07-30, six phases.** ⚠ The stub was ~45% stale — the storage quota and custom-field cap were already enforced, and 4 of 8 limit keys were live. **Phase 1** [[ISSUE-335]]: `tenants.enabled_modules` held TWO incompatible vocabularies (permission prefixes vs canonical keys) — a gate on that data would have 403'd every request for the seeded and E2E tenants. Seed fixed, CLI migration normalized live data, one fail-open predicate. **1b** FE `moduleGuard` + nav filtering + `module_not_entitled` branch. **2a** [[ISSUE-342]]/[[ISSUE-341]]: plan edits now propagate to running tenants, and `PUT /system/tenants/{id}/plan` exists — before this a gate would have enforced entitlements no admin could change. **2b** `ModuleEntitlementMiddleware` (positive route→module map, so unmapped routes fail open BY CONSTRUCTION). **3** [[ISSUE-338]]/[[ISSUE-339]]/[[ISSUE-340]] + `max_custom_roles`/`max_email_sends_per_month`. **4** real storage + email usage gauges; `ApiCalls` deliberately left unavailable pending US-PLT-004. Gates: 4829 → 4835 → 4866 → 4906 → 4931, all green.)*
 
 ## 9. Onboarding / Offboarding (6 stories) — COMPLETE ✅
 - [x] US-ONB-001 — Create onboarding checklist template *(PR #95)*
@@ -218,7 +218,7 @@
 | # | Item | Kind | Blocked on |
 |---|------|------|-----------|
 | ~~1~~ | ~~**US-PLT-005**~~ — ✅ **DONE 2026-07-29** (Scope A; AC-1/3/4 were already built, AC-2 closed N/A by ADR) | net-new story | — |
-| 2 | **US-ADM-012** — plan/module governance enforcement (403 disabled-module APIs, usage limits) | net-new story | — |
+| ~~2~~ | ~~**US-ADM-012**~~ — ✅ **DONE 2026-07-30**, six phases (normalization · FE gating · plan propagation + plan-change endpoint · module gate · limit keys · usage gauges) | net-new story | — |
 | 3 | **US-PLT-004** — observability NFRs. ⚠ **Smaller than the stub implies:** AC-2 (health live/ready) already built + tested; `HRM.*` meters already started. Real remainder = LGTM stack, Serilog→OTel sink, domain meters, API-call counter | net-new story | — *(check GlitchTip overlap before standing up LGTM)* |
 | 4 | **US-PRF-011** — performance calibration workspace | net-new story | — *(unblocks US-PRF-010 dead-end)* |
 | 5 | **US-PLT-002** — RLS prod flip | **ops**, not dev | user's deploy step (`Rls/README.md` §3b) |
@@ -231,7 +231,7 @@
 - In progress: **1** (US-PLT-002 — RLS code complete + proven, committed OFF; only the **ops** prod flip remains).
 - **Net-new backlog (2026-07-06 reconciliation): 10 → 6 shipped, 4 remain.** SHIPPED: US-ADM-011 (#238-240), US-TRN-EPIC/001/002/003 (#241-243), US-NTF-006 (8 phases), US-PLT-006 (#448/#449). REMAINING `[ ]`: US-PLT-005 / US-ADM-012 / US-PLT-004 / US-PRF-011.
 - **Also shipped since the last tally (were never recorded here):** the **SSO epic** US-AUTH-011..016 (#112/#444/#446/#447/#450) and the **location-calendar epic** US-ATT-011 + US-CHR-013 (CAL-1..8, #310-#318).
-- **Recommended next build order (updated 2026-07-29):** ~~US-PLT-005~~ ✅ done → **US-ADM-012** (self-contained; US-ADM-009 config already exists, just unenforced) → **US-PLT-004** (unblocks the US-ADM-002 KPI TCs) → **US-PRF-011**. Then the finding-driven tail (P6 FE, P7 LOW). ⚠ **Note:** the US-PLT-005 experience — a stub story whose premises had gone stale — is a standing warning. **Grep the code per-AC before building any of the three remaining stubs**; US-ADM-012 has already been confirmed ~45% stale the same way (BUG-114 storage quota and the custom-field cap are enforced, not unenforced).
+- **Recommended next build order (updated 2026-07-30):** ~~US-PLT-005~~ ✅ · ~~US-ADM-012~~ ✅ → **US-PLT-004** (real remainder only: Serilog→OTel sink · domain meters · per-tenant API-call counter · tenant span tags. **AC-2 health live/ready is already built and tested — do NOT rebuild it**; `HRM.Cache` proves the meter pipeline, so domain meters are an extension) → **US-PRF-011** (rescoped: calibrated-vs-original rating model + cohort surface; the "unblocker" AC was removed as fictional). Then the ~14 genuine deferred ACs — about half of which is ONE QuestPDF work item, not five — and the LOW findings band.
 
 ## Deferred-AC Reconciliation (2026-07-06) — ⚠ **~66% OF THIS TABLE IS STALE (swept 2026-07-30)**
 
