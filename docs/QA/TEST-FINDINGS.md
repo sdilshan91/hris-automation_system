@@ -7595,3 +7595,33 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Why it is LOW and not MED:** enforcement is **not** affected. `EmployeeService.CheckPlanLimitAsync` resolves the limit **live** by `PlanId` through `PlanLimitResolver` (override → plan → snapshot), so the plan value wins and the stale snapshot is only ever consulted as a last-resort fallback when the plan lookup yields nothing. The drift is latent, not enforced-upon. Note this is **not** true of the invite path — `UserManagementService` reads the raw snapshot and bypasses the resolver entirely, which is [[ISSUE-338]]; the two findings compound, and fixing ISSUE-338 also removes most of this one's exposure.
 - **Reproduction steps:** change a plan's `MaxEmployees`; observe `tenants.max_employees` for tenants on that plan is unchanged.
 - **Suggested direction (NOT applied):** either retire the `Tenant.MaxEmployees` snapshot entirely (once ISSUE-338 stops reading it raw, nothing depends on it for enforcement), or refresh it in the same sweep on any plan edit that changes a numeric limit. Retiring it is the cleaner end state — a denormalization with exactly one live consumer, which itself should not be using it, is not earning its keep.
+
+---
+
+### ISSUE-355 — Offboarding + exit-interviews are gated under the Onboarding module (no Offboarding module exists)
+- **ID:** ISSUE-355
+- **Type:** DECISION (product taxonomy)
+- **Severity:** LOW
+- **Status:** OPEN — needs a product call
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-012 (AC-1), US-ONB-005/006 / TC-ADM-012 — surfaced by `@backend-dev` while building the module gate, 2026-07-30
+- **Title:** `PlanModules` has an `Onboarding` key but no `Offboarding` key, while `/api/v1/offboarding` and `/api/v1/exit-interviews` are distinct route families. The gate maps both to **Onboarding**, on the reading that they are the "off" half of one Onboarding/Offboarding lifecycle module (which is how the BA docs group US-ONB-005/006).
+- **Consequence of the choice:** a tenant on a plan without `Onboarding` also loses offboarding and exit interviews. If a customer is ever sold offboarding separately, or given onboarding without offboarding, this mapping is wrong and the plan editor has no key to express it.
+- **Root cause:** the module vocabulary predates the gate and was never asked to distinguish the two halves. Confidence **100%** — `PlanModules.All` has no Offboarding key.
+- **Alternative considered:** leave both ungated. Rejected as the default because it silently exempts a whole feature area from entitlement with no record of why; an explicit mapping plus this finding is more honest.
+- **Severity rationale:** LOW — the mapping is defensible and easily changed (one table entry). Filed because it is a **product** decision made by an implementation default, which is exactly the kind of choice that should be visible rather than buried in a route table.
+- **Suggested direction (NOT applied):** confirm the taxonomy. If offboarding should be separately sellable, add a `PlanModules.Offboarding` key (note: that ripples into the plan editor, the FE `CANONICAL_MODULES`, [[ISSUE-353]]'s drift guard, and the normalization migration's canonical literal). If not, keep the current mapping and record it in the US-ADM-012 story.
+
+---
+
+### ISSUE-356 — `CustomReportBuilder` is a sellable module with no controller, so it can never be enforced
+- **ID:** ISSUE-356
+- **Type:** GAP
+- **Severity:** LOW
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-012, US-ADM-009 / — surfaced by `@backend-dev` while building the module gate, 2026-07-30
+- **Title:** `PlanModules.CustomReportBuilder` is offered in the plan editor's module grid and can be toggled per plan, but **no controller or route implements it**. The entitlement gate therefore has nothing to map it to: toggling it on or off is a no-op at runtime.
+- **Root cause:** the module key was added to the canonical vocabulary ahead of the feature. Confidence **95%** — no controller matched a custom-report-builder route in the enumeration of every `[Route]` attribute.
+- **Severity rationale:** LOW — no runtime risk. It matters commercially: a plan can advertise a module the platform does not implement, and an admin toggling it sees no effect and no explanation.
+- **Suggested direction (NOT applied):** either build the feature, or mark the key as not-yet-available in the plan editor so it cannot be sold by accident. Note `Asset` is a related-but-different case — it HAS a surface (`/api/v1/onboarding/assets`) and IS gated, it just lacks a dedicated controller.
