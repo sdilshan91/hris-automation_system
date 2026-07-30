@@ -7467,6 +7467,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-346 — `/health/ready` exists and is tested, but nothing consumes it; backend/frontend have no compose healthcheck
 - **ID:** ISSUE-346
+- **Status update:** ✅ **RESOLVED 2026-07-30** — `backend` now has a `/health/ready` healthcheck and `frontend` gates on `condition: service_healthy`. **Near-miss worth recording:** the probe was first written with `wget`; verification showed `mcr.microsoft.com/dotnet/aspnet:10.0` ships NEITHER `wget` NOR `curl`, so it could never have passed — `backend` would have sat permanently unhealthy and `frontend`, newly gated on it, would never have started. `curl` is now installed in the runtime stage for this probe.
 - **Type:** ISSUE (ops wiring gap)
 - **Severity:** LOW
 - **Status:** OPEN
@@ -7482,6 +7483,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-347 — Observability plan prescribes an env var the shipped code does not read
 - **ID:** ISSUE-347
+- **Status update:** ✅ **RESOLVED 2026-07-30** — the plan doc now specifies `OpenTelemetry__OtlpEndpoint` (and the OTel-standard `OTEL_EXPORTER_OTLP_ENDPOINT`), with an explicit warning that the old `OBSERVABILITY__OTLPENDPOINT` spelling sets a variable nothing reads.
 - **Type:** ISSUE (doc/impl drift — a trap for the next implementer)
 - **Severity:** LOW
 - **Status:** OPEN
