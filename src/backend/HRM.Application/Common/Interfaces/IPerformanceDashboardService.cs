@@ -44,4 +44,12 @@ public interface IPerformanceDashboardService
     /// <summary>FR-8/AC-4: renders the overview's tabular data as a CSV/XLSX download (PDF deferred).</summary>
     Task<Result<PerformanceDashboardExportResult>> ExportOverviewAsync(
         PerformanceDashboardFilter filter, string format, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// US-PRF-011 §2: the calibration cohort for a cycle — each in-scope employee's ORIGINAL rating, current
+    /// CALIBRATED rating (if any), reviewer and department. Reuses the same scope + population + filter logic
+    /// as the dashboard (LoadPopulationAsync), so it honours the manager-vs-HR scope and the FR-4 filters.
+    /// </summary>
+    Task<Result<CalibrationCohortDto>> GetCalibrationCohortAsync(
+        PerformanceDashboardFilter filter, CancellationToken cancellationToken = default);
 }

@@ -610,6 +610,12 @@ public static class DependencyInjection
         // materialized-view/Redis refresh (NFR-3) are documented extension points, not built here.
         services.AddScoped<IPerformanceDashboardService, PerformanceDashboardService>();
 
+        // US-PRF-011: Performance — calibrated-rating write path. Appends an append-only RatingCalibration
+        // history row (original snapshot + who/when/why) WITHOUT mutating ManagerReview.FinalScore, and writes a
+        // structured audit entry. Permission-gated (Performance.Publish.All/Manage/Review.All). The cohort READ
+        // lives on IPerformanceDashboardService (reuses its scope + population logic).
+        services.AddScoped<IPerformanceCalibrationService, PerformanceCalibrationService>();
+
         // US-PRF-010: Performance — performance-based recommendations (promotion/bonus/increment/training). HR
         // (Performance.Publish.All) drives the full workspace/auto-generate/save/submit/budget/rule config; a
         // manager (Performance.Review.Team) is hard-scoped to their direct reports (AC-5/NFR-5). Auto-generation

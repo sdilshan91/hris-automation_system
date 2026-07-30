@@ -18,13 +18,15 @@ internal static class CyclePhaseRules
         AbstractValidator<T> v,
         Func<T, IReadOnlyList<CyclePhaseInput>?> phasesSelector,
         Func<T, DateTime> startSelector,
-        Func<T, DateTime> endSelector)
+        Func<T, DateTime> endSelector,
+        Func<T, bool> isCalibrationEnabledSelector)
     {
         v.RuleFor(x => x).Custom((cmd, ctx) =>
         {
             var phases = phasesSelector(cmd);
             var cycleStart = startSelector(cmd);
             var cycleEnd = endSelector(cmd);
+            var calibrationEnabled = isCalibrationEnabledSelector(cmd);
 
             if (cycleStart >= cycleEnd)
                 ctx.AddFailure("StartDate", "The cycle start date must be before its end date.");
@@ -45,6 +47,27 @@ internal static class CyclePhaseRules
             // No duplicate phase types.
             if (phases.Select(p => p.PhaseType).Distinct().Count() != phases.Count)
                 ctx.AddFailure("Phases", "Each phase type may appear at most once in a cycle.");
+
+            // ISSUE-349 — ONE HALF of the symmetric rule, deliberately. See the note below before "fixing" this.
+            //
+            // A Calibration PHASE in the timeline while the calibration feature is OFF is genuinely incoherent:
+            // the cycle would advance into a phase whose functionality is disabled. That is rejected.
+            //
+            // The CONVERSE is NOT rejected, and must not be. `IsCalibrationEnabled` is not a mirror of the phase
+            // list — in the shipped product it is a standalone feature flag, surfaced in the Angular cycle form
+            // as a checkbox labelled "Calibration phase", while `phases[]` carries the
+            // GoalSetting/SelfAssessment/ManagerReview timeline. Enabling calibration WITHOUT a Calibration entry
+            // in `phases[]` is therefore the NORMAL state the UI produces, not a mistake.
+            //
+            // ISSUE-349 was filed as "nothing validates that the flag and the phase agree", which assumed they
+            // are two representations of one thing. They are not. The symmetric rule was implemented first and
+            // broke `CycleCreateWirePayloadApiTests` — the BUG-257 regression that pins the REAL FE payload
+            // (isCalibrationEnabled=true with three non-Calibration phases). Shipping it would have 400'd every
+            // cycle-create where a user ticked that box: a LOW-severity finding turned into a broken feature.
+            var hasCalibrationPhase = phases.Any(p => p.PhaseType == CyclePhaseType.Calibration);
+            if (!calibrationEnabled && hasCalibrationPhase)
+                ctx.AddFailure("Phases",
+                    "A Calibration phase is defined but calibration is disabled; enable calibration or remove the Calibration phase.");
 
             foreach (var p in phases)
             {
@@ -99,7 +122,8 @@ public sealed class CreateCycleCommandValidator : AbstractValidator<CreateCycleC
             .WithMessage("At least one employee is required for a custom-list cycle.")
             .When(x => x.Input.Scope is not null);
 
-        CyclePhaseRules.Apply(this, x => x.Input.Phases, x => x.Input.StartDate, x => x.Input.EndDate);
+        CyclePhaseRules.Apply(this, x => x.Input.Phases, x => x.Input.StartDate, x => x.Input.EndDate,
+            x => x.Input.IsCalibrationEnabled);
     }
 }
 
@@ -136,7 +160,8 @@ public sealed class UpdateCycleCommandValidator : AbstractValidator<UpdateCycleC
             .WithMessage("At least one employee is required for a custom-list cycle.")
             .When(x => x.Input.Scope is not null);
 
-        CyclePhaseRules.Apply(this, x => x.Input.Phases, x => x.Input.StartDate, x => x.Input.EndDate);
+        CyclePhaseRules.Apply(this, x => x.Input.Phases, x => x.Input.StartDate, x => x.Input.EndDate,
+            x => x.Input.IsCalibrationEnabled);
     }
 }
 

@@ -160,7 +160,62 @@ public sealed class CyclesController : ControllerBase
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
         return Ok(ApiResponse.Ok());
     }
+
+    // ── Calibration (US-PRF-011) ─────────────────────────────────────────
+
+    // The calibration cohort is READ through the dashboard's scope resolver (Performance.View.All/Team), so it
+    // is gated with the same view permissions as the dashboard. Applying a calibration is an HR-level WRITE,
+    // gated (like publishing) on Publish.All / Manage / Review.All.
+    private const string ViewAll = "Performance.View.All";
+    private const string ViewTeam = "Performance.View.Team";
+    private const string ManagePerf = "Performance.Manage";
+    private const string ReviewAll = "Performance.Review.All";
+
+    /// <summary>
+    /// GET /api/v1/tenant/performance/cycles/{id}/calibration?departmentId= — the calibration cohort for the
+    /// cycle (US-PRF-011 §2): each in-scope employee's original + calibrated rating, reviewer and department.
+    /// Reuses the dashboard scope + population logic; a manager sees only their direct reports.
+    /// </summary>
+    [HttpGet("cycles/{id:guid}/calibration")]
+    [RequirePermission(ViewAll, ViewTeam)]
+    [ProducesResponseType(typeof(ApiResponse<CalibrationCohortDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCalibrationCohort(
+        Guid id, [FromQuery] Guid? departmentId, CancellationToken cancellationToken)
+    {
+        var filter = new PerformanceDashboardFilter { CycleId = id, DepartmentId = departmentId };
+        var result = await _mediator.Send(new GetCalibrationCohortQuery(filter), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<CalibrationCohortDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/tenant/performance/cycles/{id}/calibration — applies/adjusts a calibrated rating for one
+    /// employee with a MANDATORY reason (US-PRF-011 §3). Never overwrites the review's original score; records
+    /// an append-only history row + an audit entry.
+    /// </summary>
+    [HttpPost("cycles/{id:guid}/calibration")]
+    [RequirePermission(PublishCycles, ManagePerf, ReviewAll)]
+    [ProducesResponseType(typeof(ApiResponse<CalibrationResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> ApplyCalibration(
+        Guid id, [FromBody] ApplyCalibrationRequest request, CancellationToken cancellationToken)
+    {
+        var input = new ApplyCalibrationInput(id, request.EmployeeId, request.CalibratedScore, request.Reason);
+        var result = await _mediator.Send(new ApplyCalibrationCommand(input), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<CalibrationResultDto>.Ok(result.Value!));
+    }
 }
 
 /// <summary>Body for the status-transition endpoint (US-PRF-004 FR-7/BR-6).</summary>
 public sealed record TransitionCycleStatusRequest(AppraisalCycleStatus TargetStatus, string? Reason);
+
+/// <summary>Body for the apply-calibration endpoint (US-PRF-011 §3). Cycle id comes from the route.</summary>
+public sealed record ApplyCalibrationRequest(Guid EmployeeId, decimal CalibratedScore, string Reason);

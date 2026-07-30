@@ -290,6 +290,95 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  Calibration cohort (US-PRF-011 §2)
+    // ══════════════════════════════════════════════════════════════
+
+    public async Task<Result<CalibrationCohortDto>> GetCalibrationCohortAsync(
+        PerformanceDashboardFilter filter, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<CalibrationCohortDto>.Failure("Tenant context is not resolved.", 400);
+
+        var scopeResult = await ResolveScopeAsync(cancellationToken);
+        if (scopeResult.IsFailure)
+            return Result<CalibrationCohortDto>.Failure(
+                scopeResult.Error!, scopeResult.StatusCode ?? 403, scopeResult.ErrorCode);
+        var scope = scopeResult.Value!;
+
+        var cycle = await ResolveCycleAsync(filter.CycleId, cancellationToken);
+        if (cycle is null)
+            return Result<CalibrationCohortDto>.Failure(
+                "No appraisal cycle is available for this tenant.", 404, "no_cycle");
+
+        // REUSE the dashboard population loader (scope + FR-4 filters + department resolution). EmployeeScoreRow
+        // already carries the original final score (BR-4: submitted review's FinalScore) + department.
+        var population = await LoadPopulationAsync(cycle.Id, filter, scope, cancellationToken);
+        if (population.Count == 0)
+            return Result<CalibrationCohortDto>.Success(new CalibrationCohortDto
+            {
+                CycleId = cycle.Id, CycleName = cycle.Name, Scope = scope.Kind.ToString(),
+                RatingScaleMax = cycle.RatingScaleMax, Rows = [],
+            });
+
+        var employeeIds = population.Select(e => e.EmployeeId).ToList();
+
+        // Reviewer per employee (tenant-scoped). ReviewerEmployeeId is the reviewing manager's employee id.
+        var reviewers = (await _dbContext.ManagerReviews.AsNoTracking()
+                .Where(r => r.CycleId == cycle.Id && employeeIds.Contains(r.EmployeeId))
+                .Select(r => new { r.EmployeeId, r.ReviewerEmployeeId })
+                .ToListAsync(cancellationToken))
+            .ToDictionary(r => r.EmployeeId, r => r.ReviewerEmployeeId);
+
+        var reviewerIds = reviewers.Values.Where(id => id is not null).Select(id => id!.Value).Distinct().ToList();
+        var reviewerNames = reviewerIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : (await _dbContext.Employees.AsNoTracking()
+                    .Where(e => reviewerIds.Contains(e.Id))
+                    .Select(e => new { e.Id, e.FirstName, e.LastName })
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(e => e.Id, e => $"{e.FirstName} {e.LastName}".Trim());
+
+        // Current calibrated score per employee = the MOST-RECENT RatingCalibration row (append-only history).
+        var latestCalibration = (await _dbContext.RatingCalibrations.AsNoTracking()
+                .Where(c => c.CycleId == cycle.Id && employeeIds.Contains(c.EmployeeId))
+                .Select(c => new { c.EmployeeId, c.CalibratedScore, c.CreatedAt })
+                .ToListAsync(cancellationToken))
+            .GroupBy(c => c.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.CreatedAt).First().CalibratedScore);
+
+        var rows = population
+            .OrderBy(e => e.DepartmentName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.EmployeeName, StringComparer.OrdinalIgnoreCase)
+            .Select(e =>
+            {
+                reviewers.TryGetValue(e.EmployeeId, out var reviewerEmployeeId);
+                var reviewerName = reviewerEmployeeId is { } rid ? reviewerNames.GetValueOrDefault(rid) : null;
+                return new CalibrationCohortRowDto
+                {
+                    EmployeeId = e.EmployeeId,
+                    EmployeeName = e.EmployeeName,
+                    EmployeeNo = e.EmployeeNo,
+                    DepartmentId = e.DepartmentId,
+                    DepartmentName = e.DepartmentName,
+                    OriginalScore = e.FinalScore,
+                    CalibratedScore = latestCalibration.TryGetValue(e.EmployeeId, out var cs) ? cs : null,
+                    ReviewerEmployeeId = reviewerEmployeeId,
+                    ReviewerName = reviewerName,
+                };
+            })
+            .ToList();
+
+        return Result<CalibrationCohortDto>.Success(new CalibrationCohortDto
+        {
+            CycleId = cycle.Id,
+            CycleName = cycle.Name,
+            Scope = scope.Kind.ToString(),
+            RatingScaleMax = cycle.RatingScaleMax,
+            Rows = rows,
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Scope resolution (BR-1/BR-3/AC-5)
     // ══════════════════════════════════════════════════════════════
 
