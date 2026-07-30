@@ -169,7 +169,21 @@ New services + config files under `docker/observability/`:
 | prometheus | `prom/prometheus` | 9090 | `prometheus.yaml` |
 | grafana | `grafana/grafana` | 3000 | provisioning/ (datasources + dashboards) |
 
-`backend` service gains `OBSERVABILITY__OTLPENDPOINT=http://otel-collector:4317` and `depends_on: otel-collector`.
+`backend` service gains `OpenTelemetry__OtlpEndpoint=http://otel-collector:4317` and `depends_on: otel-collector`.
+
+> ⚠ **Corrected 2026-07-30 (ISSUE-347).** This line previously read `OBSERVABILITY__OTLPENDPOINT`, and the
+> config section sketched below was named `Observability`. **The shipped code reads neither.** It reads
+> `OpenTelemetry:OtlpEndpoint` (`ObservabilityExtensions.ResolveOtlpEndpoint`), falling back to the standard
+> `OTEL_EXPORTER_OTLP_ENDPOINT`. Following the old spelling sets a variable nothing consumes — the app stays
+> inert and the collector silently receives nothing, with no error to explain why. Either spelling below works:
+>
+> ```
+> OpenTelemetry__OtlpEndpoint=http://otel-collector:4317   # this project's key (double underscore = ':')
+> OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317   # the OTel-standard variable, also honoured
+> ```
+>
+> Note also that setting an endpoint is *sufficient* to enable OTel — `OpenTelemetry:Enabled` need not be set,
+> though `Enabled=false` remains a hard kill-switch that wins even when an endpoint is configured (ISSUE-345).
 
 **Collector config (`collector-config.yaml`)** — the prod-swappable seam:
 ```yaml

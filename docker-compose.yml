@@ -50,6 +50,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # ISSUE-346: the app exposes /health/ready (Postgres readiness + Redis-as-Degraded) and /health/live, but
+    # NOTHING consumed them — postgres and redis each had a healthcheck while the service that actually serves
+    # traffic had none. So compose reported `backend` as up the moment the container process started, before
+    # migrations and seeding had finished, and `frontend` (depends_on: backend) came up against an API that was
+    # not yet answering. Readiness is checked here so dependents can gate on it.
+    #
+    # start_period covers first-boot migrations + seeding, which are slow on a fresh volume and must NOT be
+    # counted as failures. curl is installed in the runtime stage of src/backend/Dockerfile specifically for
+    # this probe — the stock aspnet:10.0 image has neither curl nor wget, so without that install the check
+    # could never pass and `frontend` would never start.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5000/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     restart: unless-stopped
 
   frontend:
@@ -59,7 +75,10 @@ services:
     ports:
       - "4200:80"
     depends_on:
-      - backend
+      # ISSUE-346: wait for the API to be READY, not merely started — otherwise the SPA loads and immediately
+      # fires calls at a backend still running migrations.
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
   # ClamAV malware scanner (ISSUE-101). OPT-IN via the "scanning" profile so a normal local

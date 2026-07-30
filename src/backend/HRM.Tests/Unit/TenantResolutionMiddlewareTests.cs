@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -170,6 +171,72 @@ public sealed class TenantResolutionMiddlewareTests
 
         await middleware.InvokeAsync(context);
 
+        context.RequestServices.GetRequiredService<ITenantContext>().TenantId.Should().Be(tenantId);
+    }
+
+    // ── US-PLT-004 (item 2): tenant span tags ─────────────────────────────────
+
+    [Fact]
+    public async Task InvokeAsync_WhenActivityExists_SetsTenantSpanTags()
+    {
+        var tenantId = Guid.NewGuid();
+        var cache = new FakeDistributedCache();
+        cache.SetJson("t:subdomain:acme", new
+        {
+            Id = tenantId,
+            Subdomain = "acme",
+            Status = TenantStatus.Active,
+            Plan = "growth",
+            EnabledModules = new[] { "Employee" },
+            LogoUrl = (string?)null,
+            PrimaryColor = (string?)null
+        });
+        var (context, _) = CreateHttpContext("acme.yourhrm.com", cache: cache);
+        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+
+        // An active recording Activity, mirroring what the OTel AspNetCore instrumentation supplies at runtime.
+        using var source = new ActivitySource("HRM.Tests.TenantSpan");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == source.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = source.StartActivity("request");
+        activity.Should().NotBeNull();
+
+        await middleware.InvokeAsync(context);
+
+        activity!.GetTagItem("tenant.id").Should().Be(tenantId);
+        activity.GetTagItem("tenant.subdomain").Should().Be("acme");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_WhenNoActivity_DoesNotThrow_AndStillResolvesTenant()
+    {
+        // No ActivityListener is attached in this async flow, so Activity.Current is null — the null-conditional
+        // in the middleware IS the guard. It must resolve the tenant normally and never throw.
+        Activity.Current.Should().BeNull();
+
+        var tenantId = Guid.NewGuid();
+        var cache = new FakeDistributedCache();
+        cache.SetJson("t:subdomain:acme", new
+        {
+            Id = tenantId,
+            Subdomain = "acme",
+            Status = TenantStatus.Active,
+            Plan = "growth",
+            EnabledModules = new[] { "Employee" },
+            LogoUrl = (string?)null,
+            PrimaryColor = (string?)null
+        });
+        var (context, _) = CreateHttpContext("acme.yourhrm.com", cache: cache);
+        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+
+        var act = async () => await middleware.InvokeAsync(context);
+
+        await act.Should().NotThrowAsync();
         context.RequestServices.GetRequiredService<ITenantContext>().TenantId.Should().Be(tenantId);
     }
 

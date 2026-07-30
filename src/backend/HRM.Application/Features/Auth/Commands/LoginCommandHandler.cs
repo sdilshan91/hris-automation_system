@@ -1,5 +1,6 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Observability;
 using HRM.Application.Features.Auth.DTOs;
 using MediatR;
 
@@ -19,12 +20,18 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, Result<L
 
     public async Task<Result<LoginResponse>> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        return await _authService.LoginAsync(
+        var result = await _authService.LoginAsync(
             request.Email,
             request.Password,
             request.MfaCode,
             request.IpAddress,
             request.UserAgent,
             cancellationToken);
+
+        // US-PLT-004 (item 3): login-outcome meter (success|failure). Natural seam — the handler owns the
+        // pass/fail decision. No PII tagged (outcome only). Inert when no OTel listener is attached.
+        HrmDomainMetrics.RecordLogin(result.IsSuccess);
+
+        return result;
     }
 }

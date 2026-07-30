@@ -17,6 +17,11 @@
     <PackageReference Include="Serilog.AspNetCore" Version="9.*" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.*" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.*" />
+    <!-- US-PLT-004 (item 1): OTLP log export. Added ALONGSIDE the console+file sinks. ENDPOINT-GATED via
+         ObservabilityExtensions (same IsEnabled guard as traces/metrics): only registered when OTel is
+         enabled AND an OTLP endpoint is resolved, so the file sink (the QA/RequestId log) is untouched
+         when OTel is inert. 4.x targets Serilog 4 (Serilog.AspNetCore 9.*). -->
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.*" />
     <PackageReference Include="Hangfire.Core" Version="1.*" />
     <PackageReference Include="Hangfire.AspNetCore" Version="1.*" />
     <PackageReference Include="Hangfire.PostgreSql" Version="1.*" />

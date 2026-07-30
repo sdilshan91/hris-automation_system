@@ -3,6 +3,8 @@ using System.Reflection;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Serilog;
+using Serilog.Sinks.OpenTelemetry;
 
 // NOTE: DB spans use Npgsql's built-in ActivitySource ("Npgsql", enabled via AddSource below) rather than the
 // pre-release OpenTelemetry.Instrumentation.EntityFrameworkCore — the stable, plan-approved single DB span source.
@@ -115,6 +117,41 @@ public static class ObservabilityExtensions
         if (!IsEnabled(configuration))
             return ExporterMode.None;
         return ResolveOtlpEndpoint(configuration) is not null ? ExporterMode.Otlp : ExporterMode.Console;
+    }
+
+    /// <summary>
+    /// US-PLT-004 (item 1): whether the Serilog OTLP <b>log</b> sink should be registered. Gated on the same
+    /// <see cref="IsEnabled"/> guard AND an actually-resolved OTLP endpoint — an OTLP log sink with no endpoint
+    /// would blindly ship logs at <c>localhost:4317</c> with no collector, producing connection noise. So the
+    /// log sink follows the exact OTLP-only rule the trace/metric exporters use (Console-mode ⇒ no OTLP log
+    /// sink; the existing Serilog Console+File sinks already cover local visibility). Exposed for testing.
+    /// </summary>
+    public static bool IsLogExportEnabled(IConfiguration configuration)
+        => IsEnabled(configuration) && ResolveOtlpEndpoint(configuration) is not null;
+
+    /// <summary>
+    /// US-PLT-004 (item 1): adds the OTLP log sink ALONGSIDE the existing Serilog Console + File sinks, mirroring
+    /// <c>WriteToGlitchTip</c>. Inert when OTel is inert (or Console-mode) — see <see cref="IsLogExportEnabled"/> —
+    /// so the file sink (the authoritative QA/<c>RequestId</c> root-cause log) is never touched or replaced. When
+    /// enabled it exports over OTLP/gRPC to the SAME endpoint the trace/metric exporters use, tagged with the same
+    /// <c>service.name</c> resource attribute for correlation.
+    /// </summary>
+    public static LoggerConfiguration WriteToOpenTelemetry(
+        this LoggerConfiguration loggerConfiguration, IConfiguration configuration)
+    {
+        if (!IsLogExportEnabled(configuration))
+            return loggerConfiguration; // inert / Console-mode ⇒ no OTLP log sink added.
+
+        var endpoint = ResolveOtlpEndpoint(configuration)!;
+        return loggerConfiguration.WriteTo.OpenTelemetry(options =>
+        {
+            options.Endpoint = endpoint;
+            options.Protocol = OtlpProtocol.Grpc; // match the trace/metric OTLP exporters (gRPC :4317 default).
+            options.ResourceAttributes = new Dictionary<string, object>
+            {
+                ["service.name"] = "HRM.Api",
+            };
+        });
     }
 
     public static IServiceCollection AddObservability(

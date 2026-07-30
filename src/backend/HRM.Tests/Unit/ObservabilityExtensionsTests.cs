@@ -146,4 +146,41 @@ public sealed class ObservabilityExtensionsTests
         act().Should().Be(expected);
     }
 
+    // ── US-PLT-004 (item 1): Serilog OTLP log-sink gate ───────────────────────
+    // The log sink follows the SAME IsEnabled guard as traces/metrics AND requires a resolved OTLP endpoint
+    // (an OTLP sink with no collector endpoint would ship logs into the void). So: inert by default, registered
+    // only when OTel is enabled with an endpoint, and NOT in Console-mode (Console+File sinks cover local logs).
+
+    [Fact]
+    public void LogExport_Default_IsInert_PLT004()
+    {
+        // Blank endpoint + no opt-in ⇒ no OTLP log sink ⇒ the file sink (QA/RequestId log) is untouched.
+        ObservabilityExtensions.IsLogExportEnabled(Config()).Should().BeFalse();
+    }
+
+    [Fact]
+    public void LogExport_EndpointSet_IsEnabled_PLT004()
+    {
+        var config = Config(("OpenTelemetry:OtlpEndpoint", "http://localhost:4317"));
+        ObservabilityExtensions.IsLogExportEnabled(config).Should().BeTrue();
+    }
+
+    [Fact]
+    public void LogExport_ConsoleMode_IsInert_NoEndpointToShipTo_PLT004()
+    {
+        // OTel is enabled (Console exporter) but there is no OTLP endpoint — the OTLP log sink must NOT register,
+        // else it would blindly ship to localhost:4317 with no collector. Console+File already cover local logs.
+        var config = Config(("OpenTelemetry:Enabled", "true"));
+        ObservabilityExtensions.IsEnabled(config).Should().BeTrue();
+        ObservabilityExtensions.IsLogExportEnabled(config).Should().BeFalse();
+    }
+
+    [Fact]
+    public void LogExport_KillSwitchOff_IsInert_EvenWithEndpoint_PLT004()
+    {
+        var config = Config(
+            ("OpenTelemetry:Enabled", "false"),
+            ("OpenTelemetry:OtlpEndpoint", "http://localhost:4317"));
+        ObservabilityExtensions.IsLogExportEnabled(config).Should().BeFalse();
+    }
 }
