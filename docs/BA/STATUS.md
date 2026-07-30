@@ -259,7 +259,11 @@
 >   boundaries · US-CHR-001 `LocationId` · US-CHR-012 custom-field cap · US-REC-010 AC-3 user-account creation
 >   and AC-4 Converted badge.
 >
-> **Genuinely STILL-TRUE (~14):** custom-field columns in bulk import · accrual-frequency *(now [[BUG-291]], being
+> **✅ 4 of the STILL-TRUE set CLOSED 2026-07-31** — the four Performance PDFs (360 report · review meeting · PIP ·
+> recommendation) shipped as **ONE** QuestPDF work item via a shared `PerformancePdfRenderer`, exactly as the sweep
+> predicted. That leaves **~10**, none of which now cluster.
+>
+> **Genuinely STILL-TRUE (~10):** custom-field columns in bulk import · accrual-frequency *(now [[BUG-291]], being
 > fixed)* · auto-LOP still behind `NoOpAttendanceProvider` · interview-guide attachment · scorecard versioning ·
 > US-REC-010 AC-2 salary persistence + FR-9/FR-8 welcome/onboarding · year-end tax **PDF** (the report itself is
 > built) · 360 report PDF · review-meeting PDF · PIP PDF · recommendation PDF · US-ADM-002 monitoring KPIs ·
