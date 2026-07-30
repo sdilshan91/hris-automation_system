@@ -40,6 +40,10 @@ public sealed class LeaveLedgerConfiguration : IEntityTypeConfiguration<LeaveLed
         builder.Property(l => l.LeaveYear)
             .IsRequired();
 
+        // BUG-291: the accrual period (1-based) this Accrual credit is for. Nullable — set only on Accrual
+        // rows; NULL on all other entry types and on pre-BUG-291 legacy accrual rows (see LeaveLedger).
+        builder.Property(l => l.AccrualPeriod);
+
         // US-LV-005 §7: optional FK to the leave request that produced this entry (set on the
         // "Used" deduction written at approval; null for accruals and other entry types).
         builder.Property(l => l.LeaveRequestId);

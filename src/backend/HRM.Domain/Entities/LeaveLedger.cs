@@ -29,6 +29,21 @@ public sealed class LeaveLedger : BaseEntity, IAuditExempt
     public int LeaveYear { get; set; }
 
     /// <summary>
+    /// BUG-291: which accrual PERIOD within the leave year this Accrual credit is for (1-based), so a
+    /// frequency-aware accrual (Monthly = 12 periods, Quarterly = 4, Yearly/Upfront = 1) credits each period
+    /// exactly once. This is the granularity the accrual idempotency guard keys on — before BUG-291 the guard
+    /// was year-scoped, so the first run of the year credited the whole 12/12 and every later run was skipped,
+    /// making a Monthly/Quarterly type behave like Yearly and over-crediting balances that reach encashment /
+    /// F&amp;F.
+    ///
+    /// <para>Set only on <see cref="LedgerEntryType.Accrual"/> rows written by the accrual job. NULL on every
+    /// other entry type AND on legacy accrual rows written before BUG-291 (those predate period-tagging and
+    /// each already credited the FULL year the old way — a NULL accrual row is treated as "this year is
+    /// already fully accrued" so we never double-credit or retroactively re-shape an existing balance).</para>
+    /// </summary>
+    public int? AccrualPeriod { get; set; }
+
+    /// <summary>
     /// Optional FK to the leave request that produced this entry (US-LV-005 §7).
     /// Set on the "Used" deduction written when a request is approved; null for accruals,
     /// adjustments, carry-forwards, etc. that are not tied to a specific request.
