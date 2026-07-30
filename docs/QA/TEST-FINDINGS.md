@@ -7204,6 +7204,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-331 — Running backend container is a STALE build predating PR #444/#446; US-AUTH-012 & US-AUTH-016 SSO surface is absent from the live stack
 - **ID:** ISSUE-331
+- **Status update:** ✅ **RESOLVED 2026-07-30** — backend image rebuilt from current `test/local-subdomains` and restarted. Verified live: `tenants` now has the SSO columns, `POST /api/v1/auth/break-glass-login` returns **400 (validation)** rather than 404, and the pending migrations applied — including `Platform_NormalizeTenantEnabledModules`, which normalized the `e2e` and `platform` tenants onto the canonical module vocabulary, proving [[ISSUE-335]]'s fix end-to-end on real data.
 - **Type:** ISSUE (INFRA — deployment drift; blocks live QA of two shipped stories)
 - **Severity:** MED (not a product defect — source code is correct and its bound automated tests are 56/56 green; but the *running* stack cannot exercise the US-AUTH-012/016 API/UI surface, so live re-test of those stories is blocked until the container is rebuilt)
 - **Status:** OPEN
