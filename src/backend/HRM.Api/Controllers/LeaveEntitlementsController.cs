@@ -252,4 +252,37 @@ public sealed class LeaveEntitlementsController : ControllerBase
 
         return Ok(ApiResponse<EffectiveEntitlementDto>.Ok(result.Value!));
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  BUG-291 exposure report (READ-ONLY)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// GET /api/v1/tenant/leave-entitlements/accrual-over-credit-exposure?asOfDate=YYYY-MM-DD
+    /// BUG-291 exposure report (READ-ONLY). Lists, for the CURRENT tenant, every (employee × leave type) whose
+    /// legacy full-year accrual over-credited relative to its configured Monthly/Quarterly accrual frequency as
+    /// of <paramref name="asOfDate"/>. Reports the affected population only — it adjusts nothing (correcting an
+    /// over-credit downward is an employee-detriment decision made case-by-case).
+    ///
+    /// <para><b>Authorization.</b> Gated by <c>Leave.ConfigurePolicy</c> — the platform's admin-level
+    /// leave-entitlement/accrual configuration permission that already gates every sibling entitlement route on
+    /// this controller. A true system/admin-context route was not used because this report runs in the RESOLVED
+    /// tenant under the normal query filters (system routes run tenant-less with IgnoreQueryFilters); this is
+    /// the admin gate that is both elevated and tenant-scoped.</para>
+    /// </summary>
+    [HttpGet("accrual-over-credit-exposure")]
+    [RequirePermission("Leave.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse<AccrualOverCreditExposureReportDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetAccrualOverCreditExposure(
+        [FromQuery] DateOnly asOfDate, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new GetAccrualOverCreditExposureQuery(asOfDate), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<AccrualOverCreditExposureReportDto>.Ok(result.Value!));
+    }
 }

@@ -571,6 +571,127 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  BUG-291 exposure report (READ-ONLY — no writes, no adjustments)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <inheritdoc />
+    public async Task<Result<AccrualOverCreditExposureReportDto>> GetAccrualOverCreditExposureAsync(
+        DateOnly asOfDate,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<AccrualOverCreditExposureReportDto>.Failure("Tenant context is not resolved.", 400);
+
+        var fiscalYearStartMonth = await ResolveFiscalYearStartMonthAsync(cancellationToken);
+        var leaveYear = LeaveYear.LabelFor(asOfDate, fiscalYearStartMonth);
+        var leaveYearStart = LeaveYear.StartOf(leaveYear, fiscalYearStartMonth);
+
+        var empty = new AccrualOverCreditExposureReportDto
+        {
+            AsOfDate = asOfDate,
+            LeaveYear = leaveYear,
+            Rows = Array.Empty<AccrualOverCreditExposureRow>(),
+        };
+
+        // Only Monthly/Quarterly types can be over-credited: Yearly/Upfront credit the whole entitlement in a
+        // SINGLE period, so credited == should-have by construction — they can never be affected, so we exclude
+        // them at the source rather than filtering them out later.
+        var leaveTypes = await _dbContext.LeaveTypes
+            .AsNoTracking()
+            .Where(lt => lt.AccrualFrequency == AccrualFrequency.Monthly
+                      || lt.AccrualFrequency == AccrualFrequency.Quarterly)
+            .ToListAsync(cancellationToken);
+        if (leaveTypes.Count == 0)
+            return Result<AccrualOverCreditExposureReportDto>.Success(empty);
+
+        var leaveTypeIds = leaveTypes.Select(lt => lt.Id).ToList();
+
+        // Accrual ledger rows for the target year on those types. Tenant-scoped by the global query filter.
+        var accrualRows = await _dbContext.LeaveLedgerEntries
+            .AsNoTracking()
+            .Where(l => l.EntryType == LedgerEntryType.Accrual
+                        && l.LeaveYear == leaveYear
+                        && leaveTypeIds.Contains(l.LeaveTypeId))
+            .Select(l => new { l.EmployeeId, l.LeaveTypeId, l.Amount, l.AccrualPeriod })
+            .ToListAsync(cancellationToken);
+
+        // Affected = groups that carry a LEGACY (AccrualPeriod == null) accrual row — those predate the fix and
+        // credited the full year the old way. A group whose rows are all period-tagged (post-fix) is excluded:
+        // the fix already handles it correctly, so reporting it would double-count the population.
+        var affectedGroups = accrualRows
+            .GroupBy(r => (r.EmployeeId, r.LeaveTypeId))
+            .Where(g => g.Any(r => r.AccrualPeriod == null))
+            .Select(g => new { g.Key.EmployeeId, g.Key.LeaveTypeId, CreditedDays = g.Sum(r => r.Amount) })
+            .ToList();
+        if (affectedGroups.Count == 0)
+            return Result<AccrualOverCreditExposureReportDto>.Success(empty);
+
+        // Load the affected employees (active AND terminated — a leaver's over-credit is what reaches F&F; only
+        // soft-deleted rows are excluded, by the global query filter). Then resolve their prorated annual
+        // entitlement via the SAME batched engine the accrual path uses.
+        var employeeIds = affectedGroups.Select(g => g.EmployeeId).Distinct().ToList();
+        var employees = await _dbContext.Employees
+            .AsNoTracking()
+            .Where(e => employeeIds.Contains(e.Id))
+            .ToListAsync(cancellationToken);
+        var employeesById = employees.ToDictionary(e => e.Id);
+        var leaveTypesById = leaveTypes.ToDictionary(lt => lt.Id);
+
+        var proratedByPair = await ComputeProratedEntitlementsBatchAsync(
+            employees, leaveTypes, leaveYear, cancellationToken);
+
+        var rows = new List<AccrualOverCreditExposureRow>();
+        foreach (var group in affectedGroups)
+        {
+            if (!employeesById.TryGetValue(group.EmployeeId, out var employee))
+                continue; // Employee not visible (e.g. soft-deleted) — cannot attribute the exposure.
+
+            var leaveType = leaveTypesById[group.LeaveTypeId];
+            var proratedAnnual = proratedByPair.TryGetValue((group.EmployeeId, group.LeaveTypeId), out var pa)
+                ? pa
+                : 0m;
+
+            // Should-have = the SAME frequency-aware per-period maths the merged fix credits, summed over the
+            // periods elapsed by the as-of date. Reuses AccrualPeriodProgress + PeriodAccrualAmount rather than
+            // re-deriving them, so the figure is byte-identical to what the fixed accrual job would have granted.
+            var (elapsedPeriods, periodsPerYear) =
+                AccrualPeriodProgress(leaveType.AccrualFrequency, leaveYearStart, asOfDate);
+            decimal shouldHave = 0m;
+            for (int period = 1; period <= elapsedPeriods; period++)
+                shouldHave += PeriodAccrualAmount(proratedAnnual, period, periodsPerYear);
+
+            rows.Add(new AccrualOverCreditExposureRow
+            {
+                EmployeeId = employee.Id,
+                EmployeeNo = employee.EmployeeNo,
+                EmployeeName = $"{employee.FirstName} {employee.LastName}",
+                LeaveTypeId = leaveType.Id,
+                LeaveTypeName = leaveType.Name,
+                LeaveYear = leaveYear,
+                AccrualFrequency = leaveType.AccrualFrequency.ToString(),
+                CreditedDays = group.CreditedDays,
+                ShouldHaveAccruedDays = shouldHave,
+                OverCreditedDays = group.CreditedDays - shouldHave,
+                IsEmployeeActive = employee.IsActive,
+            });
+        }
+
+        // Only a strictly positive over-credit is an exposure. A zero (e.g. as-of at year-end, where credited ==
+        // full annual == should-have) or negative difference is not reported.
+        var exposed = rows
+            .Where(r => r.OverCreditedDays > 0m)
+            .OrderByDescending(r => r.OverCreditedDays)
+            .ToList();
+
+        return Result<AccrualOverCreditExposureReportDto>.Success(new AccrualOverCreditExposureReportDto
+        {
+            AsOfDate = asOfDate,
+            LeaveYear = leaveYear,
+            Rows = exposed,
+        });
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  Accrual Processing (Hangfire job)
     // ══════════════════════════════════════════════════════════════
 

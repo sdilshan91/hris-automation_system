@@ -81,6 +81,24 @@ public interface ILeaveEntitlementService
         int year,
         CancellationToken cancellationToken = default);
 
+    // ── BUG-291 exposure report (READ-ONLY) ────────────────────────
+
+    /// <summary>
+    /// BUG-291 exposure report. Returns, for the current tenant only, every (employee × leave type) whose
+    /// LEGACY full-year accrual (an <c>Accrual</c> ledger row with <c>AccrualPeriod == NULL</c>) over-credited
+    /// relative to what its configured <c>AccrualFrequency</c> should have accrued as of
+    /// <paramref name="asOfDate"/> — i.e. <c>proratedAnnual × elapsedPeriods / periodsPerYear</c>, using the
+    /// SAME period maths as the merged BUG-291 fix. Strictly read-only: it writes nothing and adjusts no
+    /// balances (correcting an over-credit downward is an employee-detriment decision made case-by-case).
+    /// Only Monthly/Quarterly types can appear; Yearly/Upfront credit the whole year in one period and are
+    /// excluded. Employees whose accrual is already period-tagged (post-fix) are excluded — the fix already
+    /// handles them, so counting them would double-report. Only rows with a strictly positive over-credit are
+    /// returned. Tenant-scoped under the normal EF query filters (no <c>IgnoreQueryFilters</c>).
+    /// </summary>
+    Task<Result<AccrualOverCreditExposureReportDto>> GetAccrualOverCreditExposureAsync(
+        DateOnly asOfDate,
+        CancellationToken cancellationToken = default);
+
     // ── Accrual Processing ─────────────────────────────────────────
 
     /// <summary>

@@ -282,4 +282,61 @@ public sealed class ModuleEntitlementMiddlewareTests
         nextCalled.Should().BeTrue();
         code.Should().BeNull();
     }
+    // ── ISSUE-356: CustomReportBuilder gate, pre-registered ahead of the feature ──────────────
+    // The module was grantable in the plan editor while nothing enforced it, so a tenant could be billed for it
+    // and denied it with identical behaviour. These arms pin the mapping NOW so the builder cannot ship ungated.
+    // Note the entry currently matches no controller — the feature does not exist yet; that is the point.
+
+    [Theory]
+    [Trait("TC", "TC-ADM-356")]
+    [InlineData("/api/v1/reports/custom")]
+    [InlineData("/api/v1/reports/custom/definitions")]
+    [InlineData("/api/v1/report-builder")]
+    [InlineData("/api/v1/report-builder/run/42")]
+    public async Task CustomReportBuilder_routes_denied_when_not_entitled_ISSUE356(string path)
+    {
+        // Entitled to Reporting but NOT CustomReportBuilder — the exact split that was unenforceable.
+        var (nextCalled, status, code) = await Run(
+            MakeContext(path, new[] { PlanModules.CoreHr, PlanModules.Reporting }));
+
+        nextCalled.Should().BeFalse();
+        status.Should().Be(StatusCodes.Status403Forbidden,
+            "CustomReportBuilder is sold separately from Reporting; without this entry the two are "
+            + "indistinguishable at runtime and the module is billable but unenforceable");
+        code.Should().Be("module_not_entitled");
+    }
+
+    // THE ordering arm. Prefix matching is first-wins, so if the custom entries were declared AFTER the broader
+    // "/api/v1/reports", a builder route would gate under Reporting and CustomReportBuilder would stay
+    // unenforceable — the bug this fixes, silently reintroduced. Same hazard as /onboarding/assets vs /onboarding.
+    [Fact]
+    [Trait("TC", "TC-ADM-356")]
+    public async Task CustomReportBuilder_prefix_wins_over_broader_reports_prefix_ISSUE356()
+    {
+        // A plain Reporting path must still PASS for a Reporting-entitled tenant...
+        var (reportingNext, reportingStatus, _) = await Run(
+            MakeContext("/api/v1/reports/headcount", new[] { PlanModules.CoreHr, PlanModules.Reporting }));
+        reportingNext.Should().BeTrue("pre-defined report types are Reporting and must stay reachable");
+        reportingStatus.Should().Be(StatusCodes.Status200OK);
+
+        // ...while the custom-builder path under the SAME prefix is denied for that same tenant.
+        var (customNext, customStatus, _) = await Run(
+            MakeContext("/api/v1/reports/custom", new[] { PlanModules.CoreHr, PlanModules.Reporting }));
+        customNext.Should().BeFalse(
+            "if the broader /api/v1/reports entry matched first this would wrongly pass as Reporting");
+        customStatus.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ADM-356")]
+    public async Task CustomReportBuilder_routes_pass_when_entitled_ISSUE356()
+    {
+        var (nextCalled, status, code) = await Run(
+            MakeContext("/api/v1/report-builder",
+                new[] { PlanModules.CoreHr, PlanModules.Reporting, PlanModules.CustomReportBuilder }));
+
+        nextCalled.Should().BeTrue("an entitled tenant must not be blocked");
+        status.Should().Be(StatusCodes.Status200OK);
+        code.Should().BeNull();
+    }
 }

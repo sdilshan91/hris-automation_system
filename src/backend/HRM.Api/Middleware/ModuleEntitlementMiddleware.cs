@@ -83,6 +83,24 @@ public sealed class ModuleEntitlementMiddleware
         ("/api/v1/attendance", PlanModules.Attendance),
         ("/api/v1/recruitment", PlanModules.Recruitment),
         ("/api/v1/payroll", PlanModules.Payroll),
+        // ISSUE-356 — CustomReportBuilder gate, PRE-REGISTERED ahead of the feature (user decision 2026-07-31).
+        //
+        // What this does and does not do, stated plainly so nobody mistakes it for more than it is: there is no
+        // custom-report-builder feature yet, so TODAY these prefixes match no controller and the entry gates
+        // nothing. Its purpose is that the module was already SELLABLE — grantable in the plan editor — while
+        // nothing enforced it, so a tenant could be billed for it and denied it with identical behaviour. Landing
+        // the map entry first means the builder is gated the moment its routes exist, instead of shipping ungated
+        // and needing a follow-up nobody files.
+        //
+        // MUST precede the broader "/api/v1/reports" entry below: matching is first-wins on prefix (same reason
+        // /onboarding/assets precedes /onboarding above), otherwise a custom-builder route would gate under
+        // Reporting and the CustomReportBuilder entitlement would stay unenforceable.
+        //
+        // The pre-defined report TYPES under /api/v1/reports are Reporting, NOT CustomReportBuilder — they are a
+        // different product capability and are deliberately left where they are.
+        ("/api/v1/reports/custom", PlanModules.CustomReportBuilder),
+        ("/api/v1/report-builder", PlanModules.CustomReportBuilder),
+
         ("/api/v1/reports", PlanModules.Reporting),
 
         // Public careers/portal (CareersController + PortalController) — anonymous, per-tenant public pages.
