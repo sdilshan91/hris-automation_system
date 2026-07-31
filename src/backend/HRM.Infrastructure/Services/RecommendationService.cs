@@ -294,6 +294,36 @@ public sealed class RecommendationService : IRecommendationService
         if (cycle is null)
             return Result<RecommendationDto>.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
 
+        // ISSUE-351: refuse to create a recommendation that could NEVER be progressed.
+        //
+        // The dead-end: a Draft recommendation for an employee whose ManagerReview was never submitted, on a
+        // cycle that has since reached a TERMINAL status. Both submitting and reopening that review require an
+        // open manager-review window; IsPhaseOpen requires Status == Active; and Completed has no outbound edge
+        // in IsValidTransition. The row is then permanently stuck and the employee permanently un-recommendable.
+        //
+        // Deliberately narrow. Drafting a recommendation BEFORE the review is submitted stays allowed — that is
+        // legitimate early preparation while the cycle is still open and the review can still land. Only the
+        // combination that is already irrecoverable is refused. (Auto-generate never produces this state: it
+        // filters FinalScore != null. This closes the same gap on the manual path.)
+        //
+        // Prevention rather than an HR-privileged reopen path: adding a Completed -> Active transition would let
+        // a cycle whose final ratings are already published be un-completed, which is a governance change far
+        // larger than the obscure state it would rescue. That option stays open if recoverability is ever
+        // wanted for real stuck rows; none are known to exist.
+        if (cycle.IsTerminal)
+        {
+            var reviewSubmitted = await _dbContext.ManagerReviews.AsNoTracking()
+                .AnyAsync(r => r.CycleId == input.CycleId
+                            && r.EmployeeId == input.EmployeeId
+                            && r.SubmittedAt != null, cancellationToken);
+            if (!reviewSubmitted)
+                return Result<RecommendationDto>.Failure(
+                    $"This cycle is {cycle.Status} and the employee's manager review was never submitted, so a "
+                    + "recommendation created now could never be progressed. Submit the review before the cycle "
+                    + "completes, or record this outside the cycle.",
+                    422, "cycle_terminal_review_unsubmitted");
+        }
+
         var d = input.Details;
 
         // BR-5: a promotion requires a target grade + effective date.

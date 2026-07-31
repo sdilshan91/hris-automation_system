@@ -230,4 +230,88 @@ public sealed class RecommendationIntegrationTests
         forbidden.IsFailure.Should().BeTrue();
         forbidden.StatusCode.Should().Be(403);
     }
+    // ── ISSUE-351: the irrecoverable recommendation ───────────────────────────
+    // A Draft recommendation for an employee whose ManagerReview was never submitted, on a cycle that has since
+    // reached a TERMINAL status, can never be progressed: submit and reopen both need an open manager-review
+    // window, IsPhaseOpen needs Status == Active, and Completed has no outbound edge in IsValidTransition.
+    // Auto-generate never creates this state (it filters FinalScore != null); the manual path could.
+
+    [Fact]
+    public async Task Save_is_refused_on_a_TERMINAL_cycle_when_the_review_was_never_submitted_ISSUE351()
+    {
+        var noop = Substitute.For<IRecommendationIntegrationService>();
+        var tenantId = Guid.NewGuid();
+        var a = await SeedAsync(tenantId);
+
+        // A second employee on the SAME completed cycle, with NO manager review at all — the dead-end shape.
+        var strandedEmpId = Guid.NewGuid();
+        await using (var db = Db(tenantId))
+        {
+            db.Employees.Add(new Employee
+            {
+                Id = strandedEmpId, TenantId = tenantId, UserId = Guid.NewGuid(), EmployeeNo = "EMP2",
+                FirstName = "Grace", LastName = "Hopper", Email = "g@t.com", Status = EmployeeStatus.Active,
+                DepartmentId = db.Employees.First(e => e.Id == a.EmployeeEmpId).DepartmentId,
+                DateOfJoining = new DateTime(2021, 1, 1),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service(tenantId, a.HrUserId, noop, PermissionCatalog.Performance.PublishAll)
+            .SaveAsync(BonusInput(strandedEmpId, a.CycleId, 5000m));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("cycle_terminal_review_unsubmitted",
+            "creating this row would strand the employee permanently — refusing at creation is the whole fix");
+    }
+
+    // THE discriminating arm: the guard must NOT restrict legitimate early drafting. While the cycle is still
+    // ACTIVE the review can still be submitted, so an unsubmitted review is not a dead end and HR preparing a
+    // recommendation in advance must keep working. Without this arm the fix could over-restrict and nothing
+    // would notice.
+    [Fact]
+    public async Task Save_is_STILL_ALLOWED_on_an_ACTIVE_cycle_when_the_review_is_unsubmitted_ISSUE351()
+    {
+        var noop = Substitute.For<IRecommendationIntegrationService>();
+        var tenantId = Guid.NewGuid();
+        var a = await SeedAsync(tenantId);
+
+        var earlyEmpId = Guid.NewGuid();
+        await using (var db = Db(tenantId))
+        {
+            db.Employees.Add(new Employee
+            {
+                Id = earlyEmpId, TenantId = tenantId, UserId = Guid.NewGuid(), EmployeeNo = "EMP3",
+                FirstName = "Alan", LastName = "Turing", Email = "t@t.com", Status = EmployeeStatus.Active,
+                DepartmentId = db.Employees.First(e => e.Id == a.EmployeeEmpId).DepartmentId,
+                DateOfJoining = new DateTime(2021, 1, 1),
+            });
+            // Reopen the cycle: Active means the review can still land, so this is preparation, not a dead end.
+            db.AppraisalCycles.First(c => c.Id == a.CycleId).Status = AppraisalCycleStatus.Active;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service(tenantId, a.HrUserId, noop, PermissionCatalog.Performance.PublishAll)
+            .SaveAsync(BonusInput(earlyEmpId, a.CycleId, 5000m));
+
+        result.IsSuccess.Should().BeTrue(
+            "drafting ahead of a submission is legitimate while the cycle is open; the guard must fire ONLY on "
+            + $"the already-irrecoverable combination. Error was: {result.Error}");
+    }
+
+    [Fact]
+    public async Task Save_remains_allowed_on_a_terminal_cycle_when_the_review_WAS_submitted_ISSUE351()
+    {
+        var noop = Substitute.For<IRecommendationIntegrationService>();
+        var tenantId = Guid.NewGuid();
+        var a = await SeedAsync(tenantId); // seeded employee HAS a submitted review on a Completed cycle
+
+        var result = await Service(tenantId, a.HrUserId, noop, PermissionCatalog.Performance.PublishAll)
+            .SaveAsync(BonusInput(a.EmployeeEmpId, a.CycleId, 5000m));
+
+        result.IsSuccess.Should().BeTrue(
+            "the normal post-cycle recommendation flow must be untouched — this is the path the feature exists for");
+    }
+
 }
