@@ -118,6 +118,18 @@ public sealed record CycleProgressDto
     public int SignedOff { get; init; }
 
     /// <summary>
+    /// ISSUE-350: participants with at least one calibration applied (US-PRF-011). Before this the progress
+    /// panel tracked GoalSetting → SelfAssessment → ManagerReview → SignedOff and knew nothing about
+    /// calibration, so a cycle sitting IN the Calibration phase showed no movement at all — the phase looked
+    /// permanently 0% and an HR lead running a calibration session had no way to see how far it had got.
+    ///
+    /// <para><c>null</c> when the cycle has calibration DISABLED, which is meaningfully different from
+    /// <c>0</c>: null means "not part of this cycle", zero means "enabled but nobody calibrated yet". Rendering
+    /// 0% for a cycle that never uses calibration is the original complaint restated.</para>
+    /// </summary>
+    public int? CalibrationCompleted { get; init; }
+
+    /// <summary>
     /// Overall completion rate (AC-1): managerReviewCompleted / totalParticipants * 100 (2dp); 0 when no
     /// participants. This is the headline "% of reviews completed" KPI.
     /// </summary>

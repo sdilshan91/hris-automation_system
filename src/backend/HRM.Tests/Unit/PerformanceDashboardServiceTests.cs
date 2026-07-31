@@ -498,4 +498,87 @@ public sealed class PerformanceDashboardServiceTests
         result.IsSuccess.Should().BeTrue(result.Error);
         System.Text.Encoding.ASCII.GetString(result.Value!.FileContent, 0, 4).Should().Be("%PDF");
     }
+    // ── ISSUE-350: the Calibration phase used to render 0% forever ────────────
+    // BuildProgress tracked GoalSetting → SelfAssessment → ManagerReview → SignedOff and knew nothing about
+    // calibration, so a cycle sitting IN the Calibration phase showed no movement at all and an HR lead running
+    // a calibration session had no way to see how far it had got. US-PRF-011's RatingCalibration table made the
+    // count available; these arms pin it.
+
+    [Fact]
+    public async Task Calibration_progress_is_null_when_the_cycle_has_calibration_DISABLED_ISSUE350()
+    {
+        // The seeded cycle leaves IsCalibrationEnabled at its default (false).
+        var d = (await CreateService(HrUser()).GetOverviewAsync(Filter(_cycleId))).Value!;
+
+        d.Progress.CalibrationCompleted.Should().BeNull(
+            "null means 'calibration is not part of this cycle'; reporting 0 would render a permanent 0% bar — "
+            + "the original ISSUE-350 complaint restated rather than fixed");
+    }
+
+    [Fact]
+    public async Task Calibration_progress_counts_calibrated_participants_when_ENABLED_ISSUE350()
+    {
+        await EnableCalibrationAsync();
+        await AddCalibrationAsync(_empA, originalScore: 4m, calibratedScore: 3.5m);
+
+        var d = (await CreateService(HrUser()).GetOverviewAsync(Filter(_cycleId))).Value!;
+
+        d.Progress.CalibrationCompleted.Should().Be(1,
+            "one of the three participants has been calibrated — this is what makes the phase show movement");
+        d.Progress.TotalParticipants.Should().Be(3, "the denominator is unchanged");
+    }
+
+    [Fact]
+    public async Task Calibration_progress_is_zero_when_ENABLED_but_nobody_calibrated_yet_ISSUE350()
+    {
+        await EnableCalibrationAsync();
+
+        var d = (await CreateService(HrUser()).GetOverviewAsync(Filter(_cycleId))).Value!;
+
+        d.Progress.CalibrationCompleted.Should().Be(0,
+            "zero and null are different states: enabled-but-untouched vs not-part-of-this-cycle");
+    }
+
+    // A participant calibrated TWICE (a second calibration round) must count ONCE — the panel reports how many
+    // PEOPLE have been calibrated, not how many calibration rows exist, or a single contested rating revisited
+    // three times would read as three completed participants.
+    [Fact]
+    public async Task Calibration_progress_counts_each_participant_once_across_rounds_ISSUE350()
+    {
+        await EnableCalibrationAsync();
+        await AddCalibrationAsync(_empA, originalScore: 4m, calibratedScore: 3.5m);
+        await AddCalibrationAsync(_empA, originalScore: 4m, calibratedScore: 3.0m);
+
+        var d = (await CreateService(HrUser()).GetOverviewAsync(Filter(_cycleId))).Value!;
+
+        d.Progress.CalibrationCompleted.Should().Be(1,
+            "two calibration rounds on ONE employee is one calibrated participant, not two");
+    }
+
+    private async Task EnableCalibrationAsync()
+    {
+        using var db = CreateDbContext();
+        var cycle = db.AppraisalCycles.Single(c => c.Id == _cycleId); // context is already scoped to _tenantId
+        cycle.IsCalibrationEnabled = true;
+        await db.SaveChangesAsync();
+    }
+
+    private async Task AddCalibrationAsync(Guid employeeId, decimal originalScore, decimal calibratedScore)
+    {
+        using var db = CreateDbContext();
+        db.RatingCalibrations.Add(new HRM.Domain.Performance.RatingCalibration
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            CycleId = _cycleId,
+            EmployeeId = employeeId,
+            ManagerReviewId = Guid.NewGuid(),
+            OriginalScore = originalScore,
+            CalibratedScore = calibratedScore,
+            Reason = "cohort alignment",
+            CalibratedByUserId = Guid.NewGuid(),
+        });
+        await db.SaveChangesAsync();
+    }
+
 }

@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using HRM.Application.Common.Interfaces;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Security;
 
@@ -22,10 +24,12 @@ public sealed class MfaSecretProtector : IFieldProtector
     public const string Purpose = "HRM.MfaSecret.v1";
 
     private readonly IDataProtector _protector;
+    private readonly ILogger<MfaSecretProtector>? _logger;
 
-    public MfaSecretProtector(IDataProtectionProvider provider)
+    public MfaSecretProtector(IDataProtectionProvider provider, ILogger<MfaSecretProtector>? logger = null)
     {
         _protector = provider.CreateProtector(Purpose);
+        _logger = logger;
     }
 
     public string Protect(string plaintext) => _protector.Protect(plaintext);
@@ -53,8 +57,56 @@ public sealed class MfaSecretProtector : IFieldProtector
         }
         catch (Exception ex) when (ex is CryptographicException or FormatException)
         {
+            // ISSUE-336 — make a LOST KEY RING observable instead of silent.
+            //
+            // Discriminated by PAYLOAD SHAPE, not by exception type. The pre-existing comment here claimed
+            // FormatException meant legacy plaintext and CryptographicException meant a bad key — that is FALSE,
+            // and a test written against it failed: Data Protection throws CryptographicException for BOTH a raw
+            // base32 TOTP secret and a genuinely undecryptable payload. Keying the warning off the exception
+            // would fire it for every pre-encryption secret in the table and bury the real signal.
+            //
+            // A real payload is base64url and starts with Data Protection's 0x09F0C9F0 magic header, so the
+            // shape check separates "encrypted but unreadable" (dangerous) from "never encrypted" (benign).
+            //
+            // The second case is the operationally dangerous one. Unprotect falls back to returning the stored
+            // value as-is, so TOTP validation then runs against CIPHERTEXT and can never succeed: the user simply
+            // sees "invalid code" forever. They CAN still get in with a recovery code (those are hashed and
+            // verified independently of this key), so it is not a hard lockout — but nothing anywhere reports the
+            // cause. If the key ring were lost for the whole fleet, the only symptom would be a rising tide of
+            // "my authenticator stopped working" tickets. One WARNING per occurrence turns that into a signal.
+            //
+            // Deliberately logs NO secret material — not the stored value, not the plaintext, not the purpose
+            // payload. The fact of the failure is the whole message.
+            if (LooksDataProtectionEncrypted(storedValue))
+            {
+                _logger?.LogWarning(
+                    "An MFA secret is Data-Protection-encrypted but could not be decrypted with the current key "
+                    + "ring (purpose {Purpose}). TOTP validation for this user will fail until they re-enrol; "
+                    + "recovery codes still work. This usually means the Data Protection key ring was lost or "
+                    + "re-keyed — check that keys are persisting to the database.", Purpose);
+            }
+
             plaintext = null;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="value"/> has the shape of an ASP.NET Core Data Protection payload: valid
+    /// base64url whose first four bytes are the 0x09F0C9F0 magic header. Used ONLY to decide whether a failed
+    /// decrypt is worth warning about (ISSUE-336) — never to gate decryption itself.
+    /// </summary>
+    private static bool LooksDataProtectionEncrypted(string value)
+    {
+        try
+        {
+            var bytes = WebEncoders.Base64UrlDecode(value);
+            return bytes.Length >= 4
+                && bytes[0] == 0x09 && bytes[1] == 0xF0 && bytes[2] == 0xC9 && bytes[3] == 0xF0;
+        }
+        catch (FormatException)
+        {
+            return false; // not base64url at all ⇒ definitely legacy plaintext
         }
     }
 }

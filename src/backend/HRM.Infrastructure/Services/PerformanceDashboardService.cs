@@ -90,7 +90,20 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         var distribution = BuildDistribution(scored, cycle.RatingScaleMax);
         var deptAverages = BuildDepartmentAverages(scored);
         var (top, bottom) = BuildPerformerLists(scored, filter.TopBottomCount, scope);
-        var progress = BuildProgress(population);
+        // ISSUE-350: count distinct calibrated participants only when the cycle actually uses calibration.
+        int? calibrationCount = null;
+        if (cycle.IsCalibrationEnabled)
+        {
+            var inScope = population.Select(e => e.EmployeeId).ToList();
+            calibrationCount = await _dbContext.RatingCalibrations
+                .AsNoTracking()
+                .Where(c => c.CycleId == cycle.Id && inScope.Contains(c.EmployeeId))
+                .Select(c => c.EmployeeId)
+                .Distinct()
+                .CountAsync(cancellationToken);
+        }
+
+        var progress = BuildProgress(population, calibrationCount);
 
         var dto = new PerformanceDashboardDto
         {
@@ -678,7 +691,10 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         Score = e.FinalScore!.Value,
     };
 
-    private static CycleProgressDto BuildProgress(IReadOnlyList<EmployeeScoreRow> population)
+    // ISSUE-350: calibrationCount is null when the cycle has calibration disabled — see CalibrationCompleted's
+    // doc for why null and 0 must stay distinguishable.
+    private static CycleProgressDto BuildProgress(
+        IReadOnlyList<EmployeeScoreRow> population, int? calibrationCount)
     {
         var total = population.Count;
         var goalSetting = population.Count(e => e.HasGoals);
@@ -694,6 +710,7 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
             SelfAssessmentCompleted = self,
             ManagerReviewCompleted = manager,
             SignedOff = signed,
+            CalibrationCompleted = calibrationCount,
             CompletionRate = completion,
         };
     }
