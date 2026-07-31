@@ -21,10 +21,11 @@ namespace HRM.Infrastructure.Services;
 /// <para><b>REAL data only.</b> This service does NOT source per-tenant usage counters, SLA-probe history, or a
 /// request-metrics store (there is no metrics backend feeding this dashboard). Rather than fabricate numbers,
 /// it computes ONLY what real data sources support — the database, a DB connectivity probe, a Redis probe, and
-/// the Hangfire monitoring API (via <see cref="IJobQueueMonitor"/>). The Storage and EmailSends usage gauges ARE
-/// real (US-ADM-012 AC-4 — cumulative stored bytes across the four size-bearing tables, and month-to-date sent
-/// emails off <see cref="NotificationDelivery"/>). Everything still without a real data source (error rate %, P95
-/// latency, 24h trend series, SLA uptime, the API-calls gauge, the error-rate "Attention Required" queue) is
+/// the Hangfire monitoring API (via <see cref="IJobQueueMonitor"/>). The Storage, EmailSends AND ApiCalls usage
+/// gauges ARE real (US-ADM-012 AC-4 + US-PLT-004 — cumulative stored bytes across the four size-bearing tables,
+/// month-to-date sent emails off <see cref="NotificationDelivery"/>, and month-to-date API calls off the
+/// <c>tenant_api_usage</c> aggregate populated by the API-call counter). Everything still without a real data
+/// source (error rate %, P95 latency, 24h trend series, SLA uptime, the error-rate "Attention Required" queue) is
 /// returned as null/empty with an explicit "RequiresObservabilityPipeline" status flag. See the DTO doc
 /// comments — those fields are DEFERRED, not broken. (OpenTelemetry traces/metrics ARE wired in the API host
 /// via <c>ObservabilityExtensions</c>; they just don't feed this per-tenant dashboard.)</para>
@@ -190,7 +191,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         // tenant has no MaxEmployees snapshot (older tenants provisioned before US-ADM-001 stamped it). Also
         // carry the storage / email plan limits for the AC-4 usage gauges.
         var planLimits = await _db.SubscriptionPlans
-            .Select(p => new { p.Code, p.MaxEmployees, p.MaxStorageGb, p.MaxEmailSendsPerMonth })
+            .Select(p => new { p.Code, p.MaxEmployees, p.MaxStorageGb, p.MaxEmailSendsPerMonth, p.MaxApiCallsPerMonth })
             .ToListAsync(cancellationToken);
         var limitByPlanCode = planLimits.ToDictionary(
             p => p.Code, StringComparer.OrdinalIgnoreCase);
@@ -208,6 +209,8 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         var storageByTenant = await TenantStorageUsage.ComputeBytesByTenantAsync(_db, cancellationToken: cancellationToken);
         var nowUtc = DateTime.UtcNow;
         var emailByTenant = await TenantEmailSendUsage.CountSentThisMonthByTenantAsync(_db, nowUtc, cancellationToken: cancellationToken);
+        // US-PLT-004: real month-to-date API-call usage per tenant (persisted by the counter flusher).
+        var apiCallsByTenant = await TenantApiCallUsage.CountThisMonthByTenantAsync(_db, nowUtc, cancellationToken: cancellationToken);
 
         var summaries = new List<TenantUsageSummaryDto>(tenants.Count);
         foreach (var t in tenants)
@@ -224,9 +227,12 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             var emailGauge = BuildEmailGauge(
                 emailByTenant.GetValueOrDefault(t.Id),
                 (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
+            var apiGauge = BuildApiCallsGauge(
+                apiCallsByTenant.GetValueOrDefault(t.Id),
+                ResolveLongLimit(PlanLimitKeys.MaxApiCallsPerMonth, plan?.MaxApiCallsPerMonth, overrides, nowUtc));
 
             summaries.Add(BuildSummary(
-                t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, active, limit, storageGauge, emailGauge));
+                t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, active, limit, storageGauge, emailGauge, apiGauge));
         }
 
         // Quota-breach queue (FR-3): tenants >= 80% on the employee limit, sorted by severity (percent) desc.
@@ -272,7 +278,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
 
         var plan = await _db.SubscriptionPlans
             .Where(p => p.Code == t.PlanId)
-            .Select(p => new { p.MaxEmployees, p.MaxStorageGb, p.MaxEmailSendsPerMonth })
+            .Select(p => new { p.MaxEmployees, p.MaxStorageGb, p.MaxEmailSendsPerMonth, p.MaxApiCallsPerMonth })
             .FirstOrDefaultAsync(cancellationToken);
 
         int? limit = t.MaxEmployees ?? plan?.MaxEmployees;
@@ -286,14 +292,18 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             .GetValueOrDefault(tenantId);
         var emailsSent = (await TenantEmailSendUsage.CountSentThisMonthByTenantAsync(_db, nowUtc, tenantId, cancellationToken))
             .GetValueOrDefault(tenantId);
+        var apiCalls = (await TenantApiCallUsage.CountThisMonthByTenantAsync(_db, nowUtc, tenantId, cancellationToken))
+            .GetValueOrDefault(tenantId);
 
         var storageGauge = BuildStorageGauge(
             usedBytes, ResolveLongLimit(PlanLimitKeys.MaxStorageGb, plan?.MaxStorageGb, overrides, nowUtc));
         var emailGauge = BuildEmailGauge(
             emailsSent, (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
+        var apiGauge = BuildApiCallsGauge(
+            apiCalls, ResolveLongLimit(PlanLimitKeys.MaxApiCallsPerMonth, plan?.MaxApiCallsPerMonth, overrides, nowUtc));
 
         var summary = BuildSummary(
-            t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, activeEmployees, limit, storageGauge, emailGauge);
+            t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, activeEmployees, limit, storageGauge, emailGauge, apiGauge);
         var employeeGauge = summary.Gauges.First(g => g.Resource == "Employees");
 
         // Owner email (operational, not PII per BR-2): the user assigned the Tenant Owner role for this tenant.
@@ -347,14 +357,13 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     // ── helpers ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Builds a per-tenant usage summary. The Employees, Storage and EmailSends gauges are REAL (US-ADM-012 AC-4);
-    /// ApiCalls remains DEFERRED — it needs per-request instrumentation that belongs with US-PLT-004's API-call
-    /// counter, and is honestly reported <c>Available=false</c> rather than faked. The caller supplies the
-    /// already-built Storage/Email gauges (they require per-tenant DB reads via the shared anti-drift helpers).
+    /// Builds a per-tenant usage summary. The Employees, Storage, EmailSends AND ApiCalls gauges are now all REAL
+    /// (US-ADM-012 AC-4 + US-PLT-004): the caller supplies the already-built Storage/Email/ApiCalls gauges (they
+    /// require per-tenant DB reads via the shared anti-drift helpers).
     /// </summary>
     private static TenantUsageSummaryDto BuildSummary(
         Guid tenantId, string name, string subdomain, string status, string plan, int activeEmployees, int? limit,
-        UsageGaugeDto storageGauge, UsageGaugeDto emailGauge)
+        UsageGaugeDto storageGauge, UsageGaugeDto emailGauge, UsageGaugeDto apiGauge)
     {
         var percent = MonitoringClassifiers.ComputePercent(activeEmployees, limit);
         var band = percent is { } p ? MonitoringClassifiers.ClassifyBand(p) : (UsageBand?)null;
@@ -363,8 +372,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         {
             new("Employees", Available: true, Used: activeEmployees, Limit: limit, UsagePercent: percent, Band: band),
             storageGauge,
-            // DEFERRED — a real API-call gauge needs per-request instrumentation (US-PLT-004), not a fabricated number.
-            new("ApiCalls", Available: false, Used: null, Limit: null, UsagePercent: null, Band: null),
+            apiGauge,
             emailGauge,
         };
 
@@ -424,6 +432,29 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         var band = percent is { } p ? MonitoringClassifiers.ClassifyBand(p) : (UsageBand?)null;
         return new UsageGaugeDto("EmailSends", Available: true, Used: sentThisMonth, Limit: limit,
             UsagePercent: percent, Band: band);
+    }
+
+    /// <summary>
+    /// The REAL API-calls gauge (US-PLT-004): month-to-date persisted API-call count vs the resolved
+    /// <c>max_api_calls_per_month</c> cap (null ⇒ UNLIMITED per BR-3 ⇒ null percent/band, never divide-by-null).
+    /// The count lags real-time by at most one flush interval (buffered increments not yet persisted). Counts are
+    /// <c>long</c>; the gauge's <c>Used</c>/<c>Limit</c> are <see cref="int"/>, so both are clamped to
+    /// <see cref="int.MaxValue"/> for display while the percentage is computed on the exact <c>long</c> values.
+    /// </summary>
+    private static UsageGaugeDto BuildApiCallsGauge(long usedThisMonth, long? limit)
+    {
+        var usedForDisplay = (int)Math.Min(usedThisMonth, int.MaxValue);
+
+        if (limit is not { } cap)
+            return new UsageGaugeDto("ApiCalls", Available: true, Used: usedForDisplay, Limit: null,
+                UsagePercent: null, Band: null);
+
+        var limitForDisplay = (int)Math.Min(cap, int.MaxValue);
+        var percent = cap <= 0
+            ? (usedThisMonth > 0 ? 100d : 0d)
+            : Math.Round((double)usedThisMonth / cap * 100d, 1);
+        return new UsageGaugeDto("ApiCalls", Available: true, Used: usedForDisplay, Limit: limitForDisplay,
+            UsagePercent: percent, Band: MonitoringClassifiers.ClassifyBand(percent));
     }
 
     private async Task<bool> TryCanConnectAsync(CancellationToken cancellationToken)
