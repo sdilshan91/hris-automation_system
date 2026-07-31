@@ -11,7 +11,8 @@
 //
 // The monitoring service runs in the SYSTEM/admin context (no resolved tenant ⇒ tenant query filter disabled),
 // so both gauges go through the cross-tenant grouped helpers. Limits resolve via PlanLimitResolver
-// (override > plan; null = UNLIMITED per BR-3). ApiCalls stays Available=false (no per-request instrumentation).
+// (override > plan; null = UNLIMITED per BR-3). ApiCalls is now REAL too (US-PLT-004) — month-to-date count off
+// the tenant_api_usage aggregate vs max_api_calls_per_month.
 //
 // Runs against a throwaway postgres:17-alpine container (mirrors the other *PostgresTests). The agent verify
 // gate has no Docker; this arm is executed by the orchestrator's Postgres run.
@@ -117,7 +118,7 @@ public sealed class PlatformMonitoringUsageGaugesPostgresTests : IAsyncLifetime
 
     // ── seeding ──────────────────────────────────────────────────────────────
 
-    private async Task SeedPlanAsync(string code, int? maxStorageGb, int? maxEmailSends)
+    private async Task SeedPlanAsync(string code, int? maxStorageGb, int? maxEmailSends, int? maxApiCalls = null)
     {
         await using var db = Db();
         db.SubscriptionPlans.Add(new SubscriptionPlan
@@ -128,6 +129,25 @@ public sealed class PlatformMonitoringUsageGaugesPostgresTests : IAsyncLifetime
             MaxEmployees = 50,
             MaxStorageGb = maxStorageGb,
             MaxEmailSendsPerMonth = maxEmailSends,
+            MaxApiCallsPerMonth = maxApiCalls,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Seeds one tenant_api_usage bucket directly. Writing the row rather than driving real HTTP traffic keeps
+    /// the GAUGE arms about the gauge — whether the counter increments correctly is the middleware's own arms'
+    /// job, and conflating the two would make a gauge failure look like a counter failure.
+    /// </summary>
+    private async Task SeedApiUsageAsync(Guid tenantId, int yearMonth, long callCount)
+    {
+        await using var db = Db();
+        db.TenantApiUsages.Add(new TenantApiUsage
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            YearMonth = yearMonth,
+            CallCount = callCount,
         });
         await db.SaveChangesAsync();
     }
@@ -302,17 +322,23 @@ public sealed class PlatformMonitoringUsageGaugesPostgresTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ApiCalls_gauge_stays_unavailable_and_is_not_fabricated()
+    public async Task ApiCalls_gauge_reports_real_month_to_date_usage_against_max_api_calls_per_month()
     {
-        await SeedPlanAsync("professional", maxStorageGb: 10, maxEmailSends: 100);
+        await SeedPlanAsync("professional", maxStorageGb: 10, maxEmailSends: 100, maxApiCalls: 1000);
         var tenantId = await SeedTenantAsync("acme", "professional");
+        // 40 calls this month; 7 in a PRIOR month that must NOT count toward the current-month gauge.
+        await SeedApiUsageAsync(tenantId, TenantApiUsage.ToYearMonth(DateTime.UtcNow), 40);
+        await SeedApiUsageAsync(tenantId, TenantApiUsage.ToYearMonth(DateTime.UtcNow.AddMonths(-1)), 7);
 
         var result = await Service().GetTenantUsageAsync(new TenantUsageFilter());
         var api = Gauge(result.Value!.Tenants.Single(t => t.TenantId == tenantId), "ApiCalls");
 
-        api.Available.Should().BeFalse();
-        api.Used.Should().BeNull();
-        api.Limit.Should().BeNull();
+        api.Available.Should().BeTrue();
+        // Only the current-month row counts (40); the prior-month 7 must be excluded (else this is 47).
+        api.Used.Should().Be(40, "the gauge counts only the current UTC month's tenant_api_usage row");
+        api.Limit.Should().Be(1000);
+        api.UsagePercent.Should().Be(4d);
+        api.Band.Should().Be(UsageBand.Green);
     }
 
     [Fact]

@@ -374,6 +374,10 @@ try
     // ~25s cold-start tax. Gated by Dashboard:WarmupEnabled (default true); failures are logged, never fatal.
     builder.Services.AddHostedService<HRM.Api.HostedServices.DashboardWarmupHostedService>();
 
+    // US-PLT-004: the API-call counter flusher — periodically (and on graceful shutdown) drains the in-memory
+    // per-tenant increment buffer into tenant_api_usage with an atomic upsert. Off the request hot path.
+    builder.Services.AddHostedService<HRM.Api.HostedServices.ApiCallCounterFlushService>();
+
     // US-ATT-007: monthly attendance summary jobs (daily refresh + monthly finalize) and the large-export
     // background job (bound to the interface so the Infrastructure service can enqueue it by interface).
     builder.Services.AddScoped<HRM.Api.Jobs.MonthlySummaryDailyJob>();
@@ -607,6 +611,11 @@ try
     // only mapped product-module routes can be denied; platform + CoreHR routes pass. After TenantStatusEnforcement
     // (so a suspended/terminating tenant is handled first), before the controllers.
     app.UseMiddleware<ModuleEntitlementMiddleware>();
+
+    // US-PLT-004: per-tenant API-call meter. Records ONE in-memory increment per metered tenant API request
+    // (skips the same platform/health paths ModuleEntitlement skips); fail-open, never fails a request. After
+    // entitlement (so a denied request is not counted), before the controllers.
+    app.UseMiddleware<ApiCallCounterMiddleware>();
 
     // Session activity tracking — debounced last_active_at update (US-AUTH-009 FR-4)
     app.UseMiddleware<SessionActivityMiddleware>();

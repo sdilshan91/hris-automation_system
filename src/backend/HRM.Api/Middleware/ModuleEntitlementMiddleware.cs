@@ -1,3 +1,4 @@
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.DTOs;
 using HRM.Domain.Authorization;
@@ -31,25 +32,9 @@ namespace HRM.Api.Middleware;
 /// </summary>
 public sealed class ModuleEntitlementMiddleware
 {
-    // Cross-cutting / platform paths that must NEVER be gated: gating them would lock a tenant's admins out of the
-    // very console they use to see/fix their plan. Matched segment-aware (see MatchesSegment). These are also
-    // absent from RouteModuleMap, so this list is defensive documentation more than strictly required.
-    private static readonly string[] PlatformAllowList =
-    {
-        "/api/v1/auth",                    // login/refresh/logout + /auth/sso (SsoController)
-        "/api/v1/tenant/context",          // TenantContextController — the FE bootstrap (plan/modules/branding)
-        "/api/v1/tenant/settings",
-        "/api/v1/tenant/users",
-        "/api/v1/tenant/roles",
-        "/api/v1/tenant/audit-logs",
-        "/api/v1/tenant/workflows",
-        "/api/v1/tenant/workflow-instances",
-        "/api/v1/tenant/data-exports",     // GDPR export — must survive even a restricted plan
-        "/api/v1/notifications",
-        "/api/v1/notification-preferences",
-        "/api/v1/notification-templates",
-        "/api/v1/system",                  // all system/admin controllers (System Admin operates every tenant)
-    };
+    // The cross-cutting platform allow-list (auth / tenant-admin / notifications / system) lives in the shared
+    // PlatformApiPaths helper so this gate and the US-PLT-004 ApiCallCounterMiddleware skip IDENTICAL paths — a
+    // path we don't meter must be a path we don't gate, and vice versa. See PlatformApiPaths.
 
     // Route-prefix → owning module. The prefix is NOT cleanly 1:1 with the module (see the ordered traps below),
     // so this table is enumerated from the controllers' actual [Route] attributes, not guessed from the module name.
@@ -129,8 +114,8 @@ public sealed class ModuleEntitlementMiddleware
 
         var path = context.Request.Path.Value ?? string.Empty;
 
-        // Non-API paths (health/swagger/hangfire) and the platform allow-list are never gated.
-        if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) || IsPlatformAllowListed(path))
+        // Non-API paths (health/swagger/hangfire) and the platform allow-list are never gated (shared predicate).
+        if (!PlatformApiPaths.IsMeteredTenantApiPath(path))
         {
             await _next(context);
             return;
@@ -152,9 +137,6 @@ public sealed class ModuleEntitlementMiddleware
             "This feature is not included in your organization's current plan.",
             "module_not_entitled");
     }
-
-    private static bool IsPlatformAllowListed(string path)
-        => PlatformAllowList.Any(p => MatchesSegment(path, p));
 
     private static string? ResolveModule(string path)
     {

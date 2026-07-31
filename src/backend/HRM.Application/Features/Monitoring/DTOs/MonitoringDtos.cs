@@ -100,11 +100,11 @@ public enum UsageBand
 }
 
 /// <summary>
-/// A single per-tenant usage gauge (AC-2 / US-ADM-012 AC-4). The Employees, Storage and EmailSends gauges are
-/// REAL: Employees = active employees vs plan limit; Storage = cumulative stored bytes (all four size-bearing
-/// tables, in MB) vs <c>max_storage_gb</c>; EmailSends = month-to-date successful sends vs
-/// <c>max_email_sends_per_month</c>. Only ApiCalls is DEFERRED (<see cref="Available"/> false, numeric fields
-/// null) — a real API-call gauge needs per-request instrumentation (US-PLT-004), not a fabricated number.
+/// A single per-tenant usage gauge (AC-2 / US-ADM-012 AC-4 / US-PLT-004). All four gauges are now REAL:
+/// Employees = active employees vs plan limit; Storage = cumulative stored bytes (all four size-bearing tables,
+/// in MB) vs <c>max_storage_gb</c>; EmailSends = month-to-date successful sends vs <c>max_email_sends_per_month</c>;
+/// ApiCalls = month-to-date persisted API calls (off the <c>tenant_api_usage</c> aggregate) vs
+/// <c>max_api_calls_per_month</c>.
 /// A null <see cref="Limit"/> with <see cref="Available"/> true means UNLIMITED (BR-3): <see cref="UsagePercent"/>
 /// and <see cref="Band"/> are null (no cap to divide against), while <see cref="Used"/> still reports real usage.
 /// </summary>

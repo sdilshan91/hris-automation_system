@@ -225,6 +225,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<BenefitEligibilityRule> BenefitEligibilityRules => Set<BenefitEligibilityRule>();
     public DbSet<BenefitEnrollment> BenefitEnrollments => Set<BenefitEnrollment>();
 
+    // US-PLT-004: per-tenant monthly API-call aggregate (one row per tenant-month; tenant-scoped).
+    public DbSet<TenantApiUsage> TenantApiUsages => Set<TenantApiUsage>();
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
@@ -766,6 +769,11 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // CAL-5 (US-ATT-011 AC-4): tenant isolation for the effective-dated payroll calendar policy.
         modelBuilder.Entity<TenantPayrollCalendarPolicy>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PLT-004: per-tenant monthly API-call aggregate — tenant isolation via the global query filter (the
+        // cross-tenant monitoring gauge reads it with IgnoreQueryFilters, mirroring the storage/email helpers).
+        modelBuilder.Entity<TenantApiUsage>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
     }
 }
