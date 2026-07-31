@@ -7315,6 +7315,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-336 — MFA back-fill re-wraps a row whose Data-Protection key is genuinely MISSING; the "acceptable" rationale is asserted nowhere
 - **ID:** ISSUE-336
+- **Status update:** ✅ **RESOLVED 2026-07-31** — a lost/re-keyed Data Protection ring is now reported with one WARNING (no secret material). Not a hard lockout: recovery codes are hashed and verified independently of this key, so the user can still get in and re-enrol — hence LOW. **Worth recording:** my first version keyed the warning off exception type, trusting the production comment that said `FormatException` = legacy plaintext and `CryptographicException` = bad key. **That comment was FALSE** — Data Protection throws `CryptographicException` for both — and the 'legacy plaintext must stay silent' arm caught it. Shipping the first version would have warned on every pre-encryption secret and buried the real signal. Now discriminated by payload shape (base64url + the `0x09F0C9F0` magic header); the false comment is corrected in place.
 - **Type:** ISSUE (design-intent not pinned by a test)
 - **Severity:** LOW
 - **Status:** OPEN
@@ -7531,6 +7532,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-350 — A Calibration phase renders as permanently 0% and is skipped by the phase-transition job
 - **ID:** ISSUE-350
+- **Status update:** ✅ **RESOLVED 2026-07-31** — `CycleProgressDto.CalibrationCompleted` now reports calibrated participants, using US-PRF-011's `RatingCalibration` table. **Nullable on purpose:** `null` = calibration is not part of this cycle, `0` = enabled but nobody has calibrated yet. Returning 0 for a disabled cycle would render a permanent 0% bar — the original complaint relocated rather than fixed. A participant calibrated across multiple rounds counts ONCE (people done, not rows written). Both meanings mutation-verified.
 - **Type:** ISSUE (incomplete feature surface)
 - **Severity:** LOW
 - **Status:** OPEN
@@ -7546,6 +7548,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-351 — Narrow one-way door: a completed cycle can leave an employee permanently un-recommendable
 - **ID:** ISSUE-351
+- **Status update:** ✅ **RESOLVED 2026-07-31 — by PREVENTION, not by the suggested reopen path.** Creating a recommendation is now refused when the cycle is terminal AND the employee's manager review was never submitted — the combination that is already irrecoverable. **Deliberately did not add a `Completed → Active` transition:** that would let a cycle whose final ratings are already published be un-completed, a governance change far larger than the obscure state it rescues, on compensation-adjacent data. The reopen option remains available if real stuck rows ever appear. The guard is narrow — early drafting while the cycle is OPEN stays allowed, and the arm proving it does not over-fire is the load-bearing one. Mutation-verified in both directions.
 - **Type:** BUG (irrecoverable state, narrow preconditions)
 - **Severity:** LOW
 - **Status:** OPEN
