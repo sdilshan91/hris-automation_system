@@ -7655,3 +7655,50 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** configure a leave type with `AccrualFrequency = Monthly` and a 12-day annual entitlement; run the accrual job in January; inspect `leave_ledger` — expect one Accrual entry for the full 12 days rather than 1 day. Re-run in February: skipped. Then run an encashment or F&F settlement for that employee and observe the balance used.
 - **Severity rationale:** HIGH — real money leaves the business, it is silent (no error, the number simply looks generous), it is reachable through a setting the product already offers, and it scales with headcount. Not CRIT only because it requires the tenant to have chosen a non-Annual frequency.
 - **Suggested direction (NOT applied):** make the accrual job frequency-aware — credit `entitlement × elapsed periods / periods-per-year`, with the idempotency guard keyed on `(employee, leaveType, year, period)` rather than year alone, so each period credits exactly once. **This is a money-path change: it needs a real-Postgres arm and mutation verification**, per this repo's standing rule that InMemory masks Postgres on ledger arithmetic. Also decide the back-fill question — existing tenants on Monthly already hold over-credited balances, and silently correcting them downward is an employee-detriment change of the kind US-LV-008/DF-65 previously required an explicit user decision for.
+
+---
+
+### BUG-292 — Applicant conversion silently DISCARDS the HR-entered salary, then reports success
+- **ID:** BUG-292
+- **Type:** BUG (silent data loss on a money field, with a false success confirmation)
+- **Severity:** **MED**
+- **Status:** OPEN
+- **Layer:** BE + FE (wire contract)
+- **Module / US / TC:** Recruitment / US-REC-010 (AC-2) / — found 2026-07-31 during the deferred-AC verification sweep
+- **Title:** The conversion form renders an **editable salary input** (`conversion-form.component.ts:434-446`), echoes the value back in the review summary (`:500-501`), and packs it into the request body (`:995 salaryAmount`). The backend `ConvertApplicantRequest` (`ApplicantConversionController.cs:90-104`) has **nine properties and none of them is salary** — JobTitleId, DepartmentId, EmploymentType, DateOfJoining, ReportsToEmployeeId, LocationId, EmployeeNo, DateOfBirth, Gender. ASP.NET model binding drops the unmatched member with **no error, no warning, no 400**. HR types a salary, sees it confirmed in the summary, clicks Create Employee, gets a success toast — and the number is gone. The new employee has no `EmployeeSalaryComponent` row and no `SalaryStructure` assignment.
+- **The controller's own doc comment asserts the opposite:** `ApplicantConversionController.cs:86-87` says *"Name/email/phone/**salary** are mapped server-side from the application + accepted offer."* Salary is mapped nowhere. That comment is why the gap survived review.
+- **Why this is the BUG-291 shape:** an input exposed to users and read by nothing. BUG-291 was an accrual frequency you could set that no code consumed; this is a salary you can type that no code receives. Both present as working.
+- **Why MED and not HIGH:** unlike BUG-291 this does not pay out money incorrectly — it fails to persist, so the error surfaces later as an employee with no salary structure rather than as a wrong payment. The deception (summary + success toast) is what keeps it above LOW.
+- **Root cause:** the FE payload and the BE request record drifted, and nothing pins the contract. Confidence **95%** — verified by reading both sides: the FE sends it at `:995`, the BE record has no matching property.
+- **Reproduction steps:** convert an applicant with an accepted offer, edit the salary field, submit, then inspect the created employee's salary components — none exist.
+- **Suggested direction (NOT applied):** the persistence rail already exists (`EmployeeSalaryController.cs:50` → `AssignSalaryStructureCommand`), but the offer carries a flat **amount** while assignment needs a `SalaryStructureId`, so honest wiring needs a structure picker — small-to-medium, not a one-liner. **The zero-cost interim fix is to stop the UI pretending:** remove or disable the salary input rather than accept and discard it. Also delete the false doc comment either way.
+
+---
+
+### ISSUE-357 — US-LV-011 auto-LOP: implementing the AC as written would DOUBLE-DEDUCT pay
+- **ID:** ISSUE-357
+- **Type:** ISSUE (trap in the backlog — acting on the AC would create a defect)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave + Payroll / US-LV-011 AC-2 / — found 2026-07-31 during the deferred-AC verification sweep
+- **Title:** US-LV-011's auto-LOP is recorded as blocked behind `NoOpAttendanceProvider`, with the rationale stated three times as *"there is no attendance module yet"* (`NoOpAttendanceProvider.cs:7-10`, `IAttendanceProvider.cs:7-9`, `ProcessAbsenteeismJob.cs:16`). **That justification expired** — attendance shipped under US-ATT-001/002/008 and absence data is present (`AttendanceMonthlySummary.TotalAbsentDays`, `.LopDays`).
+- **The trap:** payroll does **not** read the leave module's LOP. It reads the attendance summary — `PayrollRunProcessor.cs:426`: `decimal lopDays = attendance?.LopDays ?? 0m`. So absence-driven pay deduction is **already happening** through the attendance rail. Registering a real `IAttendanceProvider` would start minting leave-side LOP rows for the same absent days payroll already deducts, creating a **second parallel ledger** — and `LopDtos.cs:45` still asserts *"Payroll computes the salary deduction from TotalLopDays"*, which is untrue today.
+- **Why file this rather than just build it:** the AC reads like a small wiring job ("register the real provider"). Doing that would be actively harmful. Nothing is broken now — this is not BUG-291, no money is currently mis-paid — but the backlog is set up to cause a double-deduction.
+- **Root cause:** two LOP sources evolved independently and the ledger never reconciled them; three stale comments preserve the expired rationale. Confidence **90%** — verified `PayrollRunProcessor.cs:426` reads the attendance summary directly.
+- **Suggested direction (NOT applied):** **re-scope the AC** from "wire the provider" to "decide which LOP rail is authoritative and reconcile the two" BEFORE any code. Then fix the three stale comments and `LopDtos.cs:45`.
+
+---
+
+### ISSUE-358 — Four of five plan feature flags are sellable in the admin console and enforced by nothing
+- **ID:** ISSUE-358
+- **Type:** ISSUE (billable-but-inert entitlements — the ISSUE-356 class, four more instances)
+- **Severity:** MED
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console / US-ADM-006 (BR-3) / — found 2026-07-31 during the deferred-AC verification sweep
+- **Title:** `PlanFeatureFlags` (`SubscriptionPlan.cs:97,109`) carries `Sso, CustomDomain, WhiteLabel, Scim, Sandbox`, persisted as jsonb and **fully editable in the platform-admin UI** (`plan-editor.component.ts:121-124`). Only **one** is ever read: `AuthService.cs:1893` for `Sso`. A repo-wide grep for `.WhiteLabel` / `.CustomDomain` / `.Scim` / `.Sandbox` outside plan-editing, DTOs and tests returns **zero** consumers. A platform admin who unchecks "White Label" on a plan has changed nothing.
+- **Tenant-side gating is a dead limb too, though it fails safe:** `branding-section.component.ts:245-247` reads `plan()?.lockedFeatures`, but the backend never emits a `plan` block — which the FE model itself documents as expected (`company-settings.models.ts:90-93`). So the "Upgrade your plan" badge can never fire, and BR-3's *"rejected by the API"* is unimplemented.
+- **Why this matters commercially, not just technically:** these are toggles a platform admin uses to define what a paying tier includes. Four of them are theatre. Same class as [[ISSUE-356]] (`CustomReportBuilder` sellable but ungated), except these are already shipped and settable.
+- **Root cause:** the flags were modelled and surfaced before any consumer existed, and nothing failed when consumers never arrived. Confidence **90%**.
+- **Suggested direction (NOT applied):** the tenant-facing half is small — emit a `plan` block from `GetSettingsAsync` and guard `UpdatePrimaryColorAsync`. Enforcing the other flags is genuine feature work across auth/branding/provisioning. **The urgent part is the honesty gap:** either enforce them or stop offering them as toggles.
