@@ -4,6 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using HRM.Api.Middleware;
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
@@ -174,6 +175,126 @@ public sealed class TenantResolutionMiddlewareTests
         context.RequestServices.GetRequiredService<ITenantContext>().TenantId.Should().Be(tenantId);
     }
 
+    // ── D3 (ISSUE-358): CustomDomain feature seam ─────────────────────────────
+    // A custom-domain host (not under the base domain, not localhost) may serve a tenant only when the tenant's
+    // plan includes the CustomDomain flag. The ONLY way a tenant resolves on a custom host today is the dev
+    // X-Tenant-Subdomain header, so these run in Development. Fail-open: a tenant with no resolvable plan is never
+    // refused. The regression arms below prove subdomain/localhost/dev-header/reserved/admin are untouched.
+
+    [Fact]
+    [Trait("TC", "TC-ADM-358")]
+    public async Task InvokeAsync_CustomDomainHost_WithoutCustomDomainFlag_IsRefused()
+    {
+        var tenantId = Guid.NewGuid();
+        var (context, scope) = CreateHttpContext("hr.acme.com", environmentName: Environments.Development);
+        context.Request.Headers["X-Tenant-Subdomain"] = new StringValues("acme");
+        await SeedTenantAsync(scope.ServiceProvider, new Tenant
+        {
+            Id = tenantId, Subdomain = "acme", Name = "Acme", Status = TenantStatus.Active, PlanId = "growth"
+        });
+        await SeedPlanAsync(scope.ServiceProvider, code: "growth", customDomain: false);
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; },
+            environmentName: Environments.Development);
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        (await ReadResponseCodeAsync(context)).Should().Be("custom_domain_not_entitled");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ADM-358")]
+    public async Task InvokeAsync_CustomDomainHost_WithCustomDomainFlag_Resolves()
+    {
+        // SAME host/tenant, only the plan flag differs (CustomDomain now granted) ⇒ resolves. Single-variable
+        // discriminator against the refusal arm above.
+        var tenantId = Guid.NewGuid();
+        var (context, scope) = CreateHttpContext("hr.acme.com", environmentName: Environments.Development);
+        context.Request.Headers["X-Tenant-Subdomain"] = new StringValues("acme");
+        await SeedTenantAsync(scope.ServiceProvider, new Tenant
+        {
+            Id = tenantId, Subdomain = "acme", Name = "Acme", Status = TenantStatus.Active, PlanId = "growth"
+        });
+        await SeedPlanAsync(scope.ServiceProvider, code: "growth", customDomain: true);
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; },
+            environmentName: Environments.Development);
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.RequestServices.GetRequiredService<ITenantContext>().TenantId.Should().Be(tenantId);
+        context.RequestServices.GetRequiredService<ITenantContext>().FeatureFlags
+            .Should().Contain(PlanFeatureFlagKeys.CustomDomain);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ADM-358")]
+    public async Task InvokeAsync_CustomDomainHost_NoPlanRow_FailsOpen_Resolves()
+    {
+        // Fail-open: the tenant's PlanId matches NO plan row ⇒ flags null ⇒ a config problem must never lock the
+        // tenant out. Must resolve, not 403. Inverting fail-open to fail-closed kills this arm.
+        var tenantId = Guid.NewGuid();
+        var (context, scope) = CreateHttpContext("hr.acme.com", environmentName: Environments.Development);
+        context.Request.Headers["X-Tenant-Subdomain"] = new StringValues("acme");
+        await SeedTenantAsync(scope.ServiceProvider, new Tenant
+        {
+            Id = tenantId, Subdomain = "acme", Name = "Acme", Status = TenantStatus.Active, PlanId = "orphan-plan"
+        });
+        // Intentionally seed NO subscription plan for "orphan-plan".
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; },
+            environmentName: Environments.Development);
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.RequestServices.GetRequiredService<ITenantContext>().TenantId.Should().Be(tenantId);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ADM-358")]
+    public async Task InvokeAsync_SubdomainHost_IsNotTreatedAsCustomDomain_EvenWithoutFlag()
+    {
+        // REGRESSION arm (matters most): a normal subdomain under the base domain must resolve exactly as before,
+        // even when the plan grants no CustomDomain flag — the seam must NOT touch subdomain resolution.
+        var tenantId = Guid.NewGuid();
+        var (context, scope) = CreateHttpContext("acme.yourhrm.com");
+        await SeedTenantAsync(scope.ServiceProvider, new Tenant
+        {
+            Id = tenantId, Subdomain = "acme", Name = "Acme", Status = TenantStatus.Active, PlanId = "growth"
+        });
+        await SeedPlanAsync(scope.ServiceProvider, code: "growth", customDomain: false);
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.RequestServices.GetRequiredService<ITenantContext>().TenantId.Should().Be(tenantId);
+    }
+
+    [Fact]
+    [Trait("TC", "TC-ADM-358")]
+    public async Task InvokeAsync_ReservedSubdomain_StillPassesThroughUnresolved()
+    {
+        // REGRESSION arm: a reserved subdomain (www) must skip tenant resolution and pass through, untouched by
+        // the custom-domain seam (host IS under the base domain, so it is never a custom host).
+        var (context, _) = CreateHttpContext("www.yourhrm.com");
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context);
+
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.RequestServices.GetRequiredService<ITenantContext>().IsResolved.Should().BeFalse();
+    }
+
     // ── US-PLT-004 (item 2): tenant span tags ─────────────────────────────────
 
     [Fact]
@@ -295,6 +416,28 @@ public sealed class TenantResolutionMiddlewareTests
         var dbContext = services.GetRequiredService<AppDbContext>();
         dbContext.Tenants.Add(tenant);
         await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task SeedPlanAsync(IServiceProvider services, string code, bool customDomain)
+    {
+        var dbContext = services.GetRequiredService<AppDbContext>();
+        dbContext.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            Id = Guid.NewGuid(),
+            Name = code,
+            Code = code,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            FeatureFlags = new PlanFeatureFlags { CustomDomain = customDomain },
+        });
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task<string?> ReadResponseCodeAsync(HttpContext context)
+    {
+        context.Response.Body.Position = 0;
+        using var doc = await JsonDocument.ParseAsync(context.Response.Body);
+        return doc.RootElement.TryGetProperty("code", out var c) ? c.GetString() : null;
     }
 
     private static async Task<string> ReadResponseBodyAsync(HttpContext context)

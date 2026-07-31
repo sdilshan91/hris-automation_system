@@ -101,6 +101,20 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
         if (plan is null || !plan.IsActive)
             return Result.Failure<ProvisionTenantResultDto>("The selected subscription plan is not available.", 400, "plan_invalid");
 
+        // D3 (ISSUE-358): Sandbox entitlement seam, PRE-REGISTERED ahead of the feature. There is NO sandbox
+        // concept in the provisioning model today — ProvisionTenantInput carries no sandbox flag — so
+        // `requestedSandbox` is always false and this guard is currently INERT: exactly the pre-registered-seam
+        // pattern (cf. the SCIM route gate that today matches no controller). When a sandbox provisioning path
+        // lands, bind its intent to `requestedSandbox` and the entitlement is ALREADY enforced here, so a sandbox
+        // tenant can never be created on a plan that doesn't include it. Fail-open: a plan whose flags can't be
+        // read (Derive ⇒ null) never blocks creation. The predicate is the shared PlanFeatureFlagKeys gate, so it
+        // cannot drift from the SCIM/CustomDomain seams.
+        var requestedSandbox = false;
+        if (requestedSandbox &&
+            !PlanFeatureFlagKeys.IsFeatureEnabled(PlanFeatureFlagKeys.Derive(plan.FeatureFlags), PlanFeatureFlagKeys.Sandbox))
+            return Result.Failure<ProvisionTenantResultDto>(
+                "The selected plan does not include a sandbox environment.", 403, "sandbox_not_entitled");
+
         var trialDays = input.TrialDays ?? plan.TrialDays;
         if (trialDays < 0)
             return Result.Failure<ProvisionTenantResultDto>("Trial days cannot be negative.", 400, "trial_days_invalid");

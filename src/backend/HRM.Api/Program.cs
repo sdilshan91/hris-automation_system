@@ -612,6 +612,12 @@ try
     // (so a suspended/terminating tenant is handled first), before the controllers.
     app.UseMiddleware<ModuleEntitlementMiddleware>();
 
+    // D3 (ISSUE-358): SCIM feature gate. Denies the reserved /scim/v2 prefix (403 feature_not_entitled) when the
+    // tenant's plan lacks the Scim flag. Pre-registered ahead of any SCIM controller — positive-list / fail-open,
+    // like ModuleEntitlement. A different mechanism from module entitlements, so it is its own gate. After the
+    // module gate, before the controllers.
+    app.UseMiddleware<ScimEntitlementMiddleware>();
+
     // US-PLT-004: per-tenant API-call meter. Records ONE in-memory increment per metered tenant API request
     // (skips the same platform/health paths ModuleEntitlement skips); fail-open, never fails a request. After
     // entitlement (so a denied request is not counted), before the controllers.

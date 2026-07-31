@@ -21,6 +21,8 @@ public sealed class TenantContext : ITenantContext
     public IReadOnlyCollection<string> EnabledModules { get; private set; } = Array.Empty<string>();
     public string? LogoUrl { get; private set; }
     public string? PrimaryColor { get; private set; }
+    // D3 (ISSUE-358): null = fail-open (no plan resolved / flags unreadable); non-null = authoritative flag set.
+    public IReadOnlyCollection<string>? FeatureFlags { get; private set; }
     public bool IsSystemContext { get; private set; }
     public bool IsResolved { get; private set; }
 
@@ -48,6 +50,12 @@ public sealed class TenantContext : ITenantContext
         AmbientTenant.SetTenant(tenantId);
     }
 
+    // D3 (ISSUE-358): set alongside SetTenant during resolution. null stays fail-open.
+    public void SetFeatureFlags(IReadOnlyCollection<string>? featureFlags)
+    {
+        FeatureFlags = featureFlags;
+    }
+
     public void SetSystemContext()
     {
         TenantId = Guid.Empty;
@@ -55,6 +63,7 @@ public sealed class TenantContext : ITenantContext
         Status = TenantStatus.Active;
         Plan = "system";
         EnabledModules = Array.Empty<string>();
+        FeatureFlags = null; // system context bypasses feature gates entirely; null = fail-open
         LogoUrl = null;
         PrimaryColor = null;
         IsSystemContext = true;

@@ -1,4 +1,5 @@
 using HRM.Application.Common.Interfaces;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.Extensions.Caching.Distributed;
@@ -124,6 +125,25 @@ public sealed class TenantResolutionMiddleware
             return;
         }
 
+        // D3 (ISSUE-358): CustomDomain feature seam. A host that is NOT under the platform base domain (and not
+        // localhost/*.localhost) is a CUSTOM DOMAIN — it may only serve a tenant whose plan includes the
+        // CustomDomain flag, otherwise refuse. Fail-open: a tenant whose plan/flags can't be read (null) is never
+        // locked out. Subdomain hosts (under the base domain), plain localhost, the dev X-Tenant-Subdomain header
+        // path on localhost, reserved subdomains and the admin.* system context are NOT custom-domain hosts (or
+        // short-circuit above), so their behaviour is untouched. Today the only way a tenant resolves on a custom
+        // host is the dev header, so this is inert in production until the custom-domain feature adds host→tenant
+        // mapping — exactly the pre-registered-seam pattern.
+        if (IsCustomDomainHost(host, baseDomain)
+            && !PlanFeatureFlagKeys.IsFeatureEnabled(tenant.FeatureFlags, PlanFeatureFlagKeys.CustomDomain))
+        {
+            _logger.LogInformation(
+                "Refused custom-domain host {Host} for tenant {TenantId}: plan lacks the CustomDomain feature.",
+                host, tenant.Id);
+            await EntitlementResponse.WriteForbiddenAsync(context,
+                "This workspace's plan does not include custom domains.", "custom_domain_not_entitled");
+            return;
+        }
+
         // Populate tenant context
         var tenantCtx = context.RequestServices.GetRequiredService<ITenantContext>();
         tenantCtx.SetTenant(
@@ -134,6 +154,9 @@ public sealed class TenantResolutionMiddleware
             tenant.EnabledModules,
             tenant.LogoUrl,
             tenant.PrimaryColor);
+        // D3: carry the plan feature flags on the same resolved context (cached path + DB path agree — both go
+        // through ResolveTenantAsync/ResolvedTenant). null = fail-open.
+        tenantCtx.SetFeatureFlags(tenant.FeatureFlags);
 
         // US-PLT-004 (item 2): stamp the current trace span with tenant tags so every downstream span in the
         // request carries them. Null-safe: Activity.Current is null when OTel is inert (the default) — the
@@ -176,6 +199,27 @@ public sealed class TenantResolutionMiddleware
         return null;
     }
 
+    // D3 (ISSUE-358): true when the request host is a CUSTOM DOMAIN — a real host that is neither the platform
+    // base domain, a subdomain of it, nor a localhost/loopback dev host. Kept deliberately conservative so the
+    // existing resolution paths (subdomain, plain localhost, *.localhost, IP/loopback) are never treated as custom.
+    private static bool IsCustomDomainHost(string host, string baseDomain)
+    {
+        host = host.Split(':')[0];
+
+        if (string.IsNullOrEmpty(host)) return false;
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return false;
+        if (host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase)) return false;
+
+        // Apex or subdomain of the platform base domain ⇒ NOT custom (this is our own domain).
+        if (host.Equals(baseDomain, StringComparison.OrdinalIgnoreCase)) return false;
+        if (host.EndsWith($".{baseDomain}", StringComparison.OrdinalIgnoreCase)) return false;
+
+        // Loopback / bare IP hosts (used by tests and probes) are not custom domains.
+        if (System.Net.IPAddress.TryParse(host, out _)) return false;
+
+        return true;
+    }
+
     private static bool IsValidSubdomain(string subdomain)
     {
         if (subdomain.Length < 3 || subdomain.Length > 63) return false;
@@ -209,22 +253,46 @@ public sealed class TenantResolutionMiddleware
         }
 
         var dbContext = context.RequestServices.GetRequiredService<AppDbContext>();
-        var tenant = await dbContext.Tenants
+        var row = await dbContext.Tenants
             .IgnoreQueryFilters()
             .AsNoTracking()
             .Where(t => !t.IsDeleted)
             .Where(t => t.Subdomain == subdomain)
-            .Select(t => new ResolvedTenant(
+            .Select(t => new
+            {
                 t.Id,
                 t.Subdomain,
                 t.Status,
                 t.PlanId,
                 t.EnabledModules,
                 t.LogoUrl,
-                t.PrimaryColor))
+                t.PrimaryColor,
+            })
             .FirstOrDefaultAsync(context.RequestAborted);
 
-        if (tenant is not null && cache is not null)
+        if (row is null)
+            return null;
+
+        // D3 (ISSUE-358): resolve the plan's feature flags (subscription_plans is a SYSTEM table, not
+        // tenant-scoped). Materialize the plan entity (not a projection of the value-converted FeatureFlags
+        // column, which need not translate on every provider). A missing plan row leaves the derived set null ⇒
+        // fail-open (no seam denies). Only on the cache-miss path — the resolved value is cached below, so the
+        // cached path carries flags identically.
+        var plan = await dbContext.SubscriptionPlans
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Code == row.PlanId, context.RequestAborted);
+
+        var tenant = new ResolvedTenant(
+            row.Id,
+            row.Subdomain,
+            row.Status,
+            row.PlanId,
+            row.EnabledModules,
+            row.LogoUrl,
+            row.PrimaryColor,
+            PlanFeatureFlagKeys.Derive(plan?.FeatureFlags));
+
+        if (cache is not null)
         {
             try
             {
@@ -263,5 +331,8 @@ public sealed class TenantResolutionMiddleware
         string? Plan,
         IReadOnlyCollection<string> EnabledModules,
         string? LogoUrl,
-        string? PrimaryColor);
+        string? PrimaryColor,
+        // D3 (ISSUE-358): derived plan feature-flag set; null = fail-open (no plan resolved). Cached with the rest
+        // so the Redis-hit path and the DB path agree.
+        IReadOnlyCollection<string>? FeatureFlags);
 }
