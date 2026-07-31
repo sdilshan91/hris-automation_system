@@ -1,0 +1,62 @@
+---
+date: 2026-07-31
+status: accepted
+deciders: product owner (via /orchestrate session)
+tags: [compensation, payroll, leave, entitlement, adr-lite]
+---
+
+# Three architecture decisions — offer compensation, LOP ownership, entitlement seams
+
+Taken 2026-07-31 after the deferred-AC verification sweep surfaced [[BUG-292]], [[ISSUE-357]] and
+[[ISSUE-358]]. In each case the **larger, architecturally-correct** option was chosen over the cheaper
+one, deliberately.
+
+## D1 — The salary STRUCTURE is decided at OFFER time (BUG-292)
+
+**Decision:** add `SalaryStructureId` to `Offer`. It is chosen when compensation is agreed and approved;
+applicant→employee conversion carries it through, and the new employee is created payroll-ready.
+
+**Why not the cheaper options.** A picker on the conversion form would have fixed the data loss in a
+fraction of the work, but it places a compensation decision *after* approval — the structure that
+determines actual take-home would never have been part of what anyone signed off. A per-grade default
+removes the decision entirely and fails silently: a wrong default produces a wrong payslip that nobody
+notices until someone is paid incorrectly, which is the same silent-wrongness class as the bug being
+fixed. Assigning salary post-conversion leaves a window where an employee exists with no structure, and
+a payroll run catching them in it pays nothing.
+
+**The principle:** the money a candidate agreed to and the money payroll pays must derive from ONE
+approved record. Anything else is two decisions that are merely expected to match.
+
+**Consequence:** Offer entity + migration + offer form + approval flow all change. Accepted.
+
+## D2 — LEAVE owns the authoritative LOP figure, fed by attendance (ISSUE-357)
+
+**Decision:** attendance remains the source of raw absence FACTS. The leave module applies POLICY (covered
+by approved leave? balance available? paid or unpaid?) and produces the authoritative LOP. Payroll reads
+that figure.
+
+**Why.** Today `PayrollRunProcessor` reads `AttendanceMonthlySummary.LopDays` directly, which means the
+attendance module is silently making a leave-policy decision it does not own and cannot see the inputs
+for — it has no visibility of approvals or balances. Declaring attendance authoritative would have been
+free (it matches production behaviour exactly) but institutionalises that inversion and drops US-LV-011.
+Keeping both rails with reconciliation at payroll makes the reconciliation logic the new failure point.
+
+**Ordering is load-bearing and non-negotiable:** repoint payroll to the leave-side figure FIRST, with a
+reconciliation check proving the two agree, and only THEN wire a real `IAttendanceProvider`. Doing it in
+the other order mints leave-side LOP rows for days payroll is still deducting via attendance — a live
+double-deduction. This is a money path; it gets real-Postgres arms and mutation verification.
+
+## D3 — Every sellable entitlement gets a pre-registered enforcement seam (ISSUE-358)
+
+**Decision:** define and land the gate for each flag now, ahead of the feature:
+- **SCIM** → reserved `/scim/v2` route prefix (same shape as the `CustomReportBuilder` gate)
+- **CustomDomain** → `TenantResolutionMiddleware`: refuse custom-host resolution unless entitled
+- **Sandbox** → tenant provisioning
+
+**Why not simply pull them from the plan editor.** That removes the mis-selling risk and nothing else —
+it leaves no obstacle to the eventual feature shipping unenforced, which is precisely the hole
+[[ISSUE-356]] was filed for. Pre-registering is the only option where a future implementer *cannot*
+accidentally ship an unenforced paid feature.
+
+**Standing rule this establishes:** a flag may not become sellable in the plan editor until its
+enforcement seam exists. Sellable-but-inert is a billing exposure, not a tidiness problem.
