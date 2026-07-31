@@ -7702,3 +7702,19 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Why this matters commercially, not just technically:** these are toggles a platform admin uses to define what a paying tier includes. Four of them are theatre. Same class as [[ISSUE-356]] (`CustomReportBuilder` sellable but ungated), except these are already shipped and settable.
 - **Root cause:** the flags were modelled and surfaced before any consumer existed, and nothing failed when consumers never arrived. Confidence **90%**.
 - **Suggested direction (NOT applied):** the tenant-facing half is small — emit a `plan` block from `GetSettingsAsync` and guard `UpdatePrimaryColorAsync`. Enforcing the other flags is genuine feature work across auth/branding/provisioning. **The urgent part is the honesty gap:** either enforce them or stop offering them as toggles.
+
+---
+
+### BUG-293 — Unpaid (LOP) leave is PAID IN FULL: payroll reads only the attendance rail, which excludes it
+- **ID:** BUG-293
+- **Type:** BUG (money — salary paid for days that should be unpaid)
+- **Severity:** **HIGH**
+- **Status:** OPEN
+- **Layer:** BE
+- **Module / US / TC:** Leave + Attendance + Payroll / US-LV-011, US-ATT-008, US-PAY-* / — found 2026-07-31 while scoping decision D2
+- **Title:** Approved-but-unpaid leave never reaches payroll. `AttendanceSummaryService` (`:442-447`) selects **every** approved `LeaveRequest` with **no `IsLop` filter**, so a day covered by unpaid leave lands in `ApprovedLeaveFullDates`; `ComputeDay` then classifies it `LEAVE`, adding to `leave` and contributing **`lop += 0`** (`:568-569`). `PayrollRunProcessor:426` reads `attendance?.LopDays`, and nothing reads the leave module's `LopService`. **Net effect: an employee takes leave they have no balance for, it is correctly flagged `IsLop`, and they are paid for it anyway.**
+- **This INVERTS the premise of [[ISSUE-357]] and decision D2.** Both assumed the two rails compute the same quantity and that wiring the leave side would DOUBLE-deduct. They do not overlap: **attendance LOP** = unapproved absence + late-arrival penalties (`"ABSENT" ⇒ lop += 1`, plus `LateDeductionDays`, US-ATT-008 BR-4); **leave LOP** = approved-but-unpaid leave (`LeaveRequest.IsLop`). Attendance explicitly excludes days covered by leave ("absent not covered by leave is LOP") and the leave rail covers exactly those days. Complementary halves, and payroll reads only one — so the defect is an **under-deduction**, not a double-deduction.
+- **Root cause:** the leave rail's output was never wired to payroll, and the attendance rail's leave query does not distinguish paid from unpaid leave. Confidence **90%** — verified by reading the leave query (`:442-447`, no `IsLop` predicate), the day classification (`:568-569`), and payroll's input (`PayrollRunProcessor:426`).
+- **Reproduction steps:** exhaust an employee's balance, approve a further leave request (flagged `IsLop`), generate the attendance monthly summary, run payroll for that month, and observe `LopDays` excludes those days and full salary is paid.
+- **Severity rationale:** HIGH — silent, recurring, money-out, and scales with headcount. Unlike [[BUG-291]] (which over-credited a balance) this over-pays salary directly. Not CRIT only because it requires an employee to actually take unpaid leave.
+- **DECISION 2026-07-31: fix as part of D2.** D2 already made the leave module authoritative for LOP, so routing payroll to the leave-side total closes this bug as a direct consequence — and avoids touching the payroll money path twice. **The ordering risk recorded in D2 REVERSES:** because nothing is currently double-counted, wiring the leave rail ADDS a deduction that was always owed rather than duplicating one. The D2 reconciliation arm becomes the proof this bug is closed. Real-Postgres arms + mutation verification required; whether past underpaid periods are corrected is a separate call.
