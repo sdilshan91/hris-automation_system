@@ -60,8 +60,8 @@ describe('ConversionService (US-REC-010)', () => {
     employmentType: 'FullTime',
     workLocationId: 'loc1',
     dateOfJoining: '2026-08-01',
-    salaryAmount: 120000,
-    currency: 'USD',
+    // BUG-292: salaryAmount/currency are deliberately absent — the backend request record has neither, so
+    // sending them was silently dropped while the UI reported success. See the regression arm below.
   };
 
   beforeEach(() => {
@@ -155,5 +155,23 @@ describe('ConversionService (US-REC-010)', () => {
     expect(ConversionService.parseErrorMessage(err)).toBe(
       'An unexpected error occurred.',
     );
+  });
+
+  // ── BUG-292 regression ──────────────────────────────────────────────────────
+  // The conversion form used to send salaryAmount/currency. The backend ConvertApplicantRequest has NEITHER
+  // property, so ASP.NET model binding dropped both with no error and no 400 — HR typed a salary, saw it
+  // echoed in the review summary, got a success toast, and the value vanished. This arm pins the wire body so
+  // the fields cannot quietly return: re-adding them to the request would fail here rather than in production.
+  it('does NOT transmit salaryAmount or currency — the backend accepts neither (BUG-292)', () => {
+    service.convert('app-1', request).subscribe();
+
+    const req = httpMock.expectOne((r) => r.url.includes('/convert'));
+    expect(req.request.body.salaryAmount)
+      .withContext('the server has no salaryAmount property; sending it created a silent data loss')
+      .toBeUndefined();
+    expect(req.request.body.currency)
+      .withContext('same defect, second field — currency was also dropped silently')
+      .toBeUndefined();
+    req.flush({ employeeId: 'e1', employeeNo: 'EMP-1', vacancyFillRatio: null });
   });
 });

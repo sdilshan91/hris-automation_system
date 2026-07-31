@@ -13,10 +13,14 @@ namespace HRM.Api.Jobs;
 /// <see cref="ILopService.GenerateAbsenteeismLopAsync"/> for each active employee over the previous
 /// month's window.
 ///
-/// SEAM: <see cref="IAttendanceProvider"/> is currently the <c>NoOpAttendanceProvider</c> (no
-/// attendance module yet, US-ATT-*), so this job is wired, idempotent, and tenant-safe but generates
-/// nothing until a real attendance provider lands. Mirrors how <see cref="HolidayRecurrenceJob"/> and
-/// <see cref="LeaveAccrualJob"/> are structured.
+/// SEAM: <see cref="IAttendanceProvider"/> is currently the <c>NoOpAttendanceProvider</c>, so this job is
+/// wired, idempotent, and tenant-safe but generates nothing. Mirrors how <see cref="HolidayRecurrenceJob"/>
+/// and <see cref="LeaveAccrualJob"/> are structured.
+///
+/// <para><b>⚠ ISSUE-357:</b> the original reason ("no attendance module yet, US-ATT-*") no longer holds —
+/// attendance shipped. Do NOT read that as clearance to activate this job: payroll already deducts absence
+/// through <c>AttendanceMonthlySummary.LopDays</c>, so generating leave-side LOP as well would double-deduct.
+/// The blocker is now a decision about which LOP rail is authoritative, not a missing module.</para>
 /// </summary>
 public sealed class ProcessAbsenteeismJob
 {

@@ -437,14 +437,30 @@ type ConversionStep = 'loading' | 'form' | 'confirm' | 'success';
                         <span class="auto">auto-filled</span>
                       }
                     </label>
+                    <!--
+                      BUG-292: READ-ONLY on purpose. This field was editable and the edited value was silently
+                      discarded — the backend ConvertApplicantRequest has no salaryAmount property, so ASP.NET
+                      model binding dropped it with no error and the conversion still reported success. HR could
+                      type a salary, see it echoed in the review summary, and lose it.
+                      It stays VISIBLE because the offer's agreed figure is useful context at conversion time,
+                      but it is no longer editable and is no longer submitted. Assigning a real salary needs a
+                      SalaryStructureId (see AssignSalaryStructureCommand), which an offer's flat amount cannot
+                      supply — that is tracked on BUG-292 and needs a product decision.
+                    -->
                     <input
                       id="salaryAmount"
                       type="number"
                       min="0"
                       formControlName="salaryAmount"
                       class="inp"
+                      readonly
+                      [attr.aria-readonly]="true"
                       [class.inp-auto]="isAutoFilled('salaryAmount')"
                     />
+                    <p class="hint">
+                      From the accepted offer. Set the employee's salary structure after conversion —
+                      it is not applied here.
+                    </p>
                   </div>
                   <div class="field">
                     <label class="lbl" for="currency">
@@ -453,12 +469,16 @@ type ConversionStep = 'loading' | 'form' | 'confirm' | 'success';
                         <span class="auto">auto-filled</span>
                       }
                     </label>
+                    <!-- BUG-292: read-only for the same reason as Salary amount above — the backend request
+                         record has no Currency property either, so an edit here was also silently discarded. -->
                     <input
                       id="currency"
                       type="text"
                       maxlength="3"
                       formControlName="currency"
                       class="inp uppercase"
+                      readonly
+                      [attr.aria-readonly]="true"
                       [class.inp-auto]="isAutoFilled('currency')"
                       placeholder="e.g. USD"
                     />
@@ -992,8 +1012,10 @@ export class ConversionFormComponent {
       employmentType: v.employmentType as EmploymentType,
       workLocationId: v.workLocationId ?? '',
       dateOfJoining: v.dateOfJoining ?? '',
-      salaryAmount: v.salaryAmount ?? null,
-      currency: v.currency?.trim().toUpperCase() || null,
+      // BUG-292: salaryAmount and currency are deliberately NOT sent. The backend request record has neither
+      // property, so both were silently dropped by model binding while the UI reported success. Sending fields
+      // the server does not accept is how the illusion was created; stop sending them. Both remain VISIBLE
+      // read-only because the offer's agreed figures are useful context at conversion time.
     };
 
     this.conversionService.convert(this.applicantId(), request).subscribe({

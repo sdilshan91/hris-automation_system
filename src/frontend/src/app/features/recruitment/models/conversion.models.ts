@@ -105,9 +105,17 @@ export interface IConvertEmployeeRequest {
   /** yyyy-MM-dd (BR-4 — defaults to the offer start date). */
   dateOfJoining: string;
 
-  // Compensation
-  salaryAmount: number | null;
-  currency: string | null;
+  // Compensation — REMOVED (BUG-292).
+  //
+  // salaryAmount and currency used to be declared and sent here, but the backend request record
+  // (ConvertApplicantRequest) has NEITHER property. ASP.NET model binding dropped both silently, with no error
+  // and no 400, while the conversion still reported success — so HR could type a salary, see it echoed in the
+  // review summary, and lose it. Declaring fields the server does not accept is what made the illusion look
+  // real, so the contract now matches what the endpoint actually consumes.
+  //
+  // The values remain VISIBLE on the form as read-only context from the accepted offer. Assigning a real
+  // salary needs a SalaryStructureId (AssignSalaryStructureCommand), which an offer's flat amount cannot
+  // supply — mapping one to the other is a product decision tracked on BUG-292.
 }
 
 // ─── Convert result (AC-2 / AC-4) ─────────────────────────────

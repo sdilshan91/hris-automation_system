@@ -11,7 +11,23 @@ public sealed record TenantSettingsDto(
     SessionPolicyDto SessionPolicy,
     // US-REC-010 FR-5/BR-7 (ISSUE-140): auto-create a login account when an applicant is hired. APPENDED —
     // positional record; trailing default keeps existing construction valid.
-    bool AutoCreateUserOnHire = false);
+    bool AutoCreateUserOnHire = false,
+    // US-ADM-006 BR-3 / ISSUE-358: the plan-gating signal the frontend has always been coded to read
+    // (branding-section.component.ts checks plan()?.lockedFeatures) but which the backend never emitted, so
+    // the "Upgrade your plan" affordance could never fire and no setting was ever gated. Nullable + trailing
+    // default so every existing construction site stays valid; the FE already no-ops when it is absent.
+    PlanGatingDto? Plan = null);
+
+/// <summary>
+/// US-ADM-006 BR-3 (ISSUE-358): which settings the tenant's plan does NOT permit. Feature keys are the
+/// well-known strings the frontend matches on (currently <c>branding.customColor</c>).
+///
+/// <para>Scope note: of the five <c>PlanFeatureFlags</c>, only <c>WhiteLabel</c> is represented here, because
+/// it is the only one with a real feature behind it (tenant branding). <c>CustomDomain</c>, <c>Scim</c> and
+/// <c>Sandbox</c> have ZERO implementing code, so gating them would enforce entitlement to nothing — the
+/// ISSUE-356 lesson. They stay unrepresented until the features exist.</para>
+/// </summary>
+public sealed record PlanGatingDto(string? Tier, IReadOnlyList<string> LockedFeatures);
 
 public sealed record OrgProfileDto(
     string Name,

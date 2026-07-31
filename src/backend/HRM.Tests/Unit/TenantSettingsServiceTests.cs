@@ -732,4 +732,95 @@ public sealed class TenantSettingsServiceTests
         public Task DeleteAsync(Guid tenantId, string relativePath, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
     }
+    // ── ISSUE-358: plan-gated branding (US-ADM-006 BR-3) ──────────────────────
+    // The frontend has always read plan()?.lockedFeatures to disable the colour picker, but the backend never
+    // emitted a plan block — so the "Upgrade your plan" affordance could never fire, and BR-3's "rejected by
+    // the API" was unimplemented: a direct API call bypassed the entitlement entirely.
+    //
+    // Scope: only WhiteLabel is gated. CustomDomain/Scim/Sandbox have ZERO implementing code, so gating them
+    // would enforce entitlement to nothing — the ISSUE-356 lesson.
+
+    [Fact]
+    public async Task Settings_report_branding_as_locked_when_the_plan_lacks_WhiteLabel_ISSUE358()
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: false);
+
+        var result = await Service().GetSettingsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Plan.Should().NotBeNull("the FE cannot gate anything without a plan block");
+        result.Value.Plan!.LockedFeatures.Should().Contain("branding.customColor");
+    }
+
+    [Fact]
+    public async Task Settings_report_nothing_locked_when_the_plan_HAS_WhiteLabel_ISSUE358()
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: true);
+
+        var result = await Service().GetSettingsAsync();
+
+        result.Value!.Plan!.LockedFeatures.Should().BeEmpty(
+            "an entitled tenant must see no lock — otherwise the badge fires for people who paid for it");
+    }
+
+    // THE enforcement arm. The FE disabling a control is cosmetic; BR-3 requires the API to refuse.
+    [Fact]
+    public async Task UpdatePrimaryColor_is_REJECTED_when_the_plan_lacks_WhiteLabel_ISSUE358()
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: false);
+
+        var result = await Service().UpdatePrimaryColorAsync("#FF0000");
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+        result.ErrorCode.Should().Be("plan_feature_locked",
+            "a disabled picker in the UI is not enforcement — a direct API call must be refused too");
+    }
+
+    [Fact]
+    public async Task UpdatePrimaryColor_is_ALLOWED_when_the_plan_HAS_WhiteLabel_ISSUE358()
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: true);
+
+        var result = await Service().UpdatePrimaryColorAsync("#FF0000");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+    }
+
+    // FAIL-OPEN arm: a tenant whose plan row is missing must NOT lose access to their own branding. Same ethos
+    // as PlanModules.IsModuleEnabled and ModuleEntitlementMiddleware (ISSUE-335) — the cost of an unreadable
+    // plan is "not enforced", never "locked out".
+    [Fact]
+    public async Task UpdatePrimaryColor_FAILS_OPEN_when_no_plan_row_exists_ISSUE358()
+    {
+        await SeedTenantAsync(_tenantId); // PlanId = "default", but no SubscriptionPlan row seeded
+
+        var result = await Service().UpdatePrimaryColorAsync("#FF0000");
+
+        result.IsSuccess.Should().BeTrue(
+            "an unreadable plan must never lock a tenant out of their own branding");
+    }
+
+    private TenantSettingsService Service() => new(
+        CreateDbContext(), _tenantContext, _currentUser,
+        Substitute.For<IFileStorage>(),
+        Substitute.For<ILogger<TenantSettingsService>>(), cache: null);
+
+    private async Task SeedPlanAsync(string code, bool whiteLabel)
+    {
+        using var db = CreateDbContext();
+        db.SubscriptionPlans.Add(new SubscriptionPlan
+        {
+            Id = Guid.NewGuid(),
+            Code = code,
+            Name = code,
+            FeatureFlags = new PlanFeatureFlags { WhiteLabel = whiteLabel },
+        });
+        await db.SaveChangesAsync();
+    }
+
 }

@@ -41,8 +41,13 @@ public sealed record LopEntryDto
 }
 
 /// <summary>
-/// LOP summary for an employee over a period, consumed by payroll (US-LV-011 FR-5, AC-4).
-/// Payroll computes the salary deduction from <see cref="TotalLopDays"/>.
+/// LOP summary for an employee over a period (US-LV-011 FR-5, AC-4).
+///
+/// <para><b>⚠ Payroll does NOT read this today (ISSUE-357).</b> The previous sentence here claimed "Payroll
+/// computes the salary deduction from TotalLopDays" — that is FALSE. <c>PayrollRunProcessor</c> takes
+/// <c>attendance?.LopDays</c> from <c>AttendanceMonthlySummary</c> instead, so this leave-side total is
+/// currently informational. Two LOP rails exist and are unreconciled; feeding this one into payroll as well
+/// would double-deduct. See ISSUE-357 before changing either.</para>
 /// </summary>
 public sealed record LopSummaryDto
 {

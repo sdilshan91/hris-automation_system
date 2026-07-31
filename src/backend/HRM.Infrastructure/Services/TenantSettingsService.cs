@@ -64,7 +64,8 @@ public sealed class TenantSettingsService : ITenantSettingsService
         if (tenant is null)
             return Result<TenantSettingsDto>.Failure("Tenant not found.", 404);
 
-        return Result<TenantSettingsDto>.Success(ToDto(tenant));
+        var plan = await ResolvePlanGatingAsync(tenant, cancellationToken);
+        return Result<TenantSettingsDto>.Success(ToDto(tenant, plan));
     }
 
     // ── Update org profile (AC-1) ─────────────────────────────────────────────
@@ -277,6 +278,16 @@ public sealed class TenantSettingsService : ITenantSettingsService
         if (tenant is null)
             return Result<BrandingDto>.Failure("Tenant not found.", 404);
 
+        // US-ADM-006 BR-3 (ISSUE-358): custom branding colour is a WhiteLabel-plan feature. The frontend has
+        // always disabled the picker when the plan locks it, but nothing enforced it server-side — BR-3's
+        // "rejected by the API" was unimplemented, so a direct API call bypassed the entitlement entirely.
+        // Fails open (see ResolvePlanGatingAsync): an unreadable plan never locks a tenant out of their own
+        // branding.
+        var gating = await ResolvePlanGatingAsync(tenant, cancellationToken);
+        if (gating is not null && gating.LockedFeatures.Contains("branding.customColor"))
+            return Result<BrandingDto>.Failure(
+                "A custom brand colour requires a plan that includes white-labelling.", 403, "plan_feature_locked");
+
         var before = ToBrandingDto(tenant);
         tenant.PrimaryColor = value;
         tenant.UpdatedAt = DateTime.UtcNow;
@@ -477,9 +488,41 @@ public sealed class TenantSettingsService : ITenantSettingsService
     private static string? Normalize(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static TenantSettingsDto ToDto(Tenant t) => new(
+    private static TenantSettingsDto ToDto(Tenant t, PlanGatingDto? plan = null) => new(
         ToOrgProfileDto(t), ToBrandingDto(t), ToLocalizationDto(t), ToPasswordPolicyDto(t), ToSessionPolicyDto(t),
-        t.AutoCreateUserOnHire);
+        t.AutoCreateUserOnHire, plan);
+
+    /// <summary>
+    /// US-ADM-006 BR-3 (ISSUE-358): resolves which settings this tenant's plan does NOT permit.
+    ///
+    /// <para>Only <c>WhiteLabel</c> is evaluated. It is the sole <c>PlanFeatureFlags</c> member with a real
+    /// feature behind it (tenant branding); <c>CustomDomain</c>/<c>Scim</c>/<c>Sandbox</c> have zero
+    /// implementing code, so gating them would enforce entitlement to nothing.</para>
+    ///
+    /// <para>FAILS OPEN by design: no plan row, or no flags, means nothing is locked. A tenant must never lose
+    /// access to a setting because their plan could not be read — the same fail-open ethos as
+    /// <c>PlanModules.IsModuleEnabled</c> and <c>ModuleEntitlementMiddleware</c> (ISSUE-335).</para>
+    /// </summary>
+    private async Task<PlanGatingDto?> ResolvePlanGatingAsync(Tenant tenant, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(tenant.PlanId))
+            return null;
+
+        var plan = await _db.SubscriptionPlans
+            .AsNoTracking()
+            .Where(p => p.Code == tenant.PlanId)
+            .Select(p => new { p.Code, p.FeatureFlags })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (plan is null)
+            return null;
+
+        var locked = new List<string>();
+        if (plan.FeatureFlags is { WhiteLabel: false })
+            locked.Add("branding.customColor");
+
+        return new PlanGatingDto(plan.Code, locked);
+    }
 
     private static OrgProfileDto ToOrgProfileDto(Tenant t) => new(
         t.Name, t.LegalName, t.RegistrationNumber, t.Address, t.Industry, t.CompanySize,
