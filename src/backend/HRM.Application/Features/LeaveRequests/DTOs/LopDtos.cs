@@ -41,13 +41,14 @@ public sealed record LopEntryDto
 }
 
 /// <summary>
-/// LOP summary for an employee over a period (US-LV-011 FR-5, AC-4).
+/// LOP summary for an employee over a period (US-LV-011 FR-5, AC-4). Informational read model (HR-facing):
+/// it lists ALL effective LOP entries (any non-Cancelled/Rejected status, incl. HR-assigned/system-generated).
 ///
-/// <para><b>⚠ Payroll does NOT read this today (ISSUE-357).</b> The previous sentence here claimed "Payroll
-/// computes the salary deduction from TotalLopDays" — that is FALSE. <c>PayrollRunProcessor</c> takes
-/// <c>attendance?.LopDays</c> from <c>AttendanceMonthlySummary</c> instead, so this leave-side total is
-/// currently informational. Two LOP rails exist and are unreconciled; feeding this one into payroll as well
-/// would double-deduct. See ISSUE-357 before changing either.</para>
+/// <para><b>Payroll does NOT deduct from THIS total.</b> D2 / BUG-293 routed payroll to
+/// <c>ILopService.GetPayrollLopDaysAsync</c>, which sums attendance's raw absence facts with the
+/// approved-but-unpaid (<c>IsLop &amp;&amp; Status == Approved</c>) leave days — a DISJOINT subset of the entries
+/// listed here (attendance already deducts HR-assigned/system-generated absent days, so they are excluded from
+/// the payroll total to avoid a double-count; wiring them is D2's deferred second half — ISSUE-357).</para>
 /// </summary>
 public sealed record LopSummaryDto
 {

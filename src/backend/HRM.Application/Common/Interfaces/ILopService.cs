@@ -32,6 +32,31 @@ public interface ILopService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// D2 / BUG-293: the AUTHORITATIVE payroll LOP per employee for a pay period — the figure payroll deducts.
+    /// The leave module owns this total: it takes attendance's raw absence FACTS
+    /// (<paramref name="attendanceLopByEmployee"/> — unapproved absence + US-ATT-008 lateness) and ADDS the
+    /// paid/unpaid POLICY decision only the leave module can make: approved-but-UNPAID (<c>IsLop</c>) leave days
+    /// for the period. Attendance never sees approvals/balances, so it must not silently own that call.
+    ///
+    /// <para><b>Provably disjoint (no double-count).</b> The leave component counts ONLY
+    /// <c>IsLop &amp;&amp; Status == Approved</c> leave — EXACTLY the set <c>AttendanceSummaryService</c> excludes from
+    /// its own LOP (it classifies an Approved leave day <c>LEAVE</c>, <c>lop += 0</c>). Attendance therefore counts
+    /// the days NOT covered by approved leave; this counts the approved-and-unpaid ones. Half-days mirror the
+    /// attendance expansion (a single-day half-day request = 0.5). HR-assigned / system-generated / compulsory
+    /// LOP (non-Approved statuses) are DELIBERATELY excluded here: attendance already deducts those absent days,
+    /// so wiring them is the deferred second half of D2 (a real <c>IAttendanceProvider</c>) — see ISSUE-357.</para>
+    ///
+    /// <para>Returns one entry per input employee id (attendance figure passed through, plus any leave LOP). Batch
+    /// (no N+1); read-only; tenant-scoped via the EF global filter.</para>
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, decimal>> GetPayrollLopDaysAsync(
+        IReadOnlyCollection<Guid> employeeIds,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        IReadOnlyDictionary<Guid, decimal> attendanceLopByEmployee,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Bulk-assigns a compulsory leave (company shutdown) to all/selected employees for the given dates
     /// (FR-6). BR-4: deducts from the employee's balance for that leave type first; if insufficient,
     /// creates an LOP entry instead. Persists a CompulsoryLeave record per date and per-employee

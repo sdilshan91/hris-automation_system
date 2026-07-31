@@ -50,6 +50,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     private readonly IPayrollSlipCleaner _slipCleaner;
     private readonly IPayrollAuditLogger _audit;
     private readonly IHolidayProvider? _holidayProvider;
+    private readonly ILopService? _lopService;
     private readonly ILogger<PayrollRunProcessor> _logger;
 
     /// <summary>Synthetic component id for the LOP deduction line (BR-2). Stable so the slip detail FK is consistent.</summary>
@@ -74,7 +75,11 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         IPayrollSlipCleaner slipCleaner,
         IPayrollAuditLogger audit,
         ILogger<PayrollRunProcessor> logger,
-        IHolidayProvider? holidayProvider = null)
+        IHolidayProvider? holidayProvider = null,
+        // D2 / BUG-293: TRAILING-OPTIONAL (mirrors _holidayProvider) so the many fixtures that compose their own
+        // collaborators keep resolving; DI always supplies the real LopService. When null, the leave-side LOP
+        // component is zero and the engine reads the attendance figure exactly as before (no behaviour change).
+        ILopService? lopService = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -84,6 +89,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _adjustmentResolver = adjustmentResolver;
         _slipCleaner = slipCleaner;
         _audit = audit;
+        _lopService = lopService;
         _logger = logger;
         // CAL-5: TRAILING-OPTIONAL so the many fixtures that compose their own DI container keep resolving
         // (mirrors OvertimeService's IHolidayProvider). DI always supplies the real HolidayProvider. With no
@@ -245,6 +251,22 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             runLog.AppendLine("NOTE: attendance period is not locked/finalized; LOP not applied (employees treated as fully present).");
 
         var (workingDaysInMonth, monthStart, monthEnd) = MonthBounds(run.PayYear, run.PayMonth);
+
+        // D2 / BUG-293: the LEAVE module owns the authoritative LOP total payroll deducts. It takes attendance's
+        // raw absence FACTS (unapproved absence + US-ATT-008 lateness, already in AttendanceMonthlySummary.LopDays)
+        // and ADDS approved-but-UNPAID (IsLop) leave days — the days attendance deliberately excludes (classifies
+        // LEAVE, lop += 0), so the two components are provably disjoint. Before this, payroll read ONLY the
+        // attendance figure, so an approved unpaid-leave day was paid in FULL (BUG-293). Batched once (no N+1).
+        // When _lopService is unwired (test fixtures that compose their own collaborators) the map is just the
+        // attendance figures, so those runs are byte-identical to the pre-D2 engine.
+        var attendanceLopByEmployee = employeeIds.ToDictionary(
+            id => id,
+            id => attendanceByEmployee.TryGetValue(id, out var a) ? a.LopDays : 0m);
+        IReadOnlyDictionary<Guid, decimal> authoritativeLopByEmployee =
+            _lopService is not null
+                ? await _lopService.GetPayrollLopDaysAsync(
+                    employeeIds, monthStart, monthEnd, attendanceLopByEmployee, cancellationToken)
+                : attendanceLopByEmployee;
 
         // ISSUE-156/157: shift-aware join/separation pro-ration. Resolve every employee's working-weekday set
         // (as-of monthStart — the SAME basis the attendance pull uses for TotalWorkingDays) and any in-period
@@ -423,7 +445,11 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             decimal workingDays = attendance?.TotalWorkingDays > 0
                 ? attendance.TotalWorkingDays
                 : (shiftWorkingDaysInMonth > 0 ? shiftWorkingDaysInMonth : workingDaysInMonth);
-            decimal lopDays = attendance?.LopDays ?? 0m;
+            // D2 / BUG-293: the AUTHORITATIVE LOP from the leave module = attendance's raw facts + approved-unpaid
+            // leave days (disjoint). Falls back to the attendance figure when the leave module is unwired.
+            decimal lopDays = authoritativeLopByEmployee.TryGetValue(emp.Id, out var authLop)
+                ? authLop
+                : attendance?.LopDays ?? 0m;
 
             // BR-4/BR-5: pro-rate mid-month joiners/leavers by the SHIFT working days they were employed.
             // CAL-5 (money-critical): `empHolidays` — the SAME set as the denominator above — is threaded here

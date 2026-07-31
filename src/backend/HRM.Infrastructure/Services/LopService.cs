@@ -204,6 +204,59 @@ public sealed class LopService : ILopService
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  D2 / BUG-293: authoritative payroll LOP (leave owns the total)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Guid, decimal>> GetPayrollLopDaysAsync(
+        IReadOnlyCollection<Guid> employeeIds,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        IReadOnlyDictionary<Guid, decimal> attendanceLopByEmployee,
+        CancellationToken cancellationToken = default)
+    {
+        // Seed with attendance's raw facts (unapproved absence + lateness). Attendance OWNS those and the leave
+        // module NEVER recomputes them — it only ADDS the paid/unpaid policy days below.
+        var result = new Dictionary<Guid, decimal>(employeeIds.Count);
+        foreach (var id in employeeIds)
+            result[id] = attendanceLopByEmployee.TryGetValue(id, out var a) ? a : 0m;
+
+        if (!_tenantContext.IsResolved || employeeIds.Count == 0)
+            return result;
+
+        var idSet = employeeIds as HashSet<Guid> ?? employeeIds.ToHashSet();
+
+        // Approved-but-UNPAID leave overlapping the period. Status == Approved is LOAD-BEARING for disjointness:
+        // it is EXACTLY the set AttendanceSummaryService excludes (an Approved leave day → LEAVE, lop += 0), so
+        // attendance and this rail can never count the same day. HR-assigned / system-generated / compulsory LOP
+        // (non-Approved statuses) are NOT counted here — attendance already deducts those absent days; wiring
+        // them is D2's deferred second half (a real IAttendanceProvider). See ISSUE-357.
+        var lopLeave = await _dbContext.LeaveRequests
+            .AsNoTracking()
+            .Where(lr => lr.IsLop
+                         && idSet.Contains(lr.EmployeeId)
+                         && lr.Status == LeaveRequestStatus.Approved
+                         && lr.StartDate <= periodEnd && lr.EndDate >= periodStart)
+            .Select(lr => new { lr.EmployeeId, lr.StartDate, lr.EndDate, lr.IsHalfDay })
+            .ToListAsync(cancellationToken);
+
+        foreach (var lr in lopLeave)
+        {
+            // Clip to the pay period and expand per-day, MIRRORING AttendanceSummaryService's leave expansion
+            // (a single-day half-day request is 0.5; every other covered day is 1.0). Clipping is load-bearing:
+            // a request straddling the month boundary contributes only its in-period days, never its whole span.
+            var from = lr.StartDate < periodStart ? periodStart : lr.StartDate;
+            var to = lr.EndDate > periodEnd ? periodEnd : lr.EndDate;
+            decimal days = lr.IsHalfDay && lr.StartDate == lr.EndDate
+                ? 0.5m
+                : to.DayNumber - from.DayNumber + 1;
+            result[lr.EmployeeId] = result.GetValueOrDefault(lr.EmployeeId) + days;
+        }
+
+        return result;
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  FR-6 / BR-4: compulsory leave (company shutdown) bulk assign
     // ══════════════════════════════════════════════════════════════
 
