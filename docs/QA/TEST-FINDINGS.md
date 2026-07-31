@@ -7625,6 +7625,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-356 — `CustomReportBuilder` is a sellable module with no controller, so it can never be enforced
 - **ID:** ISSUE-356
+- **Status update:** ✅ **RESOLVED 2026-07-31 (user decision: add the gate).** Implementing it surfaced that **no custom-report-builder feature exists**, so nothing could be gated today. Rather than mis-gate `/api/v1/reports` (those are the pre-defined report TYPES, correctly mapped to `Reporting`), the mapping is **PRE-REGISTERED** at `/api/v1/reports/custom` and `/api/v1/report-builder` — it matches nothing now, and the point is that the builder is gated the moment its routes exist instead of shipping ungated. **Ordering is load-bearing:** prefix matching is first-wins, so the custom entries MUST precede the broader `/api/v1/reports`; otherwise a builder route gates as `Reporting` and the entitlement stays unenforceable — the original bug reintroduced. Mutating the order kills 3 arms.
 - **Type:** GAP
 - **Severity:** LOW
 - **Status:** OPEN
@@ -7639,6 +7640,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### BUG-291 — `AccrualFrequency` is ignored: a Monthly/Quarterly leave type credits the FULL year on the first run, and that inflated balance is paid out
 - **ID:** BUG-291
+- **Status update:** 📋 **DECISION TAKEN 2026-07-31: report the affected population, change NOTHING.** Correcting balances downward is an employee-detriment change to be decided case-by-case by HR/Finance, not a side effect of a bug fix. Shipped a **read-only** exposure report — `GET /api/v1/tenant/leave-entitlements/accrual-over-credit-exposure?asOfDate=` (`Leave.ConfigurePolicy`) — giving credited vs should-have-accrued vs over-credited days per employee. Verified read-only (no SaveChanges / DbSet writes / IgnoreQueryFilters). Reuses the merged fix's own period maths so the figure is byte-identical to what the corrected job credits; employees already period-tagged post-fix are excluded so the report cannot double-count. **This finding stays OPEN** until the per-employee correction policy is settled — the code side is done, the business decision is not.
 - **Type:** BUG (money — over-credit reaching encashment and final settlement)
 - **Severity:** **HIGH**
 - **Status:** OPEN
