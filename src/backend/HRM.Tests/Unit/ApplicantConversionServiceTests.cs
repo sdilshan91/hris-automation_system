@@ -15,6 +15,7 @@ using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
+using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -60,7 +61,9 @@ public sealed class ApplicantConversionServiceTests
 
     private readonly List<CreateEmployeeRequest> _capturedCreates = new();
 
-    private (ApplicantConversionService svc, IEmployeeService employees) CreateService(AppDbContext db, Guid? createdEmployeeId = null)
+    // D1: the salary-assignment spy is returned so arms can assert the offer's structure actually reached it.
+    private (ApplicantConversionService svc, IEmployeeService employees, ISalaryAssignmentService salary) CreateService(
+        AppDbContext db, Guid? createdEmployeeId = null)
     {
         var employees = Substitute.For<IEmployeeService>();
         var empId = createdEmployeeId ?? Guid.NewGuid();
@@ -91,16 +94,23 @@ public sealed class ApplicantConversionServiceTests
                 return Result<EmployeeDto>.Success(new EmployeeDto { Id = empId, EmployeeNo = "EMP-0042" });
             });
 
+        var salary = Substitute.For<ISalaryAssignmentService>();
+        // Default to SUCCESS. An unconfigured NSubstitute call returns null, and the conversion path reads
+        // salaryResult.IsFailure straight away — so leaving it unconfigured NREs inside the transaction and
+        // makes every arm fail for a reason that has nothing to do with what it is testing.
+        salary.AssignAsync(Arg.Any<AssignSalaryStructureInput>(), Arg.Any<CancellationToken>())
+            .Returns(Result<CtcBreakdownDto>.Success(new CtcBreakdownDto()));
         var svc = new ApplicantConversionService(
             db, _tenantContext, _currentUser, employees,
             new LogOnlyRecruitmentNotificationService(
                 Substitute.For<ILogger<LogOnlyRecruitmentNotificationService>>()),
+            salary,
             Substitute.For<ILogger<ApplicantConversionService>>());
 
-        return (svc, employees);
+        return (svc, employees, salary);
     }
 
-    private void Seed(ApplicantStage stage, bool withAcceptedOffer)
+    private void Seed(ApplicantStage stage, bool withAcceptedOffer, Guid? offerSalaryStructureId = null)
     {
         using var db = CreateDb();
         db.Tenants.Add(new Tenant { Id = _tenantId, Subdomain = "acme", Name = "Acme" });
@@ -164,6 +174,7 @@ public sealed class ApplicantConversionServiceTests
                 DepartmentId = _deptId,
                 ReportingManagerEmployeeId = _managerId,
                 SalaryAmount = 120000m,
+                SalaryStructureId = offerSalaryStructureId,   // D1: null unless the arm supplies one
                 Currency = "USD",
                 SalaryFrequency = SalaryFrequency.Annual,
                 StartDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(30)),
@@ -191,7 +202,7 @@ public sealed class ApplicantConversionServiceTests
     public async Task GetPrefill_MapsOfferAndApplicantData()
     {
         using var db = CreateDb();
-        var (svc, _) = CreateService(db);
+        var (svc, _, _) = CreateService(db);
 
         var result = await svc.GetPrefillAsync(_applicantId);
 
@@ -214,7 +225,7 @@ public sealed class ApplicantConversionServiceTests
     public async Task Convert_MapsApplicantAndOffer_IntoCreateEmployeeRequest()
     {
         using var db = CreateDb();
-        var (svc, _) = CreateService(db);
+        var (svc, _, _) = CreateService(db);
 
         var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
 
@@ -241,7 +252,7 @@ public sealed class ApplicantConversionServiceTests
         await setupDb.SaveChangesAsync();
 
         using var db = CreateDb();
-        var (svc, _) = CreateService(db);
+        var (svc, _, _) = CreateService(db);
 
         var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
 
@@ -262,7 +273,7 @@ public sealed class ApplicantConversionServiceTests
         await setupDb.SaveChangesAsync();
 
         using var db = CreateDb();
-        var (svc, _) = CreateService(db);
+        var (svc, _, _) = CreateService(db);
 
         var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
 
@@ -277,13 +288,13 @@ public sealed class ApplicantConversionServiceTests
     public async Task Convert_AlreadyConverted_Rejected()
     {
         using var db = CreateDb();
-        var (svc, _) = CreateService(db);
+        var (svc, _, _) = CreateService(db);
 
         var first = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
         first.IsSuccess.Should().BeTrue();
 
         using var db2 = CreateDb();
-        var (svc2, _) = CreateService(db2);
+        var (svc2, _, _) = CreateService(db2);
         var second = await svc2.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
 
         second.IsFailure.Should().BeTrue();
@@ -301,7 +312,7 @@ public sealed class ApplicantConversionServiceTests
 
         var empId = Guid.NewGuid();
         using var db = CreateDb();
-        var (svc, _) = CreateService(db, empId);
+        var (svc, _, _) = CreateService(db, empId);
 
         var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
 
@@ -340,7 +351,7 @@ public sealed class ApplicantConversionServiceTests
 
         var empId = Guid.NewGuid();
         using var db = CreateDb();
-        var (svc, _) = CreateService(db, empId);
+        var (svc, _, _) = CreateService(db, empId);
 
         var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
 
@@ -379,7 +390,7 @@ public sealed class ApplicantConversionServiceTests
 
         var empId = Guid.NewGuid();
         using var db = CreateDb();
-        var (svc, _) = CreateService(db, empId);
+        var (svc, _, _) = CreateService(db, empId);
 
         var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
 
@@ -438,7 +449,7 @@ public sealed class ApplicantConversionServiceTests
 
         var empId = Guid.NewGuid();
         using var db = CreateDb();
-        var (svc, _) = CreateService(db, empId);
+        var (svc, _, _) = CreateService(db, empId);
         (await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId)))
             .IsSuccess.Should().BeTrue();
 
@@ -484,5 +495,59 @@ public sealed class ApplicantConversionServiceTests
         });
         db.SaveChanges();
         return roleId;
+    }
+    // ── D1 / BUG-292: the offer's salary structure must reach the new employee ──────────────
+    // BUG-292 was that HR could type a salary at conversion and it silently vanished. D1's answer is that the
+    // STRUCTURE is decided at offer time and conversion carries it through, so the money a candidate agreed to
+    // and the money payroll pays derive from one approved record.
+    //
+    // These arms did not exist when the carry-through shipped — the implementing agent ran out of budget before
+    // writing them, and the suite passed simply because the new code was untested. Mutating the carry-through
+    // away killed nothing, which is how the gap was found.
+
+    [Fact]
+    public async Task Conversion_assigns_the_offers_salary_structure_to_the_new_employee_D1_BUG292()
+    {
+        // The ctor already seeded a Hired applicant with an accepted offer; attach a structure to THAT offer
+        // rather than re-seeding (a second Seed() would duplicate keys in the shared InMemory store).
+        var structureId = Guid.NewGuid();
+        SetOfferSalaryStructure(structureId);
+        using var db = CreateDb();
+        var (svc, _, salary) = CreateService(db);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        await salary.Received(1).AssignAsync(
+            Arg.Is<AssignSalaryStructureInput>(i =>
+                i.SalaryStructureId == structureId && i.AnnualCtc == 120000m),
+            Arg.Any<CancellationToken>());
+    }
+
+    // The complement, and the one that stops an over-correction: a legacy/in-flight offer with NO structure
+    // must still convert. Failing a hire because this feature is not configured would be worse than the bug.
+    [Fact]
+    public async Task Conversion_succeeds_and_assigns_nothing_when_the_offer_has_no_structure_D1()
+    {
+        SetOfferSalaryStructure(null);   // the seeded offer carries no structure — the legacy/in-flight case
+        using var db = CreateDb();
+        var (svc, _, salary) = CreateService(db);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(
+            "a hire must never fail because the offer predates the salary-structure feature");
+        await salary.DidNotReceive().AssignAsync(
+            Arg.Any<AssignSalaryStructureInput>(), Arg.Any<CancellationToken>());
+    }
+
+
+    /// <summary>Points the seeded accepted offer at a salary structure (or clears it) — D1/BUG-292 arms.</summary>
+    private void SetOfferSalaryStructure(Guid? structureId)
+    {
+        using var db = CreateDb();
+        var offer = db.Offers.Single(o => o.ApplicantId == _applicantId);
+        offer.SalaryStructureId = structureId;
+        db.SaveChanges();
     }
 }

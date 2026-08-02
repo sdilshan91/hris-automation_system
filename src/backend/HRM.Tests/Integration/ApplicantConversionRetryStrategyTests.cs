@@ -115,6 +115,7 @@ public sealed class ApplicantConversionRetryStrategyTests : IAsyncLifetime
         return new ApplicantConversionService(
             db, tenantContext, currentUser, employeeService,
             new LogOnlyRecruitmentNotificationService(NullLogger<LogOnlyRecruitmentNotificationService>.Instance),
+            Substitute.For<ISalaryAssignmentService>(),
             NullLogger<ApplicantConversionService>.Instance);
     }
 

@@ -709,6 +709,54 @@ export class MainLayoutComponent implements OnInit {
       permission: 'Leave.View.Own',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z" clip-rule="evenodd"/></svg>`,
     },
+    // ─── Leave configuration (DEC-D5) ───────────────────────────────────────
+    // Four HR/admin leave-config screens under the '/leave-types' tree were
+    // reachable ONLY by direct URL — no sidebar entry existed (the Finance-facing
+    // accrual-over-credit review surfaced the gap, but it covered all four). Same
+    // discoverability defect class as ISSUE-208 (Attendance) / ISSUE-210 (Performance).
+    //
+    // Kept as their own block (NOT mixed with the employee '/leave' item above) so an
+    // HR officer scanning for day-to-day leave actions doesn't trip over config tools.
+    //
+    // Gating mirrors ROUTE ACCESS: the '/leave-types' parent guards on
+    // moduleGuard('Leave') + roleGuard(['Tenant Admin','HR Officer']). We reuse the
+    // SAME nav mechanism the surrounding items use — permission gating — on
+    // Leave.ConfigurePolicy, the catalog capability these screens consume (the FE
+    // surface of the backend's Leave.ConfigurePolicy gate; see the route comments),
+    // plus module:'Leave' to match the parent's moduleGuard. Employee/Manager/Auditor/
+    // Recruiter do NOT hold Leave.ConfigurePolicy, so the group never appears for a
+    // persona the route would bounce to /forbidden.
+    {
+      label: 'Entitlement Rules',
+      route: '/leave-types/entitlements',
+      module: 'Leave',
+      permission: 'Leave.ConfigurePolicy',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.993 6.993 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
+      label: 'Holiday Calendar',
+      route: '/leave-types/holidays',
+      module: 'Leave',
+      permission: 'Leave.ConfigurePolicy',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
+      label: 'Carry-Forward Preview',
+      route: '/leave-types/carry-forward-preview',
+      module: 'Leave',
+      permission: 'Leave.ConfigurePolicy',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M15.5 2A1.5 1.5 0 0 1 17 3.5v13A1.5 1.5 0 0 1 15.5 18h-11A1.5 1.5 0 0 1 3 16.5v-13A1.5 1.5 0 0 1 4.5 2h11ZM6 13.25a.75.75 0 0 1 .75.75v.5a.75.75 0 0 1-1.5 0v-.5a.75.75 0 0 1 .75-.75Zm3-3a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0V11a.75.75 0 0 1 .75-.75Zm3-2a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Z"/></svg>`,
+    },
+    {
+      // DEC-D5: user-facing label deliberately describes the PURPOSE, not the
+      // originating BUG-291 — Finance staff who have never heard of the bug id
+      // must still understand what this screen is for.
+      label: 'Accrual Over-Credit Review',
+      route: '/leave-types/accrual-over-credit-exposure',
+      module: 'Leave',
+      permission: 'Leave.ConfigurePolicy',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>`,
+    },
     // ─── Attendance (US-ATT-001..010, ISSUE-208) ────────────────────────────
     // The module has ~13 child routes but only the clock-in landing was reachable
     // from the sidebar; every manager/HR sub-page (approvals, shifts, reports,

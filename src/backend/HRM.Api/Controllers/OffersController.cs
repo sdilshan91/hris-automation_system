@@ -46,7 +46,7 @@ public sealed class OffersController : ControllerBase
             request.ApplicantId, request.OfferedPosition, request.DepartmentId,
             request.ReportingManagerEmployeeId, request.SalaryAmount, request.Currency,
             request.SalaryFrequency, request.BenefitsSummary, request.StartDate, request.ExpiryDate,
-            request.ProbationMonths, request.CustomClauses), cancellationToken);
+            request.ProbationMonths, request.CustomClauses, request.SalaryStructureId), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
@@ -186,6 +186,14 @@ public sealed record GenerateOfferRequest
     public decimal SalaryAmount { get; init; }
     public string Currency { get; init; } = string.Empty;
     public SalaryFrequency SalaryFrequency { get; init; } = SalaryFrequency.Monthly;
+
+    /// <summary>
+    /// Decision D1 (BUG-292): optional salary structure the compensation is agreed against at offer time.
+    /// Must belong to the calling tenant (rejected otherwise). Carried through to salary assignment when the
+    /// applicant is converted to an employee, so the new hire is payroll-ready.
+    /// </summary>
+    public Guid? SalaryStructureId { get; init; }
+
     public string? BenefitsSummary { get; init; }
     public DateOnly StartDate { get; init; }
     public DateOnly? ExpiryDate { get; init; }

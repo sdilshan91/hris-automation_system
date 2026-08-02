@@ -98,8 +98,13 @@ public static class PermissionCatalog
         /// <summary>
         /// HR management of Loss-of-Pay / compulsory leave (US-LV-011): assign-lop, compulsory bulk
         /// assignment, LOP override, and the payroll LOP summary. Granted to Tenant Admin, HR Manager,
-        /// HR Officer. Chosen over reusing Leave.ConfigurePolicy because that is not granted to HR
-        /// Officer, whom the story explicitly authorises (HR.Officer).
+        /// HR Officer.
+        ///
+        /// <para>NOTE (2026-08-02): the original rationale here claimed this permission was chosen "over
+        /// reusing Leave.ConfigurePolicy because that is not granted to HR Officer". That is no longer
+        /// true — HROfficer's default set DOES include Leave.ConfigurePolicy. The separate permission is
+        /// still worth keeping (LOP management and policy configuration are distinct capabilities), but
+        /// do not rely on the stale reason.</para>
         /// </summary>
         public const string ManageLop = "Leave.ManageLop";
 

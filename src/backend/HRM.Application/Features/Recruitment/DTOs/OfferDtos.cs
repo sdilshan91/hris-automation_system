@@ -25,6 +25,14 @@ public sealed record GenerateOfferInput
     public decimal SalaryAmount { get; init; }
     public string Currency { get; init; } = string.Empty;
     public SalaryFrequency SalaryFrequency { get; init; } = SalaryFrequency.Monthly;
+
+    /// <summary>
+    /// Decision D1 (BUG-292): optional tenant-scoped salary structure the compensation is agreed against.
+    /// When supplied, the structure must exist in the calling tenant (validated in the service) — carried
+    /// through to salary assignment on applicant→employee conversion so the new hire is payroll-ready.
+    /// </summary>
+    public Guid? SalaryStructureId { get; init; }
+
     public string? BenefitsSummary { get; init; }
     public DateOnly StartDate { get; init; }
 
@@ -70,6 +78,9 @@ public sealed record OfferDto
     public string Currency { get; init; } = string.Empty;
     public SalaryFrequency SalaryFrequency { get; init; }
     public string SalaryFrequencyName { get; init; } = string.Empty;
+
+    /// <summary>Decision D1 (BUG-292): the salary structure the offer was agreed against, if any.</summary>
+    public Guid? SalaryStructureId { get; init; }
 
     public string? BenefitsSummary { get; init; }
     public DateOnly StartDate { get; init; }

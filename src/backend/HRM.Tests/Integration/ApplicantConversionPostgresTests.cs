@@ -221,6 +221,8 @@ public sealed class ApplicantConversionPostgresTests : IAsyncLifetime
         services.AddSingleton(Substitute.For<IPayrollAuditLogger>());
         services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IRecruitmentNotificationService, LogOnlyRecruitmentNotificationService>();
+        // D1 (BUG-292): the conversion now carries an offer's salary structure through the assignment rail.
+        services.AddScoped<ISalaryAssignmentService, SalaryAssignmentService>();
         services.AddScoped<IApplicantConversionService, ApplicantConversionService>();
 
         services.AddMediatR(cfg =>

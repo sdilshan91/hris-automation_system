@@ -88,17 +88,15 @@ public sealed class ApplicantConversionController : ControllerBase
 /// id comes from the route. Name/email/phone are mapped server-side from the application + accepted offer;
 /// this body carries the fields the HR Officer reviews/completes on the form (FR-3).
 ///
-/// <para><b>SALARY IS NOT CARRIED HERE, AND IS NOT MAPPED SERVER-SIDE (BUG-292).</b> This summary previously
-/// claimed salary was "mapped server-side from the application + accepted offer". It never was: there is no
-/// Salary property on this record, no <c>EmployeeSalaryComponent</c> is written, and no
-/// <c>SalaryStructure</c> is assigned. The frontend was sending <c>salaryAmount</c>/<c>currency</c>, model
-/// binding silently dropped both, and the conversion still reported success — so HR could enter a salary,
-/// see it echoed back, and lose it. That false claim is very likely why the gap survived review.</para>
-///
-/// <para>Assigning a real salary needs a <c>SalaryStructureId</c> (see <c>AssignSalaryStructureCommand</c>),
-/// which an offer's flat <c>SalaryAmount</c> cannot supply — mapping an amount onto a structure is a product
-/// decision, not a wiring job. Until that is settled the salary/currency fields are shown READ-ONLY on the
-/// conversion form and the employee's salary is assigned as a separate, deliberate step.</para>
+/// <para><b>SALARY IS DERIVED FROM THE ACCEPTED OFFER, NOT FROM THIS BODY (Decision D1, closes BUG-292).</b>
+/// Salary is deliberately NOT a field on this request. Under D1 the salary STRUCTURE is decided at OFFER time
+/// (<c>Offer.SalaryStructureId</c>): when the accepted offer carries a structure, the conversion assigns the
+/// salary to the new employee through the existing <c>AssignSalaryStructureCommand</c> rail — using the offer's
+/// agreed <c>SalaryAmount</c> as the CTC and the joining date as the effective date — inside the same atomic
+/// unit as the conversion, so the new hire is created payroll-ready. When the accepted offer has NO structure
+/// (legacy/in-flight offers predating D1), the conversion still succeeds and simply assigns no salary. This
+/// replaces the old BUG-292 behaviour where an HR-entered salary was silently dropped by model binding and
+/// the conversion falsely reported success.</para>
 /// </summary>
 public sealed record ConvertApplicantRequest
 {

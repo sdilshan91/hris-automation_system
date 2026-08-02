@@ -49,6 +49,17 @@ public sealed class Offer : BaseEntity
     /// <summary>Pay frequency of the offered salary (FR-1).</summary>
     public SalaryFrequency SalaryFrequency { get; set; } = SalaryFrequency.Monthly;
 
+    /// <summary>
+    /// Decision D1 (BUG-292): the tenant-scoped <see cref="SalaryStructure"/> the compensation is agreed against
+    /// at OFFER time. NULLABLE — offers created before D1 (legacy/in-flight) carry none, and a required column
+    /// would break every historical row. Plain nullable UUID column (no hard FK constraint — mirrors the codebase's
+    /// cross-module reference pattern, e.g. <see cref="DepartmentId"/>); tenant-scoped existence is validated in
+    /// <c>OfferService.GenerateAsync</c>. Applicant→employee conversion carries this through to
+    /// <c>ISalaryAssignmentService.AssignAsync</c> so the new employee is created payroll-ready; when null the
+    /// conversion still succeeds and simply assigns no salary.
+    /// </summary>
+    public Guid? SalaryStructureId { get; set; }
+
     /// <summary>Free-text benefits summary (FR-1, optional). Substituted as {{benefits}}.</summary>
     public string? BenefitsSummary { get; set; }
 

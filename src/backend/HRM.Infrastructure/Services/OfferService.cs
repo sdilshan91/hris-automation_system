@@ -102,6 +102,20 @@ public sealed class OfferService : IOfferService
         if (applicant is null)
             return Result<OfferDto>.Failure("Applicant not found.", 404, "applicant_not_found");
 
+        // Decision D1 (BUG-292): when a salary structure is supplied it must exist AND belong to the calling
+        // tenant. The EF global query filter scopes SalaryStructures to _tenantContext.TenantId, so a
+        // structure id belonging to another tenant simply is not found here → rejected (hard tenant-isolation
+        // rule). A null structure is allowed (legacy/in-flight offers carry none).
+        if (input.SalaryStructureId is { } structureId)
+        {
+            var structureExists = await _dbContext.SalaryStructures
+                .AsNoTracking()
+                .AnyAsync(s => s.Id == structureId, cancellationToken);
+            if (!structureExists)
+                return Result<OfferDto>.Failure(
+                    "The selected salary structure was not found in this tenant.", 400, "salary_structure_not_found");
+        }
+
         // BR-2/FR-9: supersede any prior active offer (Draft/Sent) for this applicant/vacancy. The new
         // offer's version = max existing version + 1.
         var existingOffers = await _dbContext.Offers
@@ -158,6 +172,7 @@ public sealed class OfferService : IOfferService
             SalaryAmount = input.SalaryAmount,
             Currency = input.Currency.Trim().ToUpperInvariant(),
             SalaryFrequency = input.SalaryFrequency,
+            SalaryStructureId = input.SalaryStructureId, // D1 (BUG-292): validated tenant-scoped above.
             BenefitsSummary = _sanitizer.Sanitize(Trim(input.BenefitsSummary)),
             StartDate = input.StartDate,
             ExpiryDate = expiryDate,
@@ -563,6 +578,7 @@ public sealed class OfferService : IOfferService
             Currency = offer.Currency,
             SalaryFrequency = offer.SalaryFrequency,
             SalaryFrequencyName = offer.SalaryFrequency.ToString(),
+            SalaryStructureId = offer.SalaryStructureId,
             BenefitsSummary = offer.BenefitsSummary,
             StartDate = offer.StartDate,
             ExpiryDate = offer.ExpiryDate,

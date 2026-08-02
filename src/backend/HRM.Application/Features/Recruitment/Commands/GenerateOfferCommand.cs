@@ -23,7 +23,8 @@ public sealed record GenerateOfferCommand(
     DateOnly StartDate,
     DateOnly? ExpiryDate,
     int? ProbationMonths,
-    string? CustomClauses
+    string? CustomClauses,
+    Guid? SalaryStructureId = null
 ) : IRequest<Result<OfferDto>>;
 
 public sealed class GenerateOfferCommandHandler
@@ -48,5 +49,6 @@ public sealed class GenerateOfferCommandHandler
             ExpiryDate = request.ExpiryDate,
             ProbationMonths = request.ProbationMonths,
             CustomClauses = request.CustomClauses,
+            SalaryStructureId = request.SalaryStructureId,
         }, cancellationToken);
 }

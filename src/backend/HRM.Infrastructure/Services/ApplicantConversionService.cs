@@ -45,6 +45,7 @@ public sealed class ApplicantConversionService : IApplicantConversionService
     private readonly ICurrentUser _currentUser;
     private readonly IEmployeeService _employeeService;
     private readonly IRecruitmentNotificationService _notifications;
+    private readonly ISalaryAssignmentService _salaryAssignment;
     private readonly ILogger<ApplicantConversionService> _logger;
 
     public ApplicantConversionService(
@@ -53,6 +54,7 @@ public sealed class ApplicantConversionService : IApplicantConversionService
         ICurrentUser currentUser,
         IEmployeeService employeeService,
         IRecruitmentNotificationService notifications,
+        ISalaryAssignmentService salaryAssignment,
         ILogger<ApplicantConversionService> logger)
     {
         _dbContext = dbContext;
@@ -60,6 +62,7 @@ public sealed class ApplicantConversionService : IApplicantConversionService
         _currentUser = currentUser;
         _employeeService = employeeService;
         _notifications = notifications;
+        _salaryAssignment = salaryAssignment;
         _logger = logger;
     }
 
@@ -162,6 +165,9 @@ public sealed class ApplicantConversionService : IApplicantConversionService
             if (eligibility.IsFailure)
                 return Result<ConversionResultDto>.Failure(eligibility.Error!, eligibility.StatusCode ?? 409, eligibility.ErrorCode);
 
+            // D1 (BUG-292): the accepted offer — carries the (optional) SalaryStructureId assigned below.
+            var offer = eligibility.Value!;
+
             // NFR-3: atomic. Guard BeginTransaction behind a relational provider (InMemory has no transactions).
             var useTransaction = _dbContext.Database.IsRelational();
             await using var transaction = useTransaction
@@ -253,6 +259,32 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                     Detail = $"Applicant {applicant.ApplicationReferenceNumber} converted to employee {employee.EmployeeNo} ({employeeId}).",
                 };
                 _dbContext.AuditLogs.Add(auditLog);
+
+                // D1 (BUG-292): when the accepted offer carries a salary structure, assign the salary to the new
+                // employee through the existing US-PAY-002 rail (REUSE — no CTC maths reimplemented) inside this
+                // same atomic unit. The offer's agreed SalaryAmount is the AnnualCtc; the joining date is
+                // EffectiveFrom. An offer WITHOUT a structure (legacy/in-flight) assigns nothing and the
+                // conversion proceeds exactly as before — this feature never fails a structure-less conversion.
+                // A failure WITH a structure (e.g. CTC/component mismatch) fails the whole conversion so no
+                // half-created employee (no salary) is ever committed (NFR-3).
+                if (offer.SalaryStructureId is { } salaryStructureId)
+                {
+                    var salaryResult = await _salaryAssignment.AssignAsync(new AssignSalaryStructureInput(
+                        EmployeeId: employeeId,
+                        SalaryStructureId: salaryStructureId,
+                        EffectiveFrom: DateOnly.FromDateTime(input.DateOfJoining),
+                        AnnualCtc: offer.SalaryAmount,
+                        Reason: $"Initial salary on hire from offer {offer.OfferReferenceNumber}.",
+                        Overrides: Array.Empty<SalaryOverrideInput>()), cancellationToken);
+
+                    if (salaryResult.IsFailure)
+                    {
+                        if (transaction is not null)
+                            await transaction.RollbackAsync(cancellationToken);
+                        return Result<ConversionResultDto>.Failure(
+                            salaryResult.Error!, salaryResult.StatusCode ?? 400, salaryResult.ErrorCode);
+                    }
+                }
 
                 // FR-5/BR-7: auto-create the login account when the tenant toggle is on (passwordless; credential
                 // delivery is deferred to US-NTF-006). Runs inside the same atomic unit as the conversion.

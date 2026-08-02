@@ -445,7 +445,12 @@ export const appRoutes: Routes = [
           ),
         canActivate: [
           moduleGuard('Leave'),
-          roleGuard(['Tenant Admin', 'HR Officer']),
+          // HR Manager added 2026-08-02. PermissionCatalog grants HRManager BOTH
+          // Leave.ConfigurePolicy AND Leave.ManageLop — i.e. it deliberately says this role configures
+          // leave policy — but this hand-maintained role list had not kept up, so an HR Manager saw the
+          // leave-configuration nav (gated on the permission) and was then bounced to /forbidden (gated
+          // here on the role). The catalog is the statement of intent; this list was the drift.
+          roleGuard(['Tenant Admin', 'HR Manager', 'HR Officer']),
         ],
       },
       // ─── Leave Management / Apply + My Requests (US-LV-003) ──

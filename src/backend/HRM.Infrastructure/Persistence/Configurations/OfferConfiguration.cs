@@ -41,6 +41,11 @@ public sealed class OfferConfiguration : IEntityTypeConfiguration<Offer>
         builder.Property(o => o.DepartmentId);
         builder.Property(o => o.ReportingManagerEmployeeId);
 
+        // Decision D1 (BUG-292): nullable FK to the salary structure agreed at offer time. Plain nullable UUID
+        // column (no hard FK constraint — same cross-module pattern as DepartmentId above); tenant-scoped
+        // existence is validated in OfferService.GenerateAsync. Existing/in-flight offers leave this null.
+        builder.Property(o => o.SalaryStructureId);
+
         builder.Property(o => o.SalaryAmount)
             .HasColumnType("numeric(18,2)")
             .IsRequired();
