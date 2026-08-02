@@ -60,3 +60,44 @@ accidentally ship an unenforced paid feature.
 
 **Standing rule this establishes:** a flag may not become sellable in the plan editor until its
 enforcement seam exists. Sellable-but-inert is a billing exposure, not a tidiness problem.
+
+
+---
+
+## D2-b — the two-rail LOP split is the INTENDED design, not a temporary state (decided 2026-08-02)
+
+**Decision:** stop at the current split. **Attendance owns absence-derived LOP** (unapproved absence + lateness
+penalties); **leave owns policy-derived LOP** (approved-but-unpaid leave). Both feed payroll through
+`LopService.GetPayrollLopDaysAsync`. HR-assigned / system-generated / compulsory LOP stay on the attendance
+rail, where they already deduct correctly because those rows carry `Status = HrAssigned` (not `Approved`) and
+therefore fall through to `ABSENT`.
+
+**Why not complete the unification D2 originally envisaged.** The rails are now *provably* disjoint — the
+disjointness arm pins one employee, one month, with absence + lateness + unpaid + paid + HR-assigned LOP
+summing to exactly 3.5 — and every category is deducted exactly once. Re-plumbing `PayrollRunProcessor` to move
+working deductions around buys internal consistency at the cost of real money-path risk and no user-visible
+gain. Reopening a correct money path for tidiness is how it stops being correct.
+
+**Consequence:** [[ISSUE-357]] closes as *decided-not-built* rather than outstanding, and US-LV-011's auto-LOP
+AC is superseded — the outcome it wanted (unpaid absence reduces pay) is delivered, by a different route.
+Revisit only if a third LOP source appears.
+
+## D4 — quantify BUG-293's historical under-deduction before deciding anything (decided 2026-08-02)
+
+**Decision:** build a read-only exposure report — the same shape as BUG-291's — showing which employees, which
+periods, and how much was under-deducted. Take no corrective action until the numbers exist.
+
+**Why.** The choice between recovery, write-off and a bounded cut-off cannot be made sensibly without knowing
+whether this is hundreds or hundreds of thousands, or whether the affected population is a handful of edge
+cases or systemic. Note this points the OPPOSITE way to BUG-291: money owed **to** the business rather than to
+employees, so recovery would mean clawing back salary already paid — an employee-relations and, in many
+jurisdictions, legal matter that must not begin on unverified figures.
+
+## D5 — the leave-configuration screens get a discoverable nav group (decided 2026-08-02)
+
+**Decision:** add a "Leave configuration" navigation group covering entitlement rules, holidays, carry-forward
+and the BUG-291 exposure screen — all four of which were reachable only by direct URL.
+
+**Why this over just sending Finance a link** (the narrower option): the discoverability gap is not specific to
+the exposure report. Four admin screens were effectively invisible, and the exposure report only made that
+visible. Fixing the cluster addresses the actual problem rather than the instance of it.

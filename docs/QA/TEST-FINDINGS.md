@@ -7677,6 +7677,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-357 — US-LV-011 auto-LOP: implementing the AC as written would DOUBLE-DEDUCT pay
 - **ID:** ISSUE-357
+- **Status update:** ✅ **CLOSED 2026-08-02 as DECIDED-NOT-BUILT (decision D2-b).** The finding's premise was inverted — see [[BUG-293]]: the two rails do not overlap, and payroll was UNDER-deducting, not at risk of double-deducting. BUG-293's slice (approved-unpaid leave) is fixed and the rails are now provably disjoint. **The remaining 'unification' is deliberately not built:** attendance owns absence-derived LOP, leave owns policy-derived LOP, and every category deducts exactly once. Re-plumbing a correct money path for internal consistency buys no user-visible gain and carries real risk. US-LV-011's auto-LOP AC is superseded — the outcome it wanted (unpaid absence reduces pay) is delivered by a different route. The four stale comments that made this dangerous are already corrected.
 - **Type:** ISSUE (trap in the backlog — acting on the AC would create a defect)
 - **Severity:** MED
 - **Status:** OPEN
