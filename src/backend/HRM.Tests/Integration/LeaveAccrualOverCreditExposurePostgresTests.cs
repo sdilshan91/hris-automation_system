@@ -297,4 +297,81 @@ public sealed class LeaveAccrualOverCreditExposurePostgresTests : IAsyncLifetime
         result.Value!.Rows.Should().HaveCount(1, "tenant A sees only its own employee");
         result.Value.Rows[0].EmployeeId.Should().Be(empA);
     }
+
+    // ── Export (BUG-291 remediation tooling): CSV/XLSX render the SAME rows for Finance ─────────────────────
+    // Seeds one over-credited Monthly employee, returns the mid-year over-credit (12), then exports.
+
+    private async Task<Guid> SeedOneOverCreditedMonthlyAsync(Guid tenantId, string sub, string no)
+    {
+        await using var seed = CreateContext(tenantId);
+        var (deptId, jobId) = await SeedTenantScaffoldAsync(seed, tenantId, sub);
+        var emp = NewEmployee(tenantId, deptId, jobId, no);
+        seed.Employees.Add(emp);
+        var lt = NewLeaveType(tenantId, annual: 24m, AccrualFrequency.Monthly, "Monthly-24");
+        seed.LeaveTypes.Add(lt);
+        seed.LeaveLedgerEntries.Add(LegacyAccrual(tenantId, emp.Id, lt.Id, 24m));
+        await seed.SaveChangesAsync();
+        return emp.Id;
+    }
+
+    // ── (6) CSV: content type, non-empty, header row, and the seeded over-credit figure appear ──────────────
+    [Fact]
+    public async Task Export_Csv_HasHeaderAndOverCreditFigure_OnPostgres()
+    {
+        var tenantId = Guid.NewGuid();
+        await using (var mig = CreateContext(tenantId)) await mig.Database.MigrateAsync();
+        await SeedOneOverCreditedMonthlyAsync(tenantId, "acme", "M-1");
+
+        await using var check = CreateContext(tenantId);
+        var result = await BuildService(check, tenantId)
+            .ExportAccrualOverCreditExposureAsync(new DateOnly(2026, 6, 15), "csv");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ContentType.Should().Be("text/csv");
+        result.Value.FileName.Should().Contain("2026-06-15"); // as-of date embedded → self-describing.
+        result.Value.FileContent.Should().NotBeEmpty();
+
+        var text = System.Text.Encoding.UTF8.GetString(result.Value.FileContent);
+        text.Should().Contain("Over-Credited Days");        // human-readable header row present.
+        text.Should().Contain("As of date,2026-06-15");     // as-of date inside the file.
+        text.Should().Contain("M-1");                       // the affected employee.
+        text.Should().Contain("12");                        // its over-credited figure.
+    }
+
+    // ── (7) XLSX: content type + a real (PK-magic) workbook ─────────────────────────────────────────────────
+    [Fact]
+    public async Task Export_Xlsx_IsNonEmptyWorkbook_OnPostgres()
+    {
+        var tenantId = Guid.NewGuid();
+        await using (var mig = CreateContext(tenantId)) await mig.Database.MigrateAsync();
+        await SeedOneOverCreditedMonthlyAsync(tenantId, "acme", "X-1");
+
+        await using var check = CreateContext(tenantId);
+        var result = await BuildService(check, tenantId)
+            .ExportAccrualOverCreditExposureAsync(new DateOnly(2026, 6, 15), "xlsx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ContentType.Should()
+            .Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        result.Value.FileContent.Should().NotBeEmpty();
+        // XLSX is a zip → first two bytes are the "PK" magic. Sufficient without deep-parsing.
+        result.Value.FileContent[0].Should().Be((byte)'P');
+        result.Value.FileContent[1].Should().Be((byte)'K');
+    }
+
+    // ── (8) An unsupported format ⇒ 400 invalid_format ──────────────────────────────────────────────────────
+    [Fact]
+    public async Task Export_UnsupportedFormat_Fails_WithInvalidFormatCode_OnPostgres()
+    {
+        var tenantId = Guid.NewGuid();
+        await using (var mig = CreateContext(tenantId)) await mig.Database.MigrateAsync();
+
+        await using var check = CreateContext(tenantId);
+        var result = await BuildService(check, tenantId)
+            .ExportAccrualOverCreditExposureAsync(new DateOnly(2026, 6, 15), "pdf");
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("invalid_format");
+    }
 }

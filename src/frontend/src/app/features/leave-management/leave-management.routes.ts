@@ -42,6 +42,18 @@ export const LEAVE_MANAGEMENT_ROUTES: Routes = [
         (m) => m.CarryForwardPreviewComponent
       ),
   },
+  {
+    // BUG-291: Accrual over-credit exposure — READ-ONLY remediation tooling.
+    // Registered under 'leave-types' so it inherits the same role guard
+    // (Tenant Admin / HR Officer) as the other leave-config screens; that guard
+    // is the FE surface of the backend's Leave.ConfigurePolicy gate on the
+    // endpoint this screen consumes. No new permission plumbing is introduced.
+    path: 'accrual-over-credit-exposure',
+    loadComponent: () =>
+      import(
+        './components/accrual-over-credit-exposure/accrual-over-credit-exposure.component'
+      ).then((m) => m.AccrualOverCreditExposureComponent),
+  },
 ];
 
 /**

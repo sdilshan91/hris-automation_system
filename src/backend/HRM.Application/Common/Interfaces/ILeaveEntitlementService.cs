@@ -99,6 +99,18 @@ public interface ILeaveEntitlementService
         DateOnly asOfDate,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// BUG-291 exposure report — spreadsheet export variant (READ-ONLY). Renders the SAME rows as
+    /// <see cref="GetAccrualOverCreditExposureAsync"/> to CSV or XLSX for Finance to work case-by-case. The
+    /// as-of date is embedded in the file (headers + filename) so a saved sheet is self-describing. Reuses the
+    /// Performance <see cref="Features.Performance.DTOs.PerformanceExportFile"/> download shape. An unsupported
+    /// <paramref name="format"/> fails with <c>invalid_format</c> (400). Tenant-scoped like its JSON sibling.
+    /// </summary>
+    Task<Result<Features.Performance.DTOs.PerformanceExportFile>> ExportAccrualOverCreditExposureAsync(
+        DateOnly asOfDate,
+        string? format,
+        CancellationToken cancellationToken = default);
+
     // ── Accrual Processing ─────────────────────────────────────────
 
     /// <summary>

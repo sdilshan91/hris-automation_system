@@ -1,8 +1,12 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
+using ClosedXML.Excel;
 using HRM.Domain.Leave;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.LeaveEntitlements.DTOs;
+using HRM.Application.Features.Performance.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -1313,4 +1317,109 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
     private Task<int> ResolveFiscalYearStartMonthAsync(CancellationToken cancellationToken)
         => _leaveYearResolver.GetStartMonthAsync(cancellationToken);
 
+    // ── BUG-291 exposure report — spreadsheet export (READ-ONLY) ───────────────────────────────────────────
+    // Additive: renders the SAME rows GetAccrualOverCreditExposureAsync returns to CSV/XLSX for Finance to work
+    // case-by-case. Reuses the Performance ClosedXML/CSV idiom (RecommendationService.ExportSummaryAsync) and
+    // the PerformanceExportFile download shape. The as-of date is embedded (headers + filename) so a saved
+    // spreadsheet is self-describing — a stale, undated export is how remediation numbers get misapplied.
+
+    public async Task<Result<PerformanceExportFile>> ExportAccrualOverCreditExposureAsync(
+        DateOnly asOfDate,
+        string? format,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = (format ?? "csv").Trim().ToLowerInvariant();
+        if (normalized is not ("csv" or "xlsx"))
+            return Result<PerformanceExportFile>.Failure(
+                "Export format must be one of csv, xlsx.", 400, "invalid_format");
+
+        var report = await GetAccrualOverCreditExposureAsync(asOfDate, cancellationToken);
+        if (report.IsFailure)
+            return Result<PerformanceExportFile>.Failure(
+                report.Error!, report.StatusCode ?? 400, report.ErrorCode);
+
+        var dto = report.Value!;
+        var stamp = dto.AsOfDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var (content, fileName, contentType) = normalized switch
+        {
+            "xlsx" => (RenderExposureXlsx(dto), $"accrual-over-credit-exposure-{stamp}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            _ => (RenderExposureCsv(dto), $"accrual-over-credit-exposure-{stamp}.csv", "text/csv"),
+        };
+
+        return Result<PerformanceExportFile>.Success(new PerformanceExportFile(content, fileName, contentType));
+    }
+
+    // Human-readable headers for a Finance recipient (not property names).
+    private static readonly string[] ExposureHeaders =
+    [
+        "Employee No", "Employee Name", "Leave Type", "Leave Year", "Accrual Frequency",
+        "Credited Days", "Should Have Accrued Days", "Over-Credited Days", "Employee Active",
+    ];
+
+    private static byte[] RenderExposureCsv(AccrualOverCreditExposureReportDto dto)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Accrual Over-Credit Exposure (BUG-291)");
+        sb.AppendLine($"As of date,{dto.AsOfDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}");
+        sb.AppendLine($"Leave year,{dto.LeaveYear}");
+        sb.AppendLine();
+        sb.AppendLine(string.Join(",", ExposureHeaders));
+        foreach (var r in dto.Rows)
+        {
+            sb.AppendLine(string.Join(",",
+                Csv(r.EmployeeNo),
+                Csv(r.EmployeeName),
+                Csv(r.LeaveTypeName),
+                r.LeaveYear.ToString(CultureInfo.InvariantCulture),
+                Csv(r.AccrualFrequency),
+                r.CreditedDays.ToString(CultureInfo.InvariantCulture),
+                r.ShouldHaveAccruedDays.ToString(CultureInfo.InvariantCulture),
+                r.OverCreditedDays.ToString(CultureInfo.InvariantCulture),
+                r.IsEmployeeActive ? "Yes" : "No"));
+        }
+        return Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
+    private static byte[] RenderExposureXlsx(AccrualOverCreditExposureReportDto dto)
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Exposure");
+        var row = 1;
+        ws.Cell(row, 1).Value = "Accrual Over-Credit Exposure (BUG-291)"; row++;
+        ws.Cell(row, 1).Value = "As of date";
+        ws.Cell(row, 2).Value = dto.AsOfDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture); row++;
+        ws.Cell(row, 1).Value = "Leave year"; ws.Cell(row, 2).Value = dto.LeaveYear; row += 2;
+
+        for (var c = 0; c < ExposureHeaders.Length; c++)
+            ws.Cell(row, c + 1).Value = ExposureHeaders[c];
+        row++;
+
+        foreach (var r in dto.Rows)
+        {
+            ws.Cell(row, 1).Value = r.EmployeeNo;
+            ws.Cell(row, 2).Value = r.EmployeeName;
+            ws.Cell(row, 3).Value = r.LeaveTypeName;
+            ws.Cell(row, 4).Value = r.LeaveYear;
+            ws.Cell(row, 5).Value = r.AccrualFrequency;
+            ws.Cell(row, 6).Value = r.CreditedDays;
+            ws.Cell(row, 7).Value = r.ShouldHaveAccruedDays;
+            ws.Cell(row, 8).Value = r.OverCreditedDays;
+            ws.Cell(row, 9).Value = r.IsEmployeeActive ? "Yes" : "No";
+            row++;
+        }
+
+        using var ms = new MemoryStream();
+        workbook.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    /// <summary>Minimal RFC-4180 CSV field escaping (mirrors RecommendationService.Csv).</summary>
+    private static string Csv(string? value)
+    {
+        value ??= string.Empty;
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
+    }
 }

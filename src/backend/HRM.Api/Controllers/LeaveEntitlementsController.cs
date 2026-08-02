@@ -269,14 +269,34 @@ public sealed class LeaveEntitlementsController : ControllerBase
     /// this controller. A true system/admin-context route was not used because this report runs in the RESOLVED
     /// tenant under the normal query filters (system routes run tenant-less with IgnoreQueryFilters); this is
     /// the admin gate that is both elevated and tenant-scoped.</para>
+    ///
+    /// <para><b>Export.</b> Pass <c>?format=csv|xlsx</c> to download the same affected population as a
+    /// spreadsheet for Finance to work case-by-case (remediation tooling, not a permanent report). No
+    /// <c>format</c> returns JSON exactly as before (additive). An unsupported value returns 400 with
+    /// <c>invalid_format</c>. Adding it to THIS route (rather than a second one) means the existing
+    /// <c>Leave.ConfigurePolicy</c> gate applies by construction — the pattern used by the Performance exports.</para>
     /// </summary>
     [HttpGet("accrual-over-credit-exposure")]
     [RequirePermission("Leave.ConfigurePolicy")]
     [ProducesResponseType(typeof(ApiResponse<AccrualOverCreditExposureReportDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status200OK)] // csv/xlsx file download
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetAccrualOverCreditExposure(
-        [FromQuery] DateOnly asOfDate, CancellationToken cancellationToken)
+        [FromQuery] DateOnly asOfDate,
+        [FromQuery] string? format,
+        CancellationToken cancellationToken)
     {
+        if (!string.IsNullOrWhiteSpace(format))
+        {
+            var export = await _mediator.Send(
+                new ExportAccrualOverCreditExposureQuery(asOfDate, format), cancellationToken);
+
+            if (export.IsFailure)
+                return StatusCode(export.StatusCode ?? 400, ApiResponse.Fail(export.Error!, export.ErrorCode));
+
+            return File(export.Value!.FileContent, export.Value.ContentType, export.Value.FileName);
+        }
+
         var result = await _mediator.Send(
             new GetAccrualOverCreditExposureQuery(asOfDate), cancellationToken);
 
