@@ -725,6 +725,15 @@ public static class DependencyInjection
         services.AddScoped<IExportCleanupService, ExportCleanupService>();
         services.AddScoped<IDataExportNotificationService, RealDataExportNotificationService>();  // US-NTF-006 Phase 4
 
+        // TC-ADM-002-14/-15/-16: read-only GlitchTip metrics for the monitoring dashboard. Typed HttpClient so
+        // it gets the standard handler lifetime/pooling. Inert unless GlitchTip:ApiToken + Organization +
+        // ApiBaseUrl are all configured — the DSN alone is an INGEST credential and cannot read anything back.
+        services.AddHttpClient<IGlitchTipMetricsClient, GlitchTipMetricsClient>(c =>
+        {
+            // A monitoring read must never hang the dashboard behind an unresponsive optional component.
+            c.Timeout = TimeSpan.FromSeconds(5);
+        });
+
         // US-ADM-002: System Admin platform monitoring (cross-tenant aggregation + DB/Redis/Hangfire signals).
         // Runs in the system/admin context with IgnoreQueryFilters. IJobQueueMonitor (the Hangfire monitoring
         // seam) is registered in HRM.Api alongside Hangfire so the service does not hard-depend on a running
