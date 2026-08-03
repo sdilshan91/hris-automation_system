@@ -212,6 +212,20 @@ public static class PermissionCatalog
     {
         public const string View = "Recruitment.View";
         public const string Manage = "Recruitment.Manage";
+
+        /// <summary>
+        /// ISSUE-123 — RESERVED, DELIBERATELY NOT ENFORCED. Do not add a check on it.
+        ///
+        /// <para>Offer approval is authorized by the workflow runtime, per step and per designated approver
+        /// (<c>WorkflowRuntimeService.IsAuthorizedApproverAsync</c> → 403 <c>not_step_approver</c>). That is
+        /// strictly finer-grained than a role permission. A coarse gate on this constant was added in PR #451 and
+        /// REVERTED: it is granted only to Tenant Owner / Tenant Admin, so it 403'd the line managers, department
+        /// heads and named users tenants legitimately designate as offer approvers.</para>
+        ///
+        /// <para>It is kept in the catalog rather than deleted because <c>UpdateRoleValidator</c> rejects any
+        /// permission not in the catalog — removing it would fail role edits for every existing tenant whose
+        /// seeded Tenant Admin role still carries the string. Retiring it needs a data-cleanup migration first.</para>
+        /// </summary>
         public const string ApproveOffer = "Recruitment.ApproveOffer";
     }
 
