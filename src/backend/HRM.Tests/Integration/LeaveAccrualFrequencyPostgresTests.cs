@@ -403,4 +403,124 @@ public sealed class LeaveAccrualFrequencyPostgresTests : IAsyncLifetime
                 "the joiner+FTE discount is applied ONCE (via proratedAnnual) and spread across periods — not double-discounted");
         }
     }
+
+    // ── (5) ISSUE-284: the all-types run flushes ONCE PER EMPLOYEE — ledger must be unchanged ────────────
+    //
+    // ProcessSingleAccrualAsync used to SaveChanges per (employee × leave-type); it now stages rows and the
+    // caller flushes once per employee. That is only safe because the two reads inside it — the credited-period
+    // guard and the running-balance read — are scoped to (employee, leaveType, leaveYear), and EF queries do
+    // not observe pending inserts. This arm drives the case the change actually affects: the ALL-TYPES run
+    // (leaveTypeId null) over MULTIPLE employees and MULTIPLE frequencies, so rows for several pairs are in
+    // flight simultaneously before any flush.
+    //
+    // It asserts per-pair exactness, not just totals: a batching bug that attributed one pair's rows to another,
+    // dropped a pair, or corrupted a running balance would still leave the grand total plausible.
+    [Fact]
+    public async Task AllTypesRun_MultipleEmployeesAndFrequencies_LedgerIsExactPerPair_OnPostgres()
+    {
+        await using (var mig = CreateContext()) await mig.Database.MigrateAsync();
+
+        Guid empA, empB, empC, monthlyId, quarterlyId, yearlyId;
+        await using (var seed = CreateContext())
+        {
+            var (deptId, jobId) = await SeedTenantScaffoldAsync(seed);
+            var a = NewEmployee(_tenantId, deptId, jobId, "PG-A", new DateTime(2019, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            var b = NewEmployee(_tenantId, deptId, jobId, "PG-B", new DateTime(2019, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            // Half-FTE, so a cross-employee attribution bug shows up as a wrong AMOUNT, not just a wrong count.
+            var c = NewEmployee(_tenantId, deptId, jobId, "PG-C", new DateTime(2019, 1, 1, 0, 0, 0, DateTimeKind.Utc), fte: 0.5m);
+            empA = a.Id; empB = b.Id; empC = c.Id;
+            seed.Employees.AddRange(a, b, c);
+
+            var m = NewLeaveType(_tenantId, annual: 24m, AccrualFrequency.Monthly, "M-24");
+            var q = NewLeaveType(_tenantId, annual: 12m, AccrualFrequency.Quarterly, "Q-12");
+            var y = NewLeaveType(_tenantId, annual: 10m, AccrualFrequency.Yearly, "Y-10");
+            monthlyId = m.Id; quarterlyId = q.Id; yearlyId = y.Id;
+            seed.LeaveTypes.AddRange(m, q, y);
+            await seed.SaveChangesAsync();
+        }
+
+        // Mid-June: 6 monthly periods elapsed, 2 quarterly, 1 yearly.
+        var clock = new MutableClock(new DateTimeOffset(2026, 6, 15, 0, 0, 0, TimeSpan.Zero));
+
+        await using (var run = CreateContext())
+            await BuildService(run, clock).ProcessAccrualsAsync(2026, leaveTypeId: null);
+
+        await using (var verify = CreateContext())
+        {
+            foreach (var emp in new[] { empA, empB })
+            {
+                var m = await AccrualSummaryAsync(verify, emp, monthlyId);
+                m.Count.Should().Be(6, "six monthly periods have elapsed by mid-June");
+                m.Periods.Should().Equal([1, 2, 3, 4, 5, 6]);
+                m.Sum.Should().Be(12.00m, "6/12 of a 24-day entitlement");
+
+                var q = await AccrualSummaryAsync(verify, emp, quarterlyId);
+                q.Count.Should().Be(2);
+                q.Periods.Should().Equal([1, 2]);
+                q.Sum.Should().Be(6.00m, "2/4 of a 12-day entitlement");
+
+                var y = await AccrualSummaryAsync(verify, emp, yearlyId);
+                y.Count.Should().Be(1, "Yearly resolves to a single period");
+                y.Sum.Should().Be(10.00m);
+            }
+
+            // The half-FTE employee must be pro-rated — proving rows were attributed to the right employee.
+            var cm = await AccrualSummaryAsync(verify, empC, monthlyId);
+            cm.Count.Should().Be(6);
+            cm.Sum.Should().Be(6.00m, "half FTE of 6/12 of 24 days — not employee A's figure");
+        }
+
+        // Re-running must add NOTHING: the period guard still holds across the deferred flush.
+        await using (var rerun = CreateContext())
+            await BuildService(rerun, clock).ProcessAccrualsAsync(2026, leaveTypeId: null);
+
+        await using (var verify2 = CreateContext())
+        {
+            (await AccrualSummaryAsync(verify2, empA, monthlyId)).Count.Should().Be(6, "no duplicate periods");
+            (await AccrualSummaryAsync(verify2, empC, monthlyId)).Sum.Should().Be(6.00m);
+            (await AccrualSummaryAsync(verify2, empB, yearlyId)).Count.Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// ISSUE-284: the running balance is read from the DB per pair, so a deferred flush must still leave each
+    /// pair's BalanceAfter monotonically correct. Checks the monthly chain explicitly — a stale balance read
+    /// would show up as a flat or repeating BalanceAfter across periods.
+    /// </summary>
+    [Fact]
+    public async Task AllTypesRun_BalanceAfterChainIsCorrect_PerPair_OnPostgres()
+    {
+        await using (var mig = CreateContext()) await mig.Database.MigrateAsync();
+
+        Guid empId, monthlyId;
+        await using (var seed = CreateContext())
+        {
+            var (deptId, jobId) = await SeedTenantScaffoldAsync(seed);
+            var e = NewEmployee(_tenantId, deptId, jobId, "PG-BAL", new DateTime(2019, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+            empId = e.Id;
+            seed.Employees.Add(e);
+            var m = NewLeaveType(_tenantId, annual: 24m, AccrualFrequency.Monthly, "M-BAL");
+            var other = NewLeaveType(_tenantId, annual: 12m, AccrualFrequency.Quarterly, "Q-BAL");
+            monthlyId = m.Id;
+            seed.LeaveTypes.AddRange(m, other);
+            await seed.SaveChangesAsync();
+        }
+
+        var clock = new MutableClock(new DateTimeOffset(2026, 4, 15, 0, 0, 0, TimeSpan.Zero));
+        await using (var run = CreateContext())
+            await BuildService(run, clock).ProcessAccrualsAsync(2026, leaveTypeId: null);
+
+        await using (var verify = CreateContext())
+        {
+            var rows = await verify.LeaveLedgerEntries.AsNoTracking()
+                .Where(l => l.EmployeeId == empId && l.LeaveTypeId == monthlyId
+                            && l.EntryType == LedgerEntryType.Accrual)
+                .OrderBy(l => l.AccrualPeriod)
+                .ToListAsync();
+
+            rows.Should().HaveCount(4);
+            rows.Select(r => r.BalanceAfter).Should().Equal([2.00m, 4.00m, 6.00m, 8.00m],
+                "each period's BalanceAfter must accumulate — a stale read would repeat or flatten");
+        }
+    }
 }
