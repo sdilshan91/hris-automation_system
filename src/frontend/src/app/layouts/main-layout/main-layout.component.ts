@@ -34,6 +34,14 @@ interface INavItem {
   /** US-ADM-009: System-Admin-console items gate on role, not a tenant permission. */
   role?: string;
   /**
+   * ISSUE-214: "any-of" TENANT-role gate, for routes whose `canActivate` is a
+   * `roleGuard([...])` rather than a permission check (e.g. notification templates,
+   * guarded on Tenant Admin / Tenant Owner). Gating those on a permission proxy would
+   * let nav visibility drift from route access — the ISSUE-210 defect. Distinct from
+   * `role`, which selects the System-Admin persona split.
+   */
+  tenantRoles?: string[];
+  /**
    * US-ADM-012 AC-2: canonical module key this item belongs to (e.g. 'Payroll').
    * When set, the item is hidden if the tenant's plan does not entitle that module
    * (see isModuleEntitled — fails OPEN for legacy/unknown module lists). Untagged
@@ -1046,6 +1054,23 @@ export class MainLayoutComponent implements OnInit {
       permission: 'Tenant.ExportData',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 1a.75.75 0 0 1 .75.75v6.59l1.95-2.1a.75.75 0 1 1 1.1 1.02l-3.25 3.5a.75.75 0 0 1-1.1 0L6.2 7.26a.75.75 0 1 1 1.1-1.02l1.95 2.1V1.75A.75.75 0 0 1 10 1ZM5.273 11.5a.75.75 0 0 1 .727.927l-.6 2.4a.5.5 0 0 0 .485.673h8.23a.5.5 0 0 0 .485-.673l-.6-2.4a.75.75 0 0 1 1.454-.364l.6 2.4A2 2 0 0 1 14.515 17H6.27a2 2 0 0 1-1.94-2.48l.6-2.4a.75.75 0 0 1 .343-.62Z" clip-rule="evenodd"/></svg>`,
     },
+    {
+      // ISSUE-214 / US-NTF-002: tenant-admin notification-template editor. The page shipped
+      // reachable by URL only — no nav entry anywhere — so a built feature was effectively
+      // invisible. Role gate mirrors the route's roleGuard(['Tenant Admin','Tenant Owner']).
+      label: 'Notification Templates',
+      route: '/admin/notification-templates',
+      tenantRoles: ['Tenant Admin', 'Tenant Owner'],
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4Zm3 1.75a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 6 5.75Zm0 3.5A.75.75 0 0 1 6.75 8.5h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 6 9.25Zm0 3.5a.75.75 0 0 1 .75-.75h3.5a.75.75 0 0 1 0 1.5h-3.5a.75.75 0 0 1-.75-.75Z"/></svg>`,
+    },
+    {
+      // ISSUE-214 / US-NTF-003: personal per-tenant notification preferences. Same problem —
+      // URL-only. No gate: the route carries no roleGuard because every authenticated user
+      // manages their OWN preferences (the backend scopes to identity + membership, BR-4).
+      label: 'Notification Preferences',
+      route: '/profile/notification-preferences',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a6 6 0 0 0-6 6v2.586l-.707.707A1 1 0 0 0 4 13h12a1 1 0 0 0 .707-1.707L16 10.586V8a6 6 0 0 0-6-6ZM8.05 15a2 2 0 0 0 3.9 0h-3.9Z"/></svg>`,
+    },
     // ─── System Admin Console (platform persona only; role-gated, not permission) ──
     {
       // US-ADM-001: provision + manage tenants. SystemAdmin only (BR-1).
@@ -1087,6 +1112,10 @@ export class MainLayoutComponent implements OnInit {
       // isModuleEntitled fails OPEN, so this only ever hides an item when the tenant
       // has an authoritative canonical module list that omits this module.
       if (item.module && !isModuleEntitled(item.module, this.tenantService.enabledModules())) {
+        return false;
+      }
+      // ISSUE-214: mirror a route's roleGuard so nav visibility == route access.
+      if (item.tenantRoles && !item.tenantRoles.some((r) => this.authService.hasRole(r))) {
         return false;
       }
       if (!item.permission) {

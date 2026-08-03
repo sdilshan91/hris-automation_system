@@ -2555,6 +2555,10 @@ public sealed class AuthService : IAuthService
         }
 
         // 2) No match → just-in-time provision (gated by the domain allow-list decided in the protocol layer).
+        // ISSUE-334: track whether the USER row itself was JIT-created, so the audit event can distinguish a
+        // brand-new identity from an existing user merely gaining a membership. Those are very different events
+        // to an auditor — the first creates an account out of an IdP assertion.
+        var jitCreatedUser = false;
         if (user is null)
         {
             if (!identity.JitAllowed)
@@ -2563,6 +2567,7 @@ public sealed class AuthService : IAuthService
                 return Result<LoginResponse>.Failure("No HRM account is linked to this Microsoft identity.", 403);
             }
 
+            jitCreatedUser = true;
             user = new User
             {
                 Id = BaseEntity.NewUuidV7(),
@@ -2640,6 +2645,27 @@ public sealed class AuthService : IAuthService
                 .IgnoreQueryFilters()
                 .Include(ut => ut.UserTenantRoles).ThenInclude(utr => utr.Role).ThenInclude(r => r.RolePermissions)
                 .FirstAsync(ut => ut.Id == userTenant.Id, cancellationToken);
+
+            // ISSUE-334 (US-AUTH-014 AC): auto-provisioning must be distinguishable from an ordinary SSO login
+            // in the audit trail. Without this the ONLY record was the Serilog line below, which the in-app
+            // audit-search surface cannot read — so an account created straight out of an IdP assertion looked
+            // identical to a normal sign-in. Written AFTER the membership commits, so the event never claims a
+            // provisioning that did not happen.
+            await WriteAuditLogWithDetailAsync(
+                user.Id,
+                "sso_jit_provisioned",
+                identity.IpAddress,
+                identity.UserAgent,
+                new
+                {
+                    TenantId = tenant.Id,
+                    Email = email,
+                    Role = identity.DefaultRole,
+                    CreatedUser = jitCreatedUser,
+                    IdentityProvider = "entra",
+                },
+                cancellationToken,
+                tenant.Id);
 
             _logger.LogInformation("SSO JIT-provisioned user {UserId} into tenant {TenantId} as {Role}.",
                 user.Id, tenant.Id, identity.DefaultRole);
