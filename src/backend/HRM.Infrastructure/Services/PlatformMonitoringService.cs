@@ -47,6 +47,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     private readonly IJobQueueMonitor _jobQueue;
     private readonly IConfiguration _configuration;
     private readonly IConnectionMultiplexer? _redis;
+    private readonly IGlitchTipMetricsClient? _glitchTip;
     private readonly ILogger<PlatformMonitoringService> _logger;
 
     public PlatformMonitoringService(
@@ -57,13 +58,17 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         ILogger<PlatformMonitoringService> logger,
         // Optional: only registered by the API host when a Redis connection string is configured (Redis is
         // optional here). Null ⇒ no Redis wired ⇒ NotConfigured; non-null ⇒ a real PING probe.
-        IConnectionMultiplexer? redis = null)
+        IConnectionMultiplexer? redis = null,
+        // TC-ADM-002-14/-15/-16: optional so the existing monitoring tests keep compiling; DI always supplies
+        // it. Null (or unconfigured) => the error fields stay empty/null, i.e. honestly unavailable.
+        IGlitchTipMetricsClient? glitchTip = null)
     {
         _db = db;
         _currentUser = currentUser;
         _jobQueue = jobQueue;
         _configuration = configuration;
         _redis = redis;
+        _glitchTip = glitchTip;
         _logger = logger;
     }
 
@@ -113,6 +118,20 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
 
         var overall = MonitoringClassifiers.RollUpHealth(databaseHealth, redisHealth, jobQueue.Failed);
 
+        // TC-ADM-002-14: 24h error volume, platform-wide. NOTE: this is a COUNT, not a percentage — a true
+        // rate needs a request-total denominator, which arrives with the option-A latency meter. Reported here
+        // rather than left null because an absolute error count is already actionable, and inventing a
+        // denominator would be worse than reporting the number we actually have.
+        // Collected and logged now so the wiring is proven end-to-end; NOT surfaced as a rate until a
+        // denominator exists (see the AggregateErrorRatePercent note below).
+        if (_glitchTip is { IsConfigured: true })
+        {
+            var now = DateTime.UtcNow;
+            var trend = await _glitchTip.GetErrorTrendAsync(null, now.AddHours(-24), now, cancellationToken);
+            if (trend.Count > 0)
+                _logger.LogDebug("[Monitoring] GlitchTip 24h error count = {Count}", trend.Sum(p => p.Count));
+        }
+
         var dto = new PlatformHealthDto(
             OverallStatus: overall,
             ActiveTenantCount: activeTenantCount,
@@ -121,8 +140,13 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             DatabaseHealth: databaseHealth,
             RedisHealth: redisHealth,
             JobQueue: jobQueue,
-            AggregateErrorRatePercent: null,                       // DEFERRED — no metrics store
-            P95LatencyMs: null,                                    // DEFERRED — no metrics store
+            // TC-ADM-002-14: STILL NULL, deliberately. GlitchTip gives us the error COUNT over 24h, but a
+            // RATE needs a request-total denominator, which does not exist until the option-A latency/volume
+            // meter lands. Putting a count in a field named "...Percent" would render as a percentage in the
+            // UI and be read as one — a mislabelled number is worse than an absent one. The count IS collected
+            // (see errorCount24h) and is ready to divide the moment the denominator exists.
+            AggregateErrorRatePercent: null,
+            P95LatencyMs: null,                                    // STILL DEFERRED — GlitchTip exposes no duration API
             MetricsStatus: MonitoringStatus.RequiresObservabilityPipeline,
             GeneratedAtUtc: DateTime.UtcNow);
 
@@ -301,6 +325,12 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         // TC-ADM-002-17: uptime from the retained probe history. Stays NULL when there is no history — the TC
         // forbids a fabricated figure, and "no data" is a different statement from "100% up".
         var slaUptimePercent = await ComputeSlaUptimePercentAsync(nowUtc, cancellationToken);
+
+        // TC-ADM-002-15/-16: fail-soft by contract — an unreachable or unconfigured GlitchTip yields an empty
+        // list, which the DTO carries as "not available" rather than a reassuring zero.
+        var topErrors = _glitchTip is null
+            ? Array.Empty<object>()
+            : (await _glitchTip.GetTopErrorsAsync(tenantId, 10, cancellationToken)).Cast<object>().ToArray();
         var emailGauge = BuildEmailGauge(
             emailsSent, (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
         var apiGauge = BuildApiCallsGauge(
@@ -339,9 +369,11 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             LastActivityAt: lastActivityAt,
             EmployeeUsage: employeeGauge,
             JobQueue: _jobQueue.GetSnapshot(),
-            ErrorRateTrend24h: Array.Empty<object>(),              // DEFERRED — no metrics store
-            LatencyTrend24h: Array.Empty<object>(),                // DEFERRED — no metrics store
-            TopErrors: Array.Empty<object>(),                      // DEFERRED — no metrics store
+            // TC-ADM-002-16: top errors come from GlitchTip, filtered by the tenant_id tag (verified to
+            // DISCRIMINATE, not merely return 200). Empty = unavailable, NOT "zero errors".
+            ErrorRateTrend24h: Array.Empty<object>(),              // per-tenant trend unavailable — see note in the client
+            LatencyTrend24h: Array.Empty<object>(),                // STILL DEFERRED — GlitchTip has no duration API
+            TopErrors: topErrors,
             SlaUptimePercent: slaUptimePercent,                    // TC-ADM-002-17 — null until probes exist
             MetricsStatus: MonitoringStatus.RequiresObservabilityPipeline,
             GeneratedAtUtc: DateTime.UtcNow);
