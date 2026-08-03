@@ -132,6 +132,16 @@
     window, and comparison against the plan's `SlaTier`. **Design caution:** `SlaTier` is free text (`string`, max 50,
     no enum), so a tier→threshold map needs a documented default and must not silently treat an unknown tier as passing.
     **Hard requirement from the TC:** with no probe history the field must stay null — never a fabricated 100%.
+  - **▶ GlitchTip-route validation, attempted 2026-08-04 — PARTIAL, and it needs an ops step before it can even be
+    tested.** The instance is up (`:8000` → 200) and DOES expose the Sentry-compatible API: `/api/0/organizations/`
+    and `/api/0/projects/` return **401, not 404**, so the endpoints exist and are auth-gated. **But we hold the
+    wrong credential.** `GlitchTip:Dsn` is an *ingest* (write-only) credential embedded in the app; reading counts
+    back needs an **API auth token**, which is a different credential created in the GlitchTip UI and does not
+    exist yet. **Next step is therefore ops, not code:** create an org/project auth token, store it beside the DSN
+    in user-secrets (`GlitchTip:ApiToken`, Critical Rule #6 — never in the committed file), then confirm whether
+    GlitchTip implements the *stats* endpoints (it is a partial Sentry reimplementation: ingest is complete, the
+    read API is a subset, so time-windowed event counts must be verified, not assumed). Until that returns real
+    numbers, **do not build against it and do not stand up LGTM** — either would be speculative.
   - **TC-ADM-002-14 / -15 / -16 (aggregate error-rate %, P95 latency, 24h trend + top-errors) — genuinely blocked.**
     `AggregateErrorRatePercent` and `P95LatencyMs` are null pending a metrics store. Before standing up Grafana LGTM,
     validate whether error-rate and top-errors can be read from the **GlitchTip API** (already shipped, already

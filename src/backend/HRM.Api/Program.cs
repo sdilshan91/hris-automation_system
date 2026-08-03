@@ -480,6 +480,7 @@ try
     // /api/v1/system/encryption/reencrypt) + the weekly key-age watchdog (registered Cron.Weekly below).
     builder.Services.AddScoped<HRM.Api.Jobs.ReencryptFieldKeyJob>();
     builder.Services.AddScoped<HRM.Api.Jobs.EncryptionKeyAgeWatchdogJob>();
+    builder.Services.AddScoped<HRM.Api.Jobs.HealthProbeRecorderJob>();
 
     // ===== Polly (HTTP resilience for external service calls) =====
     builder.Services.AddHttpClient("ResilientClient")
@@ -899,6 +900,19 @@ try
             "encryption-key-age-watchdog",
             job => job.RunAsync(),
             Cron.Weekly);
+
+        // US-ADM-002 FR-7 / TC-ADM-002-17: records one readiness probe every 5 minutes into the system-scope
+        // health_probe table (and prunes past Monitoring:HealthProbeRetentionDays, default 90). This history is
+        // the ONLY basis for the dashboard's SLA uptime %; until rows accumulate the field stays null, which is
+        // the honest "Not available" state the TC requires rather than a fabricated 100%.
+        //
+        // 5 minutes = ~8 640 rows/month, trivial to store, and fine enough that a short outage moves the number:
+        // at a 30-day window one missed probe is ~0.012%, so a 99.9% tier breach (~43 min) is ~9 probes — clearly
+        // visible rather than lost to rounding.
+        recurringJobs.AddOrUpdate<HRM.Api.Jobs.HealthProbeRecorderJob>(
+            "health-probe-recorder",
+            job => job.RunAsync(CancellationToken.None),
+            "*/5 * * * *");
     }
 
     app.Run();
