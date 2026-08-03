@@ -142,7 +142,32 @@
     GlitchTip implements the *stats* endpoints (it is a partial Sentry reimplementation: ingest is complete, the
     read API is a subset, so time-windowed event counts must be verified, not assumed). Until that returns real
     numbers, **do not build against it and do not stand up LGTM** — either would be speculative.
-  - **TC-ADM-002-14 / -15 / -16 (aggregate error-rate %, P95 latency, 24h trend + top-errors) — genuinely blocked.**
+  - **✅ GlitchTip route VALIDATED END-TO-END 2026-08-04 — the error half needs NO metrics store.** With
+    `GlitchTip:ApiToken` now in user-secrets, all three questions are answered against the live instance:
+    **(1) stats_v2 works** — `GET /api/0/organizations/hrm/stats_v2/?category=error&start=&end=&field=sum(quantity)`
+    → 200 with **hourly `intervals`**; `category` accepts only `error|transaction`; `groupBy=project` → 200.
+    **(2) `/issues/` carries what the TCs need** — `count`, `firstSeen`, `lastSeen`, `level`, `title`, `project`,
+    `userCount`, plus a per-issue `stats` object keyed `{"24h": [...]}`.
+    **(3) ★ Tenant-tag filtering DISCRIMINATES — verified, not assumed.** `?query=tenant_id:<id>` is honoured:
+    a nonsense tenant returned **0** issues while an unfiltered call returned **6**. A 200 alone would have
+    proved nothing (an ignored filter also returns 200) — the discrimination test is what makes this safe to
+    build on. **⇒ TC-ADM-002-15, the top-errors half of -16, and the error-rate half of -14 are UNBLOCKED and
+    need only ordinary code. DO NOT stand up Grafana LGTM for them.**
+  - **⏸ Latency half (P95 in -14, 24h latency trend in -16) — the ONLY remaining dependency.** GlitchTip cannot
+    serve it: `category=transaction` returns *counts*, and the Sentry performance endpoints are absent
+    (`/events/?field=p95(transaction.duration)`, `/transactions/`, `/performance/` all **404**). Nor is the app
+    sending durations — no `TracesSampleRate`/`EnableTracing` anywhere. **Chosen approach (user-decided
+    2026-08-04): OPTION A — extend the EXISTING per-request meter, no new infrastructure.**
+    `ApiCallCounterMiddleware` already runs on every metered tenant request with an in-memory buffer and a
+    background flusher. Add duration buckets alongside the count → `tenant_latency_bucket` (tenant, hour,
+    bucket, count); buckets 5/10/25/50/100/250/500/1000/2500/5000/10000 ms; 30-day retention pruned by the
+    flusher; P95 interpolated from buckets; the hourly rows ARE the 24h trend. Rejected: Prometheus (a
+    `tenant_id` label on request-duration histograms is a cardinality problem, plus a new always-on stack) and
+    LGTM (three products where one would do). **NON-NEGOTIABLE on this hot path: fail-open by construction and
+    OFF the synchronous DB path, inheriting exactly what the call-counter already does — a meter must never be
+    able to take the API down. Needs a throwing-meter arm proving a request still succeeds.** No data ⇒ null.
+  - **TC-ADM-002-14 / -15 / -16 — NOT BUILT. No implementation exists for any of them.** The above removes the
+    blockers; it does not write the code.
     `AggregateErrorRatePercent` and `P95LatencyMs` are null pending a metrics store. Before standing up Grafana LGTM,
     validate whether error-rate and top-errors can be read from the **GlitchTip API** (already shipped, already
     tenant-tagged by `TenantTagSentryEventProcessor`) — that may remove the need entirely. P95 latency would still
