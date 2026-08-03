@@ -3,7 +3,6 @@ using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Recruitment.DTOs;
-using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Domain.Recruitment;
@@ -413,18 +412,18 @@ public sealed class OfferService : IOfferService
             return Result<OfferApprovalDecisionDto>.Failure(
                 "Offer approval workflow is not available.", 400, "workflow_unavailable");
 
-        // ISSUE-123 / BR-5: approving an offer is its OWN authority. The generic route into this method
-        // (WorkflowInstancesController -> DecideWorkflowInstanceCommand) gates on Tenant.*Workflows, which is a
-        // workflow-ADMINISTRATION permission — "may edit workflow definitions", not "may approve this offer".
-        // Recruitment.ApproveOffer was modelled and granted to the recruiter-approver role sets for exactly this
-        // decision but was enforced nowhere, so a workflow administrator with no recruitment authority could
-        // approve offers. Fail CLOSED: an absent principal is treated as holding no permissions.
-        if (_currentUser is null
-            || !_currentUser.Permissions.Contains(PermissionCatalog.Recruitment.ApproveOffer))
-        {
-            return Result<OfferApprovalDecisionDto>.Failure(
-                "You do not have permission to approve offers.", 403, "forbidden");
-        }
+        // ISSUE-123 — DELIBERATELY NO PERMISSION CHECK HERE. Do not add one.
+        //
+        // Authorization for this decision already lives in the workflow runtime, and it is STRICTER than any
+        // role permission could be: WorkflowRuntimeService.DecideAsync resolves the Pending step this caller is
+        // authorised to decide (IsAuthorizedApproverAsync — the resolved AssignedApproverUserId, which is how
+        // LineManager/DepartmentHead approvers land, or Role membership) and returns 403 `not_step_approver`
+        // otherwise. It answers "may THIS person approve THIS offer", per step.
+        //
+        // A coarse `Recruitment.ApproveOffer` gate was briefly added here (PR #451) and REVERTED: that permission
+        // is granted only to Tenant Owner and Tenant Admin, so it 403'd line managers, department heads and named
+        // users that a tenant had legitimately designated as the offer approver. Layering a role permission on top
+        // of a per-step approver check can only SUBTRACT correct access — it cannot add safety.
 
         var offer = await _dbContext.Offers.AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == offerId, cancellationToken);
