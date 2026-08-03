@@ -4551,7 +4551,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-197
 - **Type:** ISSUE (calculation/data — possibly missing employer-contribution config in seed; report's defining feature shows nothing)
 - **Severity:** LOW
-- **Status:** OPEN — **ROOT CAUSE CORRECTED 2026-08-03 (P1 reconciliation).** The filed cause ("BR-6 employer contributions not reflected") is wrong and would send a fixer to the wrong place. They *are* computed — at `PayrollReportService.cs:711-715`, but as a 1:1 match of the employee's **Statutory salary components**, a proxy. Meanwhile `StatutoryDeductionResolver.cs:149-162` already computes the **real** employer EPF/ETF legs and exposes `TotalEmployerContributions`, which the CTC report never reads. So the column is 0.00 for any employee whose statutory items are not modelled as salary components. **Fix direction: source the column from `IStatutoryDeductionResolver`, not from component type.**
+- **Status:** OPEN — **SCOPED 2026-08-03 (P3): the honest fix needs a BATCH statutory-resolver API first.** Sourcing this column from `IStatutoryDeductionResolver` (the correct fix) cannot be done per-employee: the resolver has **no caching** — an explicit NFR-1 deferral — and re-queries `StatutoryRules` on every call, so a CTC report over 5k employees would fire 5k rule queries, introducing the very N+1 class [[ISSUE-284]] exists to fix. The other route — reimplementing rule-selection and EPF/ETF assembly inside the report — would create a SECOND divergent copy of statutory money math, the failure class behind [[BUG-291]], [[BUG-293]] and DF-62-parity. **Prerequisite:** add a batch overload (load rules once, compute many) reusing the resolver's existing internals, then have the report call it once. Deliberately left for a focused session per the standing rule on money-path work. **ROOT CAUSE CORRECTED 2026-08-03 (P1 reconciliation).** The filed cause ("BR-6 employer contributions not reflected") is wrong and would send a fixer to the wrong place. They *are* computed — at `PayrollReportService.cs:711-715`, but as a 1:1 match of the employee's **Statutory salary components**, a proxy. Meanwhile `StatutoryDeductionResolver.cs:149-162` already computes the **real** employer EPF/ETF legs and exposes `TotalEmployerContributions`, which the CTC report never reads. So the column is 0.00 for any employee whose statutory items are not modelled as salary components. **Fix direction: source the column from `IStatutoryDeductionResolver`, not from component type.**
 - **Layer:** BE / DATA
 - **Module / US / TC:** Reports & Analytics / US-RPT-003 / TC-RPT-003-08
 - **Title:** CTC report's "Employer Contributions (est.)" column is 0.00 for every row and the TOTAL; Annual CTC == Annual Gross (no employer add-on)
@@ -5132,7 +5132,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-214 — Notification Templates (US-NTF-002) and Notification Preferences (US-NTF-003) pages are orphaned from in-app navigation (URL-only, no nav/Settings/profile entry point)
 - **Type:** ISSUE
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (P3, 2026-08-03) — both pages now have sidebar entries. **Notification Templates** is gated by a new `INavItem.tenantRoles` any-of role gate mirroring the route's `roleGuard(['Tenant Admin','Tenant Owner'])`; gating it on a permission proxy would have re-created the nav-vs-route divergence of [[ISSUE-210]]. **Notification Preferences** is deliberately ungated — its route carries no `roleGuard` because every user manages their own (BR-4), so over-gating it would be the same invisibility defect in a new place. Five Karma arms assert the rendered nav outcome through the real `AuthService`, including the negative arm (an HR Officer must NOT see Templates). **Mutation-verified:** neutering the role gate kills exactly the negative arm.
 - **Layer:** FE
 - **Module / US / TC:** Notifications & Audit / US-NTF-002, US-NTF-003 / TC-NTF-002-11, TC-NTF-003-11
 - **Title:** Both feature pages are fully implemented and route-registered (`/admin/notification-templates`, `/profile/notification-preferences`) yet have NO entry point reachable by clicking through the app — no sidebar item, no Settings tab/link, no profile/account-menu link — so a tenant admin (templates) and any user (preferences) can only reach them by typing the URL.
@@ -6284,7 +6284,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-284 — Leave accrual job does a per-(employee×leave-type) SaveChanges N+1 (~65k saves at 5k employees); plus unprojected full-entity dashboard scans
 - **Type:** ISSUE (perf debt — background job + read projection)
 - **Severity:** MED
-- **Status:** OPEN (deferred — P3/P7 perf batch; not a request-SLA path)
+- **Status:** OPEN — **DEFERRED 2026-08-03 (P3), deliberately.** Verified still present: `ProcessSingleAccrualAsync` calls `SaveChangesAsync` inside the per-(employee × leave-type) loop. Not fixed in this pass because the accrual credit path's idempotency guard was just re-keyed from `(employee, type, year)` to include the accrual PERIOD by the [[BUG-291]] fix, and batching the writes changes when those guard reads observe prior credits. Getting that wrong silently double-credits or skips leave — a money outcome. Wants a focused session with a real-Postgres arm proving credit counts are identical before and after batching, not a late-session mechanical refactor. **Also the natural companion to [[ISSUE-197]]'s batch resolver work — both are 'do the query once' fixes on money paths.** (deferred — P3/P7 perf batch; not a request-SLA path)
 - **Layer:** BE
 - **Module / US / TC:** Leave / Attendance / (auto-healed from BUG-124/125 OUT-OF-LANE)
 - **Title / detail (3 related perf traps found while fixing BUG-124/125):**
@@ -7267,7 +7267,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-334
 - **Type:** ISSUE (audit completeness / story-code drift)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (P3, 2026-08-03) — `SsoSignInAsync` now writes the AC-named `sso_jit_provisioned` audit event after the JIT membership commits, with structured detail carrying tenant, email, granted role and **`CreatedUser`** — which distinguishes an account minted straight out of an IdP assertion from an existing user merely gaining a membership. Two very different events to an auditor, and both arms exist so a hard-coded `true` cannot pass. **Mutation-verified:** removing the write, and hard-coding `CreatedUser`, each kill their arm.
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-014 (AC-4, FR-7) / TC-AUTH-157 step 6, TC-AUTH-156 — found 2026-07-29 while authoring the US-AUTH-014 TC suite (`@qa-engineer`)
 - **Title:** `AuthService.SsoSignInAsync`'s JIT branch appears to emit only `sso_login_succeeded`, not the distinct `sso_jit_provisioned` event that US-AUTH-014 AC-4/FR-7 names. The account-linking path (AC-2) may likewise lack a distinct `sso_account_linked` event. Consequence: a JIT-created account and an ordinary successful SSO login are indistinguishable in the audit trail — the auto-provisioning of a new user, which is the security-relevant event, leaves no dedicated record.
@@ -7333,7 +7333,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-337
 - **Type:** ISSUE (TEST — coverage)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (P3, 2026-08-03) — `SsoMatchLinkJitTests` binds executing arms to all seven US-AUTH-014 test cases (TC-AUTH-155/156/157/158/159/160 + TC-AUTH-ISO-008), closing the gap [[ISSUE-332]] left when it added the TC *documents* and made the matrix look complete while nothing ran. **★ The positive-control arm immediately earned its place:** the two TC-AUTH-159 privilege-ceiling arms were initially passing on the **plan-entitlement gate** (`sso_not_entitled`) and never reaching the ceiling at all — a textbook false pass. Fixed by seeding an SSO-entitled plan, so the ceiling is genuinely what is exercised. **Mutation-verified:** removing `PrivilegedForJit` kills both ceiling arms.
 - **Layer:** BE-test
 - **Module / US / TC:** Authentication / US-AUTH-014 / TC-AUTH-155..160, TC-AUTH-ISO-008 — surfaced by `@qa-engineer` when closing ISSUE-332, 2026-07-29
 - **Title:** ISSUE-332 closed the *traceability* gap by authoring 7 IEEE-829 TCs, but no xUnit arms bind to them — every one is `status: draft`. US-AUTH-014's match / account-link / JIT-provisioning logic, which is security-critical (it is the path that auto-creates user accounts from an external IdP assertion), still has effectively no automated regression coverage.
