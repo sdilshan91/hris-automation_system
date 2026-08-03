@@ -736,14 +736,31 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
 
             foreach (var employee in employees)
             {
+                // ISSUE-284: ONE SaveChanges per employee, not one per (employee × leave-type). At 5 000
+                // employees × 13 types that was ~65 000 round trips; this makes it ~5 000.
+                //
+                // Why PER-EMPLOYEE is the correct boundary, and why a wider one would be wrong: both reads
+                // inside ProcessSingleAccrualAsync — the credited-periods guard and GetLedgerBalanceAsync —
+                // are DB queries scoped to (employee, leaveType, leaveYear), and EF queries do NOT observe
+                // pending inserts. Deferring the flush is therefore safe ONLY while no deferred row could
+                // belong to a later pair's query scope. Different leave types never share a scope, so holding
+                // one employee's rows is safe. Batching ACROSS employees would be equally safe by that
+                // argument, but is deliberately not done: it would hold 500 employees × 13 types × up to 12
+                // periods (~78 000 tracked entities) before the first flush, and turn one bad row into a
+                // whole-page rollback. Per-employee keeps the change tracker small and failure blast-radius
+                // at one employee.
+                var pendingRows = 0;
                 foreach (var lt in leaveTypes)
                 {
                     // BR-3: Probation employees only get probation-eligible types.
                     if (employee.Status == EmployeeStatus.Probation && !lt.ProbationEligible)
                         continue;
 
-                    await ProcessSingleAccrualAsync(employee, lt, leaveYear, cancellationToken);
+                    pendingRows += await ProcessSingleAccrualAsync(employee, lt, leaveYear, cancellationToken);
                 }
+
+                if (pendingRows > 0)
+                    await _dbContext.SaveChangesAsync(cancellationToken);
             }
 
             skip += AccrualBatchSize;
@@ -875,7 +892,14 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
     //  Private helpers
     // ══════════════════════════════════════════════════════════════
 
-    private async Task ProcessSingleAccrualAsync(
+    /// <summary>
+    /// Stages this (employee, leave-type) pair's accrual rows on the change tracker and returns HOW MANY it
+    /// staged. ISSUE-284: it deliberately does NOT save — the caller flushes once per employee. Both reads
+    /// below are scoped to (employee, leaveType, leaveYear) and EF queries do not see pending inserts, so a
+    /// deferred flush cannot hide credits from a later pair's guard.
+    /// </summary>
+    /// <returns>The number of ledger rows added (0 when nothing accrued or every elapsed period was already credited).</returns>
+    private async Task<int> ProcessSingleAccrualAsync(
         Employee employee,
         LeaveType leaveType,
         int leaveYear,
@@ -902,7 +926,7 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         var (elapsedPeriods, periodsPerYear) =
             AccrualPeriodProgress(leaveType.AccrualFrequency, leaveYearStart, today);
         if (elapsedPeriods == 0)
-            return; // The leave year has not started yet for this tenant — nothing accrues.
+            return 0; // The leave year has not started yet for this tenant — nothing accrues.
 
         // Which periods are already credited. A legacy accrual row (AccrualPeriod == null) predates BUG-291
         // and already credited the FULL year the old way; we must NOT touch existing balances (correcting an
@@ -918,7 +942,7 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
             .ToListAsync(cancellationToken);
 
         if (existingPeriods.Any(p => p == null))
-            return; // Legacy full-year accrual already present — no back-fill, no re-shaping (BUG-291 / DF-65).
+            return 0; // Legacy full-year accrual already present — no back-fill, no re-shaping (BUG-291 / DF-65).
 
         var creditedPeriods = existingPeriods.Where(p => p != null).Select(p => p!.Value).ToHashSet();
 
@@ -963,8 +987,8 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
             written++;
         }
 
-        if (written > 0)
-            await _dbContext.SaveChangesAsync(cancellationToken);
+        // ISSUE-284: no SaveChanges here — the caller flushes once per employee.
+        return written;
     }
 
     /// <summary>1µs, in ticks — the smallest OccurredAt separation that survives PostgreSQL timestamptz
