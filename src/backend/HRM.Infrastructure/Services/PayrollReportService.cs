@@ -39,16 +39,24 @@ public sealed class PayrollReportService : IPayrollReportService
 
     private const int TrendMonths = 12;
 
+    // ISSUE-197: optional so the many existing report tests that construct this service directly keep
+    // compiling; DI always supplies it. When absent the CTC report reports employer contributions as
+    // UNAVAILABLE (0) rather than silently falling back to the old proxy — an honestly-blank column beats a
+    // wrong one on a compensation report.
+    private readonly IStatutoryDeductionResolver? _statutoryResolver;
+
     public PayrollReportService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IPayrollAuditLogger auditLogger,
-        ILogger<PayrollReportService> logger)
+        ILogger<PayrollReportService> logger,
+        IStatutoryDeductionResolver? statutoryResolver = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _auditLogger = auditLogger;
         _logger = logger;
+        _statutoryResolver = statutoryResolver;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -650,6 +658,76 @@ public sealed class PayrollReportService : IPayrollReportService
     }
 
     /// <summary>
+    /// <summary>
+    /// ISSUE-197: annual employer statutory cost per employee, from the REAL resolver.
+    ///
+    /// <para>Batched deliberately — <c>IStatutoryDeductionResolver</c> has no cache (the NFR-1 Redis cache is a
+    /// documented deferral), so a per-employee call would fire one <c>StatutoryRules</c> query per employee: a
+    /// 5 000-employee report would issue 5 000 queries. <c>ResolveManyAsync</c> loads once per distinct country,
+    /// which is ONE query for the single-country tenants that are the norm.</para>
+    ///
+    /// <para>Tax country follows the payroll precedence — the employee's Location country, else the tenant
+    /// default. An employee whose country cannot be resolved contributes 0 rather than borrowing another
+    /// country's rates, matching the resolver's own money-path contract.</para>
+    ///
+    /// <para>The resolver returns a PER-PERIOD (monthly) figure; the CTC column is annual, hence ×12. That is the
+    /// same annualisation the gross columns use, so the ratio between the columns stays meaningful.</para>
+    /// </summary>
+    private async Task<Dictionary<Guid, decimal>> ResolveAnnualEmployerContributionsAsync(
+        List<Employee> employees,
+        IReadOnlyDictionary<Guid, decimal> monthlyGrossByEmp,
+        IReadOnlyDictionary<Guid, decimal> monthlyBasicByEmp,
+        int month, int year, CancellationToken ct)
+    {
+        var empty = new Dictionary<Guid, decimal>();
+
+        // No resolver (unit-test construction) → report the column as unavailable rather than resurrect the
+        // proxy that produced ISSUE-197. A blank column is honest; a wrong one is not.
+        if (_statutoryResolver is null)
+            return empty;
+
+        var tenantDefaultCountry = await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.DefaultCountryCode)
+            .FirstOrDefaultAsync(ct);
+
+        var locationIds = employees.Where(e => e.LocationId.HasValue).Select(e => e.LocationId!.Value).Distinct().ToList();
+        var countryByLocation = locationIds.Count == 0
+            ? new Dictionary<Guid, string?>()
+            : await _dbContext.Locations.AsNoTracking()
+                .Where(l => locationIds.Contains(l.Id))
+                .ToDictionaryAsync(l => l.Id, l => l.CountryCode, ct);
+
+        var items = new List<StatutoryWageBatchItem>(employees.Count);
+        foreach (var e in employees)
+        {
+            var country = e.LocationId is { } locId ? countryByLocation.GetValueOrDefault(locId) : null;
+            if (string.IsNullOrWhiteSpace(country))
+                country = tenantDefaultCountry;
+
+            items.Add(new StatutoryWageBatchItem(
+                e.Id,
+                new StatutoryWageInput(
+                    MonthlyGross: monthlyGrossByEmp.GetValueOrDefault(e.Id),
+                    MonthlyBasic: monthlyBasicByEmp.GetValueOrDefault(e.Id),
+                    ExemptEarnings: 0m,
+                    DeclaredExemptions: 0m,
+                    ComponentAmountsById: null),
+                string.IsNullOrWhiteSpace(country) ? null : country));
+        }
+
+        var resolved = await _statutoryResolver.ResolveManyAsync(year, month, items, null, ct);
+        if (resolved.IsFailure || resolved.Value is null)
+        {
+            _logger.LogWarning(
+                "CTC report: statutory resolution failed ({Error}); employer contributions reported as 0.",
+                resolved.Error);
+            return empty;
+        }
+
+        return resolved.Value.ToDictionary(kv => kv.Key, kv => decimal.Round(kv.Value.TotalEmployerContributions * 12m, 2, MidpointRounding.AwayFromZero));
+    }
+
     /// FR-1h / US-RPT-003 BR-6: current Cost-to-Company of all employees. CTC = the employee's gross
     /// (EARNING-side) annual pay PLUS EMPLOYER CONTRIBUTIONS (pension / insurance) on top of gross.
     /// Columns: Monthly Gross, Annual Gross, Employer Contributions (annual), Annual CTC (= annual gross +
@@ -690,10 +768,17 @@ public sealed class PayrollReportService : IPayrollReportService
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // Classify current components by their SalaryComponent.Type.
-        var componentTypeById = (await _dbContext.SalaryComponents.AsNoTracking()
-                .Select(c => new { c.Id, c.Type })
-                .ToListAsync(ct))
-            .ToDictionary(c => c.Id, c => c.Type);
+        var componentMeta = await _dbContext.SalaryComponents.AsNoTracking()
+            .Select(c => new { c.Id, c.Type, c.Code })
+            .ToListAsync(ct);
+        var componentTypeById = componentMeta.ToDictionary(c => c.Id, c => c.Type);
+        // ISSUE-197: the statutory resolver needs MonthlyBasic (EPF/ETF are Basic-based by default), so the
+        // BASIC component must be identifiable. Code is the stable key — the same DF-37/ISSUE-280 convention
+        // the payroll slip denormalizes for exactly this reason.
+        var basicComponentIds = componentMeta
+            .Where(c => string.Equals(c.Code, "BASIC", StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.Id)
+            .ToHashSet();
 
         var rawComponents = await _dbContext.EmployeeSalaryComponents.AsNoTracking()
             .Where(c => employeeIds.Contains(c.EmployeeId)
@@ -708,11 +793,26 @@ public sealed class PayrollReportService : IPayrollReportService
             .GroupBy(c => c.EmployeeId)
             .ToDictionary(g => g.Key, g => (Annual: g.Sum(x => x.AnnualAmount), Monthly: g.Sum(x => x.MonthlyAmount)));
 
-        // BR-6: employer contributions, estimated as a 1:1 match of the employee's statutory components.
-        var employerContribByEmp = rawComponents
-            .Where(c => componentTypeById.GetValueOrDefault(c.SalaryComponentId) == SalaryComponentType.Statutory)
+        // BR-6 / ISSUE-197: employer contributions come from the REAL statutory resolver, not a proxy.
+        //
+        // This column previously summed the employee's Statutory-type SALARY COMPONENTS as a 1:1 stand-in. That
+        // read 0.00 for every tenant whose statutory liability is rule-driven (the normal case) rather than
+        // modelled as per-employee components — which is the whole of ISSUE-197. Meanwhile
+        // IStatutoryDeductionResolver already computes the true employer EPF/ETF legs and exposes them as
+        // TotalEmployerContributions; the report simply never asked.
+        //
+        // Resolved via the BATCH entry point (ISSUE-197): the resolver has no cache, so a per-employee call
+        // would fire one StatutoryRules query per employee. ResolveManyAsync loads once per distinct country.
+        var monthlyBasicByEmp = rawComponents
+            .Where(c => basicComponentIds.Contains(c.SalaryComponentId))
             .GroupBy(c => c.EmployeeId)
-            .ToDictionary(g => g.Key, g => g.Sum(x => x.AnnualAmount));
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.MonthlyAmount));
+
+        var employerContribByEmp = await ResolveAnnualEmployerContributionsAsync(
+            employees,
+            grossByEmp.ToDictionary(kv => kv.Key, kv => kv.Value.Monthly),
+            monthlyBasicByEmp,
+            month, year, ct);
 
         var deptNames = await DepartmentNamesAsync(employees, ct);
 
