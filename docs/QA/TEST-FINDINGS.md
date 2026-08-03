@@ -4495,7 +4495,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-194
 - **Type:** ISSUE (data-quality / aggregation grouping; partly seed-data driven)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** OPEN — **NARROWED 2026-08-03 (P1 reconciliation).** Mostly stale: the HR/org/performance aggregations now group by `DepartmentId` (a GUID), so case is irrelevant on those paths. **One residual site remains** — `LeaveReportService.cs:709` still does `.GroupBy(a => a.DepartmentName)`, which retains the original case-sensitive split. Scope is now that single call site, not the report family.
 - **Layer:** BE (grouping) / DATA
 - **Module / US / TC:** Reports & Analytics / US-RPT-001 / TC-RPT-001-05 (department-distribution), TC-RPT-001-01 (headcount by dept)
 - **Title:** Headcount-by-department / department-distribution / demographics group departments by exact (case-sensitive) name, splitting "Engineering" (32) from "engineering" (1)
@@ -4551,7 +4551,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-197
 - **Type:** ISSUE (calculation/data — possibly missing employer-contribution config in seed; report's defining feature shows nothing)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** OPEN — **ROOT CAUSE CORRECTED 2026-08-03 (P1 reconciliation).** The filed cause ("BR-6 employer contributions not reflected") is wrong and would send a fixer to the wrong place. They *are* computed — at `PayrollReportService.cs:711-715`, but as a 1:1 match of the employee's **Statutory salary components**, a proxy. Meanwhile `StatutoryDeductionResolver.cs:149-162` already computes the **real** employer EPF/ETF legs and exposes `TotalEmployerContributions`, which the CTC report never reads. So the column is 0.00 for any employee whose statutory items are not modelled as salary components. **Fix direction: source the column from `IStatutoryDeductionResolver`, not from component type.**
 - **Layer:** BE / DATA
 - **Module / US / TC:** Reports & Analytics / US-RPT-003 / TC-RPT-003-08
 - **Title:** CTC report's "Employer Contributions (est.)" column is 0.00 for every row and the TOTAL; Annual CTC == Annual Gross (no employer add-on)
@@ -4969,7 +4969,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-098
 - **Type:** BUG (FE runtime null-deref — `TypeError` during render)
 - **Severity:** MEDIUM
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (`95e247a7`; verified + flipped 2026-08-03) — `getContrastTextColor` now takes `string | null | undefined` and returns `#000000` on falsy input (`leave-type.models.ts:132-135`); pinned by a null-color spec arm.
 - **Layer:** FE
 - **Module / US / TC:** Leave Management / US-LV-001 (leave types) + US-LV-003 (apply for leave) / `leave-management/TC-LV-001-*` UI arms
 - **Title:** `getContrastTextColor(hex: string)` (`src/frontend/src/app/features/leave-management/models/leave-type.models.ts:127-128`) does `const c = hex.replace('#','')` with **no null/empty guard**. The DB allows `leave_types.color` to be NULL (acme currently has **8 of 13** leave types with `color = null`), and the type signature lies (`hex: string` while runtime passes `null`). The three call sites bind it directly in templates — `leave-type-list.component.ts:587`, `leave-type-form.component.ts:718`, `leave-application.component.ts:597` — so each null-color row throws `TypeError: Cannot read properties of null (reading 'replace')` during change detection.
@@ -5497,7 +5497,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-221
 - **Type:** ISSUE (incomplete feature — email delivery coverage gap)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (US-NTF-006 phases; verified + flipped 2026-08-03) — every module notification service is registered to its `Real*` implementation and `IEmailSender` binds to `SmtpEmailSender` whenever `Smtp:Host` is configured (`DependencyInjection.cs:236-784`). The "only the test email delivers" claim no longer holds.
 - **Layer:** BE
 - **Module / US / TC:** Notifications / US-NTF-002 (email delivery)
 - **Title:** On `feature/smtp-email-sender` (commit `ea1b6b3`, MailKit `SmtpEmailSender`), only the GENERIC `IEmailSender` seam is swapped to real SMTP when `Smtp:Host` is set (`DependencyInjection.cs:571`) — used solely by `NotificationTemplateService.SendTestEmail` (`POST /api/v1/notification-templates/{eventKey}/test-email`). The module-specific senders — `IPayslipEmailSender`, `ITenantWelcomeEmailService`, `ILeaveNotificationService`, lockout, recruitment, password-reset — are **intentionally left as `LogOnly*`** ("module-specific seams intentionally left untouched (follow-up)"). So even with SMTP fully configured, none of the app's actual transactional emails are delivered — only the admin "send test email" facade.
@@ -5677,7 +5677,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-228
 - **Type:** ISSUE (behavioral gap / dead delivery channel — infrastructure present, producers absent)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (US-NTF-006; verified + flipped 2026-08-03) — `RealNotificationDispatcher` is the registered `INotificationDispatcher` (`Program.cs:361`) and the module producers are `Real*` services, so in-app delivery has real producers. Residual seam: `IRecommendationIntegrationService` is still LogOnly — tracked separately, not this finding.
 - **Layer:** BE
 - **Module / US / TC:** Notifications & Audit + Reports + Attendance / US-NTF-001, US-NTF-003, US-RPT-004, US-ATT-010 / TC-NTF-003-07, TC-RPT-004-02, TC-ATT-139 (S5 live-WS check)
 - **Title:** The real-time notification path is proven live end-to-end (negotiate → WebSocket handshake → `NotificationHub` connect → per-user Redis-backplane group subscription), yet NO on-demand producer reaches it for a connected user: the domain producers are DI-registered as **log-only seams** (`LogOnlyLeaveNotificationService` for `ILeaveNotificationService`; `LoggingNotificationDispatcher` for `INotificationDispatcher`), and the one genuinely socket-pushing producer (`HrReportExportService`→`SignalRNotificationService.CreateAndDispatchAsync`) only fires on the **>=1000-row async branch** which is **unreachable** because all HR reports aggregate to <1000 rows. Net effect: the in-app SignalR channel is effectively dead-lettered.
@@ -6310,7 +6310,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-285 — Dashboard p95/50k SLA: remaining fixes need an index migration + widget parallelism + a perf-rig to confirm (decision-gated)
 - **Type:** ISSUE (performance / scalability — the non-code-only remainder of BUG-123)
 - **Severity:** MED (HIGH under 50k/50-VU load)
-- **Status:** OPEN (DECISION-GATED — needs schema decision + perf rig)
+- **Status:** ✅ RESOLVED (index `#390` + DF-50 `#415`; verified + flipped 2026-08-03) — all three legs the gate was waiting on landed: the birthday index migration, per-widget parallelization via child scopes, and the k6 perf rig. The 50k / 50-VU / 5-min run measured widgets **p95 192.9ms** against the 800ms SLA at 0% errors, so the decision gate is discharged rather than still pending.
 - **Layer:** BE
 - **Module / US / TC:** Reports/Dashboard / US-RPT-005 / (split from BUG-123)
 - **Title:** BUG-123's clean hot-path projection (attendance-today / live-board) is fixed in PR #259, but three pieces cannot be done as a plain in-loop code fix:
@@ -6801,7 +6801,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-309 — Tenant-wide attendance sweeps use the tenant-default policy, ignoring per-location overrides
 - **Type:** ISSUE
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (DF-22 `#409`; verified + flipped 2026-08-03) — re-verified at `AutoClockOutJob.cs:96,150`: tenant-wide sweeps load per-location policy via `AttendancePolicyResolver` instead of the tenant default.
 - **Layer:** BE
 - **Module / US / TC:** Attendance / Leave / US-ATT-011 AC-3 / (new TC needed)
 - **Title:** CAL-4 made every `AttendanceSettings` read explicit, and three tenant-wide sweeps
@@ -7059,7 +7059,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-315
 - **Type:** ISSUE (test-coverage gap)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (DF-10 `#396`; verified + flipped 2026-08-03) — header-vs-body precedence is now covered by `OnboardingChecklistsControllerIdempotencyTests` plus `OnboardingIdempotencyConcurrencyPostgresTests` (real-PG).
 - **Layer:** BE (controller)
 - **Module / US / TC:** Onboarding / US-ONB-002 / (new) — auto-healed from a `@test-authenticator` OUT-OF-LANE flag, 2026-07-17
 - **Title:** `OnboardingChecklistsController` resolves the idempotency key as "`Idempotency-Key` header else `request.IdempotencyKey` body" with no test — a mutation swapping precedence or dropping the body fallback would survive
@@ -7207,7 +7207,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-30** — backend image rebuilt from current `test/local-subdomains` and restarted. Verified live: `tenants` now has the SSO columns, `POST /api/v1/auth/break-glass-login` returns **400 (validation)** rather than 404, and the pending migrations applied — including `Platform_NormalizeTenantEnabledModules`, which normalized the `e2e` and `platform` tenants onto the canonical module vocabulary, proving [[ISSUE-335]]'s fix end-to-end on real data.
 - **Type:** ISSUE (INFRA — deployment drift; blocks live QA of two shipped stories)
 - **Severity:** MED (not a product defect — source code is correct and its bound automated tests are 56/56 green; but the *running* stack cannot exercise the US-AUTH-012/016 API/UI surface, so live re-test of those stories is blocked until the container is rebuilt)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-30; ledger flipped 2026-08-03) — see status update above: backend image rebuilt, SSO columns + break-glass verified live.
 - **Layer:** INFRA
 - **Module / US / TC:** Authentication / US-AUTH-012, US-AUTH-016 / TC-AUTH-115..136, TC-AUTH-ISO-005/006 — found 2026-07-29 during the SSO blocked-row re-run (`@test-runner`, REPORT-ONLY)
 - **Title:** `hris-backend-1` (image `hris-backend`, created 2026-07-25T09:40Z) does not contain the US-AUTH-012 (PR #444, merged 2026-07-24 20:50) or US-AUTH-016 (PR #446, merged 2026-07-24 22:07) code, despite the source tree on `test/local-subdomains` containing both. Live SSO config/enforcement/onboarding cannot be probed against `:5000`.
@@ -7226,7 +7226,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-332
 - **Type:** ISSUE (TEST — coverage/traceability gap)
 - **Severity:** MED (violates Critical Rule #4 traceability: every AC must have a linking TC; US-AUTH-014's match/link/JIT-provisioning ACs have no `docs/QA/authentication/TC-*` bound to them, neither primary nor secondary)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (`330bf20e`; verified + flipped 2026-08-03) — US-AUTH-014 now has bound IEEE-829 test cases (`docs/QA/authentication/TC-AUTH-115..120`). **Note:** the docs exist but have no automated arms — that residual is [[ISSUE-337]], which stays OPEN.
 - **Layer:** TEST
 - **Module / US / TC:** Authentication / US-AUTH-014 / (none) — found 2026-07-29 during the SSO blocked-row re-run (`@test-runner`)
 - **Title:** No test case in `docs/QA/authentication/` names US-AUTH-014 in its `user_story` frontmatter or `Related Requirements`. `grep -l "US-AUTH-014" docs/QA/authentication/*.md` → 0 files. The story (existing-user match, first-time account link, and JIT provisioning on `AuthService.SsoSignInAsync`) is untested at the TC level even though the underlying logic ships and is partially unit-covered (`SsoFailureAuditWriteTests.SsoSignIn_Success_...` drives `SsoSignInAsync` with a synthesized `SsoIdentity`).
@@ -7242,7 +7242,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **ROOT-CAUSED AND FIXED 2026-07-30.** It was **not** resource contention. A run captured at `--logger console;verbosity=normal` finally produced the exception: `CryptographicException: No key 'k2' is present in the encryption key ring` — in a test that demonstrably registers `k2`. Cause: the EF model cache is **process-wide**, the encryption value converters **close over one `IFieldEncryptor` instance**, and the cache key was `_fieldEncryptor.GetType().Name`. So two `AesGcmFieldEncryptor`s holding **different key rings** shared one compiled model — whichever context compiled it first baked its converters in for the whole process, and every later context decrypted with the wrong ring. Under parallel load the compile order varies (intermittent); in isolation the class compiles its own model (always passes). The old docstring stated the false assumption outright: *"all real-encryptor instances (same key across a run) safely share one model."* **Production was never affected** — one ring per process — which is exactly why it hid in the test suite. **Fix:** `IFieldEncryptor.ModelCacheDiscriminator` now carries the ring identity (key IDs only, never key material; ordinal-sorted so declaration order does not fragment the cache), and `AppDbContext` consumes it. Full suite **4901/4901**. **Note on the arms:** my first pass pinned the discriminator contract but left the `AppDbContext` wiring unpinned — reverting that one line to the original bug kept every arm green. Caught by mutation and closed with a dedicated wiring arm; re-mutation now kills it.
 - **Type:** ISSUE (TEST-HEALTH — flaky/non-deterministic under load)
 - **Severity:** MED (an intermittently-red gate is worse than a reliably-red one: it trains the team to re-run until green, which is exactly how a real regression gets waved through)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (`f9b96e8c`; ledger flipped 2026-08-03) — root-caused to a Data Protection key-ring collision, not contention; EF model cache now keyed on the encryption ring.
 - **Layer:** BE-test
 - **Module / US / TC:** Platform / US-PLT-005 (encryption maintenance) / TC-PLT-003-adjacent — found 2026-07-29 during the US-PLT-005 Scope A verify gate
 - **Title:** Three arms in `HRM.Tests/Integration/FieldEncryptionReencryptPostgresTests` — `Sweep_and_report_include_a_soft_deleted_tenant`, `Reencrypt_sweep_moves_old_key_values_leaves_active_rows_byte_identical_and_skips_corrupt`, and `Registry_backfill_encrypts_both_pip_and_national_id_plaintext_and_report_surfaces_it` — fail on some full-suite runs and pass on others, with **identical code**.
@@ -7282,7 +7282,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-335
 - **Type:** BUG (data/seed correctness — latent until something reads the column)
 - **Severity:** HIGH (latent today because nothing reads `enabled_modules`; becomes an immediate outage the moment US-ADM-012's module gate ships)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (US-ADM-012 phase 1/1b; verified + flipped 2026-08-03) — vocabulary normalized (seed + CLI migration) with a fail-open `PlanModules.IsModuleEnabled` predicate now referenced across the entitlement middleware.
 - **Layer:** BE / data
 - **Module / US / TC:** Admin Console / US-ADM-012 (AC-1) + US-ADM-009 / (none yet) — found 2026-07-30 while verifying US-ADM-012's premises against the live DB before building
 - **Title:** `Tenant.EnabledModules` is populated from **two different, non-overlapping key vocabularies** depending on how the tenant was created. `DbInitializer` seeds it from `PermissionCatalog.ByModule.Keys` (**permission prefixes**), while `TenantProvisioningService.DeriveTenantModules` uses `PlanModules` (**canonical module keys**). The two sets are not translatable by string equality.
@@ -7318,7 +7318,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-31** — a lost/re-keyed Data Protection ring is now reported with one WARNING (no secret material). Not a hard lockout: recovery codes are hashed and verified independently of this key, so the user can still get in and re-enrol — hence LOW. **Worth recording:** my first version keyed the warning off exception type, trusting the production comment that said `FormatException` = legacy plaintext and `CryptographicException` = bad key. **That comment was FALSE** — Data Protection throws `CryptographicException` for both — and the 'legacy plaintext must stay silent' arm caught it. Shipping the first version would have warned on every pre-encryption secret and buried the real signal. Now discriminated by payload shape (base64url + the `0x09F0C9F0` magic header); the false comment is corrected in place.
 - **Type:** ISSUE (design-intent not pinned by a test)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-31; ledger flipped 2026-08-03) — a lost/re-keyed Data Protection ring now emits one WARNING; recovery codes verify independently.
 - **Layer:** BE
 - **Module / US / TC:** Platform / US-PLT-005 (Scope A) / TC-PLT-005-03, TC-PLT-005-10 — surfaced by `@test-authenticator` during the US-PLT-005 auditor pass, 2026-07-29
 - **Title:** `MfaSecretProtector.IsProtected` returns `false` for a value protected under a key no longer in the ring (it cannot decrypt, so it is indistinguishable from legacy plaintext). `DbInitializer.BackfillLegacyMfaSecretsAsync` therefore re-`Protect`s it, permanently double-encrypting a secret whose plaintext is already unrecoverable.
@@ -7348,7 +7348,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-338
 - **Type:** BUG (entitlement enforcement inconsistency)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (US-ADM-012 phase 3; verified + flipped 2026-08-03) — re-verified at `UserManagementService.cs:376-392`: the invite cap resolves override > plan > snapshot via `PlanLimitResolver`, so per-tenant overrides now apply.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012, US-ADM-009 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** `max_employees` is enforced at two sites that disagree. `EmployeeService.CheckPlanLimitAsync` (`:1111-1149`) resolves properly through `PlanLimitResolver` (override → plan → tenant snapshot). `UserManagementService` (`:370-387`) reads **`Tenant.MaxEmployees` raw**, so a `PlanLimitOverride` granting a tenant extra headroom, or an admin raising the plan's `MaxEmployees`, has no effect on the invite path.
@@ -7363,7 +7363,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-339
 - **Type:** BUG (half-wired entitlement)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (US-ADM-012 phase 3; verified + flipped 2026-08-03) — re-verified at `CustomFieldService.cs:776-800`: the cap resolves the `max_custom_fields_per_entity` plan column + override key via `PlanLimitResolver`; the hard default of 20 is deliberate (no unlimited tier).
 - **Layer:** BE
 - **Module / US / TC:** Core HR / US-CHR-012, US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** A custom-field cap IS enforced (403 at `CustomFieldService.cs:180`), but it resolves from `Tenant.MaxCustomFields ?? 20` (`:778-785`, which carries a literal `TODO(subscription): Replace with plan-tier lookup`). `SubscriptionPlan.MaxCustomFieldsPerEntity` and the registered `max_custom_fields_per_entity` limit key are therefore **dead** — configurable in the admin UI, with no runtime effect.
@@ -7378,7 +7378,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-340
 - **Type:** ISSUE (incomplete enforcement)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (US-ADM-012 phase 3; verified + flipped 2026-08-03) — re-verified in `TenantStorageUsage.cs`: one shared helper sums all four size-bearing tables, with a cross-tenant companion so the enforced total and the displayed gauge cannot drift.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012 (AC-3/AC-4), US-CHR-008 / (BUG-114 lineage) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** `EmployeeDocumentService.EnforceStorageQuotaAsync` (`:203-251`) resolves `max_storage_gb` correctly and hard-blocks at 403 with an 80% soft warning, but sums **only** `EmployeeDocuments.FileSizeBytes`. `HrReportExport.FileSizeBytes`, `PayrollReportExport.FileSizeBytes` and `PayrollSlip.PdfFileSizeBytes` are excluded, so real tenant storage is undercounted.
@@ -7393,7 +7393,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-341
 - **Type:** GAP (missing capability)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (`7a9f641a`; verified + flipped 2026-08-03) — re-verified at `AdminTenantsController.cs:135-152`: `PUT /api/v1/system/tenants/{id}/plan` exists and recomputes `Tenant.EnabledModules` from the target plan.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-009, US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** `AdminTenantsController` exposes Provision / List / CheckSubdomain / ListPlans / UnlockUser only. There is no route to move an existing tenant onto a different plan — upgrades and downgrades are a manual DB `UPDATE` today.
@@ -7408,7 +7408,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-342
 - **Type:** BUG (cache/propagation)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (`7a9f641a`; verified + flipped 2026-08-03) — re-verified: `ITenantResolutionCache` exposes a bulk invalidator owned by one shared component, so plan edits reach running tenants (`DependencyInjection.cs:644`).
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-009 (AC-3), US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** `SubscriptionPlanService` has **no `IDistributedCache` dependency at all** (`:24-35`) and its own class doc states the Redis plan cache / 60s propagation (NFR-1/NFR-4) is DEFERRED. The tenant-resolution cache (`t:subdomain:{sub}`, 5-min TTL) is invalidated only by `TenantLifecycleService` on suspend/terminate/reactivate. Consequently a System Admin disabling a module on a plan changes nothing at runtime for up to 5 minutes — **and in fact never**, because `Tenant.EnabledModules` is a provisioning-time snapshot that no code path recomputes.
@@ -7423,7 +7423,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-343
 - **Type:** ISSUE (API contract inconsistency)
 - **Severity:** LOW
-- **Status:** OPEN — **retrofit DEFERRED by decision 2026-07-30 (user).** New gates use **403** with a machine-readable `code`; the two existing 409s (`workflow_limit_reached`, `plan_limit_reached`) stay as they are. Retrofitting them is a breaking change that would need `workflow.service.spec.ts:114` and `workflow-editor.component.spec.ts:204` updated in lockstep, and it does not belong bundled inside US-ADM-012. Every individual response is well-formed today; only cross-endpoint consistency suffers. This finding is the standing record until someone does the deliberate pass.
+- **Status:** ✅ RESOLVED-BY-DECISION (2026-07-31, user-settled; ledger flipped 2026-08-03) — **retrofit DEFERRED by decision 2026-07-30 (user).** New gates use **403** with a machine-readable `code`; the two existing 409s (`workflow_limit_reached`, `plan_limit_reached`) stay as they are. Retrofitting them is a breaking change that would need `workflow.service.spec.ts:114` and `workflow-editor.component.spec.ts:204` updated in lockstep, and it does not belong bundled inside US-ADM-012. Every individual response is well-formed today; only cross-endpoint consistency suffers. This finding is the standing record until someone does the deliberate pass.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012 / (none) — surfaced by the US-ADM-012 seam survey, 2026-07-30
 - **Title:** Plan-limit breaches return different status codes by accident of authorship: 403 for `storage_quota_exceeded` and the employee limit (the latter with no error code at all), 409 for `workflow_limit_reached` and `plan_limit_reached`. A client cannot handle "you hit a plan limit" generically.
@@ -7439,7 +7439,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-30** — `PlatformMonitoringService` now probes the real Redis (optional `IConnectionMultiplexer`; PINGs when `ConnectionStrings:Redis` is set → Healthy/Down, else genuinely NotConfigured). Stale docblock claims deleted, including the separate false "no OpenTelemetry metrics" assertion. Mutation-verified: forcing NotConfigured, forcing Healthy, and a naive always-ping all die.
 - **Type:** BUG (stale code + stale doc-comment → wrong status shown to an operator)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-30; ledger flipped 2026-08-03) — re-verified in code: `PlatformMonitoringService` probes the real Redis; NotConfigured is now only reported when Redis genuinely is not configured.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-002 / TC-ADM-002-* — surfaced by the US-PLT-004 premise verification, 2026-07-30
 - **Title:** `PlatformMonitoringService.ResolveRedisHealth()` (`:346-357`) unconditionally returns `NotConfigured`, justified by a doc-comment (`:28-30`, `:347-348`) asserting "NO Redis client / IDistributedCache is registered in DI in this codebase". That assertion is **false**: `Program.cs:51-59` registers a shared `IConnectionMultiplexer` backing `IDistributedCache` and the SignalR backplane, and `Program.cs:103-104` registers a real Redis health check. So the System Admin dashboard shows "Redis: Not configured" at the same moment `/health/ready` is successfully pinging Redis.
@@ -7455,7 +7455,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-30** — OTel is now truly inert by default (blank endpoint + no opt-in ⇒ nothing registered), console export is an explicit `OpenTelemetry:Enabled=true` opt-in, `Enabled=false` is a hard kill-switch, and a `ParentBased(TraceIdRatioBased)` sampler is tunable via `OpenTelemetry:SamplingRatio`. **Found while closing this:** `configuration.GetValue<double?>()` THROWS on an unparseable value, so an env-var typo like `OpenTelemetry__SamplingRatio=abc` would have crashed the app at startup over a telemetry knob — now parsed raw with a fallback and clamped. That was surfaced by writing an arm for a gap the implementing agent honestly self-reported (the inline `SetSampler` survived mutation).
 - **Type:** ISSUE (performance / cost; documentation materially misleading)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-30; ledger flipped 2026-08-03) — re-verified at `Program.cs:71-72`: OTLP endpoint or `OpenTelemetry:Enabled=true` required to register anything, `Enabled=false` is a hard kill-switch, traces ParentBased/ratio-sampled.
 - **Layer:** BE
 - **Module / US / TC:** Platform / US-PLT-004 / (none) — surfaced by the US-PLT-004 premise verification, 2026-07-30
 - **Title:** `docs/BA/STATUS.md` and the COMPLETION-PLAN describe the OTel instrumentation as "coded but **DORMANT** — blank `OtlpEndpoint` ⇒ Console-only, no backend". "Console-only" is not dormant: `ObservabilityExtensions.cs:87-90` and `:104-107` register `AddConsoleExporter()` for **both** traces and metrics when the endpoint is blank, and there is **no `SetSampler` call anywhere** in the file — so every request produces a fully-recorded span serialized to stdout at 100% sampling. In Docker that is written to the container log on every request.
@@ -7471,7 +7471,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-30** — `backend` now has a `/health/ready` healthcheck and `frontend` gates on `condition: service_healthy`. **Near-miss worth recording:** the probe was first written with `wget`; verification showed `mcr.microsoft.com/dotnet/aspnet:10.0` ships NEITHER `wget` NOR `curl`, so it could never have passed — `backend` would have sat permanently unhealthy and `frontend`, newly gated on it, would never have started. `curl` is now installed in the runtime stage for this probe.
 - **Type:** ISSUE (ops wiring gap)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-30; ledger flipped 2026-08-03) — re-verified in `docker-compose.yml:64`: backend healthcheck `curl -fsS /health/ready`, frontend gates on `condition: service_healthy`.
 - **Layer:** OPS
 - **Module / US / TC:** Platform / US-PLT-004 (AC-2) / — surfaced by the US-PLT-004 premise verification, 2026-07-30
 - **Title:** Health endpoints are fully built (`Program.cs:85-105` registration incl. Postgres readiness and Redis-as-Degraded, `:612-623` tag-filtered mapping plus a `/health` back-compat alias, anonymous bypass in `TenantResolutionMiddleware.cs:60-61`, integration tests in `HealthCheckApiTests.cs`). But `docker-compose.yml` defines healthchecks only for `postgres`, `redis` and `clamav`; the `backend` (`:39-50`) and `frontend` (`:52-60`) services have none, so nothing ever calls `/health/ready`.
@@ -7487,7 +7487,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-30** — the plan doc now specifies `OpenTelemetry__OtlpEndpoint` (and the OTel-standard `OTEL_EXPORTER_OTLP_ENDPOINT`), with an explicit warning that the old `OBSERVABILITY__OTLPENDPOINT` spelling sets a variable nothing reads.
 - **Type:** ISSUE (doc/impl drift — a trap for the next implementer)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-30; ledger flipped 2026-08-03) — plan doc now specifies `OpenTelemetry__OtlpEndpoint` + the OTel-standard variable, with the retired name called out.
 - **Layer:** DOC
 - **Module / US / TC:** Platform / US-PLT-004 / — surfaced by the US-PLT-004 premise verification, 2026-07-30
 - **Title:** `docs/Architecture/observability-otel-grafana-plan.md` (L171) instructs the Phase-2 implementer to set `OBSERVABILITY__OTLPENDPOINT=http://otel-collector:4317`, and sketches a config section named `Observability` (L141-147). The shipped code reads **`OpenTelemetry:OtlpEndpoint`** (`ObservabilityExtensions.cs:44`, `appsettings.json:108-110`) with a fallback to the standard `OTEL_EXPORTER_OTLP_ENDPOINT` (`:47-48`). Following the plan verbatim sets a variable nothing reads, and the collector silently receives nothing.
@@ -7502,7 +7502,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-348
 - **Type:** ISSUE (story/code drift — a whole story justified by a non-existent defect)
 - **Severity:** MED (it has been directing roadmap priority for three weeks and would have funded building a fix for nothing)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (rescope `eb0744aa`; verified + flipped 2026-08-03) — re-verified in `docs/BA/performance/US-PRF-011.md:12-20`: the story now opens with an explicit “RESCOPED — the original justification was factually false” banner and a claim-vs-reality table citing this finding.
 - **Layer:** DOC + BE (one-line message fix)
 - **Module / US / TC:** Performance / US-PRF-011, US-PRF-010 / TC-PRF-010-B1 — found 2026-07-30 verifying US-PRF-011's premises before building
 - **Title:** `docs/BA/STATUS.md` and `US-PRF-011.md` justify the story as *"removes the calibration dead-end trap that permanently locks US-PRF-010"*, describing a state where recommendations are blocked with `calibration_incomplete` and **"nothing can mark it complete"**. The code disagrees. `RecommendationService.cs:406-416` gates on `ManagerReviews.Any(r => r.CycleId == … && r.EmployeeId == … && r.SubmittedAt != null)` — i.e. an ordinary US-PRF-003 manager-review submit satisfies it. There is no `CalibrationStatus` enum, no `CalibrationCompletedAt` column, and no entity that can get stuck. The passing test `RecommendationServiceTests.Submit_with_calibration_enabled_requires_a_submitted_review` (`:259-269`) asserts `IsSuccess == true` with `calibration: true` — the lockout is disproved by a green test that predates the story.
@@ -7519,7 +7519,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ⚠️ **CLOSED 2026-07-30 — PARTIALLY INVALID. This finding's premise was wrong, and acting on it broke a shipped feature.** It asserted that `IsCalibrationEnabled` and the presence of a `Calibration` phase must AGREE. They must not. `IsCalibrationEnabled` is a standalone feature flag — the Angular cycle form surfaces it as a checkbox labelled *"Calibration phase"* — while `phases[]` carries the GoalSetting/SelfAssessment/ManagerReview timeline. **Enabling calibration with no Calibration entry in `phases[]` is the NORMAL state the shipped UI produces.** The symmetric rule was implemented and immediately broke `CycleCreateWirePayloadApiTests`, the BUG-257 regression that POSTs the REAL FE payload as raw JSON through the genuine HTTP path; it would have 400'd every cycle-create where a user ticked that box. **Resolution:** kept only the coherent half — a Calibration PHASE while the feature is OFF is genuinely incoherent and is rejected. The two arms asserting the wrong rule were INVERTED to pin the correct behaviour rather than deleted. **Lesson: a finding I filed myself, from my own sweep, was wrong — the same 'read the code, not the document' discipline applies to my own output, and the regression suite is what enforced it.**
 - **Type:** BUG (missing validation — latent)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ⚠️ CLOSED — PARTIALLY INVALID (2026-07-30; ledger flipped 2026-08-03). See status update above: the premise was wrong and the symmetric rule broke a shipped feature; the coherent half was kept and the two wrong arms inverted.
 - **Layer:** BE
 - **Module / US / TC:** Performance / US-PRF-004, US-PRF-011 / — found 2026-07-30 during the US-PRF-011 premise verification
 - **Title:** `CyclePhaseRules.Apply` (`CycleValidators.cs:15-66`) requires GoalSetting / SelfAssessment / ManagerReview phases, forbids duplicates, and enforces ordering and containment — but **nothing asserts that `AppraisalCycle.IsCalibrationEnabled == true` implies a Calibration `CyclePhase` exists, or the converse.** A cycle can therefore carry the calibration flag with no calibration window, or a calibration phase with the flag off.
@@ -7535,7 +7535,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-31** — `CycleProgressDto.CalibrationCompleted` now reports calibrated participants, using US-PRF-011's `RatingCalibration` table. **Nullable on purpose:** `null` = calibration is not part of this cycle, `0` = enabled but nobody has calibrated yet. Returning 0 for a disabled cycle would render a permanent 0% bar — the original complaint relocated rather than fixed. A participant calibrated across multiple rounds counts ONCE (people done, not rows written). Both meanings mutation-verified.
 - **Type:** ISSUE (incomplete feature surface)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-31; ledger flipped 2026-08-03) — `CycleProgressDto.CalibrationCompleted` reports calibrated participants; null means calibration is not part of the cycle.
 - **Layer:** BE
 - **Module / US / TC:** Performance / US-PRF-004, US-PRF-011 / — found 2026-07-30 during the US-PRF-011 premise verification
 - **Title:** `CyclePhaseTransitionJob.cs:65` explicitly skips any phase that is not GoalSetting/SelfAssessment/ManagerReview, and the cycle dashboard scores Calibration as `_ => 0` (`AppraisalCycleService.cs:571-577`) with overdue suppressed (`:585-586`). So a tenant who enables calibration gets a timeline bar stuck at 0% forever and no automated phase progression.
@@ -7551,7 +7551,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-31 — by PREVENTION, not by the suggested reopen path.** Creating a recommendation is now refused when the cycle is terminal AND the employee's manager review was never submitted — the combination that is already irrecoverable. **Deliberately did not add a `Completed → Active` transition:** that would let a cycle whose final ratings are already published be un-completed, a governance change far larger than the obscure state it rescues, on compensation-adjacent data. The reopen option remains available if real stuck rows ever appear. The guard is narrow — early drafting while the cycle is OPEN stays allowed, and the arm proving it does not over-fire is the load-bearing one. Mutation-verified in both directions.
 - **Type:** BUG (irrecoverable state, narrow preconditions)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-31; ledger flipped 2026-08-03) — closed by PREVENTION rather than the suggested reopen path: the irrecoverable recommendation is refused up front.
 - **Layer:** BE
 - **Module / US / TC:** Performance / US-PRF-003, US-PRF-010 / — found 2026-07-30 during the US-PRF-011 premise verification
 - **Title:** This is the *real* residual behind the mythical "calibration dead-end" (ISSUE-348) — far narrower than claimed. An employee becomes permanently un-recommendable when all four hold: the cycle has `IsCalibrationEnabled = true`; the cycle has reached `Completed`; that employee's `ManagerReview.SubmittedAt` is still null; and HR manually created a Draft recommendation for them via `SaveAsync` (auto-generate cannot, since it filters `FinalScore != null`). It is then irrecoverable because both submit and reopen require an open manager-review window (`ManagerReviewService.cs:112` and `:317`), `IsPhaseOpen` requires `Status == Active` (`AppraisalCycle.cs:229-230`), and `Completed` is terminal with no outbound edge in `IsValidTransition` (`:264-274`).
@@ -7566,7 +7566,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-352
 - **Type:** ISSUE (ledger staleness — work marked open that is delivered and tested)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (`eb0744aa`; verified + flipped 2026-08-03) — re-verified by grep: no “not built”/“unbuilt” claim for US-PRF-010 AC-B1 remains anywhere under `docs/BA/`.
 - **Layer:** DOC
 - **Module / US / TC:** Performance / US-PRF-010 (AC-B1) / TC-PRF-010-B1 — found 2026-07-30 during the US-PRF-011 premise verification
 - **Title:** Three documents still record the BUG-243 follow-up "AC-B1 completed-cycles picker" as missing — `docs/BA/STATUS.md` (deferred-AC table), `docs/BA/performance/US-PRF-010.md:107` (*"Status: not built. Ref: BUG-243."*), and `docs/QA/performance/TC-PRF-010-B1.md:15`. It is fully built end to end and was verified independently: BE endpoint `GET /api/v1/tenant/performance/recommendations/cycles/completed` (`RecommendationController.cs:43-55`, permission-gated) → `GetCompletedCyclesForRecommendationsQueryHandler` (`RecommendationQueries.cs:20-45`); FE service `recommendation.service.ts:40-44` feeding a rendered picker at `recommendation-workspace.component.ts:157`; tests `RecommendationCompletedCyclesTests.cs` (3 cases) + `recommendation-workspace.component.spec.ts:66`. Shipped in commit `bcd7c333`, **two days after** the 2026-07-06 reconciliation that recorded it as missing.
@@ -7582,7 +7582,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-31** — added `ModuleVocabularyContractTests` on the BACKEND side, which can read both languages: it parses `CANONICAL_MODULE_KEYS` from `module.guard.ts` and `CANONICAL_MODULES` from `plan.models.ts` and asserts each is membership-exact against `PlanModules.All`, in both directions. The existing FE `module-key-drift.spec.ts` already pinned copies 2↔3; a Karma spec cannot reach the C# copy, so the backend was the unguarded link. Mutation-verified: adding a phantom key to the FE guard fails the contract. Chose parsing the real source over a generated shared artifact deliberately — a stale generated file exhibits the very drift being guarded against, whereas reading the live file cannot go stale.
 - **Type:** ISSUE (contract drift risk — the same class as the bug it guards against)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-31; ledger flipped 2026-08-03) — re-verified: `HRM.Tests/Unit/ModuleVocabularyContractTests.cs` exists and parses both FE vocabularies against the BE canonical list.
 - **Layer:** BE + FE
 - **Module / US / TC:** Admin Console / US-ADM-012 (AC-1/AC-2) / TC-ADM-012-* — surfaced by `@frontend-dev` as an OUT-OF-LANE flag while building the FE gate, 2026-07-30
 - **Title:** After US-ADM-012, the canonical module vocabulary exists in **three** independent copies: `PlanModules.All` (`src/backend/HRM.Domain/Authorization/PlanModules.cs`), `CANONICAL_MODULE_KEYS` (`src/frontend/src/app/core/tenant/module.guard.ts`), and `CANONICAL_MODULES` (`src/frontend/.../features/admin/plans/plan.models.ts:122-136`). A fourth copy is frozen as a SQL literal inside the normalization migration (that one is correct and intentional — a migration must describe data as of its own point in history). Nothing asserts the three live copies agree.
@@ -7599,7 +7599,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ⚠️ **RESOLVED 2026-07-31 — and it was NOT the low-severity snapshot-tidiness item this was filed as.** `BulkEmployeeImportService.CheckPlanLimitForImportAsync` still read `Tenant.MaxEmployees` **raw**, making it the **THIRD** code path enforcing the same limit off the stale snapshot — after `EmployeeService` (fixed under BUG-008) and the invite path (fixed under [[ISSUE-338]]). **It was missed by both of those fixes AND by the [[ISSUE-342]] plan-write sweep.** User-visible effect: a tenant who PURCHASED a limit override, or whose plan was upgraded, could create employees one-by-one and invite users, but was still refused on bulk import — three paths giving three different answers about one limit. Now resolves through `PlanLimitResolver` with the same override>plan>snapshot idiom, and the error message reports the EFFECTIVE cap rather than the stale snapshot. Arm added to `InvitePlanLimitAgreementTests`. **Lesson: 'find every call site' sweeps miss things; a cross-path AGREEMENT test is what actually holds, which is why the storage helper got one under phase 4.**
 - **Type:** ISSUE (denormalized snapshot drift)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-31; ledger flipped 2026-08-03) — re-verified at `BulkEmployeeImportService.cs:1003-1022`: the import path now resolves via `PlanLimitResolver` instead of reading `Tenant.MaxEmployees` raw.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-009, US-ADM-012 / — surfaced by `@backend-dev` as an OUT-OF-LANE flag while building the ISSUE-342 sweep, 2026-07-30
 - **Title:** The ISSUE-342 plan-write sweep recomputes `Tenant.EnabledModules` when a plan's module list changes, but deliberately does **not** refresh the denormalized `Tenant.MaxEmployees` snapshot when a plan's numeric limits change. That snapshot can therefore drift from its plan indefinitely — the same class of staleness ISSUE-342 fixed for modules, left in place for limits.
@@ -7631,7 +7631,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **RESOLVED 2026-07-31 (user decision: add the gate).** Implementing it surfaced that **no custom-report-builder feature exists**, so nothing could be gated today. Rather than mis-gate `/api/v1/reports` (those are the pre-defined report TYPES, correctly mapped to `Reporting`), the mapping is **PRE-REGISTERED** at `/api/v1/reports/custom` and `/api/v1/report-builder` — it matches nothing now, and the point is that the builder is gated the moment its routes exist instead of shipping ungated. **Ordering is load-bearing:** prefix matching is first-wins, so the custom entries MUST precede the broader `/api/v1/reports`; otherwise a builder route gates as `Reporting` and the entitlement stays unenforceable — the original bug reintroduced. Mutating the order kills 3 arms.
 - **Type:** GAP
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-07-31, user decision: add the gate; ledger flipped 2026-08-03) — re-verified at `ModuleEntitlementMiddleware.cs:86-87`: `/api/v1/reports/custom` + `/api/v1/report-builder` pre-registered against `PlanModules.CustomReportBuilder`.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012, US-ADM-009 / — surfaced by `@backend-dev` while building the module gate, 2026-07-30
 - **Title:** `PlanModules.CustomReportBuilder` is offered in the plan editor's module grid and can be toggled per plan, but **no controller or route implements it**. The entitlement gate therefore has nothing to map it to: toggling it on or off is a no-op at runtime.
