@@ -297,6 +297,10 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
 
         var storageGauge = BuildStorageGauge(
             usedBytes, ResolveLongLimit(PlanLimitKeys.MaxStorageGb, plan?.MaxStorageGb, overrides, nowUtc));
+
+        // TC-ADM-002-17: uptime from the retained probe history. Stays NULL when there is no history — the TC
+        // forbids a fabricated figure, and "no data" is a different statement from "100% up".
+        var slaUptimePercent = await ComputeSlaUptimePercentAsync(nowUtc, cancellationToken);
         var emailGauge = BuildEmailGauge(
             emailsSent, (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
         var apiGauge = BuildApiCallsGauge(
@@ -338,7 +342,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             ErrorRateTrend24h: Array.Empty<object>(),              // DEFERRED — no metrics store
             LatencyTrend24h: Array.Empty<object>(),                // DEFERRED — no metrics store
             TopErrors: Array.Empty<object>(),                      // DEFERRED — no metrics store
-            SlaUptimePercent: null,                                // DEFERRED — no probe history
+            SlaUptimePercent: slaUptimePercent,                    // TC-ADM-002-17 — null until probes exist
             MetricsStatus: MonitoringStatus.RequiresObservabilityPipeline,
             GeneratedAtUtc: DateTime.UtcNow);
 
@@ -441,6 +445,55 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     /// <c>long</c>; the gauge's <c>Used</c>/<c>Limit</c> are <see cref="int"/>, so both are clamped to
     /// <see cref="int.MaxValue"/> for display while the percentage is computed on the exact <c>long</c> values.
     /// </summary>
+    /// <summary>
+    /// TC-ADM-002-17 / FR-7: platform uptime over the SLA window, as healthy-probes / total-probes.
+    ///
+    /// <para>Returns <c>null</c> when the window contains NO probes. That is deliberate and the TC requires it:
+    /// with nothing measured, "100%" would be a fabrication and "0%" would be a false alarm. Null renders as the
+    /// "Not available" placeholder, which is an honest statement about the absence of data.</para>
+    ///
+    /// <para>Uptime is a PLATFORM property — the API instance is shared — so the same figure is returned for
+    /// every tenant. What is per-tenant is only the comparison against their plan's SLA tier.</para>
+    /// </summary>
+    private Task<double?> ComputeSlaUptimePercentAsync(DateTime nowUtc, CancellationToken cancellationToken)
+        => ComputeSlaUptimePercentAsync(_db, nowUtc, SlaUptimeWindowDays, cancellationToken);
+
+    /// <summary>
+    /// The windowed query behind the uptime figure, taking its DbContext explicitly so a test can exercise the
+    /// REAL query — including the window filter — rather than re-implementing it and proving nothing.
+    /// </summary>
+    internal static async Task<double?> ComputeSlaUptimePercentAsync(
+        AppDbContext db, DateTime nowUtc, int windowDays, CancellationToken cancellationToken)
+    {
+        var windowStart = nowUtc.AddDays(-windowDays);
+
+        var counts = await db.HealthProbes
+            .AsNoTracking()
+            .Where(p => p.ObservedAtUtc >= windowStart)
+            .GroupBy(_ => 1)
+            .Select(g => new { Total = g.Count(), Healthy = g.Count(p => p.IsHealthy) })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return UptimeFromCounts(counts?.Total ?? 0, counts?.Healthy ?? 0);
+    }
+
+    /// <summary>
+    /// TC-ADM-002-17: the uptime rule itself, pure over the two counts so it can be exercised directly rather
+    /// than re-implemented in a test. <b>Zero probes ⇒ null</b>, never 100 — with nothing measured, a perfect
+    /// score is a fabrication and a zero score is a false alarm; "not available" is the only honest answer.
+    /// </summary>
+    internal static double? UptimeFromCounts(int total, int healthy)
+    {
+        if (total <= 0)
+            return null;
+
+        return Math.Round((double)healthy / total * 100d, 3);
+    }
+
+    /// <summary>The SLA measurement window, in days. Matches the default probe retention so the window can
+    /// always be fully populated.</summary>
+    private const int SlaUptimeWindowDays = 30;
+
     private static UsageGaugeDto BuildApiCallsGauge(long usedThisMonth, long? limit)
     {
         var usedForDisplay = (int)Math.Min(usedThisMonth, int.MaxValue);

@@ -216,6 +216,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // tenant_id, no query filter, no RLS policy (the key is platform-wide).
     public DbSet<EncryptionKeyActivation> EncryptionKeyActivations => Set<EncryptionKeyActivation>();
 
+    /// <summary>US-ADM-002 FR-7: system-scope readiness-probe history behind the SLA uptime %.</summary>
+    public DbSet<HealthProbe> HealthProbes => Set<HealthProbe>();
+
     // US-TRN-001: training catalog + course enrollments (tenant-scoped).
     public DbSet<TrainingCourse> TrainingCourses => Set<TrainingCourse>();
     public DbSet<CourseEnrollment> CourseEnrollments => Set<CourseEnrollment>();
