@@ -7662,7 +7662,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-292
 - **Type:** BUG (silent data loss on a money field, with a false success confirmation)
 - **Severity:** **MED**
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (decision **D1**, commit `ea8a3ae1`, merged to `test/local-subdomains` 2026-08-03)
+- **Resolution:** The salary is no longer typed at conversion time and discarded — under D1 the salary **structure** is decided at OFFER time (`Offer.SalaryStructureId`). `ApplicantConversionService:270-276` assigns it to the new employee through the existing `AssignSalaryStructureCommand` rail (offer's `SalaryAmount` as `AnnualCtc`, joining date as effective date) inside the **same atomic unit**, so a structure-carrying offer can no longer convert into a salary-less employee. `ConvertApplicantRequest` now documents that salary is deliberately not a field on it (`ApplicantConversionController.cs:92-95`), replacing the false comment that caused the gap. Pinned by `OfferSalaryStructureConversionPostgresTests` (real-Postgres arm). Gate at merge: BE 5045/0/0, FE 4030/4030.
 - **Layer:** BE + FE (wire contract)
 - **Module / US / TC:** Recruitment / US-REC-010 (AC-2) / — found 2026-07-31 during the deferred-AC verification sweep
 - **Title:** The conversion form renders an **editable salary input** (`conversion-form.component.ts:434-446`), echoes the value back in the review summary (`:500-501`), and packs it into the request body (`:995 salaryAmount`). The backend `ConvertApplicantRequest` (`ApplicantConversionController.cs:90-104`) has **nine properties and none of them is salary** — JobTitleId, DepartmentId, EmploymentType, DateOfJoining, ReportsToEmployeeId, LocationId, EmployeeNo, DateOfBirth, Gender. ASP.NET model binding drops the unmatched member with **no error, no warning, no 400**. HR types a salary, sees it confirmed in the summary, clicks Create Employee, gets a success toast — and the number is gone. The new employee has no `EmployeeSalaryComponent` row and no `SalaryStructure` assignment.
@@ -7680,7 +7681,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** ✅ **CLOSED 2026-08-02 as DECIDED-NOT-BUILT (decision D2-b).** The finding's premise was inverted — see [[BUG-293]]: the two rails do not overlap, and payroll was UNDER-deducting, not at risk of double-deducting. BUG-293's slice (approved-unpaid leave) is fixed and the rails are now provably disjoint. **The remaining 'unification' is deliberately not built:** attendance owns absence-derived LOP, leave owns policy-derived LOP, and every category deducts exactly once. Re-plumbing a correct money path for internal consistency buys no user-visible gain and carries real risk. US-LV-011's auto-LOP AC is superseded — the outcome it wanted (unpaid absence reduces pay) is delivered by a different route. The four stale comments that made this dangerous are already corrected.
 - **Type:** ISSUE (trap in the backlog — acting on the AC would create a defect)
 - **Severity:** MED
-- **Status:** OPEN
+- **Status:** ✅ CLOSED — DECIDED-NOT-BUILT (decision **D2-b**, commit `3d1cf62b`, merged to `test/local-subdomains` 2026-08-03). See the status update above; this field previously still read OPEN and contradicted it.
 - **Layer:** BE
 - **Module / US / TC:** Leave + Payroll / US-LV-011 AC-2 / — found 2026-07-31 during the deferred-AC verification sweep
 - **Title:** US-LV-011's auto-LOP is recorded as blocked behind `NoOpAttendanceProvider`, with the rationale stated three times as *"there is no attendance module yet"* (`NoOpAttendanceProvider.cs:7-10`, `IAttendanceProvider.cs:7-9`, `ProcessAbsenteeismJob.cs:16`). **That justification expired** — attendance shipped under US-ATT-001/002/008 and absence data is present (`AttendanceMonthlySummary.TotalAbsentDays`, `.LopDays`).
@@ -7694,8 +7695,9 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ### ISSUE-358 — Four of five plan feature flags are sellable in the admin console and enforced by nothing
 - **ID:** ISSUE-358
 - **Type:** ISSUE (billable-but-inert entitlements — the ISSUE-356 class, four more instances)
-- **Severity:** MED
-- **Status:** OPEN
+- **Severity:** LOW (narrowed from MED — 4 of the 5 flags are now enforced)
+- **Status:** OPEN — **NARROWED to `WhiteLabel` only** (decision **D3**, commit `13e77332`, merged 2026-08-03)
+- **Status update 2026-08-03:** D3 pre-registered real entitlement seams for three of the four inert flags, verified by grep at merge: **`Scim`** → gated at `ScimEntitlementMiddleware.cs:56` · **`CustomDomain`** → gated at `TenantResolutionMiddleware.cs:137` · **`Sandbox`** → gated at `TenantProvisioningService.cs:114`. `Sso` was already enforced (`AuthService.cs:1893`). **`WhiteLabel` remains theatre** — its only two references are `PlanFeatureFlagKeys.cs:40` (derive-set membership) and `SubscriptionPlanService.cs:375` (DTO mapping); there is still **no enforcement site**, so a platform admin unchecking "White Label" changes nothing. The tenant-side half of the original finding also stands: the backend still emits no `plan` block, so `branding-section.component.ts:245-247`'s "Upgrade your plan" badge can never fire and US-ADM-006 BR-3's *"rejected by the API"* is unimplemented for branding. Pinned by `PlanFeatureFlagKeysTests` + `ScimEntitlementMiddlewareTests`.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-006 (BR-3) / — found 2026-07-31 during the deferred-AC verification sweep
 - **Title:** `PlanFeatureFlags` (`SubscriptionPlan.cs:97,109`) carries `Sso, CustomDomain, WhiteLabel, Scim, Sandbox`, persisted as jsonb and **fully editable in the platform-admin UI** (`plan-editor.component.ts:121-124`). Only **one** is ever read: `AuthService.cs:1893` for `Sso`. A repo-wide grep for `.WhiteLabel` / `.CustomDomain` / `.Scim` / `.Sandbox` outside plan-editing, DTOs and tests returns **zero** consumers. A platform admin who unchecks "White Label" on a plan has changed nothing.
@@ -7710,7 +7712,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-293
 - **Type:** BUG (money — salary paid for days that should be unpaid)
 - **Severity:** **HIGH**
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (decision **D2**, commit `35da9b9b`, merged to `test/local-subdomains` 2026-08-03)
+- **Resolution:** Payroll no longer reads only the attendance rail. The leave module is authoritative for policy-derived LOP and payroll now routes through it, so approved-but-unpaid leave deducts exactly once. The two rails are provably disjoint — attendance owns absence-derived LOP (unapproved absence + late-arrival penalties), leave owns `LeaveRequest.IsLop` — so this added a deduction that was always owed rather than duplicating one, as recorded in the reversed ordering risk below. Pinned by `LopAuthorityPayrollPostgresTests` (real-Postgres arm, per the standing rule that InMemory masks Postgres on ledger arithmetic). Gate at merge: BE 5045/0/0, FE 4030/4030. **Still open as a separate call:** whether past underpaid periods are corrected retroactively.
 - **Layer:** BE
 - **Module / US / TC:** Leave + Attendance + Payroll / US-LV-011, US-ATT-008, US-PAY-* / — found 2026-07-31 while scoping decision D2
 - **Title:** Approved-but-unpaid leave never reaches payroll. `AttendanceSummaryService` (`:442-447`) selects **every** approved `LeaveRequest` with **no `IsLop` filter**, so a day covered by unpaid leave lands in `ApprovedLeaveFullDates`; `ComputeDay` then classifies it `LEAVE`, adding to `leave` and contributing **`lop += 0`** (`:568-569`). `PayrollRunProcessor:426` reads `attendance?.LopDays`, and nothing reads the leave module's `LopService`. **Net effect: an employee takes leave they have no balance for, it is correctly flagged `IsLop`, and they are paid for it anyway.**
