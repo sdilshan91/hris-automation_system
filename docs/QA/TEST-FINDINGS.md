@@ -7676,7 +7676,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-360
 - **Type:** ISSUE (build/deploy defect — wrong artefact shipped, ~6.5 GB wasted per build)
 - **Severity:** **MED**
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (2026-08-03, same day) — `debug` moved ABOVE `runtime` in `src/backend/Dockerfile` so the safe artefact is the default stage, plus an explicit `target: runtime` on the compose `backend` service so a stage appended below it cannot re-introduce the trap. `docker-compose.debug.yml` already named `target: debug` and still resolves correctly — verified with `docker compose config` on both files. **Result: `hris-backend:latest` 6.85 GB → 571 MB.** Container recreated and verified genuinely runtime: no `/usr/share/dotnet/sdk` inside, `/app` holds published output only, `/health/ready` 200, `/swagger` 200, healthy in ~25s. A further 3.15 GB of inactive BuildKit cache was pruned. **Note the reclaim landed on `/` (`/dev/sda7`, where `/var/lib/docker` actually lives), NOT on the D drive** — the `DockerData/` folder on D is Windows Docker Desktop WSL2 storage, unrelated to the Linux daemon.
 - **Layer:** INFRA / BUILD
 - **Module / US / TC:** Platform / DEV tooling / — found 2026-08-03 while reclaiming disk space
 - **Title:** `src/backend/Dockerfile` declares three stages in this order — `build` (`FROM mcr.microsoft.com/dotnet/sdk:10.0`), `runtime` (`FROM mcr.microsoft.com/dotnet/aspnet:10.0`, the real production image), and `debug` (`FROM build`, i.e. back onto the SDK, adding `dotnet build -c Debug`). The `backend` service in `docker-compose.yml` specifies **no `target:`**. Docker builds the **last** stage when none is named, so compose builds **`debug`** — never `runtime`.

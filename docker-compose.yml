@@ -42,6 +42,11 @@ services:
     build:
       context: ./src/backend
       dockerfile: Dockerfile
+      # ISSUE-360: name the stage EXPLICITLY. Docker builds the last stage when no target is
+      # given, so this file silently built `debug` (Debug config on the SDK base, 6.85 GB)
+      # while `runtime` was never built at all. The Dockerfile now also keeps `runtime` last;
+      # this line means a future stage appended below it cannot re-introduce the same trap.
+      target: runtime
     env_file: ./docker.env
     ports:
       - "5000:5000"
