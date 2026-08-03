@@ -119,11 +119,24 @@
 
 **▶ STILL OPEN (2):**
 - [ ] **FIX BUG-098 (MED, FE)** — `getContrastTextColor(hex)` in `leave-type.models.ts:127-128` calls `.replace('#','')` with no null guard; `leave_types.color` is nullable (8 of 13 null for acme) → `TypeError` per null-color row on the Leave-types config page **and** the employee leave-application picker. One-line null-coalesce + a spec arm feeding `color: null`. US-LV-001 / US-LV-003.
-- [ ] **BUILD deferred Admin monitoring KPIs** (TC-ADM-002-14..18 `[DEFERRED]`) — ⚠ **my own "Blocked on US-PLT-004" claim here was WRONG; corrected 2026-07-30 after verifying against the code.** Roughly 40% of this surface has no OTel dependency at all:
-  - **Buildable TODAY, zero OTel dependency:** the **storage** gauge (`EmployeeDocumentService.cs:229-230` already does the per-tenant `SumAsync(FileSizeBytes)` — but see [[ISSUE-340]], it should widen to all four size-bearing tables) · the **email-sends** gauge (`NotificationDelivery` has `TenantId`/`Channel`/`Status`/`SentAt`; the `MaxEmailSendsPerMonth` key already exists) · **SLA-uptime** (needs only a probe-history table + a Hangfire job hitting the **already-built** `/health/ready`). That covers **TC-ADM-002-17 and two-thirds of TC-ADM-002-18**.
-  - **Genuinely blocked on a metrics store:** aggregate error-rate %, P95 latency, 24h latency trend. *But* error-rate and top-errors may be sourceable from the **GlitchTip API** (already shipped, already tenant-tagged by `TenantTagSentryEventProcessor`) without standing up LGTM at all — validate that before committing to the Grafana phase.
-  - **Needs new instrumentation:** the API-call counter (limit key exists, the counter does not).
-  - ~~Also fix [[ISSUE-344]] first~~ → ✅ **FIXED 2026-07-30** — the dashboard now reports Redis's real health (and still reports NotConfigured when Redis genuinely is not configured, which is a supported mode here).
+- [ ] **BUILD deferred Admin monitoring KPIs** (TC-ADM-002-14..18) — ⚠️ **RE-VERIFIED AGAINST CODE 2026-08-04; the
+  previous note here was stale in BOTH directions.** Actual state:
+  - **TC-ADM-002-18 — ✅ ALREADY BUILT, all three gauges.** Storage (`TenantStorageUsage.ComputeBytesByTenantAsync`,
+    all four size-bearing tables per [[ISSUE-340]]), email-sends (`TenantEmailSendUsage.CountSentThisMonthByTenantAsync`)
+    and — contrary to the "needs new instrumentation" claim — **API calls**, which shipped as `ApiCallCounterMiddleware`
+    + `ApiCallCounterFlushService` writing `tenant_api_usage`. All three are wired into `GetTenantUsageAsync` and
+    `GetTenantDetailAsync` with plan-limit + override resolution. Nothing to build.
+  - **TC-ADM-002-17 (SLA uptime %) — the ONLY buildable item left.** `PlatformMonitoringService.cs:341` returns
+    `SlaUptimePercent: null // DEFERRED — no probe history`, which is the honest placeholder the TC currently
+    requires. Needs: a probe-history table, a recurring job recording readiness results, an uptime computation over a
+    window, and comparison against the plan's `SlaTier`. **Design caution:** `SlaTier` is free text (`string`, max 50,
+    no enum), so a tier→threshold map needs a documented default and must not silently treat an unknown tier as passing.
+    **Hard requirement from the TC:** with no probe history the field must stay null — never a fabricated 100%.
+  - **TC-ADM-002-14 / -15 / -16 (aggregate error-rate %, P95 latency, 24h trend + top-errors) — genuinely blocked.**
+    `AggregateErrorRatePercent` and `P95LatencyMs` are null pending a metrics store. Before standing up Grafana LGTM,
+    validate whether error-rate and top-errors can be read from the **GlitchTip API** (already shipped, already
+    tenant-tagged by `TenantTagSentryEventProcessor`) — that may remove the need entirely. P95 latency would still
+    need a metrics store.
 
 **✅ CLEARED (verified against TEST-FINDINGS.md, 2026-07-28):**
 - ~~BUG-003 (CRIT cross-tenant JWT-vs-subdomain)~~ RESOLVED PR #119 — systemic `TenantAccessGuardMiddleware`. *(Formal closure still wants a live `/verify-fix --iso` re-run — parked as a verify task, not a build task.)*
