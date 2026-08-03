@@ -7672,6 +7672,22 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### ISSUE-360 — `docker compose build backend` produces the DEBUG image: the running API is a Debug build carrying the full .NET SDK (6.85 GB vs ~400 MB)
+- **ID:** ISSUE-360
+- **Type:** ISSUE (build/deploy defect — wrong artefact shipped, ~6.5 GB wasted per build)
+- **Severity:** **MED**
+- **Status:** OPEN
+- **Layer:** INFRA / BUILD
+- **Module / US / TC:** Platform / DEV tooling / — found 2026-08-03 while reclaiming disk space
+- **Title:** `src/backend/Dockerfile` declares three stages in this order — `build` (`FROM mcr.microsoft.com/dotnet/sdk:10.0`), `runtime` (`FROM mcr.microsoft.com/dotnet/aspnet:10.0`, the real production image), and `debug` (`FROM build`, i.e. back onto the SDK, adding `dotnet build -c Debug`). The `backend` service in `docker-compose.yml` specifies **no `target:`**. Docker builds the **last** stage when none is named, so compose builds **`debug`** — never `runtime`.
+- **Consequences, in order of importance:** **(1)** the API container everyone runs locally is a **Debug build**, not Release — different JIT optimisation and debug assertions, so local perf and behaviour are not what ships. **(2)** `hris-backend:latest` is **6.85 GB** against a ~400 MB `runtime` image (aspnet base 340 MB + app): **~6.5 GB wasted**, the single largest avoidable consumer on the dev drive and the direct cause of it reaching 100% (`No space left on device` during a commit, 2026-08-03). **(3)** the `runtime` stage is never exercised, so a defect in the production image would not surface until deploy.
+- **Root cause:** the `debug` stage was appended AFTER `runtime` in the file, silently changing docker's default target. Nothing pins the intended stage. Confidence **95%** — verified by reading the stage order, confirming the compose service has no `target:`, and matching the 6.85 GB image size to an SDK-based layer set.
+- **Reproduction steps:** `docker compose build backend`, then `docker images hris-backend` → ~6.85 GB. `docker history hris-backend:latest` shows SDK layers and the copied source tree, not a published-output-only image.
+- **Severity rationale:** MED — nothing is functionally broken (the Debug build runs correctly) and it is dev-environment-only today, so not HIGH. But it ships the wrong artefact, hides the production image from all local testing, and its disk cost is large enough to have already halted work once.
+- **Suggested direction (NOT applied — it changes the running dev stack, so it wants a deliberate rebuild):** add `target: runtime` to the `backend` service's `build:` block in `docker-compose.yml`, then `docker compose build backend && docker compose up -d backend`. Anyone wanting the debug image asks for it explicitly (`target: debug`, e.g. via an override file) rather than receiving it by accident. Consider also moving the `debug` stage ABOVE `runtime` so the default can never drift again.
+
+---
+
 ### BUG-291 — `AccrualFrequency` is ignored: a Monthly/Quarterly leave type credits the FULL year on the first run, and that inflated balance is paid out
 - **ID:** BUG-291
 - **Status update:** 📋 **DECISION TAKEN 2026-07-31: report the affected population, change NOTHING.** Correcting balances downward is an employee-detriment change to be decided case-by-case by HR/Finance, not a side effect of a bug fix. Shipped a **read-only** exposure report — `GET /api/v1/tenant/leave-entitlements/accrual-over-credit-exposure?asOfDate=` (`Leave.ConfigurePolicy`) — giving credited vs should-have-accrued vs over-credited days per employee. Verified read-only (no SaveChanges / DbSet writes / IgnoreQueryFilters). Reuses the merged fix's own period maths so the figure is byte-identical to what the corrected job credits; employees already period-tagged post-fix are excluded so the report cannot double-count. **This finding stays OPEN** until the per-employee correction policy is settled — the code side is done, the business decision is not.
