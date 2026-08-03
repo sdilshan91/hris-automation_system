@@ -80,4 +80,37 @@ public interface IStatutoryDeductionResolver
     Task<Result<StatutoryDeductions>> ResolveAsync(
         int payYear, int payMonth, StatutoryWageInput wage, string? fiscalYearOverride = null,
         string? countryCode = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// ISSUE-197: the BATCH form. Loads the statutory rule set ONCE PER DISTINCT COUNTRY and then computes every
+    /// item against it, instead of re-querying <c>StatutoryRules</c> per employee.
+    ///
+    /// <para>This exists because <see cref="ResolveAsync"/> has no cache (the NFR-1 Redis cache is a documented
+    /// deferral), so calling it in a loop over a tenant's employees is an N+1: a 5 000-employee report would fire
+    /// 5 000 rule queries. Typical tenants operate in one country, so a batch is ONE query regardless of headcount.</para>
+    ///
+    /// <para>It shares the single-employee path's arithmetic exactly — both funnel through the same private
+    /// computation — so the batched numbers and the per-employee numbers cannot diverge. A cross-path agreement
+    /// test pins that; see <c>StatutoryResolverBatchAgreementTests</c>.</para>
+    ///
+    /// <para>Per-item country semantics are identical to <see cref="ResolveAsync"/>: an item with a null/blank
+    /// <c>CountryCode</c> resolves NOTHING and yields an empty (zero-deduction) result rather than borrowing
+    /// another country's rules.</para>
+    /// </summary>
+    /// <param name="items">The per-subject wage inputs, each carrying its own tax country and a caller-chosen key.</param>
+    /// <returns>One entry per input key. Keys absent from the input are absent from the result.</returns>
+    Task<Result<IReadOnlyDictionary<Guid, StatutoryDeductions>>> ResolveManyAsync(
+        int payYear, int payMonth, IReadOnlyCollection<StatutoryWageBatchItem> items,
+        string? fiscalYearOverride = null, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// One subject of a <see cref="IStatutoryDeductionResolver.ResolveManyAsync"/> call (ISSUE-197).
+/// </summary>
+/// <param name="Key">Caller-chosen identity (e.g. the employee id) used to key the returned results.</param>
+/// <param name="Wage">The same per-period wage inputs the single-employee path takes.</param>
+/// <param name="CountryCode">
+/// This subject's tax country. Null/blank resolves nothing for that subject — never a fallback to another
+/// country's rules, matching the single-employee contract on a money path.
+/// </param>
+public sealed record StatutoryWageBatchItem(Guid Key, StatutoryWageInput Wage, string? CountryCode);

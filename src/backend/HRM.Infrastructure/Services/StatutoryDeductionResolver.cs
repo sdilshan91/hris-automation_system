@@ -74,11 +74,79 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
 
         var allRules = await query.ToListAsync(cancellationToken);
 
-        // FR-4: per rule TYPE, pick the single version in effect for the period (latest effective-from wins).
         var effectiveRules = SelectEffectiveByType(periodDate, allRules);
+        return Result<StatutoryDeductions>.Success(ComputeFor(effectiveRules, wage, fiscalYearOverride));
+    }
 
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyDictionary<Guid, StatutoryDeductions>>> ResolveManyAsync(
+        int payYear, int payMonth, IReadOnlyCollection<StatutoryWageBatchItem> items,
+        string? fiscalYearOverride = null, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyDictionary<Guid, StatutoryDeductions>>.Failure(
+                "Tenant context is not resolved.", 400);
+
+        var results = new Dictionary<Guid, StatutoryDeductions>();
+        if (items.Count == 0)
+            return Result<IReadOnlyDictionary<Guid, StatutoryDeductions>>.Success(results);
+
+        var periodDate = FiscalYearResolver.PeriodDate(payYear, payMonth);
+
+        // ISSUE-197: ONE rule query per DISTINCT country, not per subject. Country normalization must mirror
+        // ResolveAsync's exactly (Trim + ToUpperInvariant on the incoming side, Trim().ToUpper() on the stored
+        // side) — a normalization that disagreed would silently resolve a different rule set for the same
+        // employee depending on which entry point was used.
+        foreach (var group in items.GroupBy(i => string.IsNullOrWhiteSpace(i.CountryCode)
+                     ? null
+                     : i.CountryCode!.Trim().ToUpperInvariant()))
+        {
+            // Null/blank country resolves NOTHING — identical to the single-employee contract. Never borrow
+            // another country's rules onto a money path.
+            if (group.Key is null)
+            {
+                foreach (var item in group)
+                    results[item.Key] = Empty(fiscalYearOverride);
+                continue;
+            }
+
+            var country = group.Key;
+            var query = _dbContext.StatutoryRules.AsNoTracking()
+                .Include(r => r.TaxSlabs)
+                .Include(r => r.Exemptions)
+                .Include(r => r.SocialSecurityRule)
+                .Where(r => r.IsActive && r.CountryCode!.Trim().ToUpper() == country);
+
+            if (!string.IsNullOrWhiteSpace(fiscalYearOverride))
+            {
+                var fy = fiscalYearOverride.Trim();
+                query = query.Where(r => r.FiscalYear == fy);
+            }
+
+            var allRules = await query.ToListAsync(cancellationToken);
+            var effectiveRules = SelectEffectiveByType(periodDate, allRules);
+
+            // Selected ONCE for the whole country group, then reused — the rule set does not vary per employee.
+            foreach (var item in group)
+                results[item.Key] = ComputeFor(effectiveRules, item.Wage, fiscalYearOverride);
+        }
+
+        return Result<IReadOnlyDictionary<Guid, StatutoryDeductions>>.Success(results);
+    }
+
+    /// <summary>
+    /// ISSUE-197: the ENTIRE per-employee computation, pure over (effective rules, wage). Extracted so the
+    /// single-employee <see cref="ResolveAsync"/> and the batch <see cref="ResolveManyAsync"/> run the SAME
+    /// arithmetic rather than two implementations that agree today and drift tomorrow — the failure class behind
+    /// BUG-291, BUG-293 and DF-62-parity. Pinned by a cross-path agreement test; do not inline either caller.
+    /// </summary>
+    private static StatutoryDeductions ComputeFor(
+        Dictionary<StatutoryRuleType, StatutoryRule> effectiveRules,
+        StatutoryWageInput wage,
+        string? fiscalYearOverride)
+    {
         if (effectiveRules.Count == 0)
-            return Result<StatutoryDeductions>.Success(Empty(fiscalYearOverride));
+            return Empty(fiscalYearOverride);
 
         var lines = new List<StatutoryDeductionLine>();
         decimal incomeTax = 0m, employeeEpf = 0m, employerEpf = 0m, etf = 0m, professionalTax = 0m, other = 0m;
@@ -186,7 +254,7 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
         var employeeTotal = Round(incomeTax + employeeEpf + professionalTax + other);
         var employerTotal = Round(employerEpf + etf);
 
-        return Result<StatutoryDeductions>.Success(new StatutoryDeductions
+        return new StatutoryDeductions
         {
             TaxableIncome = taxableIncome,
             IncomeTax = incomeTax,
@@ -200,7 +268,7 @@ public sealed class StatutoryDeductionResolver : IStatutoryDeductionResolver
             TotalEmployerContributions = employerTotal,
             Lines = lines,
             FiscalYear = fiscalYear,
-        });
+        };
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
