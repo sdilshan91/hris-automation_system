@@ -21,6 +21,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Attendance.DTOs;
 using HRM.Application.Features.Recruitment.DTOs;
 using HRM.Application.Features.Workflows.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
@@ -64,15 +65,24 @@ public sealed class WorkflowEntityWiringPostgresTests : IAsyncLifetime
         public void SetSystemContext() { }
     }
 
-    private static ICurrentUser User(Guid userId)
+    /// <param name="permissions">
+    /// ISSUE-123: offer approval now requires <c>Recruitment.ApproveOffer</c>, so an approver in these arms must
+    /// actually hold it. Defaults to none, which keeps every non-approval arm exercising a least-privilege
+    /// principal rather than an implicitly-omnipotent one.
+    /// </param>
+    private static ICurrentUser User(Guid userId, params string[] permissions)
     {
         var u = Substitute.For<ICurrentUser>();
         u.UserId.Returns(userId);
         u.IsAuthenticated.Returns(true);
         u.Email.Returns("u@acme.com");
-        u.Permissions.Returns(new List<string>());
+        u.Permissions.Returns(permissions.ToList());
         return u;
     }
+
+    /// <summary>An approver principal holding the offer-approval authority (ISSUE-123).</summary>
+    private static ICurrentUser OfferApprover(Guid userId) =>
+        User(userId, PermissionCatalog.Recruitment.ApproveOffer);
 
     private AppDbContext Db(ITenantContext tc, ICurrentUser user) =>
         new(new DbContextOptionsBuilder<AppDbContext>()
@@ -381,7 +391,7 @@ public sealed class WorkflowEntityWiringPostgresTests : IAsyncLifetime
         // The approver approves the instance.
         await using (var db = Db(tc, User(apprUser)))
         {
-            var dec = await OfferSvc(db, tc, User(apprUser))
+            var dec = await OfferSvc(db, tc, OfferApprover(apprUser))
                 .DecideApprovalAsync(offerId, WorkflowDecisionAction.Approve, null);
             dec.IsSuccess.Should().BeTrue(dec.Error);
             dec.Value!.Status.Should().Be("Approved");
@@ -393,6 +403,55 @@ public sealed class WorkflowEntityWiringPostgresTests : IAsyncLifetime
             var send = await OfferSvc(db, tc, User(apprUser)).SendAsync(offerId);
             send.IsSuccess.Should().BeTrue(send.Error);
             send.Value!.Status.Should().Be(OfferStatus.Sent);
+        }
+    }
+
+    /// <summary>
+    /// ISSUE-123: approving an offer requires <c>Recruitment.ApproveOffer</c>. The generic route into
+    /// <c>DecideApprovalAsync</c> gates only on the workflow-administration permissions, so before this fix a
+    /// principal who could edit workflow definitions could also approve offers — an authority the recruiter
+    /// role was meant to own. Drives the SAME approver identity as the happy-path arm above and varies ONLY the
+    /// permission set, so a pass here cannot come from the offer being unapprovable for some other reason.
+    /// </summary>
+    [Fact]
+    public async Task Offer_ApproveWithoutApproveOfferPermission_IsRefused_AndSendStaysBlocked()
+    {
+        var (tenantId, apprUser, applicantId) = await SeedOfferAsync(withDefinition: true);
+        var tc = new MutableTenantContext { TenantId = tenantId };
+
+        Guid offerId;
+        await using (var db = Db(tc, User(apprUser)))
+        {
+            var gen = await OfferSvc(db, tc, User(apprUser)).GenerateAsync(OfferInput(applicantId));
+            gen.IsSuccess.Should().BeTrue(gen.Error);
+            offerId = gen.Value!.Id;
+        }
+
+        // A workflow administrator WITHOUT Recruitment.ApproveOffer is refused 403.
+        await using (var db = Db(tc, User(apprUser)))
+        {
+            var denied = await OfferSvc(db, tc, User(apprUser, PermissionCatalog.Tenant.ManageWorkflows))
+                .DecideApprovalAsync(offerId, WorkflowDecisionAction.Approve, null);
+            denied.IsFailure.Should().BeTrue("approving an offer is not a workflow-administration action");
+            denied.StatusCode.Should().Be(403);
+            denied.ErrorCode.Should().Be("forbidden");
+        }
+
+        // The refusal must be real, not cosmetic: the instance is still un-approved so Send stays blocked.
+        await using (var db = Db(tc, User(apprUser)))
+        {
+            var send = await OfferSvc(db, tc, User(apprUser)).SendAsync(offerId);
+            send.IsFailure.Should().BeTrue();
+            send.ErrorCode.Should().Be("offer_approval_pending");
+        }
+
+        // And the same principal WITH the permission succeeds — proving the permission is the only variable.
+        await using (var db = Db(tc, OfferApprover(apprUser)))
+        {
+            var allowed = await OfferSvc(db, tc, OfferApprover(apprUser))
+                .DecideApprovalAsync(offerId, WorkflowDecisionAction.Approve, null);
+            allowed.IsSuccess.Should().BeTrue(allowed.Error);
+            allowed.Value!.Status.Should().Be("Approved");
         }
     }
 

@@ -2989,7 +2989,7 @@ Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offe
 - **Severity rationale:** MED — contained (no isolation/crash impact) but violates the single-outcome business rule; lets recruiters issue contradictory live offers to a hired candidate, and the new Draft is sendable.
 
 ### BUG-067 · BUG · LOW · BE — Offer expiry-date is not validated against the start-date; an offer that expires BEFORE it can start is accepted (FR-1/AC-1 gap)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (P2 offer cluster, 2026-08-03) — `GenerateOfferValidator` now rejects `ExpiryDate < StartDate` with a cross-field rule. Rule is **>=**, so expiry ON the start date is still accepted, and a null expiry is untouched (BR-6 defaults it in the service). Four arms in `OfferAuditAndValidationTests` incl. the exact repro and the on-boundary case; **mutation-verified** — neutering the rule to `=> true` kills `Validate_ExpiryBeforeStartDate_IsRejected` and nothing else.
 - **Layer:** BE
 - **Module / US / TC:** Recruitment / US-REC-007 / TC-REC-007-09 (step 4)
 - **Title:** Generation accepts `expiryDate < startDate` (both in the future), producing a logically-inconsistent offer.
@@ -3010,7 +3010,7 @@ Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offe
 - **Severity rationale:** MED — a named AC (AC-4) + FR (FR-7) requirement (the pre-expiry reminder) is unimplemented; recruiters get no heads-up before an offer lapses. The auto-expire half works.
 
 ### ISSUE-123 · ISSUE · LOW · BE — `Recruitment.ApproveOffer` permission + the BR-5/FR-10 offer-approval gate are unimplemented (deferred S34); send is never gated
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (P2 offer cluster, 2026-08-03) — **but NOT as filed; the finding's main claim was already stale.** The BR-5/FR-10 approval gate *was* implemented under US-ADM-011c: `OfferService.SendAsync` blocks a workflow-driven offer until its instance is Approved (409 `offer_approval_pending`) and `DecideApprovalAsync` handles the decision. What was genuinely true is narrower — **`Recruitment.ApproveOffer` was a dead constant**, granted to two role sets but enforced nowhere, because the generic route gates on `Tenant.*Workflows` (workflow *administration*, not offer approval). **Fixed (user-decided):** `DecideApprovalAsync` now requires `Recruitment.ApproveOffer`, failing closed on an absent principal. Regression arm `Offer_ApproveWithoutApproveOfferPermission_IsRefused_AndSendStaysBlocked` drives the same identity and varies only the permission set, and asserts the refusal is real (Send stays blocked). **Mutation-verified** on real Postgres.
 - **Layer:** BE
 - **Module / US / TC:** Recruitment / US-REC-007 / TC-REC-007-11
 - **Title:** There is no requires-approval flag, no approval state, and no approval gate on `POST /offers/{id}/send`; the `Recruitment.ApproveOffer` permission exists in PermissionCatalog but is referenced by zero endpoints (dead permission).
@@ -3020,7 +3020,7 @@ Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offe
 - **Severity rationale:** LOW — feature is spec-deferred, but the dangling ApproveOffer permission is misleading (suggests an approval gate that does not exist). TC-REC-007-11 is consequently un-drivable (BLOCKED).
 
 ### ISSUE-124 · ISSUE · LOW · BE — Offer writes (generate/send/respond/withdraw/auto-expire) emit no `audit_logs` rows (Serilog only)
-- **Status:** OPEN
+- **Status:** ✅ RESOLVED (P2 offer cluster, 2026-08-03) — all five lifecycle transitions now write `audit_logs` rows via the new `OfferAuditAction` catalog (`Offer.Generated` / `.Sent` / `.Responded` / `.Withdrawn` / `.Expired`), matching the `PayrollAuditAction` convention. Rows are added to the change set so they commit **atomically** with the status change — a refused transition writes neither, pinned by `RefusedTransition_WritesNoAuditRow`. The generate row captures the salary figure itself. The auto-expire leg is audited in `OfferExpiryJob` with a null `user_id` (system actor). **Mutation-verified** — dropping the Sent row kills exactly its arm.
 - **Layer:** BE
 - **Module / US / TC:** Recruitment / US-REC-007 / TC-REC-007-01..06
 - **Title:** No offer lifecycle event writes to audit_logs; the only trail is the Serilog file + the stage-history row on accept.
@@ -3030,7 +3030,7 @@ Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offe
 - **Severity rationale:** LOW — no spec requirement for offer audit_logs; offer changes (salary, status) are nonetheless invisible to the in-app audit-search surface (Serilog-only).
 
 ### ISSUE-125 · ISSUE · LOW · BE — Offer PDFs are NOT encrypted at rest (NFR-3 unmet in this increment; dev LocalFileStorage writes plaintext)
-- **Status:** OPEN
+- **Status:** ✅ CLOSED — SUPERSEDED by [[ISSUE-359]] (2026-08-03, user-decided). Investigating this during the P2 offer cluster established the finding is **mis-scoped, not wrong**: no `IFileStorage` implementation encrypts anything, so offer PDFs are one symptom of a platform-wide gap that equally exposes **payslip PDFs (salary)** and **employee documents (PII)**. `IFieldProtector` (US-PLT-005) covers DB *columns* only and does not apply to files. Encrypting offer PDFs alone would have satisfied the letter of this row while leaving the larger exposure open and making the storage layer inconsistent, so it is re-filed platform-wide rather than closed as done. **Nothing is fixed yet — see [[ISSUE-359]].**
 - **Layer:** BE / INFRA
 - **Module / US / TC:** Recruitment / US-REC-007 / TC-REC-007-14
 - **Title:** The generated offer PDF is stored as a plaintext file by LocalFileStorage; NFR-3 (encrypted at rest) is unmet. Tenant-scoping + authorized access (no raw blob URL) ARE correct.
@@ -7638,6 +7638,23 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Root cause:** the module key was added to the canonical vocabulary ahead of the feature. Confidence **95%** — no controller matched a custom-report-builder route in the enumeration of every `[Route]` attribute.
 - **Severity rationale:** LOW — no runtime risk. It matters commercially: a plan can advertise a module the platform does not implement, and an admin toggling it sees no effect and no explanation.
 - **Suggested direction (NOT applied):** either build the feature, or mark the key as not-yet-available in the plan editor so it cannot be sold by accident. Note `Asset` is a related-but-different case — it HAS a surface (`/api/v1/onboarding/assets`) and IS gated, it just lacks a dedicated controller.
+
+---
+
+### ISSUE-359 — No stored file is encrypted at rest anywhere: payslip PDFs (salary), employee documents (PII) and offer letters all land as plaintext
+- **ID:** ISSUE-359
+- **Type:** ISSUE (security / NFR gap — platform-wide, supersedes the offer-scoped [[ISSUE-125]])
+- **Severity:** **MED**
+- **Status:** OPEN
+- **Layer:** BE / INFRA
+- **Module / US / TC:** Platform (all file-writing modules) / US-REC-007 NFR-3 + US-PAY-* + US-CHR-* / TC-REC-007-14 — filed 2026-08-03 from the P2 offer-cluster investigation
+- **Title:** `LocalFileStorage.UploadAsync` writes a raw `FileStream` with no encryption, and **no other `IFileStorage` implementation encrypts either**. Every file the platform stores is plaintext on disk: offer letters (salary + terms), **payslip PDFs (salary)**, employee documents (identity/PII), self-assessment attachments, and report exports.
+- **Why this supersedes [[ISSUE-125]]:** ISSUE-125 filed this as an offer-letter defect. It is not offer-specific — offers are simply where it was first noticed. Fixing offers alone would satisfy the letter of that row while leaving payslips and employee documents exposed, and would leave the storage layer inconsistent with no principle explaining which files are protected. User-decided 2026-08-03 to re-file platform-wide rather than patch one caller.
+- **What is NOT the gap:** `IFieldProtector` / the US-PLT-005 encryption work covers **database columns** (`users.mfa_secret`, `national_id`) and does not apply to files. Tenant isolation and access control on the file paths ARE correct and are not in question — `LocalFileStorage` has the ISSUE-030 `..` path guard, downloads are permission-gated, and no raw blob URL is exposed. This finding is strictly about bytes at rest.
+- **Root cause:** file storage was built as a thin filesystem/blob seam and no encryption requirement was pushed down into it; each caller assumed the layer handled it. Confidence **95%** — verified by grep across every `IFileStorage` implementation and by reading `LocalFileStorage`.
+- **Reproduction steps:** generate an offer, run a payslip batch, and upload an employee document; then read the stored files directly from `{basePath}/{tenantId}/...` — all three open as valid plaintext PDFs/blobs without any key.
+- **Severity rationale:** MED, raised from the LOW this carried as ISSUE-125 because the real blast radius is the whole file estate rather than one document type: an attacker or operator with filesystem/bucket read access obtains salary and PII for every tenant at once. Not HIGH because it requires storage-layer access that already implies significant compromise, and access control at the application layer is sound.
+- **Suggested direction (NOT applied — needs its own story):** envelope-encrypt in the storage layer so every caller inherits it, reusing the existing Data Protection key ring + `EncryptedFieldRegistry` rotation tooling from PR #438. **Two decisions must be made first:** (1) key management — per-tenant vs platform key, and how it interacts with the quarterly rotation cadence already chosen; (2) a back-fill plan for the existing plaintext estate, including whether reads must tolerate legacy plaintext during migration (the `Unprotect` precedent from US-PLT-005 Scope A). Deserves a focused session, not a side quest inside a feature PR.
 
 ---
 

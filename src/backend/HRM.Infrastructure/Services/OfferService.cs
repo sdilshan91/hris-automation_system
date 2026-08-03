@@ -1,9 +1,12 @@
 using System.Globalization;
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Recruitment.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Recruitment;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -198,6 +201,17 @@ public sealed class OfferService : IOfferService
         offer.PdfStorageKey = relativePath;
 
         _dbContext.Offers.Add(offer);
+        AddOfferAudit(OfferAuditAction.Generated, offer, before: null, after: new
+        {
+            Status = offer.Status.ToString(),
+            offer.OfferReferenceNumber,
+            offer.Version,
+            offer.SalaryAmount,
+            offer.Currency,
+            SalaryFrequency = offer.SalaryFrequency.ToString(),
+            offer.StartDate,
+            offer.ExpiryDate,
+        });
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // US-ADM-011c FR-11 / US-REC-007 FR-10/BR-5: if the tenant has an Active Offer approval workflow,
@@ -262,6 +276,7 @@ public sealed class OfferService : IOfferService
                     "This offer is pending approval and cannot be sent yet.", 409, "offer_approval_pending");
         }
 
+        var statusBeforeSend = offer.Status;
         offer.Status = OfferStatus.Sent;
         offer.SentAt = DateTime.UtcNow;
 
@@ -273,6 +288,9 @@ public sealed class OfferService : IOfferService
         // is absent). Stored on a SEPARATE field so cancelling the reminder never clobbers the expiry job.
         offer.ExpiryReminderJobId = ScheduleExpiryReminder(offer);
 
+        AddOfferAudit(OfferAuditAction.Sent, offer,
+            before: new { Status = statusBeforeSend.ToString() },
+            after: new { Status = offer.Status.ToString(), offer.SentAt, offer.ExpiryDate });
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -301,6 +319,7 @@ public sealed class OfferService : IOfferService
         if (offer.Status != OfferStatus.Sent)
             return Result<OfferDto>.Failure($"Only a sent offer can be responded to (current status: {offer.Status}).", 409, "offer_not_sent");
 
+        var statusBeforeRespond = offer.Status;
         offer.Status = input.Accepted ? OfferStatus.Accepted : OfferStatus.Declined;
         offer.Response = offer.Status.ToString();
         offer.RespondedAt = DateTime.UtcNow;
@@ -336,6 +355,9 @@ public sealed class OfferService : IOfferService
             }
         }
 
+        AddOfferAudit(OfferAuditAction.Responded, offer,
+            before: new { Status = statusBeforeRespond.ToString() },
+            after: new { Status = offer.Status.ToString(), offer.Response, offer.RespondedAt });
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -360,12 +382,16 @@ public sealed class OfferService : IOfferService
         if (!offer.IsActive)
             return Result<OfferDto>.Failure($"Only a draft or sent offer can be withdrawn (current status: {offer.Status}).", 409, "offer_not_active");
 
+        var statusBeforeWithdraw = offer.Status;
         offer.Status = OfferStatus.Withdrawn;
         _expiryScheduler?.Cancel(offer.ReminderJobId);
         offer.ReminderJobId = null;
         _expiryReminderScheduler?.Cancel(offer.ExpiryReminderJobId);
         offer.ExpiryReminderJobId = null;
 
+        AddOfferAudit(OfferAuditAction.Withdrawn, offer,
+            before: new { Status = statusBeforeWithdraw.ToString() },
+            after: new { Status = offer.Status.ToString() });
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -386,6 +412,19 @@ public sealed class OfferService : IOfferService
         if (_workflowRuntime is null)
             return Result<OfferApprovalDecisionDto>.Failure(
                 "Offer approval workflow is not available.", 400, "workflow_unavailable");
+
+        // ISSUE-123 / BR-5: approving an offer is its OWN authority. The generic route into this method
+        // (WorkflowInstancesController -> DecideWorkflowInstanceCommand) gates on Tenant.*Workflows, which is a
+        // workflow-ADMINISTRATION permission — "may edit workflow definitions", not "may approve this offer".
+        // Recruitment.ApproveOffer was modelled and granted to the recruiter-approver role sets for exactly this
+        // decision but was enforced nowhere, so a workflow administrator with no recruitment authority could
+        // approve offers. Fail CLOSED: an absent principal is treated as holding no permissions.
+        if (_currentUser is null
+            || !_currentUser.Permissions.Contains(PermissionCatalog.Recruitment.ApproveOffer))
+        {
+            return Result<OfferApprovalDecisionDto>.Failure(
+                "You do not have permission to approve offers.", 403, "forbidden");
+        }
 
         var offer = await _dbContext.Offers.AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == offerId, cancellationToken);
@@ -520,6 +559,31 @@ public sealed class OfferService : IOfferService
     /// FR-5/FR-8: notify the applicant via the log-only seam. Never let a notification failure fail a
     /// committed offer write (mirrors the other recruitment notification handling).
     /// </summary>
+    /// <summary>
+    /// ISSUE-124 / FR-9: adds a semantic offer-lifecycle audit row to the change set WITHOUT saving — the
+    /// caller's <c>SaveChanges</c> commits it atomically with the mutation, so an offer can never change status
+    /// without its audit row (and vice versa). Before this, the ONLY trail for an offer's salary and status was
+    /// the Serilog file, which the in-app audit-search surface cannot read.
+    /// </summary>
+    /// <param name="before">Prior state; null for a create, where there is nothing to diff against.</param>
+    private void AddOfferAudit(string action, Offer offer, object? before, object after)
+    {
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            // Null for the system actor — the auto-expire job runs with no authenticated principal.
+            UserId = _currentUser is { IsAuthenticated: true } ? _currentUser.UserId : null,
+            EventType = action,
+            Action = action,
+            ResourceType = OfferAuditAction.ResourceType,
+            ResourceId = offer.Id.ToString(),
+            Before = before is null ? null : JsonSerializer.Serialize(before),
+            After = JsonSerializer.Serialize(after),
+            CreatedAt = DateTime.UtcNow,
+        });
+    }
+
     private async Task NotifyOfferSafeAsync(string eventType, Offer offer, CancellationToken cancellationToken)
     {
         try

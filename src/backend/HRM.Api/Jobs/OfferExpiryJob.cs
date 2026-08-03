@@ -1,6 +1,8 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Recruitment;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -57,8 +59,27 @@ public sealed class OfferExpiryJob
             return;
         }
 
+        var statusBeforeExpiry = offer.Status;
         offer.Status = OfferStatus.Expired;
         offer.ReminderJobId = null;
+
+        // ISSUE-124: the auto-expire leg must leave the same audit trail as the operator-driven transitions,
+        // otherwise the ONE status change nobody witnessed is also the one with no record. Added to the change
+        // set before SaveChanges so the row commits atomically with the status flip. UserId is null on purpose:
+        // this is the system actor, not a person.
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = tenantId,
+            UserId = null,
+            EventType = OfferAuditAction.Expired,
+            Action = OfferAuditAction.Expired,
+            ResourceType = OfferAuditAction.ResourceType,
+            ResourceId = offer.Id.ToString(),
+            Before = JsonSerializer.Serialize(new { Status = statusBeforeExpiry.ToString() }),
+            After = JsonSerializer.Serialize(new { Status = offer.Status.ToString(), offer.ExpiryDate }),
+            CreatedAt = DateTime.UtcNow,
+        });
         await dbContext.SaveChangesAsync();
 
         var applicantEmail = await dbContext.Applicants
