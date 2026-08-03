@@ -48,6 +48,16 @@ public sealed class GenerateOfferValidator : AbstractValidator<GenerateOfferComm
             .When(x => x.ExpiryDate.HasValue)
             .WithMessage("The offer expiry date must be in the future.");
 
+        // BUG-067 / FR-1 / TC-REC-007-09 step 4: expiry must not precede the start date. The auto-expire job
+        // fires at expiry+1d and flips the offer to Expired, so an expiry BEFORE the start date produces an
+        // offer that lapses before the candidate could ever begin. Only meaningful when an expiry is supplied
+        // — a null expiry is defaulted by the service to generation date + 7 days (BR-6), which is a separate
+        // rule and is deliberately not cross-checked here.
+        RuleFor(x => x.ExpiryDate)
+            .Must((cmd, d) => d!.Value >= cmd.StartDate)
+            .When(x => x.ExpiryDate.HasValue)
+            .WithMessage("The offer expiry date cannot be earlier than the start date.");
+
         RuleFor(x => x.ProbationMonths)
             .InclusiveBetween(0, MaxProbationMonths)
             .When(x => x.ProbationMonths.HasValue)
