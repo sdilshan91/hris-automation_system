@@ -77,7 +77,14 @@ function addToken(req: HttpRequest<unknown>, token: string): HttpRequest<unknown
  * Check if the URL is an auth endpoint that should not have token attached.
  */
 function isAuthEndpoint(url: string): boolean {
-  const authPaths = ['/auth/login', '/auth/forgot-password', '/auth/reset-password'];
+  // BUG-294: accept-invitation belongs here — the invitee has no session yet, so attaching (or expecting)
+  // a bearer token on it would be wrong.
+  const authPaths = [
+    '/auth/login',
+    '/auth/forgot-password',
+    '/auth/reset-password',
+    '/auth/accept-invitation',
+  ];
   return authPaths.some((path) => url.includes(path));
 }
 

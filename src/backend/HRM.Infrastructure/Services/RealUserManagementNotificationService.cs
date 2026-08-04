@@ -44,7 +44,10 @@ public sealed class RealUserManagementNotificationService : IUserManagementNotif
     {
         try
         {
-            var acceptUrl = $"{TenantBaseUrl(message.Subdomain)}/accept-invite?token={message.RawToken}";
+            // BUG-294/295: nested under /auth to match the Angular route table. The root-level path this
+            // used to emit matched no route, so the SPA wildcard sent invitees to the login page with the
+            // token discarded. Pinned by AuthEmailLinkRouteTests.
+            var acceptUrl = $"{TenantBaseUrl(message.Subdomain)}/auth/accept-invite?token={message.RawToken}";
             var expiryHours = HoursUntil(message.ExpiresAt);
 
             var payloadJson = JsonSerializer.Serialize(new Dictionary<string, object?>

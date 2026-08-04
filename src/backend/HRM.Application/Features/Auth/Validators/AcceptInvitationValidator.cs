@@ -4,15 +4,17 @@ using HRM.Application.Features.Auth.Commands;
 namespace HRM.Application.Features.Auth.Validators;
 
 /// <summary>
-/// Validates reset password command input.
+/// BUG-294: field-level validation for invitation redemption. The password rules mirror
+/// <see cref="ResetPasswordValidator"/> exactly — an invitee's first password must clear the same bar as a
+/// reset one. The tenant's configurable password policy is enforced separately and independently inside the
+/// shared password rail, so this is the floor, not the whole check.
 /// </summary>
-public sealed class ResetPasswordValidator : AbstractValidator<ResetPasswordCommand>
+public sealed class AcceptInvitationValidator : AbstractValidator<AcceptInvitationCommand>
 {
-    public ResetPasswordValidator()
+    public AcceptInvitationValidator()
     {
-        // BUG-295: no Email rule — the reset token alone identifies the user.
         RuleFor(x => x.Token)
-            .NotEmpty().WithMessage("Reset token is required.");
+            .NotEmpty().WithMessage("Invitation token is required.");
 
         RuleFor(x => x.NewPassword)
             .NotEmpty().WithMessage("New password is required.")

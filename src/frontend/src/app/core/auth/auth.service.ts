@@ -13,6 +13,7 @@ import {
   ICurrentUserResponse,
   IForgotPasswordRequest,
   IResetPasswordRequest,
+  IAcceptInvitationRequest,
   IChangePasswordRequest,
   IMessageResponse,
   IUser,
@@ -263,6 +264,22 @@ export class AuthService {
   resetPassword(request: IResetPasswordRequest): Observable<IMessageResponse> {
     return this.http.post<IMessageResponse>(
       `${this.apiUrl}/auth/reset-password`,
+      request
+    );
+  }
+
+  // ─── Accept Invitation (BUG-294) ────────────────────────
+
+  /**
+   * Redeems a tenant user-invitation: verifies the one-time token, activates the membership with the
+   * invited roles, and sets the invitee's first password. Anonymous — the tenant is resolved from the
+   * subdomain the link lands on.
+   */
+  acceptInvitation(
+    request: IAcceptInvitationRequest
+  ): Observable<IMessageResponse> {
+    return this.http.post<IMessageResponse>(
+      `${this.apiUrl}/auth/accept-invitation`,
       request
     );
   }

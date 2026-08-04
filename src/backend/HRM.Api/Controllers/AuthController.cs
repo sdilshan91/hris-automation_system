@@ -211,7 +211,7 @@ public sealed class AuthController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
     {
-        var command = new ResetPasswordCommand(request.Email, request.Token, request.NewPassword);
+        var command = new ResetPasswordCommand(request.Token, request.NewPassword);
         var result = await _mediator.Send(command, cancellationToken);
 
         if (result.IsFailure)
@@ -220,6 +220,37 @@ public sealed class AuthController : ControllerBase
         }
 
         return Ok(ApiResponse.Ok("Password updated successfully."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/auth/accept-invitation
+    /// BUG-294: redeems a tenant user-invitation — activates the membership with the invited roles and sets the
+    /// invitee's first password. Anonymous: the invitee has no session yet, and the tenant is resolved from the
+    /// subdomain the invitation link lands on.
+    /// </summary>
+    /// <remarks>
+    /// Rate-limited, unlike <c>reset-password</c>. That endpoint is protected indirectly because issuing a
+    /// reset token is itself throttled and the token lives one hour; an invitation token is valid for 72 hours,
+    /// which is a materially larger window to guess in, so this endpoint is throttled directly.
+    /// </remarks>
+    [HttpPost("accept-invitation")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth-login")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> AcceptInvitation(
+        [FromBody] AcceptInvitationRequest request, CancellationToken cancellationToken)
+    {
+        var command = new AcceptInvitationCommand(
+            request.Token, request.NewPassword, GetIpAddress(), GetUserAgent());
+        var result = await _mediator.Send(command, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+        }
+
+        return Ok(ApiResponse.Ok("Your account is ready. You can now sign in."));
     }
 
     /// <summary>

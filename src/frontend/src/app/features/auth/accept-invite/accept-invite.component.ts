@@ -19,8 +19,19 @@ import { trigger, transition, style, animate } from '@angular/animations';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthService } from '../../../core/auth/auth.service';
 
+/**
+ * BUG-294: the redemption half of the tenant user-invitation flow (US-ADM-005).
+ *
+ * The invite side shipped complete — token minted, emailed, rotated on resend — but there was no route and no
+ * component behind the link, so `/accept-invite?token=…` fell through the router wildcard to the login page
+ * and the token was silently discarded. An invited user could never actually get in.
+ *
+ * Deliberately mirrors `ResetPasswordComponent`: same three states (form / success / invalid), the same
+ * password checklist, and the same shape of error handling — an invitee setting their first password is doing
+ * the same job as a user resetting one, so it should look and behave identically.
+ */
 @Component({
-  selector: 'app-reset-password',
+  selector: 'app-accept-invite',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -33,9 +44,9 @@ import { AuthService } from '../../../core/auth/auth.service';
     ]),
   ],
   template: `
-    <div class="reset-card" [@fadeSlide]>
+    <div class="invite-card" [@fadeSlide]>
       @if (success()) {
-        <!-- Success state -->
+        <!-- Account ready -->
         <div class="success-section" [@fadeSlide]>
           <div class="success-icon-wrapper">
             <svg
@@ -53,16 +64,16 @@ import { AuthService } from '../../../core/auth/auth.service';
               />
             </svg>
           </div>
-          <h2 class="card-title">Password updated</h2>
+          <h2 class="card-title">You're all set</h2>
           <p class="card-subtitle">
-            Your password has been successfully reset. Redirecting to login...
+            Your account is ready. Redirecting you to sign in...
           </p>
           <a routerLink="/auth/login" class="btn-primary w-full mt-6 text-center no-underline">
             Sign in
           </a>
         </div>
       } @else if (invalidToken()) {
-        <!-- Invalid/expired token -->
+        <!-- Invalid / expired / already-used invitation -->
         <div class="error-section" [@fadeSlide]>
           <div class="error-icon-wrapper">
             <svg
@@ -80,21 +91,21 @@ import { AuthService } from '../../../core/auth/auth.service';
               />
             </svg>
           </div>
-          <h2 class="card-title">Link expired</h2>
+          <h2 class="card-title">Invitation unavailable</h2>
           <p class="card-subtitle">
-            This password reset link has expired or has already been used.
-            Please request a new one.
+            This invitation link is invalid, has expired, or has already been
+            used. Ask your administrator to send a new one.
           </p>
-          <a routerLink="/auth/forgot-password" class="btn-primary w-full mt-6 text-center no-underline">
-            Request new link
+          <a routerLink="/auth/login" class="btn-primary w-full mt-6 text-center no-underline">
+            Back to sign in
           </a>
         </div>
       } @else {
-        <!-- Reset form -->
+        <!-- Set the first password -->
         <div class="card-header">
-          <h2 class="card-title">Set a new password</h2>
+          <h2 class="card-title">Set up your account</h2>
           <p class="card-subtitle">
-            Choose a strong password for your account.
+            Choose a password to finish joining your team.
           </p>
         </div>
 
@@ -106,13 +117,13 @@ import { AuthService } from '../../../core/auth/auth.service';
 
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="form-section">
           <div class="form-group">
-            <label for="newPassword" class="label-notion">New password</label>
+            <label for="newPassword" class="label-notion">Password</label>
             <input
               id="newPassword"
               type="password"
               formControlName="newPassword"
               class="input-notion"
-              placeholder="Enter new password"
+              placeholder="Create a password"
               autocomplete="new-password"
               autofocus
             />
@@ -141,7 +152,7 @@ import { AuthService } from '../../../core/auth/auth.service';
               type="password"
               formControlName="confirmPassword"
               class="input-notion"
-              placeholder="Re-enter new password"
+              placeholder="Re-enter your password"
               autocomplete="new-password"
             />
             @if (form.get('confirmPassword')?.hasError('required') && form.get('confirmPassword')?.touched) {
@@ -159,9 +170,9 @@ import { AuthService } from '../../../core/auth/auth.service';
           >
             @if (isLoading()) {
               <span class="btn-spinner"></span>
-              Updating...
+              Setting up...
             } @else {
-              Reset password
+              Create account
             }
           </button>
         </form>
@@ -181,7 +192,7 @@ import { AuthService } from '../../../core/auth/auth.service';
       width: 100%;
     }
 
-    .reset-card {
+    .invite-card {
       @apply w-full rounded-xl bg-white border border-neutral-100 p-8 shadow-notion;
       @apply sm:p-10;
     }
@@ -215,7 +226,6 @@ import { AuthService } from '../../../core/auth/auth.service';
         px-4 py-3 mb-6 text-sm text-red-700;
     }
 
-    /* Password strength checklist */
     .password-checklist {
       @apply mt-3 space-y-1.5;
     }
@@ -271,7 +281,7 @@ import { AuthService } from '../../../core/auth/auth.service';
     }
   `],
 })
-export class ResetPasswordComponent implements OnInit {
+export class AcceptInviteComponent implements OnInit {
   private readonly authService = inject(AuthService);
   private readonly fb = inject(FormBuilder);
   private readonly route = inject(ActivatedRoute);
@@ -286,7 +296,7 @@ export class ResetPasswordComponent implements OnInit {
 
   private token = '';
 
-  /** Password rules for the strength checklist */
+  /** Password rules for the strength checklist — same bar as the reset flow. */
   readonly passwordRules = signal([
     { label: 'At least 12 characters', pass: false },
     { label: 'One uppercase letter', pass: false },
@@ -296,10 +306,8 @@ export class ResetPasswordComponent implements OnInit {
   ]);
 
   ngOnInit(): void {
-    // BUG-295: the token is the ONLY thing the emailed link carries, and the only thing needed — it is a
-    // 256-bit secret bound to exactly one user. This used to also require an `email` query param that the
-    // backend link never sent, so every real reset link rendered the "expired" state even when the token
-    // was perfectly valid.
+    // The token is the only thing the invitation link carries, and the only thing needed — it identifies
+    // both the invitation and, via the subdomain, the workspace being joined.
     this.route.queryParams.subscribe((params) => {
       this.token = params['token'] || '';
 
@@ -325,7 +333,6 @@ export class ResetPasswordComponent implements OnInit {
       }
     );
 
-    // Subscribe to password changes to update the strength checklist
     this.form.get('newPassword')?.valueChanges.subscribe((pwd: string) => {
       this.passwordRules.set([
         { label: 'At least 12 characters', pass: pwd.length >= 12 },
@@ -349,7 +356,7 @@ export class ResetPasswordComponent implements OnInit {
     const { newPassword } = this.form.value;
 
     this.authService
-      .resetPassword({
+      .acceptInvitation({
         token: this.token,
         newPassword,
       })
@@ -358,7 +365,6 @@ export class ResetPasswordComponent implements OnInit {
           this.success.set(true);
           this.isLoading.set(false);
 
-          // Auto-redirect to login after 3 seconds
           setTimeout(() => {
             this.router.navigate(['/auth/login']);
           }, 3000);
@@ -369,8 +375,11 @@ export class ResetPasswordComponent implements OnInit {
           if (err.status === 400) {
             const message =
               err.error?.message ||
-              'The reset link has expired or is invalid. Please request a new one.';
+              'This invitation link is invalid or has expired.';
 
+            // A dead invitation is a dead end — swap to the terminal state rather than inviting the user to
+            // retry a link that can never work. A password-policy rejection is different: it is the user's
+            // input that is wrong, so it stays inline and the link remains usable.
             if (
               message.includes('expired') ||
               message.includes('invalid') ||
