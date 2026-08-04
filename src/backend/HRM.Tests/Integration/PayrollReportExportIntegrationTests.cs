@@ -84,6 +84,24 @@ public sealed class PayrollReportExportIntegrationTests
 
         public IReadOnlyList<PayrollReportDescriptorDto> ListReportTypes() => [];
 
+        // US-PAY-009 AC-3: this fake exists to exercise the EXPORT routing, not the statement paths, so these
+        // return a not-available failure rather than a fabricated success. A fake that pretended to produce a
+        // PDF would make any future test asserting on one pass against nothing.
+        public Task<Result<PayrollReportExportResult>> GetYearEndTaxStatementPdfAsync(
+            Guid employeeId, int year, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<PayrollReportExportResult>.Failure(
+                "Not implemented by this fake.", 404, "statement_not_available"));
+
+        public Task<Result<PayrollReportExportResult>> GetYearEndTaxStatementsBundleAsync(
+            int year, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<PayrollReportExportResult>.Failure(
+                "Not implemented by this fake.", 404, "statements_not_available"));
+
+        public Task<Result<PayrollReportExportResult>> GetMyYearEndTaxStatementPdfAsync(
+            int year, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result<PayrollReportExportResult>.Failure(
+                "Not implemented by this fake.", 404, "statement_not_available"));
+
         public Task<Result<PayrollReportResult>> GenerateReportAsync(
             PayrollReportType reportType, PayrollReportQueryParams queryParams, CancellationToken cancellationToken = default)
         {
