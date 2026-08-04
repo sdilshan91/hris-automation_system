@@ -107,6 +107,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<ApplicantStageHistory> ApplicantStageHistories => Set<ApplicantStageHistory>();
     public DbSet<Interview> Interviews => Set<Interview>();
     public DbSet<InterviewInterviewer> InterviewInterviewers => Set<InterviewInterviewer>();
+    public DbSet<InterviewAttachment> InterviewAttachments => Set<InterviewAttachment>();
     public DbSet<InterviewScorecard> InterviewScorecards => Set<InterviewScorecard>();
     public DbSet<ScorecardCriterionRating> ScorecardCriterionRatings => Set<ScorecardCriterionRating>();
     public DbSet<InterviewScorecardRevision> InterviewScorecardRevisions => Set<InterviewScorecardRevision>();
@@ -465,6 +466,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
         // US-REC-006: ScorecardCriterionRating tenant isolation + soft-delete filter (AC-4).
         modelBuilder.Entity<ScorecardCriterionRating>()
             .HasQueryFilter(r => !r.IsDeleted && (!_tenantContext.IsResolved || r.TenantId == _tenantContext.TenantId));
+
+        // US-REC-005 FR-8: InterviewAttachment tenant isolation + soft-delete filter.
+        modelBuilder.Entity<InterviewAttachment>()
+            .HasQueryFilter(a => !a.IsDeleted && (!_tenantContext.IsResolved || a.TenantId == _tenantContext.TenantId));
 
         // US-REC-006 AC-K1: InterviewScorecardRevision tenant isolation + soft-delete filter. A revision is a
         // historical record of one tenant's hiring judgement — it needs the same isolation as the live row.
