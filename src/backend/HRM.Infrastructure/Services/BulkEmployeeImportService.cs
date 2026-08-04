@@ -39,36 +39,88 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
     /// <summary>Batch size for database commits (NFR-4).</summary>
     internal const int BatchSize = 100;
 
-    /// <summary>Template columns matching the Data Requirements table.</summary>
-    private static readonly string[] TemplateColumns =
+    /// <summary>
+    /// One template column: its header, the guidance shown above it, and the sample value.
+    ///
+    /// <para>US-CHR-010 FR-11 needed the template to carry a VARIABLE tail of tenant custom-field columns, and
+    /// the previous shape — three parallel positional <c>string[]</c>s — structurally could not: appending to
+    /// one without the others silently misaligns every generator that indexes them together. Collapsing them
+    /// into one record makes the tail additive and removes the alignment hazard entirely.</para>
+    /// </summary>
+    private sealed record TemplateColumn(string Name, string Description, string Sample);
+
+    /// <summary>The fixed standard columns, matching the Data Requirements table.</summary>
+    private static readonly TemplateColumn[] StandardTemplateColumns =
     [
-        "first_name", "last_name", "email", "phone", "date_of_birth",
-        "gender", "date_of_joining", "department_name", "job_title_name",
-        "employment_type", "location_name", "status"
+        new("first_name", "Required. Max 100 chars.", "Jane"),
+        new("last_name", "Required. Max 100 chars.", "Smith"),
+        new("email", "Required. Valid email, unique per tenant.", "jane.smith@example.com"),
+        new("phone", "Optional. E.164 format.", "+94771234567"),
+        new("date_of_birth", "Optional. Date (YYYY-MM-DD), must be in the past.", "1990-05-15"),
+        new("gender", "Optional. Male/Female/Non-Binary/Prefer Not To Say.", "Female"),
+        new("date_of_joining", "Required. Date (YYYY-MM-DD).", "2026-01-15"),
+        new("department_name", "Required. Must match an existing department name in your organization.", "Engineering"),
+        new("job_title_name", "Required. Must match an existing job title name in your organization.", "Software Engineer"),
+        new("employment_type", "Required. Full-Time/Part-Time/Contract/Intern.", "Full-Time"),
+        new("location_name", "Optional. Must match an existing location name if provided.", "Head Office"),
+        new("status", "Optional. Default: Active. Values: Active/Probation.", "Active"),
     ];
 
-    private static readonly string[] TemplateDescriptions =
-    [
-        "Required. Max 100 chars.",
-        "Required. Max 100 chars.",
-        "Required. Valid email, unique per tenant.",
-        "Optional. E.164 format.",
-        "Optional. Date (YYYY-MM-DD), must be in the past.",
-        "Optional. Male/Female/Non-Binary/Prefer Not To Say.",
-        "Required. Date (YYYY-MM-DD).",
-        "Required. Must match an existing department name in your organization.",
-        "Required. Must match an existing job title name in your organization.",
-        "Required. Full-Time/Part-Time/Contract/Intern.",
-        "Optional. Must match an existing location name if provided.",
-        "Optional. Default: Active. Values: Active/Probation."
-    ];
+    /// <summary>
+    /// The standard columns plus this tenant's active custom fields (FR-11). Custom-field headers are prefixed
+    /// <c>custom_</c> so they can never collide with a standard column name, present or future.
+    /// </summary>
+    private async Task<List<TemplateColumn>> BuildTemplateColumnsAsync(CancellationToken cancellationToken)
+    {
+        var columns = new List<TemplateColumn>(StandardTemplateColumns);
 
-    private static readonly string[] TemplateSampleRow =
-    [
-        "Jane", "Smith", "jane.smith@example.com", "+94771234567", "1990-05-15",
-        "Female", "2026-01-15", "Engineering", "Software Engineer",
-        "Full-Time", "Head Office", "Active"
-    ];
+        foreach (var field in await LoadCustomFieldDefinitionsAsync(cancellationToken))
+        {
+            var required = field.IsRequired ? "Required." : "Optional.";
+            var choices = ParseOptions(field.Options);
+            var options = choices.Count > 0 ? " One of: " + string.Join("/", choices) : string.Empty;
+
+            columns.Add(new TemplateColumn(
+                CustomFieldColumnPrefix + field.FieldKey,
+                $"{required} Custom field ({field.FieldType}) — {field.FieldName}.{options}",
+                choices.Count > 0 ? choices[0] : string.Empty));
+        }
+
+        return columns;
+    }
+
+    /// <summary>Header prefix that marks a template column as a tenant custom field.</summary>
+    internal const string CustomFieldColumnPrefix = "custom_";
+
+    /// <summary>This tenant's ACTIVE employee custom fields, in display order. Tenant-scoped by the filter.</summary>
+    private async Task<List<CustomFieldDefinition>> LoadCustomFieldDefinitionsAsync(
+        CancellationToken cancellationToken) =>
+        await _dbContext.CustomFieldDefinitions
+            .AsNoTracking()
+            .Where(f => f.EntityType == "employee" && f.IsActive)
+            .OrderBy(f => f.DisplayOrder)
+            .ThenBy(f => f.FieldKey)
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// The choice list for an option-typed field. Defensive: a malformed <c>Options</c> yields no choices
+    /// rather than throwing — the template is a convenience, and one bad definition must not make it
+    /// undownloadable for the whole tenant.
+    /// </summary>
+    private static List<string> ParseOptions(string? optionsJson)
+    {
+        if (string.IsNullOrWhiteSpace(optionsJson))
+            return [];
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(optionsJson) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 
     private static readonly HashSet<string> AllowedEmploymentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -86,13 +138,21 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         "Active", "Probation"
     };
 
+    // FR-11: trailing + optional so the existing test fixtures that construct this positionally keep
+    // compiling (the same technique AuthService and ApplicantConversionService use). DI injects the real
+    // service in production; a null one means custom-field VALUE rules are not applied, but unknown-column
+    // detection still works because that reads the definitions directly.
+    private readonly ICustomFieldService? _customFieldService;
+
     public BulkEmployeeImportService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         ILogger<BulkEmployeeImportService> logger,
-        INotificationDispatcher? dispatcher = null)
+        INotificationDispatcher? dispatcher = null,
+        ICustomFieldService? customFieldService = null)
     {
+        _customFieldService = customFieldService;
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
@@ -102,61 +162,57 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
 
     // ── Template Generation (FR-2, AC-1) ────────────────────────────
 
-    public Task<Result<ExportFileResult>> GenerateTemplateAsync(
+    public async Task<Result<ExportFileResult>> GenerateTemplateAsync(
         ExportFormat format,
         CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(format switch
+        // FR-11: the template now includes this tenant's custom-field columns, so it must be built per request.
+        var columns = await BuildTemplateColumnsAsync(cancellationToken);
+
+        return format switch
         {
-            ExportFormat.Csv => Result<ExportFileResult>.Success(GenerateCsvTemplate()),
-            ExportFormat.Excel => Result<ExportFileResult>.Success(GenerateExcelTemplate()),
+            ExportFormat.Csv => Result<ExportFileResult>.Success(GenerateCsvTemplate(columns)),
+            ExportFormat.Excel => Result<ExportFileResult>.Success(GenerateExcelTemplate(columns)),
             _ => Result<ExportFileResult>.Failure($"Unsupported format: {format}.", 400),
-        });
+        };
     }
 
-    private static ExportFileResult GenerateCsvTemplate()
+    private static ExportFileResult GenerateCsvTemplate(IReadOnlyList<TemplateColumn> columns)
     {
         var sb = new StringBuilder();
 
         // Description row (commented)
-        sb.AppendLine("# " + string.Join(",", TemplateDescriptions.Select(CsvEscape)));
+        sb.AppendLine("# " + string.Join(",", columns.Select(c => CsvEscape(c.Description))));
 
         // Header row
-        sb.AppendLine(string.Join(",", TemplateColumns.Select(CsvEscape)));
+        sb.AppendLine(string.Join(",", columns.Select(c => CsvEscape(c.Name))));
 
         // Sample data row
-        sb.AppendLine(string.Join(",", TemplateSampleRow.Select(CsvEscape)));
+        sb.AppendLine(string.Join(",", columns.Select(c => CsvEscape(c.Sample))));
 
         var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray();
         return new ExportFileResult(bytes, "text/csv", "employee_import_template.csv");
     }
 
-    private static ExportFileResult GenerateExcelTemplate()
+    private static ExportFileResult GenerateExcelTemplate(IReadOnlyList<TemplateColumn> columns)
     {
         using var workbook = new XLWorkbook();
         var ws = workbook.Worksheets.Add("Import Template");
 
-        // Description row (row 1)
-        for (int i = 0; i < TemplateDescriptions.Length; i++)
+        // One loop over one list — the three rows cannot drift out of alignment the way three parallel
+        // arrays could.
+        for (int i = 0; i < columns.Count; i++)
         {
-            var cell = ws.Cell(1, i + 1);
-            cell.Value = TemplateDescriptions[i];
-            cell.Style.Font.Italic = true;
-            cell.Style.Font.FontColor = XLColor.Gray;
-        }
+            var description = ws.Cell(1, i + 1);
+            description.Value = columns[i].Description;
+            description.Style.Font.Italic = true;
+            description.Style.Font.FontColor = XLColor.Gray;
 
-        // Header row (row 2)
-        for (int i = 0; i < TemplateColumns.Length; i++)
-        {
-            var cell = ws.Cell(2, i + 1);
-            cell.Value = TemplateColumns[i];
-            cell.Style.Font.Bold = true;
-        }
+            var header = ws.Cell(2, i + 1);
+            header.Value = columns[i].Name;
+            header.Style.Font.Bold = true;
 
-        // Sample data row (row 3)
-        for (int i = 0; i < TemplateSampleRow.Length; i++)
-        {
-            ws.Cell(3, i + 1).Value = TemplateSampleRow[i];
+            ws.Cell(3, i + 1).Value = columns[i].Sample;
         }
 
         ws.Columns().AdjustToContents();
@@ -476,10 +532,41 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                 EmploymentType = GetField(csvReader, "employment_type"),
                 LocationName = GetField(csvReader, "location_name"),
                 Status = GetField(csvReader, "status"),
+                CustomFields = ReadCustomFields(csvReader),
             });
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// FR-11: every <c>custom_*</c> column in the file, keyed by field key.
+    ///
+    /// <para>Deliberately collects UNKNOWN keys too. Filtering to known definitions here would make a mistyped
+    /// header (<c>custom_shirt_sze</c>) import silently as nothing — payroll-adjacent data quietly missing, with
+    /// a green import report. The validator rejects unknown keys per row instead, so the operator finds out.</para>
+    /// </summary>
+    private static Dictionary<string, string?> ReadCustomFields(CsvReader reader)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+        var headers = reader.HeaderRecord;
+        if (headers is null)
+            return values;
+
+        foreach (var header in headers)
+        {
+            if (string.IsNullOrWhiteSpace(header) ||
+                !header.StartsWith(CustomFieldColumnPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var key = header[CustomFieldColumnPrefix.Length..].Trim();
+            if (key.Length == 0)
+                continue;
+
+            values[key] = GetField(reader, header);
+        }
+
+        return values;
     }
 
     private static string? GetField(CsvReader reader, string name)
@@ -557,10 +644,32 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                 EmploymentType = GetExcelCell(ws, r, colMap, "employment_type"),
                 LocationName = GetExcelCell(ws, r, colMap, "location_name"),
                 Status = GetExcelCell(ws, r, colMap, "status"),
+                CustomFields = ReadExcelCustomFields(ws, r, colMap),
             });
         }
 
         return rows;
+    }
+
+    /// <summary>Excel counterpart of <see cref="ReadCustomFields"/> — same collect-unknown-keys-too rule.</summary>
+    private static Dictionary<string, string?> ReadExcelCustomFields(
+        IXLWorksheet ws, int row, Dictionary<string, int> colMap)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (header, _) in colMap)
+        {
+            if (!header.StartsWith(CustomFieldColumnPrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var key = header[CustomFieldColumnPrefix.Length..].Trim();
+            if (key.Length == 0)
+                continue;
+
+            values[key] = GetExcelCell(ws, row, colMap, header);
+        }
+
+        return values;
     }
 
     private static string? GetExcelCell(IXLWorksheet ws, int row, Dictionary<string, int> colMap, string column)
@@ -621,6 +730,11 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
             .Select(e => e.Email.ToLower())
             .ToListAsync(cancellationToken);
         var existingEmailSet = new HashSet<string>(existingEmails, StringComparer.OrdinalIgnoreCase);
+
+        // FR-11: this tenant's active employee custom fields, loaded once for the whole batch.
+        var customFieldDefinitions = await LoadCustomFieldDefinitionsAsync(cancellationToken);
+        var customFieldsByKey = customFieldDefinitions
+            .ToDictionary(f => f.FieldKey, StringComparer.OrdinalIgnoreCase);
 
         // Track emails within the file for in-file duplicate detection (BR-2)
         var fileEmailsSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -760,6 +874,65 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                         : EmployeeStatus.Active;
             }
 
+            // ── FR-11: custom fields ───────────────────────────────────────────────────────────
+            string? customFieldsJson = null;
+            var suppliedCustom = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (key, value) in row.CustomFields)
+            {
+                if (!customFieldsByKey.ContainsKey(key))
+                {
+                    // NEVER silently drop. A mistyped header would otherwise import as nothing at all, with a
+                    // green report — data quietly missing is far worse than a rejected row the operator can fix.
+                    rowErrors.Add(new BulkImportRowError
+                    {
+                        RowNumber = row.RowNumber,
+                        Field = CustomFieldColumnPrefix + key,
+                        Error = $"'{CustomFieldColumnPrefix}{key}' does not match any active custom field. "
+                                + "Download a fresh template to see this organization's custom-field columns.",
+                    });
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(value))
+                    suppliedCustom[key] = value;
+            }
+
+            // A required custom field must be present, mirroring the single-employee create path.
+            foreach (var definition in customFieldDefinitions.Where(d => d.IsRequired))
+            {
+                if (!suppliedCustom.ContainsKey(definition.FieldKey))
+                    rowErrors.Add(new BulkImportRowError
+                    {
+                        RowNumber = row.RowNumber,
+                        Field = CustomFieldColumnPrefix + definition.FieldKey,
+                        Error = $"'{definition.FieldName}' is a required custom field.",
+                    });
+            }
+
+            if (rowErrors.Count == 0 && suppliedCustom.Count > 0)
+            {
+                customFieldsJson = JsonSerializer.Serialize(suppliedCustom);
+
+                // Route through the SAME validator the single-employee create path uses (type/option/format
+                // rules), rather than re-deriving them here and letting the two drift.
+                var customValidation = _customFieldService is null
+                    ? Result.Success()
+                    : await _customFieldService.ValidateCustomFieldValuesAsync(
+                        "employee", customFieldsJson, cancellationToken);
+
+                if (customValidation.IsFailure)
+                {
+                    rowErrors.Add(new BulkImportRowError
+                    {
+                        RowNumber = row.RowNumber,
+                        Field = "custom_fields",
+                        Error = customValidation.Error ?? "Custom field values are invalid.",
+                    });
+                    customFieldsJson = null;
+                }
+            }
+
             if (rowErrors.Count > 0)
             {
                 errors.AddRange(rowErrors);
@@ -768,6 +941,7 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
             {
                 validRows.Add(new ValidatedRow
                 {
+                    CustomFieldsJson = customFieldsJson,
                     RowNumber = row.RowNumber,
                     FirstName = row.FirstName!,
                     LastName = row.LastName!,
@@ -903,6 +1077,9 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                     LocationId = row.LocationId,
                     IsActive = row.Status is EmployeeStatus.Active or EmployeeStatus.Probation,
                     IsDeleted = false,
+                    // FR-11: validated custom-field values, in the same JSON column the single-employee
+                    // create path writes, so the two entry points produce identical records.
+                    CustomFields = row.CustomFieldsJson,
                 });
             }
 
@@ -1237,6 +1414,9 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         public Guid DepartmentId { get; init; }
         public Guid JobTitleId { get; init; }
         public EmploymentType EmploymentType { get; init; }
+
+        /// <summary>FR-11: the validated custom-field values as JSON, or null when the tenant has none.</summary>
+        public string? CustomFieldsJson { get; init; }
         public Guid? LocationId { get; init; }
         public string? LocationName { get; init; }
         public EmployeeStatus Status { get; init; }

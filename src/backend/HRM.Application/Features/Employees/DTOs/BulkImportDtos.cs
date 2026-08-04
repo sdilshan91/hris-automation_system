@@ -18,6 +18,15 @@ public sealed record BulkImportRowDto
     public string? EmploymentType { get; init; }
     public string? LocationName { get; init; }
     public string? Status { get; init; }
+
+    /// <summary>
+    /// FR-11: raw values from the tenant custom-field columns, keyed by field key (the header minus its
+    /// <c>custom_</c> prefix). EVERY <c>custom_*</c> header found in the file lands here, including ones that
+    /// match no definition — the validator reports those as row errors rather than dropping them, because a
+    /// mistyped header that silently imports nothing is worse than a noisy failure.
+    /// </summary>
+    public IReadOnlyDictionary<string, string?> CustomFields { get; init; } =
+        new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>
