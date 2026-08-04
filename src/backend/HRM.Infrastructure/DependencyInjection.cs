@@ -502,6 +502,7 @@ public static class DependencyInjection
 
         // US-REC-006: Recruitment — structured interview scorecard submission + reads (anti-bias, FR-6).
         services.AddScoped<IScorecardService, ScorecardService>();
+        services.AddScoped<IInterviewAttachmentService, InterviewAttachmentService>();
 
         // US-REC-007: Recruitment — offer-letter generation/send/response/withdrawal + reads.
         // IOfferExpiryScheduler is OPTIONAL (Hangfire-backed impl registered in Program.cs); without it the

@@ -74,4 +74,7 @@ public sealed class Interview : BaseEntity
 
     /// <summary>The UTC end instant (start + duration). Used for conflict-overlap math (FR-7).</summary>
     public DateTime EndsAtUtc => StartsAtUtc.AddMinutes(DurationMinutes);
+
+    /// <summary>US-REC-005 FR-8: guides / evaluation-criteria documents attached to this interview.</summary>
+    public ICollection<InterviewAttachment> Attachments { get; set; } = new List<InterviewAttachment>();
 }

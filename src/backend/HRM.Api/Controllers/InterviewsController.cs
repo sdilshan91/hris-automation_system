@@ -1,3 +1,4 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Application.DTOs;
 using HRM.Application.Features.Recruitment.Commands;
 using HRM.Application.Features.Recruitment.DTOs;
@@ -23,10 +24,14 @@ namespace HRM.Api.Controllers;
 public sealed class InterviewsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    // FR-8: attachments go straight to their service rather than through MediatR — the payload is a Stream,
+    // which does not belong in a command that may be logged, retried or serialized.
+    private readonly IInterviewAttachmentService _attachments;
 
-    public InterviewsController(IMediator mediator)
+    public InterviewsController(IMediator mediator, IInterviewAttachmentService attachments)
     {
         _mediator = mediator;
+        _attachments = attachments;
     }
 
     /// <summary>
@@ -205,6 +210,92 @@ public sealed class InterviewsController : ControllerBase
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
 
         return Ok(ApiResponse<IReadOnlyList<InterviewDto>>.Ok(result.Value!));
+    }
+
+    // ── Interview attachments (US-REC-005 FR-8) ───────────────────────
+    //
+    // The AC was deferred as CONDITIONAL on "File & Document Management (S26)". That rationale expired —
+    // IFileStorage, IVirusScanner and the upload/scan/store idiom all ship.
+
+    /// <summary>
+    /// POST /api/v1/recruitment/interviews/{interviewId}/attachments
+    /// Attaches an interview guide or evaluation-criteria document (FR-8). The service allow-lists the type,
+    /// verifies the real magic bytes, and virus-scans before anything is stored.
+    /// </summary>
+    [HttpPost("interviews/{interviewId:guid}/attachments")]
+    [RequirePermission("Recruitment.Manage")]
+    [RequestSizeLimit(11 * 1024 * 1024)] // 10 MB + multipart overhead
+    [ProducesResponseType(typeof(ApiResponse<InterviewAttachmentDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UploadInterviewAttachment(
+        Guid interviewId,
+        IFormFile file,
+        [FromForm] InterviewAttachmentKind kind = InterviewAttachmentKind.Guide,
+        [FromForm] string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse.Fail("No file uploaded."));
+
+        await using var stream = file.OpenReadStream();
+        var result = await _attachments.UploadAsync(
+            interviewId, stream, file.FileName, file.ContentType, file.Length, kind, description,
+            cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<InterviewAttachmentDto>.Ok(result.Value!, "Attachment uploaded."));
+    }
+
+    /// <summary>GET /api/v1/recruitment/interviews/{interviewId}/attachments — lists them (FR-8).</summary>
+    [HttpGet("interviews/{interviewId:guid}/attachments")]
+    [RequirePermission("Recruitment.View")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<InterviewAttachmentDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListInterviewAttachments(Guid interviewId, CancellationToken cancellationToken)
+    {
+        var result = await _attachments.ListAsync(interviewId, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<IReadOnlyList<InterviewAttachmentDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>GET /api/v1/recruitment/interview-attachments/{attachmentId} — downloads the file (FR-8).</summary>
+    [HttpGet("interview-attachments/{attachmentId:guid}")]
+    [RequirePermission("Recruitment.View")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadInterviewAttachment(
+        Guid attachmentId, CancellationToken cancellationToken)
+    {
+        var result = await _attachments.DownloadAsync(attachmentId, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        var file = result.Value!;
+        return File(file.Content, file.ContentType, file.FileName);
+    }
+
+    /// <summary>DELETE /api/v1/recruitment/interview-attachments/{attachmentId} — soft-deletes it (FR-8).</summary>
+    [HttpDelete("interview-attachments/{attachmentId:guid}")]
+    [RequirePermission("Recruitment.Manage")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteInterviewAttachment(
+        Guid attachmentId, CancellationToken cancellationToken)
+    {
+        var result = await _attachments.DeleteAsync(attachmentId, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse.Ok("Attachment removed."));
     }
 
     // ── Scorecards (US-REC-006) ───────────────────────────────────────
