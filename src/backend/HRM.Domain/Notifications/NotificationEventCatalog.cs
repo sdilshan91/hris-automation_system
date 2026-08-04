@@ -643,7 +643,7 @@ public static class NotificationEventCatalog
                 },
                 ["reset"] = new Dictionary<string, object?>
                 {
-                    ["url"] = "https://app.example.com/reset?token=sample", ["expiryHours"] = 24,
+                    ["url"] = "https://acme.example.com/auth/reset-password?token=sample", ["expiryHours"] = 1,
                 },
                 ["tenant"] = SampleTenant(),
             },
@@ -806,7 +806,7 @@ public static class NotificationEventCatalog
                 ["tenant"] = MergeTenant(new Dictionary<string, object?> { ["name"] = "Acme Corporation" }),
                 ["invitation"] = new Dictionary<string, object?>
                 {
-                    ["acceptUrl"] = "https://acme.example.com/accept-invite?token=sample", ["expiryHours"] = 72,
+                    ["acceptUrl"] = "https://acme.example.com/auth/accept-invite?token=sample", ["expiryHours"] = 72,
                 },
             },
             DefaultSubject: "You've been invited to join {{tenant.name}}",

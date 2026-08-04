@@ -30,7 +30,19 @@ public interface IAuthService
     Task<Result<RefreshTokenResponse>> RefreshTokenAsync(string refreshToken, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<Result> LogoutAsync(string refreshToken, CancellationToken cancellationToken = default);
     Task<Result> ForgotPasswordAsync(string email, CancellationToken cancellationToken = default);
-    Task<Result> ResetPasswordAsync(string email, string token, string newPassword, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Resets a password from an emailed link. BUG-295: the TOKEN ALONE identifies the user — the email
+    /// parameter was removed because the emailed link never carried it, which is why the flow was dead
+    /// end-to-end. The token is 256 bits bound to exactly one user, so the email added no security.
+    /// </summary>
+    Task<Result> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// BUG-294: redeems a tenant user-invitation — verifies the one-time token, activates the membership with
+    /// the invited roles, marks the invitation Accepted, and sets the invitee's first password through the
+    /// shared password rail. Anonymous caller; the tenant comes from the subdomain the link lands on.
+    /// </summary>
+    Task<Result> AcceptInvitationAsync(string token, string newPassword, string? ipAddress = null, string? userAgent = null, CancellationToken cancellationToken = default);
     Task<Result> ChangePasswordAsync(Guid userId, string currentPassword, string newPassword, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default);
     Task<Result> RevokeAllSessionsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
     Task<Result<CurrentUserDto>> GetCurrentUserAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);

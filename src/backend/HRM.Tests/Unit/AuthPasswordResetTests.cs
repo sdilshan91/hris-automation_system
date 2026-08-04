@@ -90,7 +90,7 @@ public sealed class AuthPasswordResetTests
         await SeedUserAsync(rawToken: null, expiresAt: null);
         var service = CreateService();
 
-        var result = await service.ResetPasswordAsync(Email, "any-non-empty-token", NewPassword);
+        var result = await service.ResetPasswordAsync("any-non-empty-token", NewPassword);
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
@@ -104,7 +104,7 @@ public sealed class AuthPasswordResetTests
         await SeedUserAsync(rawToken: "the-real-token", expiresAt: DateTime.UtcNow.AddHours(1));
         var service = CreateService();
 
-        var result = await service.ResetPasswordAsync(Email, "a-different-token", NewPassword);
+        var result = await service.ResetPasswordAsync("a-different-token", NewPassword);
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
@@ -119,7 +119,7 @@ public sealed class AuthPasswordResetTests
         await SeedUserAsync(rawToken: "the-real-token", expiresAt: DateTime.UtcNow.AddMinutes(-1));
         var service = CreateService();
 
-        var result = await service.ResetPasswordAsync(Email, "the-real-token", NewPassword);
+        var result = await service.ResetPasswordAsync("the-real-token", NewPassword);
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
@@ -133,7 +133,7 @@ public sealed class AuthPasswordResetTests
         await SeedUserAsync(rawToken: "the-real-token", expiresAt: DateTime.UtcNow.AddHours(1));
         var service = CreateService();
 
-        var result = await service.ResetPasswordAsync(Email, "the-real-token", NewPassword);
+        var result = await service.ResetPasswordAsync("the-real-token", NewPassword);
 
         result.IsSuccess.Should().BeTrue();
         var user = await ReloadUserAsync();
@@ -147,9 +147,9 @@ public sealed class AuthPasswordResetTests
     {
         await SeedUserAsync(rawToken: "the-real-token", expiresAt: DateTime.UtcNow.AddHours(1));
 
-        (await CreateService().ResetPasswordAsync(Email, "the-real-token", NewPassword)).IsSuccess.Should().BeTrue();
+        (await CreateService().ResetPasswordAsync("the-real-token", NewPassword)).IsSuccess.Should().BeTrue();
 
-        var second = await CreateService().ResetPasswordAsync(Email, "the-real-token", "AnotherPassw0rd!");
+        var second = await CreateService().ResetPasswordAsync("the-real-token", "AnotherPassw0rd!");
 
         second.IsFailure.Should().BeTrue();
         second.StatusCode.Should().Be(400);

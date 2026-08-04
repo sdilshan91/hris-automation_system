@@ -16,7 +16,6 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
     public async Task<Result> Handle(ResetPasswordCommand request, CancellationToken cancellationToken)
     {
         return await _authService.ResetPasswordAsync(
-            request.Email,
             request.Token,
             request.NewPassword,
             cancellationToken);

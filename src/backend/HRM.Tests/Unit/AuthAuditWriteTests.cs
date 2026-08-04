@@ -200,7 +200,7 @@ public sealed class AuthAuditWriteTests
         }
 
         // Act 2 — reset password with the valid token.
-        var reset = await CreateService().ResetPasswordAsync(Email, rawToken, "BrandNewPassw0rd!", default);
+        var reset = await CreateService().ResetPasswordAsync(rawToken, "BrandNewPassw0rd!", default);
         reset.IsSuccess.Should().BeTrue();
 
         // Assert 2: a "password_reset_completed" row exists for the user.

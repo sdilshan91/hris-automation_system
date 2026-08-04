@@ -78,6 +78,16 @@ export const appRoutes: Routes = [
           ).then((m) => m.ResetPasswordComponent),
       },
       {
+        // BUG-294: the landing route for a tenant user-invitation link. The invitee is not authenticated
+        // (noAuthGuard passes) and has no password yet — this is where they set one. The emitted link in
+        // RealUserManagementNotificationService MUST match this path; AuthEmailLinkRouteTests pins that.
+        path: 'accept-invite',
+        loadComponent: () =>
+          import('./features/auth/accept-invite/accept-invite.component').then(
+            (m) => m.AcceptInviteComponent
+          ),
+      },
+      {
         // CR-AUTH-001: Microsoft SSO redirect landing route. The user is not yet authenticated in the
         // SPA on arrival (noAuthGuard passes); completeSsoLogin() then navigates to the returnUrl.
         path: 'sso/callback',

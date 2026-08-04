@@ -81,7 +81,7 @@ public sealed class AuthResetPasswordPolicyTests
         await SeedAsync(minPasswordLength: 16);
 
         // 12 chars, full complexity — meets the hardcoded defaults but violates the tenant's 16-char policy.
-        var result = await CreateService().ResetPasswordAsync(Email, RawToken, "Abcdefgh123!");
+        var result = await CreateService().ResetPasswordAsync(RawToken, "Abcdefgh123!");
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
@@ -97,7 +97,7 @@ public sealed class AuthResetPasswordPolicyTests
     {
         await SeedAsync(minPasswordLength: 16);
 
-        var result = await CreateService().ResetPasswordAsync(Email, RawToken, "Abcdefghijk1234!"); // 16 chars
+        var result = await CreateService().ResetPasswordAsync(RawToken, "Abcdefghijk1234!"); // 16 chars
 
         result.IsSuccess.Should().BeTrue();
         using var db = CreateDbContext();

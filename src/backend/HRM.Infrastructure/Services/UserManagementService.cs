@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.DTOs;
 using HRM.Application.Features.Users.DTOs;
 using HRM.Domain.Authorization;
@@ -789,15 +790,12 @@ public sealed class UserManagementService : IUserManagementService
         await _myTenantsCache.InvalidateAsync(userId, cancellationToken);
     }
 
-    private static (string RawToken, string TokenHash) GenerateToken()
-    {
-        Span<byte> bytes = stackalloc byte[32];
-        RandomNumberGenerator.Fill(bytes);
-        var raw = Convert.ToBase64String(bytes)
-            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
-        return (raw, hash);
-    }
+    /// <summary>
+    /// BUG-294: delegates to <see cref="InvitationToken"/>, the single definition of the invitation-token
+    /// transformation. Behaviour is unchanged (same entropy, same base64url, same UPPERCASE hex) — the point is
+    /// that the accept path now verifies against the very same expression rather than a second copy of it.
+    /// </summary>
+    private static (string RawToken, string TokenHash) GenerateToken() => InvitationToken.Generate();
 
     private static bool IsValidEmail(string email)
     {

@@ -105,7 +105,7 @@ public sealed class PasswordHistoryEnforcementTests
         await ctx.SeedUserAsync(currentPassword: P0);
         await ctx.SetResetTokenAsync("tok-a");
 
-        var result = await ctx.Service().ResetPasswordAsync(ctx.Email, "tok-a", P0);
+        var result = await ctx.Service().ResetPasswordAsync("tok-a", P0);
 
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
@@ -124,7 +124,7 @@ public sealed class PasswordHistoryEnforcementTests
         await ctx.SeedUserAsync(currentPassword: P0);
         await ctx.SetResetTokenAsync("tok-b");
 
-        var result = await ctx.Service().ResetPasswordAsync(ctx.Email, "tok-b", P1);
+        var result = await ctx.Service().ResetPasswordAsync("tok-b", P1);
 
         result.IsSuccess.Should().BeTrue();
 
@@ -147,7 +147,7 @@ public sealed class PasswordHistoryEnforcementTests
         await ctx.RotateAsync("tok-2", P2); // P1 -> P2 ; history window now {P1, P2}
 
         await ctx.SetResetTokenAsync("tok-3");
-        var result = await ctx.Service().ResetPasswordAsync(ctx.Email, "tok-3", P1);
+        var result = await ctx.Service().ResetPasswordAsync("tok-3", P1);
 
         result.IsFailure.Should().BeTrue();
         result.ErrorCode.Should().Be("password_reused", "P1 is still inside the last-N window");
@@ -164,7 +164,7 @@ public sealed class PasswordHistoryEnforcementTests
         await ctx.RotateAsync("tok-2", P2); // P1 -> P2 ; P0 is now pruned beyond N=2
 
         await ctx.SetResetTokenAsync("tok-3");
-        var result = await ctx.Service().ResetPasswordAsync(ctx.Email, "tok-3", P0);
+        var result = await ctx.Service().ResetPasswordAsync("tok-3", P0);
 
         result.IsSuccess.Should().BeTrue("P0 was pruned out of the last-N window and may be reused");
         var user = await ctx.ReloadUserAsync();
@@ -180,7 +180,7 @@ public sealed class PasswordHistoryEnforcementTests
         await ctx.SetResetTokenAsync("tok-z");
 
         // Reset straight back to the current password: allowed because the check is skipped.
-        var result = await ctx.Service().ResetPasswordAsync(ctx.Email, "tok-z", P0);
+        var result = await ctx.Service().ResetPasswordAsync("tok-z", P0);
 
         result.IsSuccess.Should().BeTrue();
         var history = await ctx.HistoryHashesAsync();
@@ -251,7 +251,7 @@ public sealed class PasswordHistoryEnforcementTests
         public async Task RotateAsync(string rawToken, string newPassword)
         {
             await SetResetTokenAsync(rawToken);
-            var result = await Service().ResetPasswordAsync(Email, rawToken, newPassword);
+            var result = await Service().ResetPasswordAsync(rawToken, newPassword);
             result.IsSuccess.Should().BeTrue($"rotation to {newPassword} should succeed");
         }
 

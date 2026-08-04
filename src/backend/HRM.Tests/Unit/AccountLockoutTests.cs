@@ -652,7 +652,7 @@ public sealed class AccountLockoutTests
 
         // Act: reset password (BR-2)
         var result = await service.ResetPasswordAsync(
-            "test@test.local", rawToken, "NewPassword456!", default);
+            rawToken, "NewPassword456!", default);
 
         // Assert: success, lockout cleared
         result.IsSuccess.Should().BeTrue();

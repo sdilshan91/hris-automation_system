@@ -110,9 +110,21 @@ export interface IForgotPasswordRequest {
   email: string;
 }
 
-/** Reset password request */
+/**
+ * Reset password request. BUG-295: token-only — the reset token is a 256-bit secret bound to exactly one
+ * user, so it identifies them on its own. The emailed link never carried an email address, which is why
+ * requiring one here made every real reset link unusable.
+ */
 export interface IResetPasswordRequest {
-  email: string;
+  token: string;
+  newPassword: string;
+}
+
+/**
+ * BUG-294: invitation redemption. The invitee has no session; the one-time token from the emailed link
+ * identifies both the invitation and the tenant it belongs to.
+ */
+export interface IAcceptInvitationRequest {
   token: string;
   newPassword: string;
 }

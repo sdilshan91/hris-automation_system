@@ -47,6 +47,10 @@ public sealed class AuthService : IAuthService
     // authorization data isn't served stale for up to the 5-min TTL. Optional (nullable, default null) so isolated
     // unit construction that omits it still compiles (mirrors the optional deps above); DI injects it in production.
     private readonly IMyTenantsCache? _myTenantsCache;
+    // BUG-294: accepting an invitation grants roles, so any permissions cached for this user+tenant are stale
+    // the moment the membership goes Active. Optional (nullable, default null) like the deps above so isolated
+    // unit construction still compiles; DI injects the registered cache in production.
+    private readonly IPermissionCache? _permissionCache;
 
     public AuthService(
         AppDbContext dbContext,
@@ -60,7 +64,8 @@ public sealed class AuthService : IAuthService
         ICurrentUser? currentUser = null,
         IFieldProtector? mfaSecretProtector = null,
         INotificationDispatcher? notificationDispatcher = null,
-        IMyTenantsCache? myTenantsCache = null)
+        IMyTenantsCache? myTenantsCache = null,
+        IPermissionCache? permissionCache = null)
     {
         _dbContext = dbContext;
         _jwtService = jwtService;
@@ -74,6 +79,7 @@ public sealed class AuthService : IAuthService
         _mfaSecretProtector = mfaSecretProtector ?? PlaintextFieldProtector.Instance;
         _notificationDispatcher = notificationDispatcher;
         _myTenantsCache = myTenantsCache;
+        _permissionCache = permissionCache;
     }
 
     public Task<Result<LoginResponse>> LoginAsync(
@@ -689,7 +695,11 @@ public sealed class AuthService : IAuthService
         {
             var baseDomain = (_configuration["Platform:BaseDomain"] ?? "yourhrm.com").Trim().TrimStart('.');
             var subdomain = _tenantContext.Subdomain;
-            var resetUrl = $"https://{subdomain}.{baseDomain}/reset-password?token={rawToken}";
+            // BUG-295: the Angular route is NESTED under /auth. This link previously pointed at the ROOT
+            // /reset-password, which no route matches, so the SPA wildcard redirected every recipient to the
+            // login page and discarded the token — self-service password reset was dead end-to-end. The path
+            // here and the route table must agree; AuthEmailLinkRouteTests pins that they do.
+            var resetUrl = $"https://{subdomain}.{baseDomain}/auth/reset-password?token={rawToken}";
             var expiryHours = (int)Math.Ceiling(ResetTokenLifetime.TotalHours);
 
             var payloadJson = JsonSerializer.Serialize(new Dictionary<string, object?>
@@ -727,39 +737,41 @@ public sealed class AuthService : IAuthService
         }
     }
 
+    /// <summary>
+    /// Resets a password from an emailed reset link. The TOKEN ALONE identifies the user (BUG-295).
+    ///
+    /// <para>This used to also require the email address, which is why the feature was dead end-to-end: the
+    /// emailed link carried only <c>?token=</c>, so the page could never assemble a valid request. The email
+    /// added no security — the reset token is 256 bits of entropy stored against exactly one <c>User</c> row, so
+    /// whoever holds it is already identified — while adding a second thing that had to agree, and putting a PII
+    /// value into a URL that lands in proxy logs, browser history and referrer headers. Requiring one secret
+    /// instead of one secret plus one identifier is both simpler and strictly better.</para>
+    ///
+    /// <para>Looking the user up BY the token hash mirrors how refresh tokens are already resolved in this
+    /// class. The stored hash is itself derived from the secret, so an equality lookup reveals nothing to an
+    /// attacker who does not already hold the token.</para>
+    /// </summary>
     public async Task<Result> ResetPasswordAsync(
-        string email,
         string token,
         string newPassword,
         CancellationToken cancellationToken = default)
     {
-        email = email.Trim().ToLowerInvariant();
+        // Every rejection below returns the SAME message — a distinct "no such token" vs "expired" would be an
+        // oracle. Preserved verbatim from the pre-BUG-295 behaviour.
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
+        }
+
+        var tokenHash = HashResetToken(token);
 
         var user = await _dbContext.Users
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+            .FirstOrDefaultAsync(u => u.PasswordResetTokenHash == tokenHash, cancellationToken);
 
-        if (user is null)
-        {
-            return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
-        }
-
-        // BUG-040: validate the reset token — it must be present, the user must have a pending token,
-        // it must not be expired, and its hash must match. Anything else is rejected with the same
-        // generic message (no oracle). A missing stored hash means no reset was requested.
-        if (string.IsNullOrEmpty(token) ||
-            string.IsNullOrEmpty(user.PasswordResetTokenHash) ||
+        if (user is null ||
             user.PasswordResetTokenExpiresAt is null ||
             user.PasswordResetTokenExpiresAt.Value <= DateTime.UtcNow)
-        {
-            return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
-        }
-
-        var providedHash = HashResetToken(token);
-        var matches = System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes(providedHash),
-            System.Text.Encoding.UTF8.GetBytes(user.PasswordResetTokenHash));
-        if (!matches)
         {
             return Result.Failure("The reset link is invalid or has expired. Please request a new one.", 400);
         }
@@ -772,6 +784,190 @@ public sealed class AuthService : IAuthService
         user.PasswordResetTokenExpiresAt = null;
 
         return await ChangeUserPasswordAsync(user, newPassword, "password_reset_completed", null, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// BUG-294: redeems a tenant user-invitation — the missing other half of US-ADM-005.
+    ///
+    /// <para>The invite side was complete (token minted, stored, rotated on resend, plan-limit enforced,
+    /// audited) but <b>nothing ever verified the token and no endpoint accepted it</b>, so every invitation
+    /// email carried a live secret to a route the backend could not honour and
+    /// <see cref="InvitationStatus.Accepted"/> was unreachable code. This is that missing half.</para>
+    ///
+    /// <para><b>It deliberately does not build a second password rail.</b> The invitee is created passwordless
+    /// at invite time, so setting the first password is routed through the very same
+    /// <c>ChangeUserPasswordAsync</c> the reset flow uses — which means the tenant password policy, the
+    /// re-use history rules and the refresh-token revocation all apply here for free and cannot drift apart.
+    /// That helper also owns the single <c>SaveChanges</c>, so the membership, the role grants, the status flip
+    /// and the new password commit as ONE unit: a policy rejection persists nothing and leaves the link
+    /// usable for a retry.</para>
+    ///
+    /// <para>Lives in <c>AuthService</c> rather than <c>UserManagementService</c> because the caller is
+    /// ANONYMOUS — the invitee has no session yet, whereas every path in the user-management service assumes an
+    /// authenticated admin.</para>
+    /// </summary>
+    public async Task<Result> AcceptInvitationAsync(
+        string token,
+        string newPassword,
+        string? ipAddress = null,
+        string? userAgent = null,
+        CancellationToken cancellationToken = default)
+    {
+        // The invitation is tenant-scoped, and the link lands on the tenant's own subdomain, so an unresolved
+        // tenant means the request never reached its workspace — fail rather than search every tenant.
+        if (!_tenantContext.IsResolved)
+        {
+            return Result.Failure("Workspace could not be determined for this invitation link.", 400);
+        }
+
+        const string GenericFailure =
+            "This invitation link is invalid, has expired, or has already been used. Please ask your administrator to send a new one.";
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Result.Failure(GenericFailure, 400);
+        }
+
+        var tokenHash = InvitationToken.Hash(token);
+
+        // The global query filter scopes this to the resolved tenant, so a tenant-A token presented on
+        // tenant B's subdomain simply does not resolve — cross-tenant redemption is impossible by construction.
+        var invitation = await _dbContext.UserInvitations
+            .FirstOrDefaultAsync(i => i.TokenHash == tokenHash, cancellationToken);
+
+        // One message for "no such token", "revoked", "already accepted" and "expired" alike: distinguishing
+        // them would tell an attacker which guesses were once real invitations.
+        if (invitation is null ||
+            invitation.Status != InvitationStatus.Invited ||
+            invitation.ExpiresAt <= DateTime.UtcNow)
+        {
+            return Result.Failure(GenericFailure, 400);
+        }
+
+        // Belt-and-braces constant-time confirmation. The lookup above already matched on equality; this makes
+        // the comparison explicit and keeps the verification in one place should the lookup ever change.
+        if (!InvitationToken.Verify(token, invitation.TokenHash))
+        {
+            return Result.Failure(GenericFailure, 400);
+        }
+
+        var email = invitation.Email.Trim().ToLowerInvariant();
+
+        // Users are global (no tenant filter). The invite path find-or-creates this row, so its absence means
+        // the invitation outlived its user — treat as unredeemable rather than silently creating an account.
+        var user = await _dbContext.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+
+        if (user is null)
+        {
+            _logger.LogWarning(
+                "Invitation {InvitationId} in tenant {TenantId} has no matching user row for its email; " +
+                "cannot be redeemed.",
+                invitation.Id, _tenantContext.TenantId);
+            return Result.Failure(GenericFailure, 400);
+        }
+
+        var now = DateTime.UtcNow;
+
+        // Membership: create it, or re-activate a disabled one. An invitation is only issued when no ACTIVE
+        // membership exists, so re-activating here is the intended outcome of accepting.
+        // Deliberately NOT IgnoreQueryFilters: UserTenant IS tenant-scoped by a global filter, so bypassing it
+        // here would leave the explicit TenantId predicate below as the only thing preventing a cross-tenant
+        // membership read — and the next person to see a "redundant" predicate would delete it. Two independent
+        // guards, neither load-bearing alone.
+        var membership = await _dbContext.UserTenants
+            .FirstOrDefaultAsync(
+                ut => ut.UserId == user.Id && ut.TenantId == _tenantContext.TenantId, cancellationToken);
+
+        if (membership is null)
+        {
+            membership = new UserTenant
+            {
+                Id = BaseEntity.NewUuidV7(),
+                UserId = user.Id,
+                TenantId = _tenantContext.TenantId,
+                Status = UserTenantStatus.Active,
+                CreatedAt = now,
+            };
+            _dbContext.UserTenants.Add(membership);
+        }
+        else
+        {
+            membership.Status = UserTenantStatus.Active;
+            membership.UpdatedAt = now;
+        }
+
+        // Grant the invited roles — but only those that STILL EXIST in this tenant. A role can be deleted
+        // during the 72-hour window, and granting a dangling id would blow up on the FK and make a legitimate
+        // invitation permanently unredeemable. Dropping the vanished role is the graceful outcome: the user
+        // gets in, an admin can adjust their roles afterwards.
+        var invitedRoleIds = invitation.InvitedRoleIds ?? new List<Guid>();
+        var liveRoleIds = invitedRoleIds.Count == 0
+            ? new List<Guid>()
+            : await _dbContext.Roles
+                .Where(r => invitedRoleIds.Contains(r.Id))
+                .Select(r => r.Id)
+                .ToListAsync(cancellationToken);
+
+        if (liveRoleIds.Count != invitedRoleIds.Count)
+        {
+            _logger.LogWarning(
+                "Invitation {InvitationId} referenced {Missing} role(s) that no longer exist in tenant " +
+                "{TenantId}; they were skipped on acceptance.",
+                invitation.Id, invitedRoleIds.Count - liveRoleIds.Count, _tenantContext.TenantId);
+        }
+
+        var existingRoleIds = await _dbContext.UserTenantRoles
+            .IgnoreQueryFilters()
+            .Where(x => x.UserTenantId == membership.Id)
+            .Select(x => x.RoleId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var roleId in liveRoleIds.Where(id => !existingRoleIds.Contains(id)))
+        {
+            _dbContext.UserTenantRoles.Add(new UserTenantRole
+            {
+                UserTenantId = membership.Id,
+                RoleId = roleId,
+                AssignedAt = now,
+                AssignedBy = "invitation",
+            });
+        }
+
+        // Consume the invitation. In-memory only — the shared password helper's SaveChanges commits this
+        // together with everything above, so a password-policy rejection leaves the invitation Invited and the
+        // link still usable (the same idiom the reset path uses).
+        invitation.Status = InvitationStatus.Accepted;
+        invitation.AcceptedAt = now;
+
+        var result = await ChangeUserPasswordAsync(
+            user, newPassword, "invitation_accepted", ipAddress, userAgent, cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        // The membership is Active only as of this commit, so anything cached about this user is now stale.
+        // my-tenants is the load-bearing one: a user invited into a SECOND workspace may hold a cached list
+        // that omits it for up to the 5-minute TTL (BUG-116 class).
+        if (_permissionCache is not null)
+        {
+            await _permissionCache.InvalidateAsync(_tenantContext.TenantId, user.Id, cancellationToken);
+        }
+
+        if (_myTenantsCache is not null)
+        {
+            await _myTenantsCache.InvalidateAsync(user.Id, cancellationToken);
+        }
+
+        _logger.LogInformation(
+            "Invitation accepted. InvitationId={InvitationId}, UserId={UserId}, TenantId={TenantId}, " +
+            "RolesGranted={RoleCount}",
+            invitation.Id, user.Id, _tenantContext.TenantId, liveRoleIds.Count);
+
+        return Result.Success();
     }
 
     /// <summary>
