@@ -45,16 +45,23 @@ const FAVICON_MAX_BYTES = 500 * 1024; // 500KB
             <div class="upload-block">
               <span class="cs-label">{{ zone.label | translate }}</span>
               <p class="cs-hint">{{ zone.hint | translate }}</p>
+              @if (slotLocked(zone.slot)) {
+                <span class="cs-upgrade-badge">{{
+                  'admin.companySettings.upgradePlan' | translate
+                }}</span>
+              }
               <div
                 class="dropzone"
                 [class.dragging]="draggingSlot() === zone.slot"
                 [class.uploading]="uploadingSlot() === zone.slot"
+                [class.cs-locked]="slotLocked(zone.slot)"
                 role="button"
-                tabindex="0"
+                [attr.tabindex]="slotLocked(zone.slot) ? -1 : 0"
+                [attr.aria-disabled]="slotLocked(zone.slot)"
                 [attr.aria-label]="(zone.label | translate)"
-                (click)="picker.click()"
-                (keydown.enter)="picker.click()"
-                (keydown.space)="picker.click(); $event.preventDefault()"
+                (click)="slotLocked(zone.slot) || picker.click()"
+                (keydown.enter)="slotLocked(zone.slot) || picker.click()"
+                (keydown.space)="slotLocked(zone.slot) || picker.click(); $event.preventDefault()"
                 (dragover)="onDragOver($event, zone.slot)"
                 (dragleave)="onDragLeave(zone.slot)"
                 (drop)="onDrop($event, zone.slot)"
@@ -246,6 +253,26 @@ export class BrandingSectionComponent {
     (this.plan()?.lockedFeatures ?? []).includes('branding.customColor')
   );
 
+  /**
+   * ISSUE-358: the asset uploads are plan-gated too, not just the colour.
+   *
+   * The backend refuses an unentitled upload with 403 `plan_feature_locked`, so without this the dropzone
+   * would happily accept a file and then surface a server error — the UI promising something the API will
+   * refuse. Keyed per slot because the backend reports them individually.
+   */
+  readonly lockedSlots = computed(() => {
+    const locked = this.plan()?.lockedFeatures ?? [];
+    return {
+      logo: locked.includes('branding.logo'),
+      emailLogo: locked.includes('branding.emailLogo'),
+      favicon: locked.includes('branding.favicon'),
+    } as Record<BrandingSlot, boolean>;
+  });
+
+  slotLocked(slot: BrandingSlot): boolean {
+    return this.lockedSlots()[slot] ?? false;
+  }
+
   constructor() {
     effect(() => {
       const v = this.value();
@@ -314,6 +341,16 @@ export class BrandingSectionComponent {
    * (magic-byte + size, NFR-2); we surface its 400 message.
    */
   private upload(file: File, slot: BrandingSlot): void {
+    // ISSUE-358: the single choke point for every upload route. The template guards the click and the
+    // keyboard activation, but DRAG-AND-DROP reaches onDrop directly — so the entitlement check has to live
+    // here or a locked slot is one drag away from a 403 the user never asked for.
+    if (this.slotLocked(slot)) {
+      this.toastr.error(
+        'Custom branding requires a plan that includes white-labelling.'
+      );
+      return;
+    }
+
     const limit = slot === 'favicon' ? FAVICON_MAX_BYTES : LOGO_MAX_BYTES;
     if (file.size > limit) {
       const mb = slot === 'favicon' ? '500KB' : '2MB';

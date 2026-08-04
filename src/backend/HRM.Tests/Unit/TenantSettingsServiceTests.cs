@@ -805,10 +805,137 @@ public sealed class TenantSettingsServiceTests
             "an unreadable plan must never lock a tenant out of their own branding");
     }
 
+    // ── ISSUE-358 residual (2026-08-05): the gate covers the WHOLE branding surface, not just the colour ──
+    //
+    // Only UpdatePrimaryColorAsync was enforced. Logo / email-logo / favicon uploads were ungated on EVERY
+    // plan, so a tenant without the entitlement could still put their own mark across the product — including
+    // on generated payslip and report PDFs, which resolve branding at render time. That is most of what
+    // white-labelling is, which left the flag as the same theatre ISSUE-358 filed it as.
+
+    [Theory]
+    [InlineData(BrandingAssetKind.Logo, "branding.logo")]
+    [InlineData(BrandingAssetKind.EmailLogo, "branding.emailLogo")]
+    [InlineData(BrandingAssetKind.Favicon, "branding.favicon")]
+    public async Task Settings_report_every_branding_asset_as_locked_without_WhiteLabel_ISSUE358(
+        BrandingAssetKind kind, string expectedKey)
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: false);
+
+        var result = await Service().GetSettingsAsync();
+
+        result.Value!.Plan!.LockedFeatures.Should().Contain(expectedKey,
+            "the FE cannot show an upgrade affordance for {0} unless the backend reports it locked", kind);
+    }
+
+    [Theory]
+    [InlineData(BrandingAssetKind.Logo)]
+    [InlineData(BrandingAssetKind.EmailLogo)]
+    [InlineData(BrandingAssetKind.Favicon)]
+    public async Task UploadBranding_is_REJECTED_without_WhiteLabel_ISSUE358(BrandingAssetKind kind)
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: false);
+
+        var result = await Service().UploadBrandingAsync(kind, ValidPng(), "logo.png");
+
+        result.IsFailure.Should().BeTrue("an unentitled tenant must not be able to brand the product");
+        result.StatusCode.Should().Be(403);
+        result.ErrorCode.Should().Be("plan_feature_locked");
+    }
+
+    [Theory]
+    [InlineData(BrandingAssetKind.Logo)]
+    [InlineData(BrandingAssetKind.EmailLogo)]
+    [InlineData(BrandingAssetKind.Favicon)]
+    public async Task UploadBranding_is_ALLOWED_with_WhiteLabel_ISSUE358(BrandingAssetKind kind)
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: true);
+
+        var result = await Service().UploadBrandingAsync(kind, ValidPng(), "logo.png");
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+    }
+
+    [Fact]
+    public async Task UploadBranding_FAILS_OPEN_when_no_plan_row_exists_ISSUE358()
+    {
+        await SeedTenantAsync(_tenantId); // no SubscriptionPlan row
+
+        var result = await Service().UploadBrandingAsync(BrandingAssetKind.Logo, ValidPng(), "logo.png");
+
+        result.IsSuccess.Should().BeTrue(
+            "an unreadable plan must never lock a tenant out of their own branding");
+    }
+
+    // THE GRANDFATHER ARM — the decision that makes this gate safe to ship.
+    //
+    // A tenant downgrades off WhiteLabel while a logo and colour are already live. The gate blocks NEW writes
+    // only: what is already set keeps rendering. Reverting the alternative would mean a billing change silently
+    // rebrands a running workspace AND its historical documents (which resolve branding at render time).
+    [Fact]
+    public async Task Downgrading_off_WhiteLabel_RETAINS_branding_already_in_place_ISSUE358()
+    {
+        await SeedTenantAsync(_tenantId);
+        await SeedPlanAsync("default", whiteLabel: true);
+
+        (await Service().UpdatePrimaryColorAsync("#FF0000")).IsSuccess.Should().BeTrue();
+        (await Service().UploadBrandingAsync(BrandingAssetKind.Logo, ValidPng(), "logo.png"))
+            .IsSuccess.Should().BeTrue();
+
+        await SetPlanWhiteLabelAsync("default", whiteLabel: false); // the downgrade
+
+        var settings = await Service().GetSettingsAsync();
+
+        settings.Value!.Branding.PrimaryColor.Should().Be("#FF0000",
+            "an existing brand colour must survive a downgrade — billing must not silently restyle a live workspace");
+        settings.Value.Branding.LogoUrl.Should().NotBeNullOrEmpty(
+            "and the existing logo must keep rendering, including on already-generated documents");
+        settings.Value.Plan!.LockedFeatures.Should().Contain("branding.customColor",
+            "but the tenant is now told the feature is locked, so the UI can stop offering changes");
+
+        (await Service().UpdatePrimaryColorAsync("#00FF00")).IsFailure.Should().BeTrue(
+            "NEW changes are what the downgrade blocks");
+    }
+
+    /// <summary>Smallest byte sequence BrandingFileValidator accepts as a PNG (magic bytes + padding).</summary>
+    private static byte[] ValidPng()
+    {
+        var png = new byte[128];
+        // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+        byte[] signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        signature.CopyTo(png, 0);
+        return png;
+    }
+
+    private async Task SetPlanWhiteLabelAsync(string code, bool whiteLabel)
+    {
+        using var db = CreateDbContext();
+        var plan = await db.SubscriptionPlans.IgnoreQueryFilters().SingleAsync(p => p.Code == code);
+        plan.FeatureFlags = new PlanFeatureFlags { WhiteLabel = whiteLabel };
+        await db.SaveChangesAsync();
+    }
+
     private TenantSettingsService Service() => new(
         CreateDbContext(), _tenantContext, _currentUser,
-        Substitute.For<IFileStorage>(),
+        FileStorageStub(),
         Substitute.For<ILogger<TenantSettingsService>>(), cache: null);
+
+    /// <summary>
+    /// A storage double that returns the URL the real one would. An unconfigured NSubstitute returns "" for a
+    /// string, so the service would persist an EMPTY LogoUrl and any "the asset was stored" assertion would be
+    /// asserting against a blank — passing or failing for reasons unrelated to the behaviour under test.
+    /// </summary>
+    private static IFileStorage FileStorageStub()
+    {
+        var storage = Substitute.For<IFileStorage>();
+        storage.UploadAsync(
+                Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(),
+                Arg.Any<CancellationToken>())
+            .Returns(ci => $"/{ci.Arg<Guid>()}/{ci.ArgAt<string>(1)}");
+        return storage;
+    }
 
     private async Task SeedPlanAsync(string code, bool whiteLabel)
     {
