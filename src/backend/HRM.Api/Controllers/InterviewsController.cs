@@ -264,6 +264,28 @@ public sealed class InterviewsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/recruitment/scorecards/{scorecardId}
+    /// US-REC-006 AC-K1: one scorecard plus its EDIT HISTORY. This route did not exist, which blocked
+    /// TC-REC-006-05, TC-REC-006-08 and ISO-015 — there was no way to read a single scorecard by id.
+    /// Guarded by Recruitment.View; the service applies the same anti-bias rule (FR-6/BR-5) as the list
+    /// views and answers 404 (not 403) for a scorecard the caller may not see, so the endpoint never
+    /// confirms that a hidden scorecard exists.
+    /// </summary>
+    [HttpGet("scorecards/{scorecardId:guid}")]
+    [RequirePermission("Recruitment.View")]
+    [ProducesResponseType(typeof(ApiResponse<ScorecardDetailDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetScorecardById(Guid scorecardId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetScorecardByIdQuery(scorecardId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ScorecardDetailDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/recruitment/applicants/{applicantId}/scorecards
     /// Lists the scorecards across all of an applicant's interviews the caller may see + the aggregate
     /// average (AC-2/AC-3). Guarded by Recruitment.View; the service applies the anti-bias rule (FR-6/BR-5).
