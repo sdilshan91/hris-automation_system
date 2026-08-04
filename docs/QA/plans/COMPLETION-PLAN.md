@@ -275,18 +275,23 @@ US-PLT-002 **RLS prod flip** (code complete + proven, committed OFF — ops step
 3. **RLS prod flip must follow the latency-meter deploy** — `tenant_latency_bucket` ships a dormant policy the flip activates.
 4. **Year-end tax PDF must REUSE `PerformancePdfRenderer`** (4 PDFs already ship through it) → don't start a second PDF stack.
 
-### Wave 0 — deploy the latency meter (2 min, do first)
+### Wave 0 — ✅ DONE 2026-08-04 — deploy the latency meter
 `docker compose build backend && docker compose up -d backend`. PR #458 is merged but the container predates it.
 P95/trend need HISTORY — every hour it is not running is an hour missing from the first real reading. Migration
 applies on startup.
+**Outcome:** image rebuilt (the running one was built 04:18, PR #458 landed 07:05), container healthy in ~20s,
+migration `20260804004010_Monitoring_TenantLatencyHistogram` applied, `tenant_latency_bucket` present.
+**Verified live, not assumed:** 3 tenant-scoped requests → 3 counts in bucket 0 after one 10s flush interval, so
+the middleware → `IApiCallCounter` → `ApiCallCounterFlushService` → `TenantLatencyUsage.UpsertAsync` chain is
+actually recording. History is accumulating from 2026-08-04.
 
-### Wave 1 — DECISIONS (no code; three of them gate later waves)
-| # | Decision | Recommendation (best, not easiest) |
+### Wave 1 — ✅ DECIDED 2026-08-04 (all four taken as recommended; the three gating ones are now unblocked)
+| # | Decision | ✅ DECISION (2026-08-04) — recommendation was accepted as-is |
 |---|---|---|
-| D-a | **Clawback: [[BUG-291]] + [[BUG-293]] retroactive tail** | **Absorb, fix forward, do NOT recover.** Both are overpayments to employees; recovering paid salary is legally fraught and trust-corrosive. **But decide on numbers, not instinct:** BUG-291's exposure report is built — run it, and build the matching BUG-293 query. **Split out** current employees with large *un-encashed* inflated balances: correcting a number before it becomes money is not clawback. ⏰ Open since 2026-07-30 — the only item accruing cost. |
-| D-b | **[[ISSUE-358]] `WhiteLabel`** | **Enforce it.** Deleting is easier and wrong — it removes a capability customers are sold rather than making it real. D3 set the pattern for Scim/CustomDomain/Sandbox. Do it WITH US-ADM-006's tenant-side `plan` block. |
-| D-c | **[[ISSUE-203]] BCrypt workFactor 12** | **Keep 12; re-measure on production hardware.** Lowering it makes a number look better by permanently weakening every existing hash, based on a measurement from a limited-core test host. |
-| D-d | **`DF-61-conc-approval-race`** | **Needs product judgement + a state-machine read first.** A Rejected run is legitimately re-runnable, so the guard cannot simply extend to all post-ReviewPending states. Question: *should reprocess un-submit an in-flight approval, or be refused while approval is pending?* Instinct: refuse-and-tell over silent un-submit — but verify against the workflow before committing. |
+| D-a | **Clawback: [[BUG-291]] + [[BUG-293]] retroactive tail** | ✅ **DECIDED — absorb + fix forward + correct un-encashed balances.** **Absorb, fix forward, do NOT recover.** Both are overpayments to employees; recovering paid salary is legally fraught and trust-corrosive. **But decide on numbers, not instinct:** BUG-291's exposure report is built — run it, and build the matching BUG-293 query. **Split out** current employees with large *un-encashed* inflated balances: correcting a number before it becomes money is not clawback. ⏰ Open since 2026-07-30 — the only item accruing cost. |
+| D-b | **[[ISSUE-358]] `WhiteLabel`** | ✅ **DECIDED — enforce it, bundled with US-ADM-006.** **Enforce it.** Deleting is easier and wrong — it removes a capability customers are sold rather than making it real. D3 set the pattern for Scim/CustomDomain/Sandbox. Do it WITH US-ADM-006's tenant-side `plan` block. |
+| D-c | **[[ISSUE-203]] BCrypt workFactor 12** | ✅ **DECIDED — keep 12; ISSUE-203 stays OPEN pending a production-hardware re-measure (not a code task).** **Keep 12; re-measure on production hardware.** Lowering it makes a number look better by permanently weakening every existing hash, based on a measurement from a limited-core test host. |
+| D-d | **`DF-61-conc-approval-race`** | ✅ **REFUSE-AND-TELL on `AwaitingApproval` + `Approved`.** The state-machine read was done before deciding (`PayrollRunStatus.cs`, `PayrollRunProcessor.cs:110-153`): the interlock today guards **only** `Finalized` and `Cancelled`, so a run under an in-flight approval — or one already **Approved but not yet Finalized** — can be silently reprocessed. `Approved` is the sharper hazard: reprocessing there changes what an approver signed off on. `Rejected` and `ReviewPending` stay re-runnable (HR corrects → re-submits → new workflow instance), so the legitimate correction loop is untouched. Silent un-submit was rejected: it discards an approver's decision without telling them. Implement as a 409 with a distinct error code alongside `run_finalized`/`run_cancelled`. |
 
 ### Wave 2 — isolated small fixes (no shared files; safe in parallel)
 - **US-REC-010 FR-8/FR-9** — ★ **the deferral rationale EXPIRED.** `ApplicantConversionService.cs:36-37` claims *"there is no Onboarding module yet"* and *"welcome email: log-only seam"*. **Both false:** `OnboardingChecklistService`/`OnboardingTemplateService` exist and `IUserManagementNotificationService` → `Real...` (US-NTF-006). Wire conversion to them and DELETE the two lying comments. Cheap now, not blocked.
