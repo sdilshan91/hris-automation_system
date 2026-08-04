@@ -24,8 +24,59 @@ namespace HRM.Api.Controllers;
 public sealed class PayrollReportsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    // AC-3: the statement endpoints return file BYTES, so they call the service directly rather than routing a
+    // byte[] payload through MediatR.
+    private readonly IPayrollReportService _reports;
 
-    public PayrollReportsController(IMediator mediator) => _mediator = mediator;
+    public PayrollReportsController(IMediator mediator, IPayrollReportService reports)
+    {
+        _mediator = mediator;
+        _reports = reports;
+    }
+
+    // ── US-PAY-009 AC-3: individual + bulk year-end tax statements ─────────────
+    //
+    // The columnar YearEndTaxStatement report already shipped, but AC-3 asks for INDIVIDUAL per-employee
+    // statements with a MONTH-WISE breakdown, available for bulk download — three things a table of annual
+    // totals cannot satisfy.
+
+    /// <summary>
+    /// GET /api/v1/payroll/tax-statements/{employeeId}?year=2026
+    /// One employee's year-end tax statement as a PDF.
+    /// </summary>
+    [HttpGet("tax-statements/{employeeId:guid}")]
+    [RequirePermission("Payroll.Export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetTaxStatement(
+        Guid employeeId, [FromQuery] int year, CancellationToken cancellationToken)
+    {
+        var result = await _reports.GetYearEndTaxStatementPdfAsync(employeeId, year, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return File(result.Value!.FileContent, result.Value.ContentType, result.Value.FileName);
+    }
+
+    /// <summary>
+    /// GET /api/v1/payroll/tax-statements/bundle?year=2026
+    /// Every employee's statement for the year, as a ZIP (AC-3 bulk download).
+    /// </summary>
+    [HttpGet("tax-statements/bundle")]
+    [RequirePermission("Payroll.Export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetTaxStatementBundle(
+        [FromQuery] int year, CancellationToken cancellationToken)
+    {
+        var result = await _reports.GetYearEndTaxStatementsBundleAsync(year, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return File(result.Value!.FileContent, result.Value.ContentType, result.Value.FileName);
+    }
 
     /// <summary>
     /// GET /api/v1/payroll/reports

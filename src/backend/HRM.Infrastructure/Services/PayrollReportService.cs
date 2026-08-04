@@ -45,13 +45,20 @@ public sealed class PayrollReportService : IPayrollReportService
     // wrong one on a compensation report.
     private readonly IStatutoryDeductionResolver? _statutoryResolver;
 
+    // US-PAY-009 AC-3 self-service: identifies the SIGNED-IN user so their own statement can be resolved from
+    // the session rather than from a caller-supplied id. Trailing + optional so the many existing report tests
+    // that construct this service positionally keep compiling; DI always supplies it.
+    private readonly ICurrentUser? _currentUserOrNull;
+
     public PayrollReportService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         IPayrollAuditLogger auditLogger,
         ILogger<PayrollReportService> logger,
-        IStatutoryDeductionResolver? statutoryResolver = null)
+        IStatutoryDeductionResolver? statutoryResolver = null,
+        ICurrentUser? currentUser = null)
     {
+        _currentUserOrNull = currentUser;
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _auditLogger = auditLogger;
@@ -1045,16 +1052,178 @@ public sealed class PayrollReportService : IPayrollReportService
             "Employee No", "Employee", "Country", "Fiscal Year", "Taxable Income", "Income Tax Withheld",
         };
 
-        // Representative period: the year-end month (December) unless a period month is pinned, so the FY that
-        // CONTAINS (year, month) is the one selected per country.
+        int month = qp.PayMonth ?? 12;
+        var statements = await ResolveYearEndStatementsAsync(year, qp, ct);
+
+        if (statements.Count == 0)
+            return EmptyYearEndResult(columns, month, year);
+
+        // The columnar view is now a PROJECTION of the same per-employee statements the PDF renders, rather
+        // than a second walk over the slips. Two independent aggregations of a tax figure is exactly how the
+        // report and the document end up disagreeing about what an employee earned.
+        var rows = statements
+            .Select(st => new PayrollReportRow
+            {
+                Cells =
+                [
+                    st.EmployeeNo,
+                    st.EmployeeName,
+                    st.CountryCode,
+                    st.FiscalYear,
+                    Money(st.TotalTaxableIncome),
+                    Money(st.TotalIncomeTaxWithheld),
+                ],
+            })
+            .ToList();
+
+        var totalRow = new PayrollReportRow
+        {
+            Cells =
+            [
+                "TOTAL", string.Empty, string.Empty, string.Empty,
+                Money(statements.Sum(st => st.TotalTaxableIncome)),
+                Money(statements.Sum(st => st.TotalIncomeTaxWithheld)),
+            ],
+        };
+
+        return Result<PayrollReportResult>.Success(new PayrollReportResult
+        {
+            ReportType = PayrollReportType.YearEndTaxStatement.ToString(),
+            Title = "Year-End Tax Statements",
+            PayMonth = month, PayYear = year,
+            Columns = columns, Rows = rows, TotalRow = totalRow, TotalCount = rows.Count,
+            Note = "Per-employee fiscal-year summary. Each employee's Taxable Income + Income Tax Withheld are the "
+                 + "SUM of their finalized-slip TaxableIncome / IncomeTaxWithheld within their BRANCH-country's "
+                 + "fiscal-year window (Location.CountryCode → tenant default → sole rule country) — so multi-country "
+                 + "tenants show each employee under their own country's fiscal year. Employees with no resolvable "
+                 + "tax country, no in-effect income-tax rule, or no finalized slips in the window are omitted. For "
+                 + "the individual month-wise statements AC-3 requires, use the per-employee PDF or the bulk ZIP.",
+        });
+    }
+
+    /// <summary>
+    /// US-PAY-009 AC-3: the per-employee, MONTH-WISE year-end tax statements — the single source both the
+    /// columnar report and the rendered PDFs are built from.
+    ///
+    /// <para>The fiscal-year resolution is the subtle part and must not be duplicated: an employee's tax year
+    /// comes from their BRANCH country's in-effect income-tax rule (Location.CountryCode → tenant default →
+    /// sole rule country), so in a multi-country tenant two employees in the same calendar year can legitimately
+    /// sit in different fiscal windows. Employees with no resolvable country, no in-effect rule, or no finalized
+    /// slips inside their window are omitted rather than shown with fabricated zeroes.</para>
+    /// </summary>
+    // ══════════════ US-PAY-009 AC-3: individual + bulk year-end tax statements ══════════════
+
+    public async Task<Result<PayrollReportExportResult>> GetYearEndTaxStatementPdfAsync(
+        Guid employeeId, int year, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PayrollReportExportResult>.Failure("Tenant context is not resolved.", 400);
+
+        var statements = await ResolveYearEndStatementsAsync(year, new PayrollReportQueryParams(), cancellationToken);
+        var statement = statements.FirstOrDefault(st => st.EmployeeId == employeeId);
+
+        if (statement is null)
+            return Result<PayrollReportExportResult>.Failure(
+                "No year-end tax statement is available for this employee and year.", 404, "statement_not_available");
+
+        return Result<PayrollReportExportResult>.Success(await RenderStatementAsync(statement, cancellationToken));
+    }
+
+    public async Task<Result<PayrollReportExportResult>> GetYearEndTaxStatementsBundleAsync(
+        int year, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PayrollReportExportResult>.Failure("Tenant context is not resolved.", 400);
+
+        var statements = await ResolveYearEndStatementsAsync(year, new PayrollReportQueryParams(), cancellationToken);
+
+        if (statements.Count == 0)
+            return Result<PayrollReportExportResult>.Failure(
+                "No year-end tax statements are available for this year.", 404, "statements_not_available");
+
+        var brandColor = await ResolveBrandColorAsync(cancellationToken);
+
+        using var buffer = new MemoryStream();
+        // leaveOpen so the archive's Dispose does not close the stream before ToArray().
+        using (var archive = new System.IO.Compression.ZipArchive(
+                   buffer, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var statement in statements)
+            {
+                var entry = archive.CreateEntry(
+                    YearEndTaxStatementPdfRenderer.FileNameFor(statement),
+                    System.IO.Compression.CompressionLevel.Fastest);
+
+                await using var entryStream = entry.Open();
+                var pdf = YearEndTaxStatementPdfRenderer.Render(statement, brandColor);
+                await entryStream.WriteAsync(pdf, cancellationToken);
+            }
+        }
+
+        return Result<PayrollReportExportResult>.Success(new PayrollReportExportResult
+        {
+            FileContent = buffer.ToArray(),
+            FileName = $"year-end-tax-statements-{year}.zip",
+            ContentType = "application/zip",
+        });
+    }
+
+    public async Task<Result<PayrollReportExportResult>> GetMyYearEndTaxStatementPdfAsync(
+        int year, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<PayrollReportExportResult>.Failure("Tenant context is not resolved.", 400);
+
+        // Resolve the employee from the SIGNED-IN USER rather than taking an id from the caller. An employee
+        // self-service endpoint that accepted an employeeId would be one parameter away from letting anyone
+        // read a colleague's tax document.
+        if (_currentUserOrNull is null || !_currentUserOrNull.IsAuthenticated)
+            return Result<PayrollReportExportResult>.Failure(
+                "You must be signed in to download your tax statement.", 401, "not_authenticated");
+
+        var currentUserId = _currentUserOrNull.UserId;
+        var employeeId = await _dbContext.Employees.AsNoTracking()
+            .Where(e => e.UserId == currentUserId)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (employeeId is null)
+            return Result<PayrollReportExportResult>.Failure(
+                "Your user account is not linked to an employee record.", 404, "employee_not_linked");
+
+        var statements = await ResolveYearEndStatementsAsync(year, new PayrollReportQueryParams(), cancellationToken);
+        var statement = statements.FirstOrDefault(st => st.EmployeeId == employeeId.Value);
+
+        if (statement is null)
+            return Result<PayrollReportExportResult>.Failure(
+                "No year-end tax statement is available for you for this year.", 404, "statement_not_available");
+
+        return Result<PayrollReportExportResult>.Success(await RenderStatementAsync(statement, cancellationToken));
+    }
+
+    private async Task<PayrollReportExportResult> RenderStatementAsync(
+        YearEndTaxStatementDto statement, CancellationToken cancellationToken) => new()
+    {
+        FileContent = YearEndTaxStatementPdfRenderer.Render(
+            statement, await ResolveBrandColorAsync(cancellationToken)),
+        FileName = YearEndTaxStatementPdfRenderer.FileNameFor(statement),
+        ContentType = "application/pdf",
+    };
+
+    private async Task<string?> ResolveBrandColorAsync(CancellationToken cancellationToken) =>
+        await _dbContext.Tenants.AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.PrimaryColor)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<List<YearEndTaxStatementDto>> ResolveYearEndStatementsAsync(
+        int year, PayrollReportQueryParams qp, CancellationToken ct)
+    {
         int month = qp.PayMonth ?? 12;
         var periodDate = FiscalYearResolver.PeriodDate(year, month);
         var monthStart = periodDate;
         var monthEnd = new DateOnly(year, month, DateTime.DaysInMonth(year, month));
 
-        // ── Per-country effective IncomeTax rule (mirror PayrollRunProcessor's country-filtered SelectEffective).
-        // Group the active-for-period IncomeTax rules by normalized country and pick the in-effect version; keep
-        // its (EffectiveFrom, EffectiveTo, FiscalYear) — the FY WINDOW the employee's country runs.
         var incomeTaxRuleRows = await _dbContext.StatutoryRules.AsNoTracking()
             .Where(r => r.IsActive
                 && r.RuleType == StatutoryRuleType.IncomeTax
@@ -1075,22 +1244,20 @@ public sealed class PayrollReportService : IPayrollReportService
                 fyByCountry[grp.Key] = (candidates[idx].EffectiveFrom, candidates[idx].EffectiveTo, candidates[idx].FiscalYear);
         }
 
-        // ── Employee → country resolution inputs (mirror the run's batch loads; no N+1). ──
         var locationCountry = await _dbContext.Locations.AsNoTracking()
             .Where(l => l.CountryCode != null)
             .Select(l => new { l.Id, l.CountryCode })
             .ToDictionaryAsync(x => x.Id, x => x.CountryCode!, ct);
 
-        var tenantDefaultRaw = await _dbContext.Tenants.AsNoTracking()
+        var tenant = await _dbContext.Tenants.AsNoTracking()
             .Where(t => t.Id == _tenantContext.TenantId)
-            .Select(t => t.DefaultCountryCode)
+            .Select(t => new { t.Name, t.DefaultCountryCode })
             .FirstOrDefaultAsync(ct);
-        var tenantDefaultCountry = string.IsNullOrWhiteSpace(tenantDefaultRaw)
-            ? null
-            : tenantDefaultRaw.Trim().ToUpperInvariant();
 
-        // Single-country backward-compat fallback: the distinct non-null country across ALL active-for-period
-        // rules, when EXACTLY one (mirrors the run so a single-country tenant taxes country-less employees).
+        var tenantDefaultCountry = string.IsNullOrWhiteSpace(tenant?.DefaultCountryCode)
+            ? null
+            : tenant!.DefaultCountryCode!.Trim().ToUpperInvariant();
+
         var ruleCountriesRaw = await _dbContext.StatutoryRules.AsNoTracking()
             .Where(r => r.IsActive
                 && r.EffectiveFrom <= monthEnd
@@ -1100,25 +1267,25 @@ public sealed class PayrollReportService : IPayrollReportService
             .ToListAsync(ct);
         var ruleCountries = ruleCountriesRaw
             .Where(c => !string.IsNullOrWhiteSpace(c))
-            .Select(c => c.Trim().ToUpperInvariant())
+            .Select(c => c!.Trim().ToUpperInvariant())
             .Distinct()
             .ToList();
         var soleRuleCountry = ruleCountries.Count == 1 ? ruleCountries[0] : null;
 
-        // ── Employees (respecting the FR-3 employee-side filters) + their finalized slips (batched ONCE). ──
         var employees = await ScopedEmployeesQuery(qp).ToListAsync(ct);
         if (employees.Count == 0)
-            return EmptyYearEndResult(columns, month, year);
+            return [];
 
         var employeeIds = employees.Select(e => e.Id).ToHashSet();
 
-        // Load finalized slips for the 3 pay-years that any resolved FY window can span (a period-year FY plus an
-        // Apr–Mar-style FY that crosses the calendar boundary), then group per employee in memory (no N+1). The
-        // per-employee FY window filter below trims to the exact months that belong in each employee's FY.
         var candidateYears = new[] { year - 1, year, year + 1 };
         var slipRows = await FinalizedSlipsQuery()
             .Where(s => candidateYears.Contains(s.PayYear))
-            .Select(s => new { s.EmployeeId, s.PayYear, s.PayMonth, s.TaxableIncome, s.IncomeTaxWithheld })
+            .Select(s => new
+            {
+                s.EmployeeId, s.PayYear, s.PayMonth,
+                s.GrossEarnings, s.TaxableIncome, s.IncomeTaxWithheld, s.TotalDeductions,
+            })
             .ToListAsync(ct);
 
         var slipsByEmployee = slipRows
@@ -1126,7 +1293,7 @@ public sealed class PayrollReportService : IPayrollReportService
             .GroupBy(s => s.EmployeeId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        var rows = new List<PayrollReportRow>();
+        var statements = new List<YearEndTaxStatementDto>();
         foreach (var emp in employees)
         {
             // TAX-1 precedence: Location.CountryCode → Tenant.DefaultCountryCode → sole rule country → null.
@@ -1137,66 +1304,50 @@ public sealed class PayrollReportService : IPayrollReportService
             empCountry = string.IsNullOrWhiteSpace(empCountry) ? null : empCountry.Trim().ToUpperInvariant();
             empCountry ??= soleRuleCountry;
 
-            // No country, or a country with no in-effect IncomeTax rule → not taxed here → SKIP (never fabricate).
             if (empCountry is null || !fyByCountry.TryGetValue(empCountry, out var fy))
                 continue;
             if (!slipsByEmployee.TryGetValue(emp.Id, out var empSlips))
                 continue;
 
-            decimal taxable = 0m, withheld = 0m;
-            int inWindow = 0;
-            foreach (var s in empSlips)
-            {
-                var period = new DateOnly(s.PayYear, s.PayMonth, 1);
-                if (period >= fy.From && (fy.To is null || period <= fy.To.Value))
+            var lines = empSlips
+                .Where(s =>
                 {
-                    taxable += s.TaxableIncome;
-                    withheld += s.IncomeTaxWithheld;
-                    inWindow++;
-                }
-            }
-            if (inWindow == 0)
-                continue; // no finalized slips inside this employee's FY window.
+                    var period = new DateOnly(s.PayYear, s.PayMonth, 1);
+                    return period >= fy.From && (fy.To is null || period <= fy.To.Value);
+                })
+                .OrderBy(s => s.PayYear).ThenBy(s => s.PayMonth)
+                .Select(s => new YearEndTaxMonthLineDto
+                {
+                    PayYear = s.PayYear,
+                    PayMonth = s.PayMonth,
+                    PeriodLabel = $"{System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(s.PayMonth)} {s.PayYear}",
+                    GrossEarnings = s.GrossEarnings,
+                    TaxableIncome = s.TaxableIncome,
+                    IncomeTaxWithheld = s.IncomeTaxWithheld,
+                    TotalDeductions = s.TotalDeductions,
+                })
+                .ToList();
 
-            rows.Add(new PayrollReportRow
+            if (lines.Count == 0)
+                continue;
+
+            statements.Add(new YearEndTaxStatementDto
             {
-                Cells =
-                [
-                    emp.EmployeeNo,
-                    $"{emp.FirstName} {emp.LastName}".Trim(),
-                    empCountry,
-                    fy.FiscalYear,
-                    Money(taxable),
-                    Money(withheld),
-                ],
+                EmployeeId = emp.Id,
+                EmployeeNo = emp.EmployeeNo,
+                EmployeeName = $"{emp.FirstName} {emp.LastName}".Trim(),
+                CountryCode = empCountry,
+                FiscalYear = fy.FiscalYear,
+                Lines = lines,
+                TotalGrossEarnings = lines.Sum(l => l.GrossEarnings),
+                TotalTaxableIncome = lines.Sum(l => l.TaxableIncome),
+                TotalIncomeTaxWithheld = lines.Sum(l => l.IncomeTaxWithheld),
+                TotalDeductions = lines.Sum(l => l.TotalDeductions),
+                TenantName = tenant?.Name ?? string.Empty,
             });
         }
 
-        rows = rows.OrderBy(r => r.Cells[0], StringComparer.OrdinalIgnoreCase).ToList();
-
-        var totalRow = new PayrollReportRow
-        {
-            Cells =
-            [
-                "TOTAL", string.Empty, string.Empty, string.Empty,
-                Money(rows.Sum(r => ParseMoney(r.Cells[4]))),
-                Money(rows.Sum(r => ParseMoney(r.Cells[5]))),
-            ],
-        };
-
-        return Result<PayrollReportResult>.Success(new PayrollReportResult
-        {
-            ReportType = PayrollReportType.YearEndTaxStatement.ToString(),
-            Title = "Year-End Tax Statements",
-            PayMonth = month, PayYear = year,
-            Columns = columns, Rows = rows, TotalRow = totalRow, TotalCount = rows.Count,
-            Note = "Per-employee fiscal-year summary. Each employee's Taxable Income + Income Tax Withheld are the "
-                 + "SUM of their finalized-slip TaxableIncome / IncomeTaxWithheld within their BRANCH-country's "
-                 + "fiscal-year window (Location.CountryCode → tenant default → sole rule country) — so multi-country "
-                 + "tenants show each employee under their own country's fiscal year. Employees with no resolvable "
-                 + "tax country, no in-effect income-tax rule, or no finalized slips in the window are omitted. A "
-                 + "per-employee PDF + bulk-ZIP (5,000-scale) is a follow-up beyond this columnar summary.",
-        });
+        return [.. statements.OrderBy(st => st.EmployeeNo, StringComparer.OrdinalIgnoreCase)];
     }
 
     private static Result<PayrollReportResult> EmptyYearEndResult(IReadOnlyList<string> columns, int month, int year) =>

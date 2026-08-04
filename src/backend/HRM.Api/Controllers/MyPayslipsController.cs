@@ -1,3 +1,4 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Application.DTOs;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Application.Features.Payroll.Queries;
@@ -22,14 +23,41 @@ namespace HRM.Api.Controllers;
 public sealed class MyPayslipsController : ControllerBase
 {
     private readonly IMediator _mediator;
+    // AC-3 self-service: returns file bytes, so it calls the service directly rather than through MediatR.
+    private readonly IPayrollReportService _reports;
 
-    public MyPayslipsController(IMediator mediator) => _mediator = mediator;
+    public MyPayslipsController(IMediator mediator, IPayrollReportService reports)
+    {
+        _mediator = mediator;
+        _reports = reports;
+    }
 
     /// <summary>
     /// GET — lists the authenticated employee's own payslips from Finalized runs (AC-1/FR-2), most recent
     /// first, paginated (FR-6 default 12/page, optional <paramref name="year"/> filter). 403 when no employee
     /// record is linked to the current user.
     /// </summary>
+    /// <summary>
+    /// GET /api/v1/payroll/my-payslips/tax-statement?year=2026
+    /// US-PAY-009 AC-3 (self-service): the SIGNED-IN employee's own year-end tax statement, month-wise, as a PDF.
+    ///
+    /// <para>Takes no employee id on purpose. The service resolves the employee from the session, so this
+    /// endpoint cannot be turned into a way to read a colleague's tax document by changing a parameter.</para>
+    /// </summary>
+    [HttpGet("tax-statement")]
+    [RequirePermission("Payroll.View.Own")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMyTaxStatement([FromQuery] int year, CancellationToken cancellationToken)
+    {
+        var result = await _reports.GetMyYearEndTaxStatementPdfAsync(year, cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return File(result.Value!.FileContent, result.Value.ContentType, result.Value.FileName);
+    }
+
     [HttpGet]
     [RequirePermission("Payroll.View.Own")]
     [ProducesResponseType(typeof(ApiResponse<MyPayslipListDto>), StatusCodes.Status200OK)]

@@ -89,6 +89,160 @@ public sealed class PayrollReportIntegrationTests
         return (db, ctx, new PayrollReportService(db, ctx, audit, NullLogger<PayrollReportService>.Instance));
     }
 
+    // ══════════════ US-PAY-009 AC-3: individual month-wise statements + bulk ZIP ══════════════
+    //
+    // The columnar report aggregates each employee to ONE annual row. AC-3 asks for individual statements with
+    // a MONTH-WISE breakdown, available for bulk download — an employee filing with a tax authority needs the
+    // periods, not a single total, and cannot file a table of everyone's figures.
+
+    [Fact]
+    public async Task TaxStatementPdf_carries_a_MONTH_WISE_breakdown_ACK3()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        var emp = await SeedTaxEmployee(_tenantA, "LK1", lkLoc);
+
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized, month: 12, year: 2026);
+        await SeedTaxSlip(_tenantA, runId, emp, 4, 2026, taxable: 100_000m, withheld: 5_000m);
+        await SeedTaxSlip(_tenantA, runId, emp, 5, 2026, taxable: 120_000m, withheld: 6_000m);
+        await SeedTaxSlip(_tenantA, runId, emp, 6, 2026, taxable: 140_000m, withheld: 7_000m);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GetYearEndTaxStatementPdfAsync(emp, 2026);
+
+            result.IsSuccess.Should().BeTrue(result.Error);
+            result.Value!.ContentType.Should().Be("application/pdf");
+            result.Value.FileName.Should().Contain("LK1").And.Contain("2026-2027");
+
+            // A real PDF, not an empty buffer that would make every other assertion here meaningless.
+            result.Value.FileContent.Should().NotBeEmpty();
+            System.Text.Encoding.ASCII.GetString(result.Value.FileContent, 0, 5).Should().Be("%PDF-");
+        }
+    }
+
+    [Fact]
+    public async Task TaxStatementBundle_contains_ONE_pdf_per_employee_ACK3()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        var emp1 = await SeedTaxEmployee(_tenantA, "LK1", lkLoc);
+        var emp2 = await SeedTaxEmployee(_tenantA, "LK2", lkLoc);
+
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized, month: 12, year: 2026);
+        await SeedTaxSlip(_tenantA, runId, emp1, 4, 2026, taxable: 100_000m, withheld: 5_000m);
+        await SeedTaxSlip(_tenantA, runId, emp2, 4, 2026, taxable: 200_000m, withheld: 9_000m);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GetYearEndTaxStatementsBundleAsync(2026);
+
+            result.IsSuccess.Should().BeTrue(result.Error);
+            result.Value!.ContentType.Should().Be("application/zip");
+
+            using var buffer = new MemoryStream(result.Value.FileContent);
+            using var archive = new System.IO.Compression.ZipArchive(buffer, System.IO.Compression.ZipArchiveMode.Read);
+
+            archive.Entries.Should().HaveCount(2, "bulk download means one statement per employee, not one file");
+            archive.Entries.Select(e => e.Name).Should().Contain(n => n.Contains("LK1"))
+                .And.Contain(n => n.Contains("LK2"));
+            archive.Entries.Should().OnlyContain(e => e.Length > 0, "an empty entry is a broken statement");
+        }
+    }
+
+    [Fact]
+    public async Task TaxStatement_for_an_employee_with_no_slips_is_404_ACK3()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        var emp = await SeedTaxEmployee(_tenantA, "LK-EMPTY", lkLoc);
+
+        var (db, _, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GetYearEndTaxStatementPdfAsync(emp, 2026);
+
+            result.IsFailure.Should().BeTrue("a statement with no finalized slips must not be fabricated");
+            result.StatusCode.Should().Be(404);
+            result.ErrorCode.Should().Be("statement_not_available");
+        }
+    }
+
+    // The security arm. Self-service resolves the employee from the SESSION; an endpoint that accepted an id
+    // would be one parameter away from letting anyone read a colleague's tax document.
+    [Fact]
+    public async Task MyTaxStatement_resolves_the_employee_from_the_SIGNED_IN_user_ACK3()
+    {
+        await SeedIncomeTaxRule(_tenantA, "LK", "2026-2027",
+            new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        var lkLoc = await SeedLocationWithCountry(_tenantA, "LK");
+        // Employee numbers chosen so the COLLEAGUE sorts FIRST. Statements come back ordered by employee no,
+        // so with "MINE"/"THEIRS" a broken implementation that ignored the session and took the first record
+        // would still return mine — and this arm would pass for entirely the wrong reason.
+        var mine = await SeedTaxEmployee(_tenantA, "ZZZ-MINE", lkLoc);
+        var colleague = await SeedTaxEmployee(_tenantA, "AAA-THEIRS", lkLoc);
+
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized, month: 12, year: 2026);
+        await SeedTaxSlip(_tenantA, runId, mine, 4, 2026, taxable: 100_000m, withheld: 5_000m);
+        await SeedTaxSlip(_tenantA, runId, colleague, 4, 2026, taxable: 999_000m, withheld: 99_000m);
+
+        // Link MY employee row to the signed-in user.
+        var signedInUserId = Guid.NewGuid();
+        using (var link = Db(_tenantA))
+        {
+            var row = await link.Employees.IgnoreQueryFilters().SingleAsync(e => e.Id == mine);
+            row.UserId = signedInUserId;
+            await link.SaveChangesAsync();
+        }
+
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_dbName).Options;
+        using var db2 = new AppDbContext(options, ctx);
+        var currentUser = new FakeCurrentUser { TenantId = _tenantA, UserId = signedInUserId };
+        var svc2 = new PayrollReportService(
+            db2, ctx,
+            new PayrollAuditLogger(db2, ctx, currentUser, NullLogger<PayrollAuditLogger>.Instance),
+            NullLogger<PayrollReportService>.Instance,
+            statutoryResolver: null,
+            currentUser: currentUser);
+
+        var result = await svc2.GetMyYearEndTaxStatementPdfAsync(2026);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.FileName.Should().Contain("ZZZ-MINE")
+            .And.NotContain("AAA-THEIRS", "self-service must resolve MY statement, never a colleague's");
+    }
+
+    [Fact]
+    public async Task MyTaxStatement_for_a_user_with_no_employee_record_is_404_ACK3()
+    {
+        var ctx = new MutableTenantContext { TenantId = _tenantA };
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_dbName).Options;
+        using var db = new AppDbContext(options, ctx);
+        var currentUser = new FakeCurrentUser { TenantId = _tenantA, UserId = Guid.NewGuid() };
+        var svc = new PayrollReportService(
+            db, ctx,
+            new PayrollAuditLogger(db, ctx, currentUser, NullLogger<PayrollAuditLogger>.Instance),
+            NullLogger<PayrollReportService>.Instance,
+            statutoryResolver: null,
+            currentUser: currentUser);
+
+        var result = await svc.GetMyYearEndTaxStatementPdfAsync(2026);
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("employee_not_linked");
+    }
+
     // ── Seeding ─────────────────────────────────────────────────────────────
 
     /// <summary>

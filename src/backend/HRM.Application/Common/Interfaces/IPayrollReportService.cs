@@ -51,6 +51,26 @@ public interface IPayrollReportService
     /// Exports a report to CSV / Excel / PDF (FR-2, AC-4). For BankAdvice the exported file carries the
     /// FULL account number (BR-2). Returns the file bytes (synchronous; large-async is deferred).
     /// </summary>
+    /// <summary>
+    /// US-PAY-009 AC-3: ONE employee's year-end tax statement as a PDF — month-wise, not an annual total.
+    /// HR-facing; <paramref name="employeeId"/> is resolved within the caller's tenant.
+    /// </summary>
+    Task<Result<PayrollReportExportResult>> GetYearEndTaxStatementPdfAsync(
+        Guid employeeId, int year, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// US-PAY-009 AC-3: every employee's statement for the year, bundled as a ZIP for bulk download.
+    /// </summary>
+    Task<Result<PayrollReportExportResult>> GetYearEndTaxStatementsBundleAsync(
+        int year, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// US-PAY-009 AC-3 (self-service): the CURRENT user's own statement. Resolves the employee from the signed-in
+    /// user rather than accepting an id, so this endpoint can never be used to read someone else's tax document.
+    /// </summary>
+    Task<Result<PayrollReportExportResult>> GetMyYearEndTaxStatementPdfAsync(
+        int year, CancellationToken cancellationToken = default);
+
     Task<Result<PayrollReportExportResult>> ExportReportAsync(
         PayrollReportType reportType,
         PayrollExportFormat format,
