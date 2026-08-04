@@ -816,8 +816,31 @@ public static class DependencyInjection
         {
             var basePath = configuration["FileStorage:BasePath"] ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
             var logger = sp.GetRequiredService<ILogger<LocalFileStorage>>();
-            return new LocalFileStorage(basePath, logger);
+            IFileStorage storage = new LocalFileStorage(basePath, logger);
+
+            // ISSUE-359: encrypt every stored file at rest. Wrapping rather than modifying the filesystem seam
+            // means a future S3/Blob implementation inherits this for free, and no consumer changes.
+            //
+            // ON BY DEFAULT (decision 2026-08-05): off-by-default protects nothing until someone remembers to
+            // flip it, and the finding's whole point is that salary and PII sit in plaintext today.
+            // FileEncryption:Enabled=false is a kill-switch for NEW WRITES ONLY — reads always handle both
+            // forms, so flipping it cannot strand an already-encrypted file.
+            //
+            // ⚠ OPERATIONAL COUPLING: the keys live in the Postgres-persisted Data-Protection ring, so a
+            // database restore and a file restore must stay in step, and the ring must never be pruned —
+            // files outlive the default 90-day key rotation by years.
+            var encryptFiles = configuration.GetValue("FileEncryption:Enabled", true);
+
+            return new EncryptingFileStorage(
+                storage,
+                sp.GetRequiredService<IDataProtectionProvider>(),
+                sp.GetRequiredService<ILogger<EncryptingFileStorage>>(),
+                encryptNewWrites: encryptFiles);
         });
+
+        // ISSUE-359: reports/sweeps the still-plaintext part of the file estate. Scoped: it reads the
+        // CURRENT tenant's storage root.
+        services.AddScoped<IFileEncryptionMaintenanceService, FileEncryptionMaintenanceService>();
 
         // Virus scanner (US-CHR-001 NFR-3 / ISSUE-101). Pluggable + config-gated: when a ClamAV daemon host
         // is configured (VirusScanning:ClamAv:Host) we wire the real ClamAvVirusScanner (INSTREAM over TCP,
