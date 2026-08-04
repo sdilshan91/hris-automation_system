@@ -262,7 +262,7 @@ Remaining: [[ISSUE-194]] **narrowed to one call site** (`LeaveReportService.cs:7
 Obsolete BUG-243 table struck as OBSOLETE · 33 ALREADY-BUILT deferred-AC rows struck · all three lying comments corrected (`PayrollReportDtos`, `PerformanceDashboardService`, `AttendanceService`) · double-counting resolved.
 
 ### Remaining feature work
-US-PLT-002 **RLS prod flip** (code complete + proven, committed OFF — ops step, not dev) · **Admin monitoring KPIs** (TC-ADM-002-14..18 — the storage gauge is now nearly free since `TenantStorageUsage.ComputeBytesByTenantAsync` exists; email-sends + SLA-uptime have no OTel dependency; error-rate/P95 blocked on a metrics store or sourceable from the GlitchTip API) · **per-tenant API-call counter** (deliberately deferred slice of US-PLT-004) · **~8 genuine deferred ACs** (custom-field columns in bulk import · interview-guide attachment · scorecard versioning · US-REC-010 FR-8/FR-9 · year-end tax PDF · US-ADM-006 plan-gated enterprise settings) · **6 LOW DF residuals** · ops flips (ClamAV prod, GlitchTip prod DSN).
+US-PLT-002 **RLS prod flip** (code complete + proven, committed OFF — ops step, not dev) · **Admin monitoring KPIs** (TC-ADM-002-14..18 — the storage gauge is now nearly free since `TenantStorageUsage.ComputeBytesByTenantAsync` exists; email-sends + SLA-uptime have no OTel dependency; error-rate/P95 blocked on a metrics store or sourceable from the GlitchTip API) · **per-tenant API-call counter** (deliberately deferred slice of US-PLT-004) · **deferred ACs — re-verified 2026-08-04, and the list shrank** (custom-field columns in bulk import · interview-guide attachment · scorecard versioning *(the edit-history half only — there is no template entity to version)* · ~~US-REC-010 FR-8/FR-9~~ **DONE #459** · year-end tax *statements* *(not "PDF" — the report PDF already ships; the gap is per-employee + month-wise + bulk ZIP, US-PAY-009 AC-3)* · ~~US-ADM-006 plan-gated enterprise settings~~ **ALREADY SHIPPED in `520ef273`, missed by the ledger**) · **6 LOW DF residuals** · ops flips (ClamAV prod, GlitchTip prod DSN).
 
 ## 🎯 P5 — THE NEXT SESSION'S PLAN (2026-08-04, dependency-ordered)
 
@@ -271,7 +271,7 @@ US-PLT-002 **RLS prod flip** (code complete + proven, committed OFF — ops step
 
 ### ⚠️ Conflicts this order exists to avoid
 1. **The three `DF-61-conc-*` items all touch `PayrollRunProcessor`'s reprocess interlock** → ONE session, not three PRs.
-2. **[[ISSUE-358]] (`WhiteLabel`) and "US-ADM-006 plan-gated enterprise settings" are the SAME work** → do together or build the gate twice.
+2. ~~**[[ISSUE-358]] (`WhiteLabel`) and "US-ADM-006 plan-gated enterprise settings" are the SAME work** → do together or build the gate twice.~~ ✅ **MOOT — the gate was already built** (`520ef273`, 2026-07-31) and the ledger missed it. The conflict this rule existed to prevent cannot occur. The surviving residual is narrower: `WhiteLabel` gates only the primary colour, leaving logo/email-logo/favicon ungated on every plan.
 3. **RLS prod flip must follow the latency-meter deploy** — `tenant_latency_bucket` ships a dormant policy the flip activates.
 4. **Year-end tax PDF must REUSE `PerformancePdfRenderer`** (4 PDFs already ship through it) → don't start a second PDF stack.
 
@@ -334,9 +334,78 @@ invariant (final balance == sum of amounts) rather than a hard-coded number.
   `TryAcquireAsync` so it is not re-litigated from the shape of the code.
 
 ### Wave 4 — features
-- **[[ISSUE-359]]** file encryption at rest — **decided and fully specified** (platform ring + per-tenant purpose strings; tolerate-legacy + sweep + visible count). Constraints already recorded: `IFieldProtector` is byte[]-oriented so files need STREAMING crypto; an envelope header (version + key-id) is required; the key ring must NEVER be pruned. Largest remaining engineering item.
-- Deferred ACs, **verified still true 2026-08-04**: custom-field columns in bulk import · interview-guide attachment · scorecard versioning · year-end tax PDF (reuse `PerformancePdfRenderer`).
-- [[ISSUE-358]] implementation (after D-b).
+
+> ⚠️ **THIS SECTION WAS WRONG IN THREE PLACES. Re-verified against code 2026-08-04 (post-Wave-3) and corrected
+> below.** Two of the three were *plan says pending, code says shipped*; the third was a factually false premise
+> inside a recorded decision. The "verified still true 2026-08-04" stamp on the deferred-AC line did not survive
+> re-checking — a reminder that a verification stamp is only as good as the depth of the check behind it.
+
+- **[[ISSUE-359]]** file encryption at rest — the largest remaining engineering item. **Design decided
+  2026-08-04:**
+  - **Buffered AES-GCM, NOT streaming.** The finding's "files need STREAMING crypto" constraint was written
+    from the shape of `IFieldProtector`, not from how callers behave. All **15** `OpenReadAsync` sites already
+    buffer the whole file into a `MemoryStream`, and the biggest writes (payslip PDFs, exports) are already
+    `byte[]` in memory *before* upload — so buffered crypto pins no memory that is not already pinned, while
+    chunked-AEAD framing would be complexity **no caller exercises**. Upload caps are 5–25 MB per path.
+  - **The envelope carries a version byte + key-id**, so a streaming v2 can land later *without rewriting
+    already-encrypted files*. That is what makes starting buffered a reversible decision rather than a shortcut.
+  - **Storage quota keeps measuring LOGICAL (plaintext) bytes.** `TenantStorageUsage` sums four DB columns all
+    written from plaintext length and never stats the disk, so encryption does not break it — but disk will
+    exceed the billed figure by the envelope overhead. Deliberate; to be commented at the site so it is not
+    re-filed as drift.
+  - ⚠️ **CORRECTION — the recorded rotation justification is FALSE.** The decision claimed the quarterly
+    `EncryptionKeyAgeWatchdogJob` "already covers" a Data Protection scheme. It does not: that job reads
+    `Encryption:ActiveKeyId` from `FieldEncryptionOptions` — the **AES-GCM config ring**. Data Protection is a
+    separate mechanism with no `ActiveKeyId`, and nothing in this repo watches or re-encrypts against it.
+    **Resolution:** rely on Data Protection's own automatic key roll with indefinite retention of old keys —
+    which is exactly what the "never prune" constraint requires — and correct the finding text. No rotation
+    tooling is built for files.
+  - Remaining-plaintext count is surfaced **API-only**, mirroring the `MfaSecretsLegacyPlaintext` precedent
+    (which likewise has no frontend).
+  - Scope is genuinely small at the seam: **one** `IFileStorage` implementation, **18** injecting services /
+    **32** call sites (the finding's "36 consumers" counted files containing the string, including the
+    interface and XML doc comments). No call-site changes.
+
+- **Deferred ACs — the line below was stale; re-verified 2026-08-04:**
+  - **Custom-field columns in bulk import** — genuinely not built. Blocked in practice by
+    `BulkEmployeeImportService`'s three parallel positional `string[]` arrays, which cannot carry a variable
+    tail; they want to become one `record TemplateColumn(Name, Description, Sample)` list first. The validation
+    seam already exists and is proven on the single-employee path.
+  - **Interview-guide attachment** — genuinely not built (no field, no endpoint). ✅ **Its deferral rationale
+    has EXPIRED**: the docs mark it CONDITIONAL on "File & Document Management (S26)", but `IFileStorage`,
+    `IVirusScanner` and the `EmployeeDocumentService` upload/scan/store idiom all ship. Same expired-rationale
+    class as US-REC-010 FR-8/FR-9.
+  - **Scorecard versioning** — ⚠️ **the AC's premise is unbuildable as written.** It says "templates are not
+    versioned", but `ScorecardCriteria` is a hard-coded static list of four criteria — there is no
+    tenant-configurable template entity to version. **Decided 2026-08-04:** build the half that addresses the
+    actual harm — append-only rating history instead of `ScorecardService`'s `RemoveRange` (which silently
+    rewrites what a historical scorecard meant, on an `IAuditExempt` entity so nothing captures it) plus the
+    missing `GET /scorecards/{id}` that blocks three test cases. Template versioning is re-filed as its own
+    scoped story rather than smuggled in as a prerequisite.
+  - **Year-end tax PDF** — ⚠️ **stale twice over.** There is **no live `deferred:true` stub** (no call site
+    passes it; the parameter defaults to `false`), `BuildYearEndTaxStatementAsync` is fully implemented, and
+    `PayrollReportRenderer` already renders it to PDF. The real gap is **US-PAY-009 AC-3**: *individual*
+    per-employee statements with **month-wise** rows, available for **bulk download** — three things a tabular
+    report cannot satisfy. **And "reuse `PerformancePdfRenderer`" was the wrong target**: it is an
+    `internal static` class in the Performance namespace with four DTO-specific methods, so reuse would mean
+    dragging a Payroll DTO into it or refactoring four shipped PDFs. **Decided: build on `PayslipPdfRenderer`**
+    — same lane, `public` API, and structurally the same document (per-employee, per-period, branded,
+    line-items). The "don't start a second PDF stack" warning is moot regardless: there are already **eight**
+    QuestPDF renderers; the question was only ever which idiom to follow.
+
+- ~~[[ISSUE-358]] implementation (after D-b)~~ — ⚠️ **ALREADY SHIPPED.** Commit `520ef273` (2026-07-31) added
+  `PlanGatingDto`, the `Plan` block on `TenantSettingsDto`, `ResolvePlanGatingAsync`, and the BR-3 403
+  (`plan_feature_locked`) in `UpdatePrimaryColorAsync`, with four unit arms. Verified: `520ef273` is an ancestor
+  of HEAD. **The plan missed it because the work was folded into a commit titled for BUG-292** — the ledger-rot
+  class already measured at 66% on 2026-08-03. Same for "US-ADM-006 plan-gated enterprise settings" in the
+  Remaining-feature-work list above.
+  **The genuine residual (decided 2026-08-04): `WhiteLabel` currently gates ONLY the custom primary colour.**
+  Logo, email-logo and favicon uploads are ungated on every plan — so a tenant without the entitlement still
+  white-labels most of what customers actually see, *including generated payslip and report PDFs*. That is the
+  same theatre charge ISSUE-358 brought in the first place. **Gate the whole branding surface.** Two code
+  residuals ride along: `ResolvePlanGatingAsync` bypasses `PlanFeatureFlagKeys` (a 4th seam not using the shared
+  derivation the class exists to enforce) and runs a redundant DB query when `ITenantContext.FeatureFlags` is
+  already populated per-request by `TenantResolutionMiddleware`.
 
 ### Wave 5 — ops flips (yours)
 RLS prod flip (largest security gain still deferred; reversible via `Rls:Enabled`) → ClamAV prod (real clamd) → GlitchTip hardening (**`ENABLE_OPEN_USER_REGISTRATION=false` is the sharp edge** on a reachable instance).
