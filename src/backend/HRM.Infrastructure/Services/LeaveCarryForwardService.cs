@@ -207,11 +207,30 @@ public sealed class LeaveCarryForwardService : ILeaveCarryForwardService
                 decimal residual = outcome.ForfeitedDays - encashable;
                 if (residual > 0m)
                 {
+                    // DF-65-pg-encash: stamp the residual draw AFTER the encashment draw, instead of at the
+                    // same instant.
+                    //
+                    // Both draws previously used `yearEndUtc` verbatim, so the encashed and expired rows landed
+                    // with byte-identical OccurredAt AND CreatedAt (the audit interceptor stamps one timestamp
+                    // per batch). GetLedgerBalanceAsync orders by OccurredAt DESC, CreatedAt DESC — with both
+                    // keys tied, Postgres may return EITHER row, so the running balance non-deterministically
+                    // read the INTERMEDIATE post-encashment balance instead of the true final one, overstating
+                    // the employee's remaining days by the residual. Found by the real-PG arm; InMemory kept
+                    // full tick precision and the ordering happened to fall the right way.
+                    //
+                    // Offset by TWO ticks-units because a single draw already occupies occurredAt and
+                    // occurredAt + PoolRowTickOffset when it splits across the carry and accrual pools — so +1
+                    // would collide with the encashment's own second row. Same idiom as
+                    // LeaveRequestService's multi-restore loop.
+                    var residualOccurredAt = encashable > 0m
+                        ? yearEndUtc.AddTicks(PooledLeaveLedger.PoolRowTickOffset * 2)
+                        : yearEndUtc;
+
                     await PooledLeaveLedger.AppendDeductionAsync(
                         _dbContext, employee.TenantId, employee.Id, leaveType.Id, fromYear, residual,
                         leaveRequestId: null, forfeitBalance,
                         $"Forfeiture at {fromYear} year-end (over encashment cap): {residual} days",
-                        yearEndUtc, LedgerEntryType.Expired, cancellationToken);
+                        residualOccurredAt, LedgerEntryType.Expired, cancellationToken);
                 }
             }
             else

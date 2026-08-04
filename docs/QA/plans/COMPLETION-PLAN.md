@@ -312,7 +312,14 @@ password-setting rail. Sequenced after Wave 2 only because Wave 2 is already in 
 
 ### Wave 3 — ✅ payroll concurrency DONE 2026-08-04 (ONE branch; shared file, as planned)
 `DF-61-conc-retry` + `DF-61-conc-approval-race` (after D-d) + `DF-61-conc-slip` together.
-`DF-65-pg-encash` still outstanding — separate branch (different file, leave-encashment real-PG arm).
+`DF-65-pg-encash` ✅ **DONE 2026-08-04 on its own branch — and it found [[BUG-296]] (MED), a real balance-overstatement bug.**
+The encashable year-end path stamped its encash draw and its residual-expire draw with the IDENTICAL timestamp, and the
+audit interceptor stamps one `CreatedAt` per batch — so both rows were byte-identical on both keys the running-balance
+read sorts by, and Postgres could return either. The balance resolved to the intermediate post-encashment figure,
+overstating the employee's remaining days. **InMemory could never have caught it** (full tick precision, insertion order
+preserved) — the exact InMemory-masks-Postgres class this repo keeps hitting, and the reason the deferred item existed.
+Fixed with the same `PoolRowTickOffset` idiom `LeaveRequestService` already used; the arm asserts a provider-independent
+invariant (final balance == sum of amounts) rather than a hard-coded number.
 
 **Outcome.** Two fixed, one closed-as-accepted:
 - **`DF-61-conc-approval-race`** — both guard sites now share ONE `GuardNonReprocessableStatus` helper, because

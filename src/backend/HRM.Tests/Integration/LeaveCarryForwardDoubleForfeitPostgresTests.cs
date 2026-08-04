@@ -284,4 +284,125 @@ public sealed class LeaveCarryForwardDoubleForfeitPostgresTests : IAsyncLifetime
             latest.BalanceAfter.Should().Be(7m, "the running-balance read must pick the final chained balance");
         }
     }
+
+    // ── (3) DF-65-pg-encash: the ENCASHABLE two-draw forfeit on real Postgres ─────────────────────────
+    //
+    // Arms (1) and (2) cover only the NON-encashable path. The encashable branch
+    // (LeaveCarryForwardService.cs:189-215) is the more intricate money branch: it makes TWO pooled draws —
+    // encash up to MaxEncashDays, then expire the residual — and THREADS the first draw's resulting balance
+    // into the second (`forfeitBalance = enc.FinalRow.BalanceAfter`). It had an InMemory unit arm but no
+    // real-PG arm, on a path that decides how many days an employee is PAID for versus loses.
+    //
+    // Why real Postgres matters specifically here: both draws land at the same logical instant and each can
+    // split into two rows, so the whole thing rests on the PoolRowTickOffset surviving timestamptz truncation
+    // (arm 2's concern) AND on the balance chaining correctly across four possible rows. On InMemory,
+    // DateTime keeps full tick precision, so a broken offset or a stale-balance thread can pass unnoticed.
+    [Fact]
+    public async Task YearEndSweep_EncashableForfeit_ThreadsBothPooledDraws_OnPostgres()
+    {
+        await using (var mig = CreateContext()) await mig.Database.MigrateAsync();
+
+        Guid empId, typeId, priorBucketId;
+        await using (var seed = CreateContext())
+        {
+            var (deptId, jobId) = await SeedTenantScaffoldAsync(seed);
+            var emp = NewEmployee(_tenantId, deptId, jobId, "PG-ENC");
+            empId = emp.Id;
+            seed.Employees.Add(emp);
+
+            typeId = BaseEntity.NewUuidV7();
+            seed.LeaveTypes.Add(new LeaveType
+            {
+                Id = typeId, TenantId = _tenantId, Name = "Annual",
+                AnnualEntitlement = 3m, AccrualFrequency = AccrualFrequency.Upfront,
+                CarryForwardLimit = 5m, CarryForwardExpiryMonths = 12,
+                // The branch under test: encashable WITH a cap, so the forfeit MUST split into two draws.
+                Encashable = true, MaxEncashDays = 1m,
+                NegativeBalanceAllowed = false, Gender = LeaveTypeGender.All, IsActive = true,
+            });
+
+            priorBucketId = BaseEntity.NewUuidV7();
+            seed.LeaveCarryForwardTrackings.Add(new LeaveCarryForwardTracking
+            {
+                Id = priorBucketId, TenantId = _tenantId, EmployeeId = empId, LeaveTypeId = typeId,
+                FromYear = 2025, ToYear = 2026, CarriedDays = 5m, ConsumedDays = 0m, ExpiredDays = 0m,
+                ExpiryDate = new DateOnly(2027, 1, 1), Status = CarryForwardTrackingStatus.Active,
+            });
+            seed.LeaveLedgerEntries.Add(new LeaveLedger
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, EntryType = LedgerEntryType.CarryForward,
+                EmployeeId = empId, LeaveTypeId = typeId, LeaveYear = 2026, Amount = 5m, BalanceAfter = 5m,
+                OccurredAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        // unused = entitlement 3 + carry-in 5 = 8; limit 5 -> carry 5, forfeit 3.
+        // Encashable with cap 1 -> encash 1, residual 2 expires.
+        await using (var act = CreateContext())
+        {
+            var svc = BuildYearEndService(act, empId, typeId, entitlement: 3m);
+            var run = await svc.ProcessYearEndAsync(2026);
+            run.IsSuccess.Should().BeTrue(run.Error);
+        }
+
+        await using (var check = CreateContext())
+        {
+            var ledger = await check.LeaveLedgerEntries.AsNoTracking()
+                .Where(l => l.EmployeeId == empId && l.LeaveTypeId == typeId && l.LeaveYear == 2026)
+                .ToListAsync();
+
+            ledger.Where(l => l.EntryType == LedgerEntryType.Encashed).Sum(l => -l.Amount)
+                .Should().Be(1m, "encashment is capped at MaxEncashDays = 1");
+            ledger.Where(l => l.EntryType == LedgerEntryType.Expired).Sum(l => -l.Amount)
+                .Should().Be(2m, "the residual over the encashment cap expires");
+
+            // The money invariant: the split must be EXACT. Encashing more would overpay; expiring more
+            // would rob the employee; the two together must equal the forfeit and no more.
+            ledger.Where(l => l.EntryType is LedgerEntryType.Encashed or LedgerEntryType.Expired)
+                .Sum(l => -l.Amount)
+                .Should().Be(3m, "encashed + expired must equal the forfeited days exactly — once, not twice");
+
+            // BALANCE THREADING — the assertion this arm exists for. `forfeitBalance` is re-read from the
+            // first draw's FinalRow and fed into the second. If that thread breaks (second draw computed from
+            // the pre-encashment balance), the running balance stops agreeing with the sum of amounts. This
+            // invariant holds for any correct running-balance ledger and needs no hard-coded figure.
+            var latest = ledger
+                .OrderByDescending(l => l.OccurredAt).ThenByDescending(l => l.CreatedAt)
+                .First();
+            latest.BalanceAfter.Should().Be(
+                ledger.Sum(l => l.Amount),
+                "the final running balance must equal the sum of every amount — a stale balance threaded " +
+                "into the second draw breaks this even though both draw AMOUNTS still look right");
+
+            // Both draws came from the carried pool, so the prior bucket absorbed all 3.
+            var bucket = await check.LeaveCarryForwardTrackings.AsNoTracking()
+                .FirstAsync(t => t.Id == priorBucketId);
+            bucket.ConsumedDays.Should().Be(3m,
+                "both pooled draws (1 encashed + 2 expired) were routed through the carried pool");
+            bucket.Status.Should().Be(CarryForwardTrackingStatus.Consumed,
+                "DF-65 (b): the sweep terminalizes the superseded bucket");
+        }
+
+        // The DF-65 double-forfeit guard, on the encashable path: expiry must not re-forfeit the days that
+        // were already encashed or expired by the sweep.
+        await using (var expire = CreateContext())
+        {
+            var svc = BuildYearEndService(expire, empId, typeId, entitlement: 3m);
+            var expired = await svc.ProcessExpiryAsync(new DateOnly(2027, 2, 1));
+            expired.IsSuccess.Should().BeTrue(expired.Error);
+            expired.Value.Should().Be(0, "the superseded bucket is terminal");
+        }
+
+        await using (var final = CreateContext())
+        {
+            var rows = await final.LeaveLedgerEntries.AsNoTracking()
+                .Where(l => l.EmployeeId == empId && l.LeaveTypeId == typeId && l.LeaveYear == 2026)
+                .ToListAsync();
+            rows.Where(l => l.EntryType == LedgerEntryType.Expired).Sum(l => -l.Amount)
+                .Should().Be(2m, "expiry adds no further forfeiture on the encashable path either");
+            rows.Where(l => l.EntryType == LedgerEntryType.Encashed).Sum(l => -l.Amount)
+                .Should().Be(1m, "and it certainly must not encash a second time");
+        }
+    }
 }
