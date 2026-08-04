@@ -29,6 +29,9 @@ public sealed class AdminEncryptionController : ControllerBase
 {
     private readonly IFieldEncryptionMaintenanceService _maintenance;
     private readonly IBackgroundJobClient? _backgroundJobs;
+    // ISSUE-359: the FILE side of encryption-at-rest. Kept on the same route family so an operator has one
+    // place to ask "what is still unencrypted", rather than two unrelated surfaces.
+    private readonly IFileEncryptionMaintenanceService _files;
 
     /// <summary>
     /// <paramref name="backgroundJobs"/> is OPTIONAL (the repo's standard Hangfire seam): present in the real
@@ -36,10 +39,51 @@ public sealed class AdminEncryptionController : ControllerBase
     /// hosts without Hangfire storage) → the sweep runs INLINE and returns its summary.
     /// </summary>
     public AdminEncryptionController(
-        IFieldEncryptionMaintenanceService maintenance, IBackgroundJobClient? backgroundJobs = null)
+        IFieldEncryptionMaintenanceService maintenance,
+        IFileEncryptionMaintenanceService files,
+        IBackgroundJobClient? backgroundJobs = null)
     {
         _maintenance = maintenance;
+        _files = files;
         _backgroundJobs = backgroundJobs;
+    }
+
+    /// <summary>
+    /// GET /api/v1/system/encryption/files — how much of the stored FILE estate is still plaintext (ISSUE-359).
+    ///
+    /// <para>The rollout tolerates legacy plaintext on read so encryption could ship without a migration. This
+    /// count is what stops that tolerance becoming permanent: without a number somebody can look at, "we will
+    /// back-fill later" is indistinguishable from "there is still salary in plaintext".</para>
+    /// </summary>
+    [HttpGet("files")]
+    [RequirePermission("Tenant.Lifecycle")]
+    [ProducesResponseType(typeof(ApiResponse<FileEncryptionStatusDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetFileEncryptionStatus(CancellationToken cancellationToken)
+    {
+        var result = await _files.GetStatusAsync(cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<FileEncryptionStatusDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/system/encryption/files/sweep — re-writes this tenant's remaining plaintext files through
+    /// the encrypting storage. Idempotent: already-sealed files are skipped, so a re-run is safe.
+    /// </summary>
+    [HttpPost("files/sweep")]
+    [RequirePermission("Tenant.Lifecycle")]
+    [ProducesResponseType(typeof(ApiResponse<FileEncryptionSweepResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SweepFileEncryption(CancellationToken cancellationToken)
+    {
+        var result = await _files.SweepAsync(cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<FileEncryptionSweepResultDto>.Ok(result.Value!));
     }
 
     /// <summary>
