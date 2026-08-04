@@ -5,6 +5,7 @@ using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
 using HRM.Application.Features.TenantSettings.DTOs;
+using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.ValueObjects;
 using HRM.Infrastructure.Persistence;
@@ -312,6 +313,22 @@ public sealed class TenantSettingsService : ITenantSettingsService
         if (tenant is null)
             return Result<BrandingUploadResultDto>.Failure("Tenant not found.", 404);
 
+        // ISSUE-358: logo / email-logo / favicon are WhiteLabel-entitled, exactly like the brand colour. Until
+        // now only the colour was enforced, so a tenant without the entitlement could still put their own logo
+        // across the product AND onto generated payslip/report PDFs — most of what white-labelling actually is.
+        //
+        // GRANDFATHERED BY DESIGN: this blocks NEW uploads only. Branding already in place keeps rendering after
+        // a downgrade, matching how the colour gate behaves and avoiding a billing change silently rebranding a
+        // live workspace (and its historical documents, which resolve branding at render time). Clearing an
+        // asset back to the default is never blocked — giving a feature up must always be allowed.
+        //
+        // Fails open (see ResolvePlanGatingAsync): unreadable flags never lock a tenant out of their own brand.
+        var gating = await ResolvePlanGatingAsync(tenant, cancellationToken);
+        var featureKey = BrandingFeatureKey(kind);
+        if (gating is not null && gating.LockedFeatures.Contains(featureKey))
+            return Result<BrandingUploadResultDto>.Failure(
+                "Custom branding requires a plan that includes white-labelling.", 403, "plan_feature_locked");
+
         var fileType = validation.Value!;
         var fileName = kind switch
         {
@@ -503,8 +520,43 @@ public sealed class TenantSettingsService : ITenantSettingsService
     /// access to a setting because their plan could not be read — the same fail-open ethos as
     /// <c>PlanModules.IsModuleEnabled</c> and <c>ModuleEntitlementMiddleware</c> (ISSUE-335).</para>
     /// </summary>
+    /// <summary>
+    /// The branding capabilities WhiteLabel entitles. Every one of these puts the tenant's own identity in
+    /// front of users — including on generated payslip and report PDFs, which read branding at render time.
+    ///
+    /// <para>Gating only the colour (as this originally did) left the other three ungated on every plan, so a
+    /// tenant without the entitlement could still replace the logo and favicon across the product. That is
+    /// most of what "white-label" means commercially, and it left the flag as the same theatre ISSUE-358
+    /// filed it as.</para>
+    /// </summary>
+    private static readonly string[] WhiteLabelFeatureKeys =
+    [
+        "branding.customColor",
+        "branding.logo",
+        "branding.emailLogo",
+        "branding.favicon",
+    ];
+
+    /// <summary>Maps an upload kind onto the feature key that entitles it.</summary>
+    private static string BrandingFeatureKey(BrandingAssetKind kind) => kind switch
+    {
+        BrandingAssetKind.Logo => "branding.logo",
+        BrandingAssetKind.EmailLogo => "branding.emailLogo",
+        BrandingAssetKind.Favicon => "branding.favicon",
+        _ => "branding.logo",
+    };
+
     private async Task<PlanGatingDto?> ResolvePlanGatingAsync(Tenant tenant, CancellationToken cancellationToken)
     {
+        // DELIBERATELY reads the plan row rather than ITenantContext.FeatureFlags, even though the middleware
+        // has already resolved those per request and this is therefore one extra indexed lookup.
+        //
+        // The contract is that a NULL flag set means "unknown ⇒ fail open" while an EMPTY-but-non-null set is
+        // authoritative "nothing enabled". Any context that is not fully populated — a background/system
+        // context, a job, a test double, a future ITenantContext that returns empty instead of null — would
+        // therefore LOCK A PAYING TENANT OUT OF THEIR OWN BRANDING. That is precisely the outcome the fail-open
+        // ethos exists to prevent, and one query is a cheap price for not risking it. (The redundancy was
+        // flagged as a residual; the tidier version carries the worse failure mode.)
         if (string.IsNullOrWhiteSpace(tenant.PlanId))
             return null;
 
@@ -517,9 +569,14 @@ public sealed class TenantSettingsService : ITenantSettingsService
         if (plan is null)
             return null;
 
-        var locked = new List<string>();
-        if (plan.FeatureFlags is { WhiteLabel: false })
-            locked.Add("branding.customColor");
+        // Route through the SHARED derivation + predicate rather than reading FeatureFlags.WhiteLabel directly.
+        // PlanFeatureFlagKeys exists so the entitlement seams cannot drift, and this was the one seam not using
+        // it — it happened to agree, which is exactly how drift stays invisible until it doesn't.
+        var flags = PlanFeatureFlagKeys.Derive(plan.FeatureFlags);
+
+        var locked = PlanFeatureFlagKeys.IsFeatureEnabled(flags, PlanFeatureFlagKeys.WhiteLabel)
+            ? new List<string>()
+            : [.. WhiteLabelFeatureKeys];
 
         return new PlanGatingDto(plan.Code, locked);
     }

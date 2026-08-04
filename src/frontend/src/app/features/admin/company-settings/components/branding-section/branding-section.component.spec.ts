@@ -145,6 +145,78 @@ describe('BrandingSectionComponent', () => {
     expect(errorSpy).toHaveBeenCalledWith('Unsupported file type. Use PNG or SVG.');
   });
 
+  // ── ISSUE-358: the asset uploads are plan-gated too, not just the colour ──
+
+  function lockAllBranding(): void {
+    fixture.componentRef.setInput('plan', {
+      tier: 'starter',
+      lockedFeatures: [
+        'branding.customColor',
+        'branding.logo',
+        'branding.emailLogo',
+        'branding.favicon',
+      ],
+    });
+    fixture.detectChanges();
+  }
+
+  it('reports each branding slot as locked when the plan says so (ISSUE-358)', () => {
+    lockAllBranding();
+
+    expect(component.slotLocked('logo')).toBeTrue();
+    expect(component.slotLocked('emailLogo')).toBeTrue();
+    expect(component.slotLocked('favicon')).toBeTrue();
+  });
+
+  it('leaves every slot unlocked when the plan reports nothing locked', () => {
+    fixture.componentRef.setInput('plan', { tier: 'enterprise', lockedFeatures: [] });
+    fixture.detectChanges();
+
+    expect(component.slotLocked('logo')).toBeFalse();
+    expect(component.slotLocked('favicon')).toBeFalse();
+  });
+
+  it('treats an absent plan block as unlocked — fail open (ISSUE-358)', () => {
+    // The backend omits `plan` when it cannot resolve one. The UI must not gate on a signal it never got.
+    fixture.componentRef.setInput('plan', null);
+    fixture.detectChanges();
+
+    expect(component.slotLocked('logo')).toBeFalse();
+  });
+
+  it('refuses a locked upload arriving via DRAG-AND-DROP, not just via the click guard (ISSUE-358)', () => {
+    // The template disables the click and keyboard paths, but onDrop reaches the upload directly — so a
+    // locked slot would otherwise be one drag away from a 403 the user never asked for.
+    lockAllBranding();
+    const errorSpy = spyOn(toastr, 'error');
+    const file = new File(['x'], 'logo.png', { type: 'image/png' });
+
+    component.onDrop(
+      {
+        preventDefault: () => {},
+        dataTransfer: { files: [file] },
+      } as unknown as DragEvent,
+      'logo'
+    );
+
+    httpMock.expectNone(uploadUrl);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it('refuses a locked upload arriving via the file picker (ISSUE-358)', () => {
+    lockAllBranding();
+    const errorSpy = spyOn(toastr, 'error');
+    const file = new File(['x'], 'logo.png', { type: 'image/png' });
+
+    component.onFilePicked(
+      { target: { files: [file], value: '' } } as unknown as Event,
+      'favicon'
+    );
+
+    httpMock.expectNone(uploadUrl);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
   it('rejects an oversized file client-side without uploading', () => {
     const errorSpy = spyOn(toastr, 'error');
     const big = new File(['x'], 'huge.png', { type: 'image/png' });
