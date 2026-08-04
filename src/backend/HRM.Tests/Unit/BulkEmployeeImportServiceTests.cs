@@ -54,7 +54,51 @@ public sealed class BulkEmployeeImportServiceTests : IDisposable
     private BulkEmployeeImportService CreateService(ITenantContext? ctx = null)
     {
         var dbContext = TestDbContextFactory.Create(ctx ?? _tenantContext, _dbName);
-        return new BulkEmployeeImportService(dbContext, ctx ?? _tenantContext, _currentUser, _logger);
+        var context = ctx ?? _tenantContext;
+        // FR-11: wire the REAL custom-field validator, not a substitute — the whole point of routing through it
+        // is that bulk import and single-employee create cannot drift on the value rules.
+        var customFields = new CustomFieldService(
+            TestDbContextFactory.Create(context, _dbName),
+            context,
+            _currentUser,
+            Substitute.For<ILogger<CustomFieldService>>());
+        return new BulkEmployeeImportService(
+            dbContext, context, _currentUser, _logger, dispatcher: null, customFieldService: customFields);
+    }
+
+    /// <summary>Seeds one active employee custom field for this tenant (US-CHR-010 FR-11).</summary>
+    private async Task SeedCustomFieldAsync(
+        string fieldKey, string fieldName, string fieldType = "text",
+        bool isRequired = false, string? optionsJson = null)
+    {
+        using var db = CreateDbContext();
+        db.CustomFieldDefinitions.Add(new CustomFieldDefinition
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenantId,
+            EntityType = "employee",
+            FieldKey = fieldKey,
+            FieldName = fieldName,
+            FieldType = fieldType,
+            IsRequired = isRequired,
+            Options = optionsJson,
+            DisplayOrder = 1,
+            IsActive = true,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>CSV whose header carries the standard columns plus the given custom_ columns.</summary>
+    private string BuildCsvWithCustom(IEnumerable<string> customHeaders, params string[] dataRows)
+    {
+        var sb = new StringBuilder();
+        sb.Append("first_name,last_name,email,phone,date_of_birth,gender,date_of_joining,department_name,job_title_name,employment_type,location_name,status");
+        foreach (var h in customHeaders)
+            sb.Append(',').Append(h);
+        sb.AppendLine();
+        foreach (var row in dataRows)
+            sb.AppendLine(row);
+        return sb.ToString();
     }
 
     private AppDbContext CreateDbContext(ITenantContext? ctx = null)
@@ -993,6 +1037,114 @@ public sealed class BulkEmployeeImportServiceTests : IDisposable
         var newEmp = db2.Employees.FirstOrDefault(e => e.Email == "new@test.com");
         newEmp.Should().NotBeNull();
         newEmp!.EmployeeNo.Should().Be("EMP-0006");
+    }
+
+    // ══════════════ US-CHR-010 FR-11: tenant custom-field columns in bulk import ══════════════
+    //
+    // Only standard fields imported before; a tenant's custom fields could be set one-by-one but not in bulk,
+    // which is exactly the case bulk import exists for.
+
+    [Fact]
+    public async Task Template_includes_this_tenants_custom_field_columns_FR11()
+    {
+        await SeedTenant();
+        await SeedCustomFieldAsync("shirt_size", "Shirt Size", "select", optionsJson: """["S","M","L"]""");
+
+        var result = await CreateService().GenerateTemplateAsync(ExportFormat.Csv);
+
+        var csv = Encoding.UTF8.GetString(result.Value!.FileBytes);
+        csv.Should().Contain("custom_shirt_size",
+            "an operator cannot fill in a column the template never mentions");
+        csv.Should().Contain("Shirt Size", "the description row must name the field");
+        csv.Should().Contain("S/M/L", "and list the permitted options");
+    }
+
+    [Fact]
+    public async Task Template_for_a_tenant_with_no_custom_fields_is_unchanged_FR11()
+    {
+        await SeedTenant();
+
+        var result = await CreateService().GenerateTemplateAsync(ExportFormat.Csv);
+
+        var csv = Encoding.UTF8.GetString(result.Value!.FileBytes);
+        csv.Should().NotContain("custom_", "no custom fields must mean a byte-identical template to before");
+    }
+
+    [Fact]
+    public async Task Import_persists_custom_field_values_FR11()
+    {
+        await SeedTenant();
+        await SeedReferenceData("Engineering", "Software Engineer");
+        await SeedCustomFieldAsync("shirt_size", "Shirt Size");
+
+        var csv = BuildCsvWithCustom(
+            ["custom_shirt_size"],
+            "John,Doe,john@test.com,,,,2026-01-15,Engineering,Software Engineer,Full-Time,,Active,L");
+
+        var result = await CreateService().ImportAsync(CreateCsvStream(csv), "t.csv", csv.Length, false);
+
+        result.Value!.Success.Should().Be(1, string.Join("; ", result.Value.Errors.Select(e => e.Error)));
+
+        using var db = CreateDbContext();
+        var employee = db.Employees.Single();
+        employee.CustomFields.Should().NotBeNull()
+            .And.Contain("shirt_size").And.Contain("L",
+                "the imported value must land in the SAME JSON column the single-employee path writes");
+    }
+
+    // THE arm this rule exists for. A mistyped custom_ header must NOT import as nothing with a green report.
+    [Fact]
+    public async Task Import_REJECTS_a_custom_column_that_matches_no_field_FR11()
+    {
+        await SeedTenant();
+        await SeedReferenceData("Engineering", "Software Engineer");
+        await SeedCustomFieldAsync("shirt_size", "Shirt Size");
+
+        var csv = BuildCsvWithCustom(
+            ["custom_shirt_sze"], // typo
+            "John,Doe,john@test.com,,,,2026-01-15,Engineering,Software Engineer,Full-Time,,Active,L");
+
+        var result = await CreateService().ImportAsync(CreateCsvStream(csv), "t.csv", csv.Length, false);
+
+        result.Value!.Success.Should().Be(0,
+            "silently importing the row WITHOUT the value would lose data behind a green report");
+        result.Value.Errors.Should().Contain(e => e.Field == "custom_shirt_sze");
+        result.Value.Errors.Should().Contain(e => e.Error.Contains("does not match any active custom field"));
+    }
+
+    [Fact]
+    public async Task Import_REJECTS_a_row_missing_a_REQUIRED_custom_field_FR11()
+    {
+        await SeedTenant();
+        await SeedReferenceData("Engineering", "Software Engineer");
+        await SeedCustomFieldAsync("employee_band", "Employee Band", isRequired: true);
+
+        var csv = BuildCsvWithCustom(
+            ["custom_employee_band"],
+            "John,Doe,john@test.com,,,,2026-01-15,Engineering,Software Engineer,Full-Time,,Active,");
+
+        var result = await CreateService().ImportAsync(CreateCsvStream(csv), "t.csv", csv.Length, false);
+
+        result.Value!.Success.Should().Be(0);
+        result.Value.Errors.Should().Contain(e => e.Error.Contains("required custom field"),
+            "a required custom field must be enforced in bulk exactly as on the single-employee path");
+    }
+
+    [Fact]
+    public async Task Import_still_works_for_a_tenant_with_no_custom_fields_FR11()
+    {
+        // Regression guard: the FR-11 work must not change behaviour for tenants that use no custom fields.
+        await SeedTenant();
+        await SeedReferenceData("Engineering", "Software Engineer");
+
+        var csv = BuildCsvContent(
+            "John,Doe,john@test.com,,,,2026-01-15,Engineering,Software Engineer,Full-Time,,Active");
+
+        var result = await CreateService().ImportAsync(CreateCsvStream(csv), "t.csv", csv.Length, false);
+
+        result.Value!.Success.Should().Be(1);
+        using var db = CreateDbContext();
+        db.Employees.Single().CustomFields.Should().BeNull();
     }
 
     public void Dispose()
