@@ -271,6 +271,16 @@ public sealed class PayrollRunService : IPayrollRunService
                 break; // the only re-runnable state.
             default:
                 // AwaitingApproval / Approved / Rejected — return the run to HR (ReviewPending) before re-running.
+                //
+                // DELIBERATE ASYMMETRY with the worker-side guard (PayrollRunProcessor
+                // .GuardNonReprocessableStatus): this REQUEST-time gate refuses Rejected too, while the worker
+                // still processes a Rejected run. That is intentional, not drift. Here we are answering "may HR
+                // start a re-run right now?" — and the answer for a rejected run is "submit the correction
+                // first", which is clearer than silently re-running. The worker faces a different question: a
+                // reprocess that was ALREADY legitimately requested has arrived late, and refusing it there
+                // would strand work rather than prevent it. The worker only guards the states where proceeding
+                // would destroy something (an in-flight approval, or signed-off figures); a Rejected run has
+                // neither.
                 return Result<PayrollRunAcceptedDto>.Failure(
                     $"A payroll run in status {run.Status} cannot be re-run.", 409, "run_not_rerunnable");
         }

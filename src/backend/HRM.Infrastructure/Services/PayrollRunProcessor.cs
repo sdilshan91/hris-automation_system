@@ -98,6 +98,58 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         _holidayProvider = holidayProvider;
     }
 
+    /// <summary>
+    /// The single definition of "this run must not be reprocessed", applied BOTH before taking the per-run
+    /// interlock and again after acquiring it. Returns <c>null</c> when the run may proceed.
+    ///
+    /// <para><b>Why one helper rather than two guard sites (DF-61-conc-approval-race).</b> The two sites
+    /// previously carried duplicated Finalized/Cancelled checks, and the whole defect class here is the two
+    /// disagreeing: a reprocess legitimately enqueued while ReviewPending, then raced by an HR submit or
+    /// approval before the worker ran, sailed past the post-lock re-read and silently un-submitted the
+    /// approval — replace-cleaning the slips and reverting the run to ReviewPending.</para>
+    ///
+    /// <para><b>Which states, and why not simply "everything past ReviewPending".</b> Decision D-d
+    /// (2026-08-04), taken after reading the state machine rather than from the shape of the enum:</para>
+    /// <list type="bullet">
+    ///   <item><b>Finalized</b> — immutable (BR-7).</item>
+    ///   <item><b>Cancelled</b> — terminal; a stale job must not resurrect it (ISSUE-154).</item>
+    ///   <item><b>AwaitingApproval</b> — an approval is in flight. Reprocessing would un-submit it without
+    ///     telling the approver.</item>
+    ///   <item><b>Approved</b> — the sharper hazard: reprocessing here silently changes figures somebody has
+    ///     already signed off on, while the run still looks approved.</item>
+    ///   <item><b>Rejected</b> — deliberately NOT guarded. A rejected run is legitimately re-runnable: HR
+    ///     corrects it and re-submits, which creates a new workflow instance. Blocking it would break the
+    ///     correction loop the workflow exists to support.</item>
+    ///   <item><b>ReviewPending / Queued</b> — the normal reprocess path.</item>
+    /// </list>
+    ///
+    /// <para><b>Refuse-and-tell, not silent un-submit.</b> The alternative — letting a reprocess cancel the
+    /// in-flight approval automatically — was rejected: it discards an approver's decision without telling
+    /// them. The caller is told to return the run to HR (or reject it) first.</para>
+    /// </summary>
+    private static Result? GuardNonReprocessableStatus(PayrollRun run) => run.Status switch
+    {
+        PayrollRunStatus.Finalized =>
+            Result.Failure("A finalized payroll run cannot be reprocessed.", 409, "run_finalized"),
+
+        PayrollRunStatus.Cancelled =>
+            Result.Failure("A cancelled payroll run cannot be reprocessed.", 409, "run_cancelled"),
+
+        PayrollRunStatus.AwaitingApproval =>
+            Result.Failure(
+                "This payroll run is awaiting approval and cannot be reprocessed. Return it to HR or reject " +
+                "it first, then re-run.",
+                409, "run_awaiting_approval"),
+
+        PayrollRunStatus.Approved =>
+            Result.Failure(
+                "This payroll run has already been approved and cannot be reprocessed — doing so would change " +
+                "figures that were signed off. Return it to HR first, then re-run.",
+                409, "run_approved"),
+
+        _ => null,
+    };
+
     public async Task<Result> ProcessAsync(Guid runId, CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -107,15 +159,10 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         if (run is null)
             return Result.Failure("Payroll run not found.", 404, "run_not_found");
 
-        // BR-7: a Finalized run is immutable — never reprocess.
-        if (run.Status == PayrollRunStatus.Finalized)
-            return Result.Failure("A finalized payroll run cannot be reprocessed.", 409, "run_finalized");
-
-        // ISSUE-154: a Cancelled run is terminal — a stale/duplicate enqueued job must NOT resurrect it back to
-        // ReviewPending. Bail out (the ProcessPayrollRunJob logs the non-completion). Re-running a cancelled
-        // period is a fresh initiate, not a reprocess of this run.
-        if (run.Status == PayrollRunStatus.Cancelled)
-            return Result.Failure("A cancelled payroll run cannot be reprocessed.", 409, "run_cancelled");
+        // Guards the caller-visible case: a reprocess requested against a run that must not be reprocessed.
+        var preLockGuard = GuardNonReprocessableStatus(run);
+        if (preLockGuard is not null)
+            return preLockGuard;
 
         // DF-61-conc: per-runId interlock. Without it two concurrent ProcessAsync for the SAME run (e.g. a rerun
         // job the reconcile sweep double-enqueued) could both replace-clean + re-insert slips → DUPLICATE
@@ -144,12 +191,14 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             //   * already-done          -> ReviewPending AND marker == null (the winner's ProcessAsync clears the
             //                              marker on completion, so a NULL marker on a ReviewPending run means
             //                              nothing is left to do) -> NO-OP (re-processing would re-duplicate).
-            // Finalized/Cancelled may also have been reached in the window; honour the same terminal guards.
+            // A non-reprocessable state may have been reached in the window; honour the SAME guards as above.
+            // DF-61-conc-approval-race: this is the site that actually closes the race — the reprocess was
+            // legitimately enqueued while ReviewPending, and HR submitted or approved it before this worker ran.
+            // Re-reading and re-guarding here is the only place that can notice.
             await _dbContext.Entry(run).ReloadAsync(cancellationToken);
-            if (run.Status == PayrollRunStatus.Finalized)
-                return Result.Failure("A finalized payroll run cannot be reprocessed.", 409, "run_finalized");
-            if (run.Status == PayrollRunStatus.Cancelled)
-                return Result.Failure("A cancelled payroll run cannot be reprocessed.", 409, "run_cancelled");
+            var postLockGuard = GuardNonReprocessableStatus(run);
+            if (postLockGuard is not null)
+                return postLockGuard;
             if (run.Status == PayrollRunStatus.ReviewPending && run.ReprocessRequestedAt is null)
             {
                 _logger.LogInformation(
@@ -1209,12 +1258,29 @@ internal sealed class PayrollRunProcessLock : IAsyncDisposable
     /// <see cref="Contended"/> flag tells the caller whether the lock was taken (proceed) or is already held
     /// elsewhere (no-op).
     ///
-    /// <para>CAVEAT (DF-61-conc-retry, LOW): a SESSION advisory lock lives on one physical backend connection.
-    /// The DbContext runs under <c>EnableRetryOnFailure</c>, so on a transient mid-ProcessAsync fault the
-    /// execution strategy can reconnect on a DIFFERENT pooled connection that does not hold this lock — silently
-    /// degrading the interlock to the un-locked baseline for that run. This is acceptable: the
-    /// <c>ReprocessRequestedAt</c> marker + <c>PayrollRunReconcileJob</c> sweep remain the backstop and the worst
-    /// case is duplicate ReviewPending slips (never a double-PAY) — i.e. exactly the pre-change behaviour.</para>
+    /// <para>CAVEAT (DF-61-conc-retry, LOW) — <b>known, measured, and deliberately ACCEPTED (2026-08-04).</b>
+    /// A SESSION advisory lock lives on one physical backend connection. The DbContext runs under
+    /// <c>EnableRetryOnFailure</c>, so on a transient mid-ProcessAsync fault the execution strategy can reconnect
+    /// on a DIFFERENT pooled connection that does not hold this lock — silently degrading the interlock to the
+    /// un-locked baseline for that run.</para>
+    ///
+    /// <para><b>The exact failure window</b> is: a transient fault occurs AFTER this lock is taken but BEFORE
+    /// ProcessAsync completes, AND the reconnect lands on a different pooled connection, AND a second worker is
+    /// concurrently processing the SAME run. All three must hold.</para>
+    ///
+    /// <para><b>Why it is accepted rather than fixed.</b> The blast radius of the fix exceeds the impact of the
+    /// defect. The suggested hardening — wrapping ProcessAsync in a <c>CreateExecutionStrategy().ExecuteAsync</c>
+    /// boundary that re-takes the lock — makes the ENTIRE payroll compute a retriable unit: a method that
+    /// replace-cleans slips, reverts Applied adjustments to Pending, and writes money rows. Re-executing all of
+    /// that on a transient fault is a materially larger correctness risk, on a money path, than the degradation
+    /// it removes. Meanwhile the degradation cannot lose money: the <c>ReprocessRequestedAt</c> marker +
+    /// <c>PayrollRunReconcileJob</c> sweep remain the backstop, and the worst case is duplicate ReviewPending
+    /// slips (never a double-PAY) — i.e. exactly the pre-change behaviour this interlock improved on.</para>
+    ///
+    /// <para><b>What would change the decision:</b> evidence that the window is actually being hit in
+    /// production (duplicate ReviewPending slips correlated with a retry/reconnect), or the interlock becoming
+    /// load-bearing for something that CAN lose money. Neither is true today. Do not re-litigate this from the
+    /// shape of the code alone.</para>
     /// </summary>
     public static async Task<PayrollRunProcessLock?> TryAcquireAsync(
         AppDbContext dbContext, Guid runId, CancellationToken cancellationToken)
