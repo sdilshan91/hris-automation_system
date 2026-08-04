@@ -264,6 +264,53 @@ Obsolete BUG-243 table struck as OBSOLETE · 33 ALREADY-BUILT deferred-AC rows s
 ### Remaining feature work
 US-PLT-002 **RLS prod flip** (code complete + proven, committed OFF — ops step, not dev) · **Admin monitoring KPIs** (TC-ADM-002-14..18 — the storage gauge is now nearly free since `TenantStorageUsage.ComputeBytesByTenantAsync` exists; email-sends + SLA-uptime have no OTel dependency; error-rate/P95 blocked on a metrics store or sourceable from the GlitchTip API) · **per-tenant API-call counter** (deliberately deferred slice of US-PLT-004) · **~8 genuine deferred ACs** (custom-field columns in bulk import · interview-guide attachment · scorecard versioning · US-REC-010 FR-8/FR-9 · year-end tax PDF · US-ADM-006 plan-gated enterprise settings) · **6 LOW DF residuals** · ops flips (ClamAV prod, GlitchTip prod DSN).
 
+## 🎯 P5 — THE NEXT SESSION'S PLAN (2026-08-04, dependency-ordered)
+
+> **Start here.** Ordered to avoid file conflicts and wrong-sequence rework, NOT by size. Verified against
+> code 2026-08-04 — the previous deferred-AC list was ~10 items and half were already built.
+
+### ⚠️ Conflicts this order exists to avoid
+1. **The three `DF-61-conc-*` items all touch `PayrollRunProcessor`'s reprocess interlock** → ONE session, not three PRs.
+2. **[[ISSUE-358]] (`WhiteLabel`) and "US-ADM-006 plan-gated enterprise settings" are the SAME work** → do together or build the gate twice.
+3. **RLS prod flip must follow the latency-meter deploy** — `tenant_latency_bucket` ships a dormant policy the flip activates.
+4. **Year-end tax PDF must REUSE `PerformancePdfRenderer`** (4 PDFs already ship through it) → don't start a second PDF stack.
+
+### Wave 0 — deploy the latency meter (2 min, do first)
+`docker compose build backend && docker compose up -d backend`. PR #458 is merged but the container predates it.
+P95/trend need HISTORY — every hour it is not running is an hour missing from the first real reading. Migration
+applies on startup.
+
+### Wave 1 — DECISIONS (no code; three of them gate later waves)
+| # | Decision | Recommendation (best, not easiest) |
+|---|---|---|
+| D-a | **Clawback: [[BUG-291]] + [[BUG-293]] retroactive tail** | **Absorb, fix forward, do NOT recover.** Both are overpayments to employees; recovering paid salary is legally fraught and trust-corrosive. **But decide on numbers, not instinct:** BUG-291's exposure report is built — run it, and build the matching BUG-293 query. **Split out** current employees with large *un-encashed* inflated balances: correcting a number before it becomes money is not clawback. ⏰ Open since 2026-07-30 — the only item accruing cost. |
+| D-b | **[[ISSUE-358]] `WhiteLabel`** | **Enforce it.** Deleting is easier and wrong — it removes a capability customers are sold rather than making it real. D3 set the pattern for Scim/CustomDomain/Sandbox. Do it WITH US-ADM-006's tenant-side `plan` block. |
+| D-c | **[[ISSUE-203]] BCrypt workFactor 12** | **Keep 12; re-measure on production hardware.** Lowering it makes a number look better by permanently weakening every existing hash, based on a measurement from a limited-core test host. |
+| D-d | **`DF-61-conc-approval-race`** | **Needs product judgement + a state-machine read first.** A Rejected run is legitimately re-runnable, so the guard cannot simply extend to all post-ReviewPending states. Question: *should reprocess un-submit an in-flight approval, or be refused while approval is pending?* Instinct: refuse-and-tell over silent un-submit — but verify against the workflow before committing. |
+
+### Wave 2 — isolated small fixes (no shared files; safe in parallel)
+- **US-REC-010 FR-8/FR-9** — ★ **the deferral rationale EXPIRED.** `ApplicantConversionService.cs:36-37` claims *"there is no Onboarding module yet"* and *"welcome email: log-only seam"*. **Both false:** `OnboardingChecklistService`/`OnboardingTemplateService` exist and `IUserManagementNotificationService` → `Real...` (US-NTF-006). Wire conversion to them and DELETE the two lying comments. Cheap now, not blocked.
+- [[ISSUE-194]] — one `GroupBy(a => a.DepartmentName)` at `LeaveReportService.cs:709`.
+- [[ENH-024]] — FE `aria-describedby` on the disabled "Send payslips" button.
+- `DF-plt-us002-fr3-drift` — doc only; US-PLT-002 FR-3 still prescribes the retired `SET LOCAL` GUC.
+
+### Wave 3 — payroll concurrency (ONE session; shared file)
+`DF-61-conc-retry` + `DF-61-conc-approval-race` (after D-d) + `DF-61-conc-slip` together.
+`DF-65-pg-encash` separately (different file — leave-encashment real-PG arm).
+
+### Wave 4 — features
+- **[[ISSUE-359]]** file encryption at rest — **decided and fully specified** (platform ring + per-tenant purpose strings; tolerate-legacy + sweep + visible count). Constraints already recorded: `IFieldProtector` is byte[]-oriented so files need STREAMING crypto; an envelope header (version + key-id) is required; the key ring must NEVER be pruned. Largest remaining engineering item.
+- Deferred ACs, **verified still true 2026-08-04**: custom-field columns in bulk import · interview-guide attachment · scorecard versioning · year-end tax PDF (reuse `PerformancePdfRenderer`).
+- [[ISSUE-358]] implementation (after D-b).
+
+### Wave 5 — ops flips (yours)
+RLS prod flip (largest security gain still deferred; reversible via `Rls:Enabled`) → ClamAV prod (real clamd) → GlitchTip hardening (**`ENABLE_OPEN_USER_REGISTRATION=false` is the sharp edge** on a reachable instance).
+
+### Wave 6 — `DF-approveoffer-retire`
+Needs a data-cleanup migration before the constant can be removed (`UpdateRoleValidator` rejects permissions absent from the catalog, and the back-fill never removes rows). Bundle with the next authorization change.
+
+---
+
 ## ▶ Remaining work — priority order
 
 > ⚠ **STALE (2026-07-15 snapshot — predates the #352–#382 campaign).** The P0–P7 breakdown below was groomed BEFORE the arc-k/arc-l "fix all bugs+issues+decisions" campaign, which cleared the MED/LOW bug/issue backlog + every product/BA decision (see the two 2026-07-18/19 changelog entries above). **The LIVE queue is now `docs/QA/DEFERRED-FOLLOWUPS.md`** (per-item, with recommendations); `docs/QA/TEST-FINDINGS.md` holds current finding statuses. Treat the sections below as historical context, not the active plan.
