@@ -319,6 +319,100 @@ public sealed class ScorecardServiceTests
         result.ErrorCode.Should().Be("score_out_of_range");
     }
 
+    // ── AC-K1: edit history — an edit must not silently rewrite what a scorecard MEANT ──────────
+    //
+    // Editing replaced the rating set wholesale (RemoveRange + re-insert) on an IAuditExempt entity, so the
+    // prior judgement vanished with nothing recording it anywhere. A hiring decision could be reviewed months
+    // later against scores that were never the ones it was made on.
+
+    [Fact]
+    public async Task Editing_a_scorecard_SNAPSHOTS_the_superseded_version_ACK1()
+    {
+        var service = CreateService();
+
+        await service.SubmitAsync(InputFor(
+            OverallRecommendation.NoHire, ("technical_skills", 2), ("communication", 2)));
+        await service.SubmitAsync(InputFor(
+            OverallRecommendation.Hire, ("technical_skills", 4), ("communication", 4)));
+
+        using var db = CreateDbContext();
+        var revisions = await db.InterviewScorecardRevisions.AsNoTracking().ToListAsync();
+
+        revisions.Should().ContainSingle("one edit supersedes exactly one version");
+        var snapshot = revisions[0];
+        snapshot.Version.Should().Be(1, "the snapshot captures the version it REPLACED, not the new one");
+        snapshot.OverallRecommendation.Should().Be(OverallRecommendation.NoHire,
+            "the ORIGINAL judgement must survive — this is the whole point of AC-K1");
+        snapshot.AverageScore.Should().Be(2.00m);
+        snapshot.RatingsJson.Should().Contain("technical_skills")
+            .And.Contain("2", "the superseded SCORES must be recoverable, not just the recommendation");
+    }
+
+    [Fact]
+    public async Task A_scorecard_that_was_never_edited_has_NO_revisions_ACK1()
+    {
+        // Guards against snapshotting on first submission, which would make every scorecard look edited.
+        var service = CreateService();
+
+        await service.SubmitAsync(InputFor(OverallRecommendation.Hire, ("technical_skills", 4)));
+
+        using var db = CreateDbContext();
+        (await db.InterviewScorecardRevisions.CountAsync()).Should().Be(0);
+        (await db.InterviewScorecards.AsNoTracking().SingleAsync()).Version.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Each_edit_adds_one_revision_and_advances_the_version_ACK1()
+    {
+        var service = CreateService();
+
+        await service.SubmitAsync(InputFor(OverallRecommendation.NoHire, ("technical_skills", 1)));
+        await service.SubmitAsync(InputFor(OverallRecommendation.Hire, ("technical_skills", 3)));
+        await service.SubmitAsync(InputFor(OverallRecommendation.StrongHire, ("technical_skills", 5)));
+
+        using var db = CreateDbContext();
+        var versions = await db.InterviewScorecardRevisions.AsNoTracking()
+            .OrderBy(r => r.Version).Select(r => r.Version).ToListAsync();
+
+        versions.Should().Equal([1, 2], "two edits supersede versions 1 and 2");
+        (await db.InterviewScorecards.AsNoTracking().SingleAsync()).Version.Should().Be(3);
+    }
+
+    // ── AC-K1: GET by id — the route did not exist, blocking TC-REC-006-05/-08 and ISO-015 ──────
+
+    [Fact]
+    public async Task GetById_returns_the_scorecard_with_its_history_oldest_first_ACK1()
+    {
+        var service = CreateService();
+
+        var created = await service.SubmitAsync(InputFor(
+            OverallRecommendation.NoHire, ("technical_skills", 2)));
+        await service.SubmitAsync(InputFor(OverallRecommendation.Hire, ("technical_skills", 4)));
+
+        var detail = await service.GetByIdAsync(created.Value!.Id);
+
+        detail.IsSuccess.Should().BeTrue(detail.Error);
+        detail.Value!.Scorecard.OverallRecommendation.Should().Be(OverallRecommendation.Hire,
+            "the scorecard itself reports the CURRENT state");
+        detail.Value.Scorecard.Version.Should().Be(2);
+
+        detail.Value.Revisions.Should().ContainSingle();
+        detail.Value.Revisions[0].Version.Should().Be(1);
+        detail.Value.Revisions[0].OverallRecommendation.Should().Be(OverallRecommendation.NoHire);
+        detail.Value.Revisions[0].Ratings.Should().Contain(r => r.CriterionKey == "technical_skills" && r.Score == 2,
+            "the superseded ratings must round-trip out of the JSON snapshot, not just be stored");
+    }
+
+    [Fact]
+    public async Task GetById_for_an_unknown_scorecard_is_404_ACK1()
+    {
+        var result = await CreateService().GetByIdAsync(Guid.NewGuid());
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(404);
+        result.ErrorCode.Should().Be("scorecard_not_found");
+    }
+
     // ── GetCriteria returns the default set ───────────────────────────
 
     [Fact]

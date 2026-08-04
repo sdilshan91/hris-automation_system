@@ -64,6 +64,44 @@ public sealed record ScorecardDto
 
     /// <summary>True when the lock period has passed (BR-4) — the scorecard is now immutable.</summary>
     public bool IsLocked { get; init; }
+
+    /// <summary>
+    /// AC-K1: which revision the current state is. 1 means never edited. Appended positionally-safe (init-only
+    /// with a default) so every existing construction stays valid.
+    /// </summary>
+    public int Version { get; init; } = 1;
+}
+
+/// <summary>
+/// A superseded version of a scorecard (US-REC-006 AC-K1) — what it said before an edit replaced it.
+///
+/// <para>Returned only by the single-scorecard read. The list/summary views deliberately do not carry history:
+/// they exist to compare interviewers' current judgements, and interleaving prior versions there would confuse
+/// the comparison the anti-bias rules are built around.</para>
+/// </summary>
+public sealed record ScorecardRevisionDto
+{
+    public int Version { get; init; }
+    public OverallRecommendation OverallRecommendation { get; init; }
+    public string OverallRecommendationName { get; init; } = string.Empty;
+    public decimal AverageScore { get; init; }
+    public string? GeneralNotes { get; init; }
+    public IReadOnlyList<CriterionRatingDto> Ratings { get; init; } = [];
+    public DateTime RevisedAt { get; init; }
+    public Guid RevisedByEmployeeId { get; init; }
+}
+
+/// <summary>
+/// One scorecard plus its full edit history (US-REC-006 AC-K1) — the payload of
+/// <c>GET /recruitment/scorecards/{id}</c>, which did not exist before and blocked TC-REC-006-05/-08 and
+/// ISO-015.
+/// </summary>
+public sealed record ScorecardDetailDto
+{
+    public ScorecardDto Scorecard { get; init; } = new();
+
+    /// <summary>Superseded versions, OLDEST first. Empty when the scorecard has never been edited.</summary>
+    public IReadOnlyList<ScorecardRevisionDto> Revisions { get; init; } = [];
 }
 
 /// <summary>

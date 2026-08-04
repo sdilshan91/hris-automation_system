@@ -48,5 +48,15 @@ public sealed class InterviewScorecard : BaseEntity, IAuditExempt
     // ── Navigation ─────────────────────────────────────────────────
 
     /// <summary>The per-criterion ratings making up this scorecard (FR-1). ≥1 required.</summary>
+    /// <summary>
+    /// AC-K1: which revision the CURRENT state is. Starts at 1 on submission and increments on every edit; each
+    /// increment is accompanied by an <see cref="InterviewScorecardRevision"/> snapshot of the state it
+    /// replaced, so a hiring decision can always be reviewed against the scores it was actually made on.
+    /// </summary>
+    public int Version { get; set; } = 1;
+
     public ICollection<ScorecardCriterionRating> Ratings { get; set; } = new List<ScorecardCriterionRating>();
+
+    /// <summary>Prior versions of this scorecard, oldest first. Empty when it has never been edited.</summary>
+    public ICollection<InterviewScorecardRevision> Revisions { get; set; } = new List<InterviewScorecardRevision>();
 }

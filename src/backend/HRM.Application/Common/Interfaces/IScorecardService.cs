@@ -35,6 +35,13 @@ public interface IScorecardService
     /// </summary>
     Task<Result<ScorecardSummaryDto>> GetForApplicantAsync(Guid applicantId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// US-REC-006 AC-K1: one scorecard by id, with its full edit history. Applies the SAME anti-bias
+    /// visibility rule as the summary views — a caller who cannot see a scorecard in the list cannot fetch it
+    /// directly either, and gets 404 rather than 403 so the endpoint does not confirm it exists.
+    /// </summary>
+    Task<Result<ScorecardDetailDto>> GetByIdAsync(Guid scorecardId, CancellationToken cancellationToken = default);
+
     /// <summary>Returns the default evaluation criteria (US-REC-006 FR-1/BR-2). Tenant-agnostic in Phase 1.</summary>
     Result<IReadOnlyList<ScorecardCriterionDto>> GetCriteria();
 }

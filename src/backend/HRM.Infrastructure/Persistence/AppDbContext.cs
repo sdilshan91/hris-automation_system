@@ -109,6 +109,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<InterviewInterviewer> InterviewInterviewers => Set<InterviewInterviewer>();
     public DbSet<InterviewScorecard> InterviewScorecards => Set<InterviewScorecard>();
     public DbSet<ScorecardCriterionRating> ScorecardCriterionRatings => Set<ScorecardCriterionRating>();
+    public DbSet<InterviewScorecardRevision> InterviewScorecardRevisions => Set<InterviewScorecardRevision>();
     public DbSet<Offer> Offers => Set<Offer>();
     public DbSet<ApplicantPortalToken> ApplicantPortalTokens => Set<ApplicantPortalToken>();
     public DbSet<SalaryComponent> SalaryComponents => Set<SalaryComponent>();
@@ -463,6 +464,11 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-REC-006: ScorecardCriterionRating tenant isolation + soft-delete filter (AC-4).
         modelBuilder.Entity<ScorecardCriterionRating>()
+            .HasQueryFilter(r => !r.IsDeleted && (!_tenantContext.IsResolved || r.TenantId == _tenantContext.TenantId));
+
+        // US-REC-006 AC-K1: InterviewScorecardRevision tenant isolation + soft-delete filter. A revision is a
+        // historical record of one tenant's hiring judgement — it needs the same isolation as the live row.
+        modelBuilder.Entity<InterviewScorecardRevision>()
             .HasQueryFilter(r => !r.IsDeleted && (!_tenantContext.IsResolved || r.TenantId == _tenantContext.TenantId));
 
         // US-REC-007: Offer tenant isolation + soft-delete filter (AC-5 cross-tenant isolation).
