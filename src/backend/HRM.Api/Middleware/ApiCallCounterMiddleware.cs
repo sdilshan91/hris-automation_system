@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 
@@ -35,7 +36,43 @@ public sealed class ApiCallCounterMiddleware
     public async Task InvokeAsync(HttpContext context)
     {
         TryCount(context);
-        await _next(context);
+
+        // TC-ADM-002-14/-16: measure the downstream pipeline. Timestamp arithmetic only — no allocation, no
+        // Stopwatch object, nothing on the DB path. The measurement must NEVER change control flow, so the
+        // request is awaited exactly as before and the recording happens in a finally that cannot throw out.
+        var startTs = Stopwatch.GetTimestamp();
+        try
+        {
+            await _next(context);
+        }
+        finally
+        {
+            TryRecordLatency(context, Stopwatch.GetElapsedTime(startTs).TotalMilliseconds);
+        }
+    }
+
+    /// <summary>
+    /// Fail-open by construction, exactly like <see cref="TryCount"/>: ANY exception is swallowed and logged.
+    /// A usage meter must never be able to fail a request — and this one runs in a `finally`, where a throw
+    /// would replace the real response (or the real exception) with the meter's own bug.
+    /// </summary>
+    private void TryRecordLatency(HttpContext context, double elapsedMs)
+    {
+        try
+        {
+            if (!PlatformApiPaths.IsMeteredTenantApiPath(context.Request.Path))
+                return;
+
+            var tenant = context.RequestServices.GetService<ITenantContext>();
+            if (tenant is not { IsResolved: true, IsSystemContext: false })
+                return;
+
+            _counter.RecordLatency(tenant.TenantId, DateTime.UtcNow, elapsedMs);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "[ApiLatency] failed to record request latency; request unaffected");
+        }
     }
 
     // Never throws: a metering failure must not fail the request (fail-open). Kept separate from the pipeline

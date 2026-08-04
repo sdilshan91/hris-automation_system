@@ -231,6 +231,9 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     // US-PLT-004: per-tenant monthly API-call aggregate (one row per tenant-month; tenant-scoped).
     public DbSet<TenantApiUsage> TenantApiUsages => Set<TenantApiUsage>();
 
+    /// <summary>TC-ADM-002-14/-16: per-tenant hourly request-latency histogram.</summary>
+    public DbSet<TenantLatencyBucket> TenantLatencyBuckets => Set<TenantLatencyBucket>();
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         base.OnConfiguring(optionsBuilder);
