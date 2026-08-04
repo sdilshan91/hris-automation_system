@@ -275,24 +275,40 @@ US-PLT-002 **RLS prod flip** (code complete + proven, committed OFF — ops step
 3. **RLS prod flip must follow the latency-meter deploy** — `tenant_latency_bucket` ships a dormant policy the flip activates.
 4. **Year-end tax PDF must REUSE `PerformancePdfRenderer`** (4 PDFs already ship through it) → don't start a second PDF stack.
 
-### Wave 0 — deploy the latency meter (2 min, do first)
+### Wave 0 — ✅ DONE 2026-08-04 — deploy the latency meter
 `docker compose build backend && docker compose up -d backend`. PR #458 is merged but the container predates it.
 P95/trend need HISTORY — every hour it is not running is an hour missing from the first real reading. Migration
 applies on startup.
+**Outcome:** image rebuilt (the running one was built 04:18, PR #458 landed 07:05), container healthy in ~20s,
+migration `20260804004010_Monitoring_TenantLatencyHistogram` applied, `tenant_latency_bucket` present.
+**Verified live, not assumed:** 3 tenant-scoped requests → 3 counts in bucket 0 after one 10s flush interval, so
+the middleware → `IApiCallCounter` → `ApiCallCounterFlushService` → `TenantLatencyUsage.UpsertAsync` chain is
+actually recording. History is accumulating from 2026-08-04.
 
-### Wave 1 — DECISIONS (no code; three of them gate later waves)
-| # | Decision | Recommendation (best, not easiest) |
+### Wave 1 — ✅ DECIDED 2026-08-04 (all four taken as recommended; the three gating ones are now unblocked)
+| # | Decision | ✅ DECISION (2026-08-04) — recommendation was accepted as-is |
 |---|---|---|
-| D-a | **Clawback: [[BUG-291]] + [[BUG-293]] retroactive tail** | **Absorb, fix forward, do NOT recover.** Both are overpayments to employees; recovering paid salary is legally fraught and trust-corrosive. **But decide on numbers, not instinct:** BUG-291's exposure report is built — run it, and build the matching BUG-293 query. **Split out** current employees with large *un-encashed* inflated balances: correcting a number before it becomes money is not clawback. ⏰ Open since 2026-07-30 — the only item accruing cost. |
-| D-b | **[[ISSUE-358]] `WhiteLabel`** | **Enforce it.** Deleting is easier and wrong — it removes a capability customers are sold rather than making it real. D3 set the pattern for Scim/CustomDomain/Sandbox. Do it WITH US-ADM-006's tenant-side `plan` block. |
-| D-c | **[[ISSUE-203]] BCrypt workFactor 12** | **Keep 12; re-measure on production hardware.** Lowering it makes a number look better by permanently weakening every existing hash, based on a measurement from a limited-core test host. |
-| D-d | **`DF-61-conc-approval-race`** | **Needs product judgement + a state-machine read first.** A Rejected run is legitimately re-runnable, so the guard cannot simply extend to all post-ReviewPending states. Question: *should reprocess un-submit an in-flight approval, or be refused while approval is pending?* Instinct: refuse-and-tell over silent un-submit — but verify against the workflow before committing. |
+| D-a | **Clawback: [[BUG-291]] + [[BUG-293]] retroactive tail** | ✅ **DECIDED — absorb + fix forward + correct un-encashed balances.** **Absorb, fix forward, do NOT recover.** Both are overpayments to employees; recovering paid salary is legally fraught and trust-corrosive. **But decide on numbers, not instinct:** BUG-291's exposure report is built — run it, and build the matching BUG-293 query. **Split out** current employees with large *un-encashed* inflated balances: correcting a number before it becomes money is not clawback. ⏰ Open since 2026-07-30 — the only item accruing cost. |
+| D-b | **[[ISSUE-358]] `WhiteLabel`** | ✅ **DECIDED — enforce it, bundled with US-ADM-006.** **Enforce it.** Deleting is easier and wrong — it removes a capability customers are sold rather than making it real. D3 set the pattern for Scim/CustomDomain/Sandbox. Do it WITH US-ADM-006's tenant-side `plan` block. |
+| D-c | **[[ISSUE-203]] BCrypt workFactor 12** | ✅ **DECIDED — keep 12; ISSUE-203 stays OPEN pending a production-hardware re-measure (not a code task).** **Keep 12; re-measure on production hardware.** Lowering it makes a number look better by permanently weakening every existing hash, based on a measurement from a limited-core test host. |
+| D-d | **`DF-61-conc-approval-race`** | ✅ **REFUSE-AND-TELL on `AwaitingApproval` + `Approved`.** The state-machine read was done before deciding (`PayrollRunStatus.cs`, `PayrollRunProcessor.cs:110-153`): the interlock today guards **only** `Finalized` and `Cancelled`, so a run under an in-flight approval — or one already **Approved but not yet Finalized** — can be silently reprocessed. `Approved` is the sharper hazard: reprocessing there changes what an approver signed off on. `Rejected` and `ReviewPending` stay re-runnable (HR corrects → re-submits → new workflow instance), so the legitimate correction loop is untouched. Silent un-submit was rejected: it discards an approver's decision without telling them. Implement as a 409 with a distinct error code alongside `run_finalized`/`run_cancelled`. |
 
 ### Wave 2 — isolated small fixes (no shared files; safe in parallel)
 - **US-REC-010 FR-8/FR-9** — ★ **the deferral rationale EXPIRED.** `ApplicantConversionService.cs:36-37` claims *"there is no Onboarding module yet"* and *"welcome email: log-only seam"*. **Both false:** `OnboardingChecklistService`/`OnboardingTemplateService` exist and `IUserManagementNotificationService` → `Real...` (US-NTF-006). Wire conversion to them and DELETE the two lying comments. Cheap now, not blocked.
+  - ⚠ **Correction to this plan's own estimate (2026-08-04):** FR-8 is cheap as written; **FR-9 is not.** FR-5 provisions a *passwordless User with an **Active** UserTenant*, and `InviteAsync` rejects active members (`UserManagementService.cs:359-362`), so the invitation rail cannot be reused — and per [[BUG-294]] that rail is dead anyway. **Design taken:** deliver FR-9 through `INotificationDispatcher` (the `RealTenantWelcomeEmailService` idiom) on a **new dedicated catalogue event key**, carrying a **`/forgot-password` link, not a one-time token**. Two reasons: it matches the platform's existing deliberate no-token decision for `tenant_welcome_*`, and a password-reset token lives **1 hour** (`AuthService.cs:659`) while a welcome email is typically sent days before the start date — a token-bearing link would be expired on arrival. Mutating the existing (dead) `onboarding_welcome` key was rejected: it is the dispatch job's **fallback** for unmapped types (`OnboardingNotificationDispatchJob.cs:99`), so adding credential placeholders there would render a credential template against unrelated payloads.
 - [[ISSUE-194]] — one `GroupBy(a => a.DepartmentName)` at `LeaveReportService.cs:709`.
 - [[ENH-024]] — FE `aria-describedby` on the disabled "Send payslips" button.
 - `DF-plt-us002-fr3-drift` — doc only; US-PLT-002 FR-3 still prescribes the retired `SET LOCAL` GUC.
+
+### Wave 2b — 🔴 [[BUG-294]] invitations are undeliverable (AUTO-HEALED IN 2026-08-04, promoted above Wave 3)
+**Discovered while mapping FR-9's seam; grep-verified, not inferred.** `UserInvitation.TokenHash` is minted, stored and
+rotated but **never read for verification anywhere** — and there is **no accept/activate endpoint**. Every invitation
+email carries a live token to a route the backend cannot honour, so an invited tenant user can never log in; the admin
+sees "sent" and nothing goes red. `InvitationStatus.Accepted` is unreachable code.
+**Ranked HIGH and placed here** (severity × blast-radius): it silently breaks a core sold admin flow for *every* invited
+user, and it is small — one endpoint that verifies the token, creates the `UserTenant` + `InvitedRoleIds` grants, flips
+the row to `Accepted`, then hands off to the **existing** `reset-password` rail. Do **not** build a second
+password-setting rail. Sequenced after Wave 2 only because Wave 2 is already in flight on its own branch.
 
 ### Wave 3 — payroll concurrency (ONE session; shared file)
 `DF-61-conc-retry` + `DF-61-conc-approval-race` (after D-d) + `DF-61-conc-slip` together.

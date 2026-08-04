@@ -449,6 +449,64 @@ public static class NotificationEventCatalog
             Category: NotificationCategory.OnboardingOffboarding,
             IsMandatory: false);
 
+        // ── US-REC-010 FR-9 — the new-hire welcome email WITH login details. A dedicated event rather than extra
+        // placeholders on "onboarding_welcome", because that key is the onboarding dispatch job's FALLBACK for any
+        // unmapped outbox type (OnboardingNotificationDispatchJob.MapOutboxTypeToEventKey) — putting credential
+        // placeholders there would render a credential-bearing template against unrelated onboarding payloads.
+        // The account provisioned on hire is PASSWORDLESS (US-REC-010 FR-5/BR-7), so the "credentials" are the login
+        // address plus a self-service link to set the first password. There is deliberately NO one-time token: the
+        // platform already took that decision for tenant_welcome_* (RealTenantWelcomeEmailService), and a password
+        // reset token lives one hour while a welcome email is typically sent days before the start date — a
+        // token-bearing link would be expired on arrival. Conversions that create no account send the plain
+        // "onboarding_welcome" event instead, so neither template ever renders a blank credential block. ──
+        yield return new NotificationEventDefinition(
+            EventKey: "employee_welcome_credentials",
+            EventName: "New Hire Welcome (with login details)",
+            Placeholders:
+            [
+                "employee.firstName", "employee.lastName", "employee.email",
+                "employee.startDate", "employee.jobTitle", "employee.department",
+                "manager.name",
+                "login.email", "forgotPassword.url",
+                .. TenantPlaceholders,
+            ],
+            SampleData: new Dictionary<string, object?>
+            {
+                ["employee"] = new Dictionary<string, object?>
+                {
+                    ["firstName"] = "Alex", ["lastName"] = "Newcomer", ["email"] = "alex.newcomer@example.com",
+                    ["startDate"] = "2026-08-01", ["jobTitle"] = "Software Engineer", ["department"] = "Engineering",
+                },
+                ["manager"] = new Dictionary<string, object?> { ["name"] = "Sam Manager" },
+                ["login"] = new Dictionary<string, object?> { ["email"] = "alex.newcomer@example.com" },
+                ["forgotPassword"] = new Dictionary<string, object?>
+                {
+                    ["url"] = "https://acme.yourhrm.com/forgot-password",
+                },
+                ["tenant"] = SampleTenant(),
+            },
+            DefaultSubject: "Welcome to {{tenant.companyName}} — your account is ready",
+            DefaultBodyHtml:
+                "<p>Hi {{employee.firstName}},</p>" +
+                "<p>Welcome to <strong>{{tenant.companyName}}</strong>! We're excited to have you join " +
+                "{{employee.department}} as {{employee.jobTitle}} starting {{employee.startDate}}.</p>" +
+                "<p>Your manager {{manager.name}} will be in touch, and your onboarding checklist is waiting for " +
+                "you once you sign in.</p>" +
+                "<p>An account has been created for you. Sign in with <strong>{{login.email}}</strong> — " +
+                "set your password using the link below.</p>" +
+                "<p><a href=\"{{forgotPassword.url}}\">Set your password</a></p>" +
+                "<p>Regards,<br/>{{tenant.companyName}}</p>",
+            DefaultBodyText:
+                "Hi {{employee.firstName}},\n\n" +
+                "Welcome to {{tenant.companyName}}! We're excited to have you join {{employee.department}} as " +
+                "{{employee.jobTitle}} starting {{employee.startDate}}.\n\n" +
+                "Your manager {{manager.name}} will be in touch, and your onboarding checklist is waiting for you " +
+                "once you sign in.\n\n" +
+                "An account has been created for you. Sign in with {{login.email}} — set your password here:\n" +
+                "{{forgotPassword.url}}\n\nRegards,\n{{tenant.companyName}}",
+            Category: NotificationCategory.OnboardingOffboarding,
+            IsMandatory: false);
+
         // ── US-NTF-006 Phase 3 — onboarding CHECKLIST ASSIGNED (US-ONB-002). A dedicated event whose FLAT
         // placeholders match the onboarding outbox payload (employeeName/templateName/startDate/taskCount), so the
         // rendered email has no blank placeholders — the generic "onboarding_welcome" template does NOT match that

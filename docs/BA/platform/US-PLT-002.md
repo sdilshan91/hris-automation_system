@@ -32,18 +32,19 @@ Tenant isolation today is **single-layer**: EF Core global query filters (reads)
 ## 4. Functional Requirements
 - FR-1: Enable RLS (`ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`) on every table carrying `tenant_id` (i.e. every `BaseEntity` table). Maintain a single source of truth for that table list.
 - FR-2: Create a `USING (tenant_id = current_setting('app.current_tenant', true)::uuid)` policy and a matching `WITH CHECK` policy on each.
-- FR-3 (**MANDATED MECHANISM** — test-friendly + pooling-safe): Set the tenant GUC with **`SET LOCAL app.current_tenant = '<id>'` inside an ambient per-request transaction**, NOT a session-level `SET`. Implement an ambient unit-of-work (middleware or a MediatR `TransactionBehavior`) that, for every tenant-scoped request, opens a transaction → issues `SET LOCAL` from `ITenantContext` → runs the handler → commits/rolls back. Rationale: `SET LOCAL` is transaction-scoped and auto-resets on commit/rollback, so the tenant variable **cannot leak across pooled connections** — eliminating the #1 RLS-with-pooling hazard. (Note: `SET LOCAL` is a no-op outside a transaction and does not carry between EF autocommit statements, which is exactly why the explicit per-request transaction is required.) Do NOT use session-level `SET` on pooled connections.
+- FR-3 (**MANDATED MECHANISM** — pooling-safe, set on connection open): Set the tenant GUC with **`SELECT set_config('app.current_tenant', '<id>', false)` from a `DbConnectionInterceptor` when the connection is opened** (shipped as `TenantGucConnectionInterceptor`), reading the id from `ITenantContext`. The GUC is session-scoped for the life of that physical connection and is **re-stamped on every open**, so a pooled connection handed to the next request is re-set (or cleared) before that request issues any query — the connection is never observable carrying a previous tenant's value. Do NOT use a bare session-level `SET` issued from application code outside the open hook, which *is* the leak hazard.
+  - ⚠ **This FR was rewritten 2026-08-04 (`DF-plt-us002-fr3-drift`) to match what actually shipped.** It previously mandated `SET LOCAL` inside an **ambient per-request transaction** (a middleware/MediatR `TransactionBehavior`). That mechanism was **retired during implementation**: `SET LOCAL` is transaction-scoped, and wrapping every request in an explicit ambient transaction is incompatible with Npgsql's `EnableRetryOnFailure` execution strategy, which throws on user-initiated transactions (ISSUE-277; the same root cause as BUG-068/252/264). The interceptor keeps the pooling guarantee without owning a transaction. The code was always correct — only this story was stale.
 - FR-4: The application SHALL connect as a **dedicated login role WITHOUT `BYPASSRLS`** (so RLS always applies, even to raw SQL). Provide a **separate privileged connection/role** (with `BYPASSRLS` or table ownership) used ONLY by migrations, `DbInitializer` seeding, the tenant-resolution lookup, and system-level Hangfire jobs — never by normal request flow. Keep this bypass surface narrow and auditable.
 - FR-5: Keep EF Core global query filters in place (defense-in-depth, not replacement).
 
 ## 5. Non-Functional Requirements
-- NFR-1: Per-request overhead limited to one `SET LOCAL` statement + the ambient transaction wrapper; no measurable regression to P95 latency targets (reads now run inside a transaction — verify this is acceptable under load).
+- NFR-1: Per-connection-open overhead limited to one `set_config` round-trip; no measurable regression to P95 latency targets. (Cheaper than the retired ambient-transaction design, which added a transaction to every read.)
 - NFR-2: Connection pooling correctness — no session-variable bleed between requests sharing a pooled connection.
 - NFR-3: Rollback path — the migration is reversible (`Down` drops policies and disables RLS).
 
 ## 6. Risks & Constraints
-- **Mechanism is decided** (FR-3): `SET LOCAL` + ambient per-request transaction + non-`BYPASSRLS` app role. This is the test-friendly AND production-suitable choice because it is leak-proof under pooling by construction. The rejected alternative — session-level `SET` on pooled connections — is a prod data-leak hazard and a source of order-dependent flaky tests; do not use it.
-- Ambient transaction cost: reads now run inside an explicit transaction. Confirm acceptable under load; ensure long-running/streaming endpoints aren't harmed.
+- **Mechanism is decided** (FR-3): `set_config` on connection open via `TenantGucConnectionInterceptor` + non-`BYPASSRLS` app role. Leak-proof under pooling because the GUC is re-stamped on every open. The rejected alternative — a bare session-level `SET` issued from application code, with no re-stamp on checkout — is a prod data-leak hazard and a source of order-dependent flaky tests; do not use it.
+- ~~Ambient transaction cost~~ — **no longer applicable:** the ambient per-request transaction was retired (see FR-3), so reads do not run inside an explicit transaction and long-running/streaming endpoints are unaffected.
 - Background jobs / seeding run without a tenant → must use the privileged (bypass) connection explicitly.
 - Scope decision: implement across ALL tenant-scoped tables (recommended) vs. high-sensitivity tables first (payroll, PII) — confirm before build.
 
@@ -59,7 +60,7 @@ Tenant isolation today is **single-layer**: EF Core global query filters (reads)
 
 ## 9. Implementation Plan (codebase-grounded, 2026-06-15)
 
-Mechanism is fixed (FR-3/FR-4): **`SET LOCAL` + ambient per-request transaction + non-`BYPASSRLS` app role + separate privileged connection**. Below maps it onto the actual code.
+Mechanism is fixed (FR-3/FR-4): **`set_config` on connection open (`TenantGucConnectionInterceptor`) + non-`BYPASSRLS` app role + separate privileged connection**. Below maps it onto the actual code. (This section was written 2026-06-15 against the then-planned ambient-transaction design; FR-3 above records why that was retired.)
 
 ### 9.1 Table set (what gets RLS)
 - **Include:** every tenant-scoped entity — i.e. every entity with a `TenantId` query filter in `AppDbContext.OnModelCreating` (~40 tables: `user_tenants`, `roles`, `refresh_tokens`, all CHR/LV/ATT/REC tables, `audit_logs`, etc.). Maintain ONE authoritative list (derive from the model: tables whose CLR type has a `TenantId` property) so it can't drift.

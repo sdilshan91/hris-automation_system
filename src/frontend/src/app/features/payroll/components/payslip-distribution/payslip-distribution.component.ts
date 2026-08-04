@@ -97,6 +97,9 @@ import { TrappedDialogDirective } from '../../../../shared/directives';
             [style.background-color]="'var(--brand-primary)'"
             [disabled]="!canSend() || sending()"
             [attr.aria-disabled]="!canSend() || sending()"
+            [attr.aria-describedby]="
+              !canSend() && !sending() ? 'send-payslips-disabled-reason' : null
+            "
             (click)="openConfirm()"
           >
             @if (sending()) {
@@ -108,9 +111,13 @@ import { TrappedDialogDirective } from '../../../../shared/directives';
           </button>
         </div>
 
-        <!-- Why the action is disabled (AC-1 preconditions) -->
+        <!-- Why the action is disabled (AC-1 preconditions).
+             ENH-024: linked to the button via aria-describedby, so a screen-reader user tabbing to the dimmed
+             button hears WHY it is dimmed, not just that it is. The id is referenced only while this hint is
+             actually rendered — the same !canSend() && !sending() condition — so the button never points at
+             a missing element. -->
         @if (!canSend() && !sending()) {
-          <p class="mt-3 text-xs text-amber-600">
+          <p id="send-payslips-disabled-reason" class="mt-3 text-xs text-amber-600">
             @if (runStatus() !== 'Finalized') {
               Payslip emails can be sent once this payroll run is finalized.
             } @else if (!hasGeneratedPdfs()) {
