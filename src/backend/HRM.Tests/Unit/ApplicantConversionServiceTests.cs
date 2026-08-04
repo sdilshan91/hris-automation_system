@@ -11,16 +11,19 @@
 // precondition logic (FR-1 Hired + accepted offer; FR-10/BR-2 duplicate).
 // ============================================================================
 
+using System.Text.Json;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
+using HRM.Application.Features.Onboarding.DTOs;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using NSubstitute;
@@ -47,6 +50,7 @@ public sealed class ApplicantConversionServiceTests
         _tenantContext = Substitute.For<ITenantContext>();
         _tenantContext.TenantId.Returns(_tenantId);
         _tenantContext.IsResolved.Returns(true);
+        _tenantContext.Subdomain.Returns("acme"); // FR-9 builds the set-password link from this.
 
         _currentUser = Substitute.For<ICurrentUser>();
         _currentUser.UserId.Returns(_userId);
@@ -63,7 +67,10 @@ public sealed class ApplicantConversionServiceTests
 
     // D1: the salary-assignment spy is returned so arms can assert the offer's structure actually reached it.
     private (ApplicantConversionService svc, IEmployeeService employees, ISalaryAssignmentService salary) CreateService(
-        AppDbContext db, Guid? createdEmployeeId = null)
+        AppDbContext db, Guid? createdEmployeeId = null,
+        IOnboardingChecklistService? onboarding = null,
+        INotificationDispatcher? dispatcher = null,
+        IConfiguration? configuration = null)
     {
         var employees = Substitute.For<IEmployeeService>();
         var empId = createdEmployeeId ?? Guid.NewGuid();
@@ -105,7 +112,10 @@ public sealed class ApplicantConversionServiceTests
             new LogOnlyRecruitmentNotificationService(
                 Substitute.For<ILogger<LogOnlyRecruitmentNotificationService>>()),
             salary,
-            Substitute.For<ILogger<ApplicantConversionService>>());
+            Substitute.For<ILogger<ApplicantConversionService>>(),
+            onboarding,
+            dispatcher,
+            configuration);
 
         return (svc, employees, salary);
     }
@@ -324,7 +334,8 @@ public sealed class ApplicantConversionServiceTests
         var user = await assertDb.Users.IgnoreQueryFilters()
             .SingleOrDefaultAsync(u => u.Email == "ada@acme.com");
         user.Should().NotBeNull("the toggle is on, so a login account is provisioned");
-        user!.PasswordHash.Should().BeNull("credential delivery is deferred (US-NTF-006) — passwordless account");
+        user!.PasswordHash.Should().BeNull(
+            "the provisioned account is passwordless — FR-9 delivers a set-password link, never a password");
         user.IsActive.Should().BeTrue();
 
         // An ACTIVE UserTenant membership for this tenant.
@@ -549,5 +560,339 @@ public sealed class ApplicantConversionServiceTests
         var offer = db.Offers.Single(o => o.ApplicantId == _applicantId);
         offer.SalaryStructureId = structureId;
         db.SaveChanges();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  FR-8 — onboarding checklist trigger on hire
+    // ══════════════════════════════════════════════════════════════════════
+
+    /// <summary>An onboarding service whose applicable-template list is fixed per arm.</summary>
+    private static IOnboardingChecklistService OnboardingReturning(params ApplicableTemplateDto[] templates)
+    {
+        var onboarding = Substitute.For<IOnboardingChecklistService>();
+        onboarding.GetApplicableTemplatesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Result<IReadOnlyList<ApplicableTemplateDto>>.Success(templates));
+        onboarding.AssignAsync(Arg.Any<AssignChecklistInput>(), Arg.Any<CancellationToken>())
+            .Returns(Result<OnboardingChecklistInstanceDto>.Success(new OnboardingChecklistInstanceDto()));
+        return onboarding;
+    }
+
+    [Fact]
+    public async Task Convert_AssignsTheApplicableOnboardingChecklist_ForTheNewEmployee_FR8()
+    {
+        var templateId = Guid.NewGuid();
+        var onboarding = OnboardingReturning(new ApplicableTemplateDto
+        {
+            Id = templateId,
+            TemplateName = "Engineering Onboarding",
+            IsUniversal = false,
+        });
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, empId, onboarding: onboarding);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        await onboarding.Received(1).AssignAsync(
+            Arg.Is<AssignChecklistInput>(i =>
+                i.EmployeeId == empId &&
+                i.TemplateId == templateId &&
+                // Derived from the applicant, so a retried post-commit call returns the existing checklist
+                // instead of assigning a second one.
+                i.IdempotencyKey == "hire-conversion:" + _applicantId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Convert_WithNoApplicableTemplate_AssignsNothing_AndStillSucceeds_FR8()
+    {
+        // "Trigger the onboarding workflow (IF CONFIGURED)" — a tenant that has configured no template is a
+        // normal state, not an error. The conversion must not fail and no checklist may be invented.
+        var onboarding = OnboardingReturning();
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, onboarding: onboarding);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        await onboarding.DidNotReceive().AssignAsync(
+            Arg.Any<AssignChecklistInput>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Convert_WithSeveralApplicableTemplates_PrefersTheMostSpecificOverTheUniversalOne_FR8()
+    {
+        var universalId = Guid.NewGuid();
+        var specificId = Guid.NewGuid();
+        // Deliberately ordered universal-first, and named so that a naive "first by name" pick would choose
+        // the universal one — the arm fails if specificity is not actually what decides.
+        var onboarding = OnboardingReturning(
+            new ApplicableTemplateDto { Id = universalId, TemplateName = "All New Joiners", IsUniversal = true },
+            new ApplicableTemplateDto { Id = specificId, TemplateName = "Engineering Onboarding", IsUniversal = false });
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, onboarding: onboarding);
+
+        await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        await onboarding.Received(1).AssignAsync(
+            Arg.Is<AssignChecklistInput>(i => i.TemplateId == specificId), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Convert_WithSeveralNonUniversalTemplates_PicksTheFirstByName_FR8()
+    {
+        // Pins the tie-break that OrderBy(IsUniversal) alone does not decide. The service returns templates
+        // already ordered by name and OrderBy is stable, so name order must survive — without that guarantee
+        // which of two equally-specific templates a hire gets would be arbitrary and could change silently.
+        var alpha = Guid.NewGuid();
+        var beta = Guid.NewGuid();
+        var onboarding = OnboardingReturning(
+            new ApplicableTemplateDto { Id = alpha, TemplateName = "Alpha Onboarding", IsUniversal = false },
+            new ApplicableTemplateDto { Id = beta, TemplateName = "Beta Onboarding", IsUniversal = false });
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, onboarding: onboarding);
+
+        await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        await onboarding.Received(1).AssignAsync(
+            Arg.Is<AssignChecklistInput>(i => i.TemplateId == alpha), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Convert_WhenTheChecklistAssignmentIsRejected_TheConversionStillSucceeds_FR8()
+    {
+        // AssignAsync can fail without throwing (e.g. BR-2 already has an active checklist). That branch is
+        // logged, not raised — the committed hire must survive it.
+        var onboarding = Substitute.For<IOnboardingChecklistService>();
+        onboarding.GetApplicableTemplatesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns(Result<IReadOnlyList<ApplicableTemplateDto>>.Success(new[]
+            {
+                new ApplicableTemplateDto { Id = Guid.NewGuid(), TemplateName = "Eng", IsUniversal = false },
+            }));
+        onboarding.AssignAsync(Arg.Any<AssignChecklistInput>(), Arg.Any<CancellationToken>())
+            .Returns(Result<OnboardingChecklistInstanceDto>.Failure(
+                "This employee already has an active checklist.", 409, "already_assigned"));
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, empId, onboarding: onboarding);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        await onboarding.Received(1).AssignAsync(
+            Arg.Any<AssignChecklistInput>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Convert_WhenTheOnboardingTriggerThrows_TheCommittedConversionStillSucceeds_FR8()
+    {
+        var onboarding = Substitute.For<IOnboardingChecklistService>();
+        onboarding.GetApplicableTemplatesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns<Result<IReadOnlyList<ApplicableTemplateDto>>>(_ => throw new InvalidOperationException("boom"));
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, empId, onboarding: onboarding);
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue(
+            "the employee is already committed — a post-commit side effect must never fail the conversion");
+        using var assertDb = CreateDb();
+        (await assertDb.Employees.IgnoreQueryFilters().AnyAsync(e => e.Id == empId)).Should().BeTrue();
+
+        // Without this the arm is falsely reassuring: if the onboarding seam were never invoked at all, the
+        // stub would never throw, the conversion would succeed, and the test would pass while proving nothing
+        // about the try/catch. Asserting the throwing collaborator WAS reached is what makes it a real guard.
+        await onboarding.Received(1).GetApplicableTemplatesAsync(empId, Arg.Any<CancellationToken>());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  FR-9 — welcome email
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static (INotificationDispatcher dispatcher, List<NotificationRequest> sent) CapturingDispatcher()
+    {
+        var sent = new List<NotificationRequest>();
+        var dispatcher = Substitute.For<INotificationDispatcher>();
+        dispatcher.SendEmailAsync(Arg.Do<NotificationRequest>(sent.Add), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+        return (dispatcher, sent);
+    }
+
+    private static IConfiguration BaseDomainConfig(string baseDomain = "yourhrm.com")
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Platform:BaseDomain"] = baseDomain })
+            .Build();
+
+    [Fact]
+    public async Task Convert_WithProvisionedAccount_SendsWelcomeWithLoginAndSetPasswordLink_ButNoToken_FR9()
+    {
+        EnableAutoCreateUserOnHire();
+        SeedEmployeeRole();
+        var (dispatcher, sent) = CapturingDispatcher();
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(
+            db, dispatcher: dispatcher, configuration: BaseDomainConfig("yourhrm.com"));
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        sent.Should().ContainSingle();
+        var request = sent[0];
+        request.EventKey.Should().Be("employee_welcome_credentials");
+        request.RecipientEmail.Should().Be("ada@acme.com");
+        request.TenantId.Should().Be(_tenantId);
+
+        // The in-app leg needs a user id; FR-5 linked one, so it must be carried.
+        request.RecipientUserId.Should().NotBeNull("an account was provisioned, so the in-app leg has a target");
+
+        using var payload = JsonDocument.Parse(request.PayloadJson);
+        payload.RootElement.GetProperty("login").GetProperty("email").GetString()
+            .Should().Be("ada@acme.com");
+        payload.RootElement.GetProperty("forgotPassword").GetProperty("url").GetString()
+            .Should().Be("https://acme.yourhrm.com/forgot-password");
+
+        // The whole point of the no-token decision: a reset token expires in an hour, and this email is
+        // typically read days before the start date. A token in the payload would be expired on arrival.
+        request.PayloadJson.Should().NotContainEquivalentOf("token");
+    }
+
+    [Fact]
+    public async Task Convert_WithNoBaseDomainConfigured_StillBuildsAUsableSetPasswordLink_FR9()
+    {
+        // Platform:BaseDomain is absent in some hosts. The fallback must still produce a real absolute URL —
+        // a welcome email whose only call to action is "https://acme./forgot-password" is a broken email.
+        EnableAutoCreateUserOnHire();
+        SeedEmployeeRole();
+        var (dispatcher, sent) = CapturingDispatcher();
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, dispatcher: dispatcher, configuration: null);
+
+        await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        using var payload = JsonDocument.Parse(sent.Single().PayloadJson);
+        payload.RootElement.GetProperty("forgotPassword").GetProperty("url").GetString()
+            .Should().Be("https://acme.yourhrm.com/forgot-password");
+    }
+
+    [Fact]
+    public async Task Convert_NormalisesTheLoginEmailCasing_ButEmailsTheAddressAsGiven_FR9()
+    {
+        // Logins are matched lower-cased (FR-5 stores the account that way), so the credential line must show
+        // the address the user will actually type. The delivery address itself is not case-normalised.
+        EnableAutoCreateUserOnHire();
+        SeedEmployeeRole();
+        using (var seed = CreateDb())
+        {
+            var applicant = seed.Applicants.Single(a => a.Id == _applicantId);
+            applicant.Email = "Ada@Acme.COM";
+            seed.SaveChanges();
+        }
+        var (dispatcher, sent) = CapturingDispatcher();
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, dispatcher: dispatcher, configuration: BaseDomainConfig());
+
+        await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        var request = sent.Single();
+        using var payload = JsonDocument.Parse(request.PayloadJson);
+        payload.RootElement.GetProperty("login").GetProperty("email").GetString()
+            .Should().Be("ada@acme.com", "the account is keyed on the lower-cased address");
+        request.RecipientEmail.Should().Be("Ada@Acme.COM");
+    }
+
+    [Fact]
+    public async Task Convert_WithoutAProvisionedAccount_SendsThePlainWelcome_WithNoCredentialBlock_FR9()
+    {
+        // AutoCreateUserOnHire is off by default, so FR-9's "(if user account was created)" clause does not
+        // apply — the hire is still welcomed, but a credential template would render an empty login block.
+        var (dispatcher, sent) = CapturingDispatcher();
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, dispatcher: dispatcher, configuration: BaseDomainConfig());
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        sent.Should().ContainSingle();
+        sent[0].EventKey.Should().Be("onboarding_welcome");
+        sent[0].RecipientUserId.Should().BeNull("no account was provisioned, so there is no in-app recipient");
+
+        using var payload = JsonDocument.Parse(sent[0].PayloadJson);
+        payload.RootElement.TryGetProperty("login", out _).Should().BeFalse();
+        payload.RootElement.TryGetProperty("forgotPassword", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Convert_WelcomeEmailCarriesTheEmployeeAndTenantDetailsTheTemplateRenders_FR9()
+    {
+        var (dispatcher, sent) = CapturingDispatcher();
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, dispatcher: dispatcher, configuration: BaseDomainConfig());
+
+        await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        using var payload = JsonDocument.Parse(sent.Single().PayloadJson);
+        var employee = payload.RootElement.GetProperty("employee");
+        employee.GetProperty("firstName").GetString().Should().Be("Ada");
+        // Resolved names, not raw ids — the template renders these verbatim, so ids would print as GUIDs.
+        employee.GetProperty("department").GetString().Should().Be("Engineering");
+        employee.GetProperty("jobTitle").GetString().Should().Be("Senior Backend Engineer");
+        payload.RootElement.GetProperty("manager").GetProperty("name").GetString().Should().Be("Grace Hopper");
+        payload.RootElement.GetProperty("tenant").GetProperty("companyName").GetString().Should().Be("Acme");
+    }
+
+    [Fact]
+    public async Task Convert_WhenTheWelcomeEmailThrows_TheCommittedConversionStillSucceeds_FR9()
+    {
+        var dispatcher = Substitute.For<INotificationDispatcher>();
+        dispatcher.SendEmailAsync(Arg.Any<NotificationRequest>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("smtp down"));
+
+        var empId = Guid.NewGuid();
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(db, empId, dispatcher: dispatcher, configuration: BaseDomainConfig());
+
+        var result = await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        result.IsSuccess.Should().BeTrue("a mail failure must never fail a committed conversion");
+        using var assertDb = CreateDb();
+        (await assertDb.Employees.IgnoreQueryFilters().AnyAsync(e => e.Id == empId)).Should().BeTrue();
+
+        // Same reasoning as the FR-8 arm: prove the throwing dispatcher was actually reached, so this cannot
+        // pass vacuously on a build where the welcome email is never sent at all.
+        await dispatcher.Received(1).SendEmailAsync(
+            Arg.Any<NotificationRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Convert_AFailingOnboardingTrigger_DoesNotSuppressTheWelcomeEmail_FR8_FR9()
+    {
+        // The two legs have separate try/catch blocks on purpose. A single shared catch would let the first
+        // failure silently swallow the second leg — which is exactly how a "notifications are best-effort"
+        // seam quietly stops notifying.
+        var onboarding = Substitute.For<IOnboardingChecklistService>();
+        onboarding.GetApplicableTemplatesAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+            .Returns<Result<IReadOnlyList<ApplicableTemplateDto>>>(_ => throw new InvalidOperationException("boom"));
+        var (dispatcher, sent) = CapturingDispatcher();
+
+        using var db = CreateDb();
+        var (svc, _, _) = CreateService(
+            db, onboarding: onboarding, dispatcher: dispatcher, configuration: BaseDomainConfig());
+
+        await svc.ConvertAsync(Input(_applicantId, _jobTitleId, _deptId, _managerId));
+
+        sent.Should().ContainSingle("the welcome email must still go out when the onboarding leg fails");
     }
 }

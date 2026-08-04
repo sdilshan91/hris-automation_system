@@ -1,12 +1,15 @@
+using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
+using HRM.Application.Features.Onboarding.DTOs;
 using HRM.Application.Features.Recruitment.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Services;
@@ -32,10 +35,14 @@ namespace HRM.Infrastructure.Services;
 /// An existing global User with the same email is REUSED (no duplicate account). Credential DELIVERY (welcome
 /// email) is deferred to US-NTF-006 — the account is created passwordless.
 ///
+/// FR-8 onboarding trigger + FR-9 welcome email: IMPLEMENTED (both deferral rationales expired — the Onboarding
+/// module and a real notification dispatcher now exist). Both run AFTER the transaction commits, in the
+/// never-fatal <see cref="PostConversionNotificationsSafeAsync"/> seam: the employee is already durable, so a
+/// delivery or checklist failure must not fail a committed conversion. FR-8 also CANNOT run inside the
+/// transaction — <c>OnboardingChecklistService.AssignAsync</c> owns its own SaveChanges, its idempotency-race
+/// recovery and its post-commit Hangfire enqueue.
+///
 /// DEFERRALS (Phase 1):
-///  - FR-8 onboarding workflow trigger: there is no Onboarding module yet — DEFERRED (log-only seam below).
-///  - FR-9 welcome email: log-only seam (real email + the Hangfire NFR-5 async queue are deferred, same as
-///    the rest of recruitment).
 ///  - Postgres RLS (NFR-2): tenant isolation is the EF query filter + TenantInterceptor (US-PLT-002 defers RLS).
 /// </summary>
 public sealed class ApplicantConversionService : IApplicantConversionService
@@ -47,7 +54,12 @@ public sealed class ApplicantConversionService : IApplicantConversionService
     private readonly IRecruitmentNotificationService _notifications;
     private readonly ISalaryAssignmentService _salaryAssignment;
     private readonly ILogger<ApplicantConversionService> _logger;
+    private readonly IOnboardingChecklistService? _onboarding;
+    private readonly INotificationDispatcher? _dispatcher;
+    private readonly IConfiguration? _configuration;
 
+    // FR-8/FR-9 dependencies are trailing + nullable so the several test fixtures that construct this service
+    // positionally keep compiling (the same technique AuthService uses). DI resolves all three normally.
     public ApplicantConversionService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
@@ -55,7 +67,10 @@ public sealed class ApplicantConversionService : IApplicantConversionService
         IEmployeeService employeeService,
         IRecruitmentNotificationService notifications,
         ISalaryAssignmentService salaryAssignment,
-        ILogger<ApplicantConversionService> logger)
+        ILogger<ApplicantConversionService> logger,
+        IOnboardingChecklistService? onboarding = null,
+        INotificationDispatcher? dispatcher = null,
+        IConfiguration? configuration = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -64,6 +79,9 @@ public sealed class ApplicantConversionService : IApplicantConversionService
         _notifications = notifications;
         _salaryAssignment = salaryAssignment;
         _logger = logger;
+        _onboarding = onboarding;
+        _dispatcher = dispatcher;
+        _configuration = configuration;
     }
 
     // ── Pre-fill (AC-1/FR-2) ───────────────────────────────────────────
@@ -302,8 +320,10 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                     applicant.Id, employeeId, employee.EmployeeNo, applicant.VacancyId, filledCount, headcount,
                     vacancyClosed, _tenantContext.TenantId, _currentUser.Email);
 
-                // FR-7/BR-5 + FR-8/FR-9: log-only seams (no real email/onboarding module yet — deferred).
-                await PostConversionNotificationsSafeAsync(applicant, employeeId, vacancyClosed, cancellationToken);
+                // FR-7/BR-5 recruiter notify + FR-8 onboarding checklist + FR-9 welcome email. Post-commit and
+                // never fatal — the conversion is already durable.
+                await PostConversionNotificationsSafeAsync(
+                    applicant, employee, vacancyClosed, userAccountCreated, cancellationToken);
 
                 return Result<ConversionResultDto>.Success(new ConversionResultDto
                 {
@@ -455,30 +475,203 @@ public sealed class ApplicantConversionService : IApplicantConversionService
     }
 
     /// <summary>
-    /// FR-7/BR-5 recruiter notification (vacancy auto-closed) + FR-8 onboarding trigger + FR-9 welcome email.
-    /// All log-only seams (real delivery + the Onboarding module are deferred). Never fails the committed
-    /// conversion (mirrors the other recruitment notification handling).
+    /// Post-commit side effects: FR-7/BR-5 recruiter notification (vacancy auto-closed), FR-8 onboarding
+    /// checklist assignment, and the FR-9 welcome email. Runs AFTER the transaction commits and never throws —
+    /// the employee record is already durable, so none of these may fail a committed conversion.
+    ///
+    /// <para>Each leg has its OWN try/catch on purpose: a tenant with a broken onboarding template must still
+    /// get its welcome email, and vice versa. One shared catch would let the first failure silently swallow the
+    /// remaining legs.</para>
     /// </summary>
     private async Task PostConversionNotificationsSafeAsync(
-        Applicant applicant, Guid employeeId, bool vacancyClosed, CancellationToken cancellationToken)
+        Applicant applicant, Employee employee, bool vacancyClosed, bool userAccountCreated,
+        CancellationToken cancellationToken)
     {
         try
         {
             await _notifications.NotifyStageChangedAsync(
                 applicant.Id, applicant.VacancyId, applicant.Email,
                 ApplicantStage.Hired.ToString(), "Converted", cancellationToken);
-
-            _logger.LogInformation(
-                "Conversion seams (log-only). EmployeeId={EmployeeId}, ApplicantId={ApplicantId}, " +
-                "VacancyClosed={VacancyClosed}: FR-9 welcome email DEFERRED (no email platform); " +
-                "FR-8 onboarding trigger DEFERRED (no onboarding module); recruiter notify on auto-close DEFERRED.",
-                employeeId, applicant.Id, vacancyClosed);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
-                "Post-conversion notification failed (non-fatal). ApplicantId={ApplicantId}, TenantId={TenantId}",
-                applicant.Id, _tenantContext.TenantId);
+                "Post-conversion recruiter notification failed (non-fatal). ApplicantId={ApplicantId}, " +
+                "VacancyClosed={VacancyClosed}, TenantId={TenantId}",
+                applicant.Id, vacancyClosed, _tenantContext.TenantId);
+        }
+
+        await TriggerOnboardingSafeAsync(applicant, employee, cancellationToken);
+        await SendWelcomeEmailSafeAsync(applicant, employee, userAccountCreated, cancellationToken);
+    }
+
+    /// <summary>
+    /// FR-8: trigger the onboarding workflow "if configured" for the new employee — i.e. assign the onboarding
+    /// checklist template that applies to their department/job title.
+    ///
+    /// <para><b>"If configured" is load-bearing:</b> a tenant with no applicable template is a normal state, not
+    /// an error, so zero templates is a silent no-op. When several apply, the most SPECIFIC one wins (a template
+    /// targeted at a department/job title beats a universal one), tie-broken by the name ordering the service
+    /// already returns — the service deliberately does not choose for us.</para>
+    ///
+    /// <para>The idempotency key is derived from the applicant, so a retried or duplicated call returns the
+    /// existing checklist instead of assigning a second one.</para>
+    /// </summary>
+    private async Task TriggerOnboardingSafeAsync(
+        Applicant applicant, Employee employee, CancellationToken cancellationToken)
+    {
+        if (_onboarding is null)
+            return;
+
+        try
+        {
+            var applicable = await _onboarding.GetApplicableTemplatesAsync(employee.Id, cancellationToken);
+            if (applicable.IsFailure || applicable.Value is not { Count: > 0 } templates)
+            {
+                _logger.LogInformation(
+                    "FR-8: no onboarding template applies to employee {EmployeeId} — nothing assigned. " +
+                    "TenantId={TenantId}",
+                    employee.Id, _tenantContext.TenantId);
+                return;
+            }
+
+            // Most specific first; the service already ordered by name, and OrderBy is stable, so the name
+            // ordering survives as the tie-break.
+            var template = templates.OrderBy(t => t.IsUniversal).First();
+
+            var result = await _onboarding.AssignAsync(new AssignChecklistInput(
+                EmployeeId: employee.Id,
+                TemplateId: template.Id,
+                OverrideStartDate: null, // derived from Employee.DateOfJoining, clamped to today.
+                Mode: ChecklistAssignmentMode.Replace,
+                AdditionalTasks: Array.Empty<AdHocTaskInput>(),
+                IdempotencyKey: $"hire-conversion:{applicant.Id}"), cancellationToken);
+
+            if (result.IsFailure)
+            {
+                _logger.LogWarning(
+                    "FR-8: onboarding checklist assignment failed (non-fatal). EmployeeId={EmployeeId}, " +
+                    "TemplateId={TemplateId}, Error={Error}, TenantId={TenantId}",
+                    employee.Id, template.Id, result.Error, _tenantContext.TenantId);
+                return;
+            }
+
+            _logger.LogInformation(
+                "FR-8: onboarding checklist assigned on hire. EmployeeId={EmployeeId}, TemplateId={TemplateId}, " +
+                "TemplateName={TemplateName}, TenantId={TenantId}",
+                employee.Id, template.Id, template.TemplateName, _tenantContext.TenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "FR-8: onboarding trigger failed (non-fatal). EmployeeId={EmployeeId}, ApplicantId={ApplicantId}, " +
+                "TenantId={TenantId}",
+                employee.Id, applicant.Id, _tenantContext.TenantId);
+        }
+    }
+
+    /// <summary>
+    /// FR-9: welcome the new employee, "with login credentials (if user account was created) and onboarding
+    /// instructions".
+    ///
+    /// <para>The account FR-5 provisions is PASSWORDLESS, so the credentials are the login address plus a
+    /// self-service link to set the first password. There is deliberately NO one-time token: the platform
+    /// already took that decision for the tenant-owner welcome, and a password-reset token lives one hour while
+    /// this email is typically sent days before the start date. The link works because FR-5 created an ACTIVE
+    /// membership, which is exactly what forgot-password requires.</para>
+    ///
+    /// <para>When no account was created the credential-bearing event would render an empty credential block, so
+    /// the plain onboarding-welcome event is sent instead.</para>
+    /// </summary>
+    private async Task SendWelcomeEmailSafeAsync(
+        Applicant applicant, Employee employee, bool userAccountCreated, CancellationToken cancellationToken)
+    {
+        if (_dispatcher is null)
+            return;
+
+        try
+        {
+            var tenantName = await _dbContext.Tenants
+                .AsNoTracking()
+                .Where(t => t.Id == _tenantContext.TenantId)
+                .Select(t => t.Name)
+                .FirstOrDefaultAsync(cancellationToken) ?? _tenantContext.Subdomain;
+
+            var departmentName = employee.DepartmentId is { } did
+                ? await _dbContext.Departments.AsNoTracking()
+                    .Where(d => d.Id == did).Select(d => d.Name).FirstOrDefaultAsync(cancellationToken)
+                : null;
+
+            var jobTitleName = employee.JobTitleId is { } jid
+                ? await _dbContext.JobTitles.AsNoTracking()
+                    .Where(j => j.Id == jid).Select(j => j.TitleName).FirstOrDefaultAsync(cancellationToken)
+                : null;
+
+            var managerName = employee.ReportsToEmployeeId is { } mid
+                ? (await _dbContext.Employees.AsNoTracking()
+                    .Where(e => e.Id == mid).Select(e => e.FirstName + " " + e.LastName)
+                    .FirstOrDefaultAsync(cancellationToken))?.Trim()
+                : null;
+
+            var payload = new Dictionary<string, object?>
+            {
+                ["employee"] = new Dictionary<string, object?>
+                {
+                    ["firstName"] = employee.FirstName,
+                    ["lastName"] = employee.LastName,
+                    ["email"] = applicant.Email,
+                    ["startDate"] = employee.DateOfJoining.ToString("yyyy-MM-dd"),
+                    ["jobTitle"] = jobTitleName,
+                    ["department"] = departmentName,
+                },
+                ["manager"] = new Dictionary<string, object?> { ["name"] = managerName },
+                ["tenant"] = new Dictionary<string, object?>
+                {
+                    ["name"] = tenantName,
+                    ["companyName"] = tenantName,
+                },
+            };
+
+            string eventKey;
+            if (userAccountCreated)
+            {
+                var baseDomain = (_configuration?["Platform:BaseDomain"] ?? "yourhrm.com").Trim().TrimStart('.');
+                var loginEmail = applicant.Email.Trim().ToLowerInvariant();
+                payload["login"] = new Dictionary<string, object?> { ["email"] = loginEmail };
+                payload["forgotPassword"] = new Dictionary<string, object?>
+                {
+                    ["url"] = $"https://{_tenantContext.Subdomain}.{baseDomain}/forgot-password",
+                };
+                eventKey = "employee_welcome_credentials";
+            }
+            else
+            {
+                eventKey = "onboarding_welcome";
+            }
+
+            // RecipientUserId drives the in-app leg and is only set when FR-5 linked an account; RecipientEmail
+            // is always supplied so the email reaches a hire who has no User row.
+            var request = new NotificationRequest(
+                TenantId: _tenantContext.TenantId,
+                EventKey: eventKey,
+                PayloadJson: JsonSerializer.Serialize(payload),
+                RecipientUserId: employee.UserId,
+                RecipientEmail: applicant.Email,
+                NotificationType: "recruitment.hire.welcome");
+
+            await _dispatcher.SendEmailAsync(request, cancellationToken);
+
+            _logger.LogInformation(
+                "FR-9: welcome email dispatched on hire. EmployeeId={EmployeeId}, EventKey={EventKey}, " +
+                "UserAccountCreated={UserAccountCreated}, TenantId={TenantId}",
+                employee.Id, eventKey, userAccountCreated, _tenantContext.TenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "FR-9: welcome email failed (non-fatal). EmployeeId={EmployeeId}, ApplicantId={ApplicantId}, " +
+                "TenantId={TenantId}",
+                employee.Id, applicant.Id, _tenantContext.TenantId);
         }
     }
 }

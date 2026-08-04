@@ -706,6 +706,54 @@ public sealed class LeaveReportServiceTests
         eng.Value.Should().Be(40m); // 80 / 200
     }
 
+    [Fact]
+    public async Task UtilizationByDepartment_MergesDepartmentsDifferingOnlyInCase_ISSUE194()
+    {
+        // ISSUE-194: a second department row named "engineering" (lower-case) used to produce its OWN bar
+        // beside "Engineering". That is worse than a cosmetic duplicate label: each bar's percentage was
+        // computed over only a FRACTION of the real entitlement, so BOTH numbers were wrong.
+        var lowerCaseEngDeptId = Guid.NewGuid();
+        var empDave = Guid.NewGuid();
+        using (var db = CreateDbContext())
+        {
+            db.Departments.Add(new Department
+            {
+                Id = lowerCaseEngDeptId, TenantId = _tenantId, Name = "engineering", Code = "ENG2",
+            });
+            db.Employees.Add(Emp(empDave, "Dave", "EMP-0004", lowerCaseEngDeptId));
+            db.SaveChanges();
+        }
+
+        // Engineering: Alice + Bob, 100 each. engineering: Dave, 100. Total entitlement 300.
+        StubEntitlement(_empAlice, _annualLeaveTypeId, 100m);
+        StubEntitlement(_empBob, _annualLeaveTypeId, 100m);
+        StubEntitlement(empDave, _annualLeaveTypeId, 100m);
+        StubEntitlement(_empCarol, _annualLeaveTypeId, 0m);
+        StubEntitlement(_empAlice, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empBob, _sickLeaveTypeId, 0m);
+        StubEntitlement(empDave, _sickLeaveTypeId, 0m);
+        StubEntitlement(_empCarol, _sickLeaveTypeId, 0m);
+
+        // 80 used in "Engineering" + 20 used in "engineering" = 100 of 300.
+        AddRequest(_empAlice, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 3, 1), totalDays: 80m);
+        AddRequest(empDave, _annualLeaveTypeId, LeaveRequestStatus.Approved,
+            new DateOnly(Year, 3, 1), totalDays: 20m);
+
+        var result = await CreateService().GetAnalyticsAsync(
+            LeaveAnalyticsChartType.UtilizationByDepartment,
+            Params(from: new DateOnly(Year, 1, 1), to: new DateOnly(Year, 12, 31)));
+
+        var chart = result.Value!;
+        var engBars = chart.Points
+            .Where(p => string.Equals(p.Label, "engineering", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        engBars.Should().ContainSingle("the two casings are one department to a reader, so they are one bar");
+        // 100 / 300 — the honest figure. The pre-fix split reported 40% and 20%, neither of which is right.
+        engBars[0].Value.Should().Be(33.33m);
+    }
+
     // ══════════════════════════════════════════════════════════════
     //  FR-2: filters
     // ══════════════════════════════════════════════════════════════

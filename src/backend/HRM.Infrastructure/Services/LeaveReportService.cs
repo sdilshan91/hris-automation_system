@@ -705,8 +705,17 @@ public sealed class LeaveReportService : ILeaveReportService
         var agg = await ComputeUtilizationAggregatesAsync(qp, scope, ct);
 
         // Roll per (department, leaveType) up to per-department utilization for the bar/pie chart.
+        // ⚠ This grouping MUST stay on the materialised list. `StringComparer.OrdinalIgnoreCase` is a
+        // LINQ-to-Objects concept — pushed into an IQueryable it either fails to translate or is silently
+        // dropped under Postgres's default (case-sensitive) collation, and ISSUE-194 comes back while an
+        // InMemory test still passes. `ComputeUtilizationAggregatesAsync` returns a List for this reason.
+        // ISSUE-194: group case-INSENSITIVELY. A case-sensitive group split "Engineering" from "engineering"
+        // into two bars whose utilization percentages were each computed over a fraction of the real
+        // entitlement — so the chart showed a near-duplicate label AND two wrong percentages. The label keeps
+        // the casing of the first row in each group. This is the last case-sensitive department grouping; the
+        // HR/org/performance reports already group by DepartmentId.
         var points = agg
-            .GroupBy(a => a.DepartmentName)
+            .GroupBy(a => a.DepartmentName, StringComparer.OrdinalIgnoreCase)
             .Select(g =>
             {
                 decimal ent = g.Sum(x => x.Entitlement);

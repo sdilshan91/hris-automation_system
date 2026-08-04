@@ -178,6 +178,35 @@ describe('PayslipDistributionComponent', () => {
       expect(text).toContain('Generate payslip PDFs');
     });
 
+    // ENH-024: the button already exposed disabled + aria-disabled, but a screen-reader user heard no
+    // REASON. These arms pin the programmatic association, not just the presence of the hint text.
+    it('points the disabled Send button at the reason hint via aria-describedby (ENH-024)', () => {
+      setup('Finalized', { generation: notGenerated });
+
+      const button = fixture.debugElement.query(
+        By.css('button[aria-describedby]'),
+      ).nativeElement as HTMLButtonElement;
+      const describedBy = button.getAttribute('aria-describedby')!;
+
+      // The referenced element must actually exist, and carry the reason the button is dimmed —
+      // a dangling aria-describedby is worse than none.
+      const hint = (fixture.nativeElement as HTMLElement).querySelector(`#${describedBy}`);
+      expect(hint).not.toBeNull();
+      expect(hint!.textContent).toContain('Generate payslip PDFs');
+    });
+
+    it('drops aria-describedby when Send is enabled and no hint is rendered (ENH-024)', () => {
+      setup('Finalized');
+
+      expect(component.canSend()).toBeTrue();
+      const button = fixture.debugElement.query(
+        By.css('button[aria-describedby]'),
+      );
+      expect(button)
+        .withContext('no hint is rendered, so the button must not reference a missing element')
+        .toBeNull();
+    });
+
     it('leaves Send disabled when PDF readiness lookup errors', () => {
       email = jasmine.createSpyObj<PayslipEmailService>('PayslipEmailService', [
         'sendPayslips',
