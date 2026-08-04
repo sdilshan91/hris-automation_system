@@ -166,8 +166,19 @@
     LGTM (three products where one would do). **NON-NEGOTIABLE on this hot path: fail-open by construction and
     OFF the synchronous DB path, inheriting exactly what the call-counter already does — a meter must never be
     able to take the API down. Needs a throwing-meter arm proving a request still succeeds.** No data ⇒ null.
-  - **TC-ADM-002-14 / -15 / -16 — NOT BUILT. No implementation exists for any of them.** The above removes the
-    blockers; it does not write the code.
+  - **✅ TC-ADM-002-14 / -15 / -16 BUILT 2026-08-04 — P4 COMPLETE. No metrics store was needed.**
+    **-15 + top-errors of -16** via `IGlitchTipMetricsClient` (fail-soft; `tenant_id` tag filter, verified to
+    discriminate). **P95, latency trend and the error-RATE denominator** via option A: `ApiCallCounterMiddleware`
+    now measures each request and folds it into a fixed-bucket hourly histogram (`tenant_latency_bucket`,
+    5..10000 ms + overflow), flushed and pruned at 30 days by the existing background flusher. `AggregateErrorRatePercent`
+    = GlitchTip's 24h error count ÷ that request total. **Zero new infrastructure.**
+    **Rules pinned + mutation-verified:** empty window ⇒ null, never 0 (a 0 P95 renders as a perfectly fast
+    service) · overflow reports the last finite bound as a FLOOR rather than inventing a ceiling · the meter is
+    fail-open and off the synchronous DB path · drain is read-and-zero so nothing double-flushes · lossless
+    under concurrency (it feeds the error-rate denominator, so lost counts would inflate the rate).
+    **★ A P95 boundary I got wrong first and pinned once corrected:** with EXACTLY 5% slow, P95 sits at the FAST
+    bound — 95% of observations fall at or below it. A tail only moves P95 once it exceeds 5%. Both cases are
+    now arms.
     `AggregateErrorRatePercent` and `P95LatencyMs` are null pending a metrics store. Before standing up Grafana LGTM,
     validate whether error-rate and top-errors can be read from the **GlitchTip API** (already shipped, already
     tenant-tagged by `TenantTagSentryEventProcessor`) — that may remove the need entirely. P95 latency would still

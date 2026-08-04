@@ -17,6 +17,9 @@ namespace HRM.Api.HostedServices;
 /// logged, never fatal. On ungraceful shutdown the un-flushed buffer is lost — an accepted trade for a usage
 /// meter (see <see cref="IApiCallCounter"/>). Gate: <c>ApiCallCounter:Enabled</c> (default true).</para>
 /// </summary>
+/// <summary>Days of hourly latency history retained (TC-ADM-002-16 needs 24h; 30 gives headroom).</summary>
+public sealed partial class ApiCallCounterFlushServiceConstants { public const int Days = 30; }
+
 public sealed class ApiCallCounterFlushService : BackgroundService
 {
     private readonly IApiCallCounter _counter;
@@ -77,6 +80,16 @@ public sealed class ApiCallCounterFlushService : BackgroundService
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             await TenantApiCallUsage.UpsertAsync(db, deltas, DateTime.UtcNow, cancellationToken);
+
+            // TC-ADM-002-14/-16: same flush, same failure contract — the latency histogram rides along rather
+            // than adding a second timer and a second connection.
+            var latencyDeltas = _counter.DrainLatency();
+            if (latencyDeltas.Count > 0)
+                await TenantLatencyUsage.UpsertAsync(db, latencyDeltas, DateTime.UtcNow, cancellationToken);
+
+            // Retention: the trend needs 24h; 30 days is ~720 rows/tenant/bucket and gives headroom for a wider
+            // window later. Pruned here rather than in a separate job so retention cannot silently stop running.
+            await TenantLatencyUsage.PruneAsync(db, DateTime.UtcNow.AddDays(-ApiCallCounterFlushServiceConstants.Days), cancellationToken);
         }
         catch (Exception ex)
         {

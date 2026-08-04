@@ -122,15 +122,28 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         // rate needs a request-total denominator, which arrives with the option-A latency meter. Reported here
         // rather than left null because an absolute error count is already actionable, and inventing a
         // denominator would be worse than reporting the number we actually have.
-        // Collected and logged now so the wiring is proven end-to-end; NOT surfaced as a rate until a
-        // denominator exists (see the AggregateErrorRatePercent note below).
+        // TC-ADM-002-14: error RATE = GlitchTip's 24h error count / the request total from our own latency
+        // histogram. Both halves must exist — an error count without a denominator is not a rate, and a
+        // denominator of zero means no traffic, not a healthy 0%. Null in either case: "not available".
+        var healthNow = DateTime.UtcNow;
+        var healthSince = healthNow.AddHours(-24);
+        double? errorRatePercent = null;
         if (_glitchTip is { IsConfigured: true })
         {
-            var now = DateTime.UtcNow;
-            var trend = await _glitchTip.GetErrorTrendAsync(null, now.AddHours(-24), now, cancellationToken);
-            if (trend.Count > 0)
-                _logger.LogDebug("[Monitoring] GlitchTip 24h error count = {Count}", trend.Sum(p => p.Count));
+            var trend = await _glitchTip.GetErrorTrendAsync(null, healthSince, healthNow, cancellationToken);
+            var requests = await TenantLatencyUsage.RequestTotalAsync(_db, null, healthSince, cancellationToken);
+            if (trend.Count > 0 && requests > 0)
+                errorRatePercent = Math.Round((double)trend.Sum(p => p.Count) / requests * 100d, 3);
         }
+
+        // Platform-wide P95 across all tenants' histograms.
+        var platformP95 = TenantLatencyUsage.P95From(
+            (await _db.TenantLatencyBuckets.IgnoreQueryFilters()
+                .Where(b => b.HourUtc >= healthSince)
+                .GroupBy(b => b.BucketIndex)
+                .Select(g => new { Index = g.Key, Count = g.Sum(x => x.Count) })
+                .ToListAsync(cancellationToken))
+            .ToDictionary(r => r.Index, r => r.Count));
 
         var dto = new PlatformHealthDto(
             OverallStatus: overall,
@@ -145,8 +158,8 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             // meter lands. Putting a count in a field named "...Percent" would render as a percentage in the
             // UI and be read as one — a mislabelled number is worse than an absent one. The count IS collected
             // (see errorCount24h) and is ready to divide the moment the denominator exists.
-            AggregateErrorRatePercent: null,
-            P95LatencyMs: null,                                    // STILL DEFERRED — GlitchTip exposes no duration API
+            AggregateErrorRatePercent: errorRatePercent,
+            P95LatencyMs: platformP95,
             MetricsStatus: MonitoringStatus.RequiresObservabilityPipeline,
             GeneratedAtUtc: DateTime.UtcNow);
 
@@ -331,6 +344,17 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         var topErrors = _glitchTip is null
             ? Array.Empty<object>()
             : (await _glitchTip.GetTopErrorsAsync(tenantId, 10, cancellationToken)).Cast<object>().ToArray();
+
+        // TC-ADM-002-14/-16: latency from the per-tenant hourly histogram the request meter now records.
+        // P95 is null (not 0) when the window holds no requests — zero would render as a perfectly fast
+        // service, which is the same fabrication the SLA-uptime field refuses to make.
+        var since24h = nowUtc.AddHours(-24);
+        var p95 = await TenantLatencyUsage.P95Async(_db, tenantId, since24h, cancellationToken);
+        // TC-ADM-002-16: P95 PER HOUR — an actual latency trend. Request volume rides along so a reader can
+        // see when a percentile is drawn from too few samples to mean anything.
+        var latencyTrend = (await TenantLatencyUsage.HourlyLatencyAsync(_db, tenantId, since24h, cancellationToken))
+            .Select(x => (object)new { hourUtc = x.HourUtc, p95Ms = x.P95Ms, requests = x.Requests })
+            .ToArray();
         var emailGauge = BuildEmailGauge(
             emailsSent, (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
         var apiGauge = BuildApiCallsGauge(
@@ -372,7 +396,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             // TC-ADM-002-16: top errors come from GlitchTip, filtered by the tenant_id tag (verified to
             // DISCRIMINATE, not merely return 200). Empty = unavailable, NOT "zero errors".
             ErrorRateTrend24h: Array.Empty<object>(),              // per-tenant trend unavailable — see note in the client
-            LatencyTrend24h: Array.Empty<object>(),                // STILL DEFERRED — GlitchTip has no duration API
+            LatencyTrend24h: latencyTrend,                         // TC-ADM-002-16 — hourly request volume
             TopErrors: topErrors,
             SlaUptimePercent: slaUptimePercent,                    // TC-ADM-002-17 — null until probes exist
             MetricsStatus: MonitoringStatus.RequiresObservabilityPipeline,
