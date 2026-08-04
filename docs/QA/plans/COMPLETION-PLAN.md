@@ -310,9 +310,21 @@ user, and it is small — one endpoint that verifies the token, creates the `Use
 the row to `Accepted`, then hands off to the **existing** `reset-password` rail. Do **not** build a second
 password-setting rail. Sequenced after Wave 2 only because Wave 2 is already in flight on its own branch.
 
-### Wave 3 — payroll concurrency (ONE session; shared file)
+### Wave 3 — ✅ payroll concurrency DONE 2026-08-04 (ONE branch; shared file, as planned)
 `DF-61-conc-retry` + `DF-61-conc-approval-race` (after D-d) + `DF-61-conc-slip` together.
-`DF-65-pg-encash` separately (different file — leave-encashment real-PG arm).
+`DF-65-pg-encash` still outstanding — separate branch (different file, leave-encashment real-PG arm).
+
+**Outcome.** Two fixed, one closed-as-accepted:
+- **`DF-61-conc-approval-race`** — both guard sites now share ONE `GuardNonReprocessableStatus` helper, because
+  the *duplication* of the guard was the defect. `AwaitingApproval` + `Approved` refuse with distinct 409 codes;
+  **`Rejected` deliberately stays re-runnable** (narrower than the ledger row proposed — HR corrects and
+  re-submits a rejected run, and blocking that would break the correction loop).
+- **`DF-61-conc-slip`** — a real-slip arm replacing the degenerate zero-employee proof. Mutation-verified against
+  the actual failure mode: disabling the contended no-op fails it with *"expected 1, but found 2"*.
+- **`DF-61-conc-retry`** — **accepted, not fixed** (your call). The hardening would make the entire payroll
+  compute a retriable unit; that is a bigger money-path risk than a degradation that provably cannot lose money
+  and is already backstopped by the marker + reconcile sweep. Reasoning and reopen-criteria recorded on
+  `TryAcquireAsync` so it is not re-litigated from the shape of the code.
 
 ### Wave 4 — features
 - **[[ISSUE-359]]** file encryption at rest — **decided and fully specified** (platform ring + per-tenant purpose strings; tolerate-legacy + sweep + visible count). Constraints already recorded: `IFieldProtector` is byte[]-oriented so files need STREAMING crypto; an envelope header (version + key-id) is required; the key ring must NEVER be pruned. Largest remaining engineering item.
