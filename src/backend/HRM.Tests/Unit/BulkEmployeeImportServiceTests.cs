@@ -10,6 +10,7 @@
 // ============================================================================
 
 using System.Globalization;
+using Microsoft.AspNetCore.DataProtection;
 using System.Text;
 using ClosedXML.Excel;
 using FluentAssertions;
@@ -63,7 +64,9 @@ public sealed class BulkEmployeeImportServiceTests : IDisposable
             _currentUser,
             Substitute.For<ILogger<CustomFieldService>>());
         return new BulkEmployeeImportService(
-            dbContext, context, _currentUser, _logger, dispatcher: null, customFieldService: customFields);
+            dbContext, context, _currentUser, _logger,
+            DataProtectionProvider.Create(nameof(BulkEmployeeImportServiceTests)),
+            dispatcher: null, customFieldService: customFields);
     }
 
     /// <summary>Seeds one active employee custom field for this tenant (US-CHR-010 FR-11).</summary>
@@ -682,7 +685,9 @@ public sealed class BulkEmployeeImportServiceTests : IDisposable
         );
 
         var dbCtxA = TestDbContextFactory.Create(ctxA, _dbName);
-        var serviceA = new BulkEmployeeImportService(dbCtxA, ctxA, _currentUser, _logger);
+        var serviceA = new BulkEmployeeImportService(
+            dbCtxA, ctxA, _currentUser, _logger,
+            DataProtectionProvider.Create(nameof(BulkEmployeeImportServiceTests)));
         var result = await serviceA.ImportAsync(CreateCsvStream(csv), "test.csv", csv.Length, false);
 
         result.IsSuccess.Should().BeTrue();

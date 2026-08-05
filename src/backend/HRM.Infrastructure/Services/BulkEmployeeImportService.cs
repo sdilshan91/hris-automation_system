@@ -5,6 +5,8 @@ using ClosedXML.Excel;
 using CsvHelper;
 using CsvHelper.Configuration;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Common.Security;
+using Microsoft.AspNetCore.DataProtection;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
 using HRM.Application.Features.Employees.Queries;
@@ -28,6 +30,7 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<BulkEmployeeImportService> _logger;
+    private readonly IDataProtectionProvider _protectionProvider;
     private readonly INotificationDispatcher? _dispatcher;
 
     /// <summary>Max file size: 25 MB (BR-7).</summary>
@@ -149,9 +152,13 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         ILogger<BulkEmployeeImportService> logger,
+        IDataProtectionProvider protectionProvider,
         INotificationDispatcher? dispatcher = null,
         ICustomFieldService? customFieldService = null)
     {
+        // REQUIRED, not optional: an optional provider would mean a missing wire silently falls back to
+        // writing whole-workforce PII in plaintext — the exact failure ISSUE-359 exists to prevent.
+        _protectionProvider = protectionProvider;
         _customFieldService = customFieldService;
         _dbContext = dbContext;
         _tenantContext = tenantContext;
@@ -328,7 +335,7 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
 
             var ext = Path.GetExtension(job.FileName)?.ToLowerInvariant();
             List<BulkImportRowDto> rows;
-            await using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            await using (var fs = await OpenImportFileAsync(filePath, job.TenantId, cancellationToken))
             {
                 rows = ext == ".csv" ? ParseCsvRows(fs) : ParseExcelRows(fs);
             }
@@ -1141,9 +1148,15 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         if (fileStream.CanSeek)
             fileStream.Position = 0;
 
-        await using (var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+        // ISSUE-359: the queued file is a whole-workforce PII spreadsheet sitting on disk until the background
+        // job picks it up. Sealed with the same envelope as the other storage seams.
+        using (var buffer = new MemoryStream())
         {
-            await fileStream.CopyToAsync(fs, cancellationToken);
+            await fileStream.CopyToAsync(buffer, cancellationToken);
+            var sealedBytes = FileEnvelope.Wrap(
+                _protectionProvider.CreateProtector(ImportFilePurposeFor(job.TenantId))
+                    .Protect(buffer.ToArray()));
+            await File.WriteAllBytesAsync(filePath, sealedBytes, cancellationToken);
         }
 
         _logger.LogInformation(
@@ -1353,6 +1366,43 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
             return currentSeq + 1;
 
         return 1;
+    }
+
+    /// <summary>
+    /// Per-tenant key purpose for queued import files (ISSUE-359). Distinct from the uploads
+    /// (<c>file:</c>) and report-export (<c>report-export:</c>) purposes: separate storage surfaces must not
+    /// share a derived key.
+    /// </summary>
+    private static string ImportFilePurposeFor(Guid tenantId) => $"bulk-import:{tenantId}";
+
+    /// <summary>
+    /// Opens a queued import file, decrypting it when sealed.
+    ///
+    /// <para><b>Legacy plaintext is tolerated deliberately.</b> A job queued by the old build and processed by
+    /// the new one would otherwise fail on deploy — the file was written before encryption existed. Unlike the
+    /// uploads tree there is no long tail here: these files are deleted once the job completes, so the
+    /// tolerance drains on its own within one job's lifetime rather than needing a back-fill sweep.</para>
+    /// </summary>
+    private async Task<Stream> OpenImportFileAsync(
+        string filePath, Guid tenantId, CancellationToken cancellationToken)
+    {
+        var stored = await File.ReadAllBytesAsync(filePath, cancellationToken);
+
+        if (!FileEnvelope.IsEncrypted(stored))
+            return new MemoryStream(stored, writable: false);
+
+        var version = FileEnvelope.VersionOf(stored);
+        if (version != FileEnvelope.Version1)
+        {
+            throw new InvalidOperationException(
+                $"Queued import file uses an unsupported encryption envelope version ({version}).");
+        }
+
+        var plaintext = _protectionProvider
+            .CreateProtector(ImportFilePurposeFor(tenantId))
+            .Unprotect(FileEnvelope.Unwrap(stored));
+
+        return new MemoryStream(plaintext, writable: false);
     }
 
     private static string GetImportFilePath(Guid jobId)
