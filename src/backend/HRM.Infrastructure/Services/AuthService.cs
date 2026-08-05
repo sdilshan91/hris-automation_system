@@ -53,6 +53,23 @@ public sealed class AuthService : IAuthService
     // unit construction still compiles; DI injects the registered cache in production.
     private readonly IPermissionCache? _permissionCache;
 
+    /// <summary>ISSUE-203: BCrypt cost, resolved once per scope. See <see cref="PasswordHashingOptions"/>.</summary>
+    private readonly int _passwordWorkFactor;
+    private readonly bool _rehashPasswordOnLogin;
+
+    /// <summary>
+    /// Reads the cost factor out of a BCrypt hash (<c>$2a$12$…</c>), or null when the string is not one.
+    /// Used only to decide whether a re-hash is needed — never to make a security decision.
+    /// </summary>
+    private static int? WorkFactorOf(string? hash)
+    {
+        if (string.IsNullOrEmpty(hash))
+            return null;
+
+        var parts = hash.Split('$', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2 && int.TryParse(parts[1], out var factor) ? factor : null;
+    }
+
     public AuthService(
         AppDbContext dbContext,
         IJwtService jwtService,
@@ -73,6 +90,10 @@ public sealed class AuthService : IAuthService
         _tenantContext = tenantContext;
         _totpService = totpService;
         _configuration = configuration;
+        _passwordWorkFactor = configuration.GetValue(
+            $"{PasswordHashingOptions.SectionName}:WorkFactor", PasswordHashingOptions.DefaultWorkFactor);
+        _rehashPasswordOnLogin = configuration.GetValue(
+            $"{PasswordHashingOptions.SectionName}:RehashOnLogin", true);
         _cache = cache;
         _logger = logger;
         _backgroundJobClient = backgroundJobClient;
@@ -168,7 +189,27 @@ public sealed class AuthService : IAuthService
             return Result<LoginResponse>.Failure("Invalid email or password.", 401);
         }
 
-        if (!BCrypt.Net.BCrypt.Verify(password, user.PasswordHash))
+        // ISSUE-203: migrate the stored cost factor on the way past. Changing the configured factor otherwise
+        // only affects NEW passwords, so every existing user keeps paying the old cost forever and the SLA
+        // never moves — the setting would look broken. This is the one moment the plaintext is legitimately in
+        // hand, and it costs one extra hash on a user's FIRST login after a change, never afterwards.
+        // Verified ONCE and reused. Calling Verify again for the re-hash check would double the very CPU cost
+        // this change exists to reduce — the whole finding is that one cost-12 verify (~607 ms measured on 8
+        // cores) is what caps login throughput.
+        var passwordMatches = BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
+
+        if (passwordMatches
+            && _rehashPasswordOnLogin
+            && WorkFactorOf(user.PasswordHash) is int storedWorkFactor
+            && storedWorkFactor != _passwordWorkFactor)
+        {
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password, workFactor: _passwordWorkFactor);
+            _logger.LogInformation(
+                "Re-hashed password for user {UserId} from work factor {Old} to {New}",
+                user.Id, storedWorkFactor, _passwordWorkFactor);
+        }
+
+        if (!passwordMatches)
         {
             // BUG-045: run the whole failed-attempt handling as one atomic, retriable unit under a per-user
             // row lock (see RunFailedAttemptAsync), so concurrent wrong-password logins cannot lose counter
@@ -1065,7 +1106,7 @@ public sealed class AuthService : IAuthService
 
         // Hash and set new password (BR-2: a password change/reset clears lockout state).
         var previousHash = user.PasswordHash;
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: 12);
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, workFactor: _passwordWorkFactor);
         user.PasswordChangedAt = DateTime.UtcNow;
         user.FailedLoginCount = 0;
         user.LockedUntil = null;

@@ -758,7 +758,7 @@ public sealed class ApplicantConversionServiceTests
         payload.RootElement.GetProperty("login").GetProperty("email").GetString()
             .Should().Be("ada@acme.com");
         payload.RootElement.GetProperty("forgotPassword").GetProperty("url").GetString()
-            .Should().Be("https://acme.yourhrm.com/forgot-password");
+            .Should().Be("https://acme.yourhrm.com/auth/forgot-password");
 
         // The whole point of the no-token decision: a reset token expires in an hour, and this email is
         // typically read days before the start date. A token in the payload would be expired on arrival.
@@ -769,7 +769,9 @@ public sealed class ApplicantConversionServiceTests
     public async Task Convert_WithNoBaseDomainConfigured_StillBuildsAUsableSetPasswordLink_FR9()
     {
         // Platform:BaseDomain is absent in some hosts. The fallback must still produce a real absolute URL —
-        // a welcome email whose only call to action is "https://acme./forgot-password" is a broken email.
+        // a welcome email whose only call to action is "https://acme./auth/forgot-password" is a broken email.
+        // NOTE: these two assertions previously pinned the ROOT-level /forgot-password path, which matches no
+        // Angular route (it is nested under `auth`) — so they locked a dead link in place while passing.
         EnableAutoCreateUserOnHire();
         SeedEmployeeRole();
         var (dispatcher, sent) = CapturingDispatcher();
@@ -781,7 +783,7 @@ public sealed class ApplicantConversionServiceTests
 
         using var payload = JsonDocument.Parse(sent.Single().PayloadJson);
         payload.RootElement.GetProperty("forgotPassword").GetProperty("url").GetString()
-            .Should().Be("https://acme.yourhrm.com/forgot-password");
+            .Should().Be("https://acme.yourhrm.com/auth/forgot-password");
     }
 
     [Fact]

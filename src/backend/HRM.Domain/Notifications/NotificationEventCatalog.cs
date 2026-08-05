@@ -481,7 +481,7 @@ public static class NotificationEventCatalog
                 ["login"] = new Dictionary<string, object?> { ["email"] = "alex.newcomer@example.com" },
                 ["forgotPassword"] = new Dictionary<string, object?>
                 {
-                    ["url"] = "https://acme.yourhrm.com/forgot-password",
+                    ["url"] = "https://acme.yourhrm.com/auth/forgot-password",
                 },
                 ["tenant"] = SampleTenant(),
             },
@@ -609,7 +609,7 @@ public static class NotificationEventCatalog
                 ["payslip"] = new Dictionary<string, object?>
                 {
                     ["month"] = "May", ["year"] = 2026, ["periodLabel"] = "May 2026",
-                    ["url"] = "https://app.example.com/payslips/123",
+                    ["url"] = "https://app.example.com/my-payslips",
                 },
                 ["tenant"] = SampleTenant(),
             },
@@ -2548,7 +2548,7 @@ public static class NotificationEventCatalog
         ["subdomain"] = "acme",
         ["forgotPassword"] = new Dictionary<string, object?>
         {
-            ["url"] = "https://acme.example.com/forgot-password",
+            ["url"] = "https://acme.example.com/auth/forgot-password",
         },
         ["tenant"] = MergeTenant(new Dictionary<string, object?> { ["name"] = "Acme Corporation" }),
     };
