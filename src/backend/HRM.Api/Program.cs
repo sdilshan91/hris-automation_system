@@ -595,6 +595,11 @@ try
     // BUG-003: reject a request whose JWT tenant differs from the tenant resolved from the host/subdomain
     // (the spoofable X-Tenant-Subdomain dev header / subdomain). After auth (needs ICurrentUser), before
     // any tenant-scoped controller work. Does not touch resolution; a matching token+subdomain passes.
+    // Wave 5 / RLS prep: confine /api/v1/system/* to the admin (system) context. Placed alongside the
+    // BUG-003 tenant guard — both are post-auth cross-tenant boundaries. Under RLS a system endpoint reached
+    // on a tenant host routes to the tenant role, where its cross-tenant queries silently return zero rows.
+    app.UseMiddleware<SystemEndpointHostGuardMiddleware>();
+
     app.UseMiddleware<TenantAccessGuardMiddleware>();
 
     // US-ADM-003 (AC-3/NFR-2): session-based revocation + expiry for impersonation tokens. After auth (needs the

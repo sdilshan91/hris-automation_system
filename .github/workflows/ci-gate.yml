@@ -15,7 +15,11 @@ name: CI Gate
 
 on:
   pull_request:
-    branches: [main]
+    # `main` is stale; the de-facto trunk is `test/local-subdomains`. Triggering only on `main` meant this
+    # gate had not run on a merged PR since 2026-07-01 — including every PR that added the RLS Testcontainers
+    # suites the pre-flip checklist depends on. CI that never fires is worse than no CI: it reports a green
+    # checkbox nobody earned.
+    branches: [main, test/local-subdomains]
   workflow_dispatch:
 
 # Cancel superseded runs on the same PR to save minutes.

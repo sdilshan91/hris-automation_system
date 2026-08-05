@@ -21,8 +21,40 @@ namespace HRM.Infrastructure;
 /// </summary>
 public static class DependencyInjection
 {
+    /// <summary>
+    /// Fail-fast on the HALF-FLIP: <c>Rls:Enabled=true</c> while <c>ConnectionStrings:PrivilegedConnection</c>
+    /// is still blank.
+    ///
+    /// <para>In that state <see cref="ConnectionRoutingInterceptor"/> is inert (it returns early on a blank
+    /// privileged string), so EVERYTHING — migrations, the RLS reconciler's own <c>ALTER TABLE … FORCE ROW
+    /// LEVEL SECURITY</c>, Hangfire's schema bootstrap — runs as the unprivileged runtime role. The result is a
+    /// half-configured database: some statements permission-denied, others applied. The two settings are a
+    /// single decision expressed as two keys, and nothing else in the pipeline notices when they disagree.</para>
+    ///
+    /// <para>Refusing to start is deliberately harsher than degrading to RLS-off. A silent downgrade would mean
+    /// an operator who believes they flipped tenant isolation ON is running with it OFF — the one outcome worse
+    /// than an outage, because nobody investigates a service that came up clean.</para>
+    /// </summary>
+    private static void GuardRlsConfiguration(IConfiguration configuration)
+    {
+        if (!configuration.GetValue("Rls:Enabled", false))
+            return;
+
+        if (string.IsNullOrWhiteSpace(configuration.GetConnectionString("PrivilegedConnection")))
+        {
+            throw new InvalidOperationException(
+                "Rls:Enabled=true requires ConnectionStrings:PrivilegedConnection to be set (the hrm_owner "
+                + "role). With it blank, connection routing is inert, so migrations, the RLS reconciler and "
+                + "Hangfire's schema bootstrap would all run as the unprivileged runtime role. Set the "
+                + "privileged connection string, or set Rls:Enabled=false. See "
+                + "HRM.Infrastructure/Persistence/Rls/README.md.");
+        }
+    }
+
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
+        GuardRlsConfiguration(configuration);
+
         // P3-4: field-at-rest encryptor (AES-256-GCM key ring). Singleton — stateless/thread-safe, so the EF value
         // converters on Pip notes / Recommendation compensation can safely close over the one instance. Fail-fast:
         // its constructor throws if no usable Encryption:ActiveKeyId + base64 32-byte Encryption:Keys key is

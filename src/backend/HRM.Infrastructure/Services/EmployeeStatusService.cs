@@ -1,4 +1,5 @@
 using System.Text.Json;
+using HRM.Infrastructure.Multitenancy;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
@@ -537,6 +538,12 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
 
         user.IsActive = false;
         user.UpdatedAt = DateTime.UtcNow;
+
+        // RLS: User.IsActive is cleared GLOBALLY (users carries no tenant_id), so revoking only the ambient
+        // tenant's tokens would leave a terminated employee holding a live session in their other workspaces
+        // until it expired naturally. The scope covers the SaveChangesAsync too — a tenant-scoped connection
+        // would run the revocation UPDATE against zero rows.
+        using var crossTenantRevoke = CrossTenantScope.Enter();
 
         // Revoke all active refresh tokens for this user
         var activeTokens = await _dbContext.RefreshTokens
