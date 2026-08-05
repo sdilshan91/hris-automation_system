@@ -101,8 +101,40 @@ production value before flipping. *(Confidence the current config is safe: 80% �
    FROM information_schema.role_table_grants WHERE grantee = 'hrm_app' GROUP BY 1;
    ```
 5. Maintenance window. Set `Rls:Enabled=true` and restart.
-6. **Watch the startup log for `RLS reconciler: ENABLED + FORCED … on 137 table(s)`.**
-   **If the count is not 137, abort and roll back.** The `hrm_owner bypasses RLS` warning is expected.
+6. **Watch the startup log for `RLS reconciler: ENABLED + FORCED … on N table(s)`.**
+   Do **not** compare `N` against a memorised number — it changes every time a tenant-scoped table is added
+   (it was 120 at the 2026-07-11 validation, 135 in the current dev database, 137 once the two Wave 4
+   recruitment tables migrate). Compare it against the schema instead. **The check that matters is that this
+   returns ZERO rows** — any tenant-scoped table missing its policy is a table RLS will not protect:
+
+   ```sql
+   SELECT c.table_name
+   FROM information_schema.columns c
+   JOIN information_schema.tables t
+     ON t.table_name = c.table_name AND t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+   WHERE c.table_schema = 'public'
+     AND c.column_name = 'tenant_id'
+     AND c.table_name NOT IN ('users', 'tenants')   -- deliberate global carve-outs
+     AND NOT EXISTS (
+       SELECT 1 FROM pg_policies p
+       WHERE p.schemaname = 'public' AND p.tablename = c.table_name
+         AND p.policyname = 'tenant_isolation');
+   ```
+
+   Then confirm enabled = forced = policied:
+
+   ```sql
+   SELECT
+     (SELECT count(*) FROM pg_class WHERE relnamespace='public'::regnamespace AND relrowsecurity)      AS enabled,
+     (SELECT count(*) FROM pg_class WHERE relnamespace='public'::regnamespace AND relforcerowsecurity) AS forced,
+     (SELECT count(*) FROM pg_policies WHERE schemaname='public' AND policyname='tenant_isolation')    AS policies;
+   ```
+
+   All three must be equal. **If they differ, or the first query returns any row, abort and roll back.**
+   The `hrm_owner bypasses RLS` warning is expected (ISSUE-279).
+
+   > Verified against the running dev database on 2026-08-05: `135 / 135 / 135`, zero unpoliced tenant
+   > tables. The two Wave 4 recruitment tables had not yet migrated into that container.
 7. Smoke, in this order — the middle four are the flows that were broken and are the point of this PR:
    login → dashboard read → **tenant switch** → **my-tenants (switcher lists ALL workspaces)** →
    a write → **password reset, then confirm sessions in the user's OTHER workspace are dead** →
