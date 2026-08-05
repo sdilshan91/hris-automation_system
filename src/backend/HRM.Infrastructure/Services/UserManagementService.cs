@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using HRM.Infrastructure.Multitenancy;
 using System.Text;
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
@@ -597,6 +598,13 @@ public sealed class UserManagementService : IUserManagementService
 
         // Deliberate cross-tenant write: the password is global. Revoke ALL of the user's refresh tokens
         // across ALL tenants, scoped strictly by UserId.
+        //
+        // RLS: this comment describes an intent the query alone stops delivering once RLS is on. This runs on
+        // a tenant subdomain, so the ambient is a resolved tenant and the read returns only that tenant's
+        // tokens — an admin "force password reset" would leave the user signed in everywhere else. The scope
+        // must also cover the SaveChangesAsync, or the revocation UPDATE matches nothing.
+        using var crossTenantRevoke = CrossTenantScope.Enter();
+
         var now = DateTime.UtcNow;
         var allTokens = await _db.RefreshTokens
             .IgnoreQueryFilters()

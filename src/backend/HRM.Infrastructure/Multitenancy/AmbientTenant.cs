@@ -44,4 +44,12 @@ public static class AmbientTenant
 
     /// <summary>Clears the ambient for the current async flow (back to the unresolved fallback).</summary>
     public static void Clear() => _current.Value = null;
+
+    /// <summary>
+    /// Restores a previously-captured ambient. Exists so a block of genuinely cross-tenant work can enter
+    /// system context and then put back exactly what it displaced — see <see cref="CrossTenantScope"/>.
+    /// <c>SetSystem</c> alone would leave the rest of the request running as system, which under RLS means
+    /// silently privileged.
+    /// </summary>
+    public static void Restore(AmbientTenantInfo? previous) => _current.Value = previous;
 }

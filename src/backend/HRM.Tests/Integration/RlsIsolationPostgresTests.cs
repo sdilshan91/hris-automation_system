@@ -26,6 +26,14 @@ using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Hangfire;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Distributed;
+using HRM.Infrastructure.Services;
+using HRM.Infrastructure.Persistence.Interceptors;
+using HRM.Infrastructure.Multitenancy;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -527,6 +535,286 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
         await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 11. CrossTenantScope — the fix for the fail-open → fail-closed inversion (Wave 5 flip prep).
+    //
+    // The EF filter is FAIL-OPEN (`!IsResolved || TenantId == current`), so `IgnoreQueryFilters()` has always
+    // been enough to reach across tenants. RLS is FAIL-CLOSED: the same call returns ZERO ROWS. Five auth
+    // flows depend on genuinely cross-tenant reads/writes — tenant switching, listing a user's workspaces, and
+    // three "revoke this user's sessions everywhere" paths — and each of them silently stops working, looking
+    // exactly like "no such record". `CrossTenantScope.Enter()` re-routes to the BYPASSRLS role for the block.
+    //
+    // These arms drive the REAL interceptors (routing + GUC) rather than hand-built connections, because the
+    // scope's entire mechanism IS those interceptors reading AmbientTenant.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Production-shaped context: both interceptors, RLS on, default⇒hrm_app, privileged⇒hrm_owner.</summary>
+    private AppDbContext RoutedDb(ITenantContext tc)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Rls:Enabled"] = "true",
+                ["ConnectionStrings:DefaultConnection"] = _appConnString,
+                ["ConnectionStrings:PrivilegedConnection"] = _ownerConnString,
+            })
+            .Build();
+
+        return new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>()
+                .UseNpgsql(_appConnString, n => n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+                .UseSnakeCaseNamingConvention()
+                .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning))
+                .AddInterceptors(
+                    new ConnectionRoutingInterceptor(config),
+                    new TenantGucConnectionInterceptor(config))
+                .Options,
+            tc);
+    }
+
+    [Fact]
+    public async Task WithoutCrossTenantScope_ACrossTenantReadIsSilentlyEmpty_WaveFivePrep()
+    {
+        // This is the bug, reproduced: the exact shape of SwitchTenantAsync's membership lookup — read another
+        // tenant's row while the ambient is this tenant. No error, no exception; just nothing.
+        AmbientTenant.SetTenant(_tenantA);
+        try
+        {
+            await using var db = RoutedDb(new MutableTenantContext { TenantId = _tenantA });
+
+            var otherTenantsRows = await db.Employees
+                .IgnoreQueryFilters()
+                .CountAsync(e => e.TenantId == _tenantB);
+
+            otherTenantsRows.Should().Be(0,
+                "RLS is fail-closed, so IgnoreQueryFilters() reaches nothing — which is why every "
+                + "cross-tenant auth flow breaks silently the moment the flag flips");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    [Fact]
+    public async Task WithCrossTenantScope_TheSameReadSeesTheOtherTenant_WaveFivePrep()
+    {
+        AmbientTenant.SetTenant(_tenantA);
+        try
+        {
+            await using var db = RoutedDb(new MutableTenantContext { TenantId = _tenantA });
+
+            int seen;
+            using (CrossTenantScope.Enter())
+            {
+                seen = await db.Employees
+                    .IgnoreQueryFilters()
+                    .CountAsync(e => e.TenantId == _tenantB);
+            }
+
+            seen.Should().Be(EmployeesB,
+                "inside the scope the connection routes to the BYPASSRLS role, so a legitimately "
+                + "cross-tenant read works again");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    [Fact]
+    public async Task CrossTenantScope_RESTORES_isolation_afterwards_WaveFivePrep()
+    {
+        // THE arm. A scope that entered system context and never restored would leave the rest of the request
+        // running privileged — tenant isolation silently off for everything downstream. That is a far worse
+        // bug than the one the scope fixes, and it would not show up in any of the flows above.
+        AmbientTenant.SetTenant(_tenantA);
+        try
+        {
+            await using var db = RoutedDb(new MutableTenantContext { TenantId = _tenantA });
+
+            using (CrossTenantScope.Enter())
+            {
+                (await db.Employees.IgnoreQueryFilters().CountAsync(e => e.TenantId == _tenantB))
+                    .Should().Be(EmployeesB);
+            }
+
+            AmbientTenant.Current.Should().NotBeNull();
+            AmbientTenant.Current!.Value.IsSystemContext.Should().BeFalse(
+                "the ambient must be exactly what it was before the scope");
+            AmbientTenant.Current!.Value.TenantId.Should().Be(_tenantA);
+
+            (await db.Employees.IgnoreQueryFilters().CountAsync(e => e.TenantId == _tenantB))
+                .Should().Be(0, "isolation must be back in force the moment the scope is disposed");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    [Fact]
+    public async Task CrossTenantScope_restores_even_when_the_block_THROWS_WaveFivePrep()
+    {
+        // Auth flows throw (a denied switch, a failed save). If an exception escaped the scope without
+        // restoring, the request would continue privileged — so the leak would happen precisely on the error
+        // paths nobody exercises.
+        AmbientTenant.SetTenant(_tenantA);
+        try
+        {
+            await using var db = RoutedDb(new MutableTenantContext { TenantId = _tenantA });
+
+            // Deliberately INLINE, not via an `async () => …` lambda handed to Should().ThrowAsync().
+            // AmbientTenant is AsyncLocal: a value set inside a nested async flow never propagates back to the
+            // caller, so the lambda form would report "restored" no matter what Dispose did — it passed under a
+            // mutation that removed the restore entirely. The leak is only observable in the same async context
+            // that entered the scope.
+            var threw = false;
+            try
+            {
+                using (CrossTenantScope.Enter())
+                {
+                    await db.Employees.IgnoreQueryFilters().CountAsync(e => e.TenantId == _tenantB);
+                    throw new InvalidOperationException("boom");
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                threw = true;
+            }
+
+            threw.Should().BeTrue("the arm is worthless if the exception never happened");
+            AmbientTenant.Current!.Value.IsSystemContext.Should().BeFalse();
+            (await db.Employees.IgnoreQueryFilters().CountAsync(e => e.TenantId == _tenantB))
+                .Should().Be(0, "an exception must not strand the request in privileged context");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    [Fact]
+    public async Task CrossTenantScope_allows_a_write_that_the_strict_WITH_CHECK_would_reject_WaveFivePrep()
+    {
+        // SwitchTenantAsync inserts a RefreshToken carrying the TARGET tenant's id. On hrm_app that violates
+        // the strict WITH CHECK (42501) — a 500 rather than a graceful failure. Employees stands in for the
+        // same shape: a row stamped for a tenant other than the ambient one.
+        AmbientTenant.SetTenant(_tenantA);
+        try
+        {
+            await using var db = RoutedDb(new MutableTenantContext { TenantId = _tenantA });
+            var departmentId = Guid.NewGuid();
+
+            using (CrossTenantScope.Enter())
+            {
+                db.Departments.Add(new Department
+                {
+                    Id = departmentId,
+                    TenantId = _tenantB,
+                    Name = "Cross-tenant write " + Guid.NewGuid().ToString("N")[..8],
+                    Code = "X" + Guid.NewGuid().ToString("N")[..6],
+                    IsActive = true,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            // Assert on the row that was actually written. An earlier version of this arm counted EMPLOYEES to
+            // "prove" a DEPARTMENT insert — true regardless of what SaveChanges did, so the only real signal
+            // was the absence of a 42501. Now the landed row is checked explicitly, read back on the owner
+            // connection so RLS cannot hide it.
+            (await RawCountAsync(_ownerConnString, _tenantB, "departments"))
+                .Should().BeGreaterThan(0, "the cross-tenant department write must actually land");
+
+            await using (var ownerDb = OwnerAwareDb(_ownerConnString, new MutableTenantContext { TenantId = _tenantB }))
+            {
+                (await ownerDb.Departments.IgnoreQueryFilters().AnyAsync(d => d.Id == departmentId))
+                    .Should().BeTrue("the exact row inserted inside the scope must exist, stamped for tenant B");
+            }
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 12. THE CALL SITES, not just the mechanism.
+    //
+    // Arms #11 prove CrossTenantScope works. They do NOT prove it is still PLUGGED IN at the five production
+    // sites it was built for — delete the `using` from GetMyTenantsAsync and every one of those arms stays
+    // green. Every unit test that exercises these methods runs on EF InMemory, which has no RLS at all, so the
+    // whole existing suite is structurally blind to a removed scope.
+    //
+    // That is the dangerous shape: invisible today (RLS off ⇒ prod and tests agree), detonating only after the
+    // flip, and looking exactly like "you are not a member of any other workspace". This arm drives the real
+    // AuthService against hrm_app with ENABLE + FORCE RLS, so removing the scope FAILS a test.
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task GetMyTenantsAsync_StillListsEVERYWorkspace_UnderRls_WaveFivePrep()
+    {
+        var userId = Guid.NewGuid();
+        await SeedUserInBothTenantsAsync(userId);
+
+        // Ambient = tenant A, exactly as a request arriving on acme.* would be.
+        AmbientTenant.SetTenant(_tenantA);
+        try
+        {
+            var tenantContext = new MutableTenantContext { TenantId = _tenantA };
+            await using var db = RoutedDb(tenantContext);
+            var auth = new AuthService(
+                db,
+                Substitute.For<IJwtService>(),
+                tenantContext,
+                Substitute.For<ITotpService>(),
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build(),
+                new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions())),
+                NullLogger<AuthService>.Instance,
+                Substitute.For<IBackgroundJobClient>());
+
+            var result = await auth.GetMyTenantsAsync(userId, _tenantA);
+
+            result.IsSuccess.Should().BeTrue();
+            result.Value!.Select(m => m.TenantId).Should().BeEquivalentTo(
+                new[] { _tenantA, _tenantB },
+                "the workspace switcher must list BOTH memberships. Without CrossTenantScope this returns only "
+                + "tenant A — and that truncated list is then cached, so one request poisons the switcher for "
+                + "every later one.");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    /// <summary>Seeds one user holding an ACTIVE membership in both tenants, written on the owner connection.</summary>
+    private async Task SeedUserInBothTenantsAsync(Guid userId)
+    {
+        await using var db = OwnerAwareDb(_ownerConnString, new MutableTenantContext { TenantId = _tenantA });
+
+        db.Users.Add(new User
+        {
+            Id = userId,
+            Email = $"switcher-{userId:N}@acme.test",
+            DisplayName = "Workspace Switcher",
+            PasswordHash = "x",
+            IsActive = true,
+        });
+
+        foreach (var tenantId in new[] { _tenantA, _tenantB })
+        {
+            db.UserTenants.Add(new UserTenant
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                TenantId = tenantId,
+                Status = UserTenantStatus.Active,
+            });
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private AppDbContext OwnerAwareDb(string connString, ITenantContext tc) =>

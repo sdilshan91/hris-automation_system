@@ -109,11 +109,17 @@ restart** (the reconciler `DISABLE`s enforcement; the app runs pre-RLS on whatev
 - [x] **[LOW — 3b, DONE 2026-07-11]** service-body DI-scope audit: the five wrapped per-tenant services are
       clean (use the injected scoped DbContext); the only fresh-scope hazard is the notification writers →
       folded into ISSUE-268 above.
-- [x] **[3b, RESOLVED 2026-07-11]** CI RLS coverage: NOT a gap — `ci-gate.yml`'s `backend` job runs the full
-      unfiltered `dotnet test` on `ubuntu-latest`, which executes the RLS isolation + reconciler
-      Testcontainers suites (Docker available there). A separate postgres-service-container job is NOT
-      required for coverage; the backend gate does hard-require Docker on the runner (ci-gate triggers on
-      PRs into `main` only).
+- [~] **[3b — was WRONGLY marked RESOLVED 2026-07-11; corrected 2026-08-05]** CI RLS coverage. The original
+      entry was right that `ci-gate.yml`'s `backend` job runs the full unfiltered `dotnet test` (so it would
+      execute the RLS isolation + reconciler Testcontainers suites, Docker being available on
+      `ubuntu-latest`), and right that no separate postgres-service-container job is needed. **But it
+      parenthesised the fact that killed it:** ci-gate triggered on PRs into `main` **only**, while the
+      de-facto trunk is `test/local-subdomains`. `main` is stale. So the gate had not run on a merged PR
+      since **2026-07-01** — and the RLS suites landed **2026-07-10/11**, i.e. *these suites had never run in
+      CI even once*. Citing them as pre-flip evidence was citing a green checkbox nobody earned.
+      **Fixed:** `ci-gate.yml` now triggers on `[main, test/local-subdomains]`.
+      **Still open:** this stays `[~]` and NOT `[x]` until a run on the real trunk has actually completed
+      green — the whole lesson of this item is that "the workflow exists" is not "the workflow ran".
 
 These follow-ups are tracked for **increment 3b**; 3a leaves RLS **ready, proven, and reversible** with
 `Rls:Enabled` committed **false**. **The 2026-07-11 readiness audit resolved the CI + DI-scope items and

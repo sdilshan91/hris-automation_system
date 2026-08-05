@@ -1,6 +1,7 @@
 using Hangfire;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
+using HRM.Infrastructure.Multitenancy;
 using HRM.Application.Common.Models;
 using HRM.Application.Common.Security;
 using HRM.Application.Features.Auth.DTOs;
@@ -1072,6 +1073,13 @@ public sealed class AuthService : IAuthService
         user.LockoutCount = 0;
         user.LastLockoutAt = null;
 
+        // RLS: "across all tenants" is the security property, not a convenience. Scoped to the ambient tenant
+        // a password change would revoke only the sessions in the workspace it was performed from, leaving the
+        // user's other workspaces logged in on the OLD credential — a silent regression, and the one this
+        // whole flip is supposed to prevent rather than cause. The scope covers the SaveChangesAsync below as
+        // well as the read: on the tenant-scoped connection the UPDATE would match nothing.
+        using var crossTenantRevoke = CrossTenantScope.Enter();
+
         // Revoke all refresh tokens across all tenants
         var allTokens = await _dbContext.RefreshTokens
             .IgnoreQueryFilters()
@@ -1277,6 +1285,12 @@ public sealed class AuthService : IAuthService
             return Result<IReadOnlyList<TenantMembershipDto>>.Failure("User not found.", 404);
         }
 
+        // RLS: this query is cross-tenant BY DEFINITION — it lists every workspace the user belongs to, with
+        // no tenant predicate. Scoped to the ambient tenant it would return only the workspace the user is
+        // already in, and that truncated list is then written to the shared my-tenants Redis cache, so one
+        // request would poison the switcher for every subsequent one.
+        using var crossTenantList = CrossTenantScope.Enter();
+
         var userTenants = await _dbContext.UserTenants
             .IgnoreQueryFilters()
             .AsNoTracking()
@@ -1360,6 +1374,14 @@ public sealed class AuthService : IAuthService
                 "You do not have an active membership in this organization.",
                 403);
         }
+
+        // RLS: everything from here on touches the TARGET tenant while the ambient is still the SOURCE
+        // subdomain — the membership lookup, the concurrent-session count, and the refresh-token INSERT that
+        // IssueTokensAsync performs with TenantId = target. Under RLS the reads return zero rows (every switch
+        // denied as "not a member") and the insert violates the strict WITH CHECK (42501 → a 500). The scope
+        // is entered HERE, in the caller, and deliberately not inside IssueTokensAsync — that method is shared
+        // with normal login and MFA login, where the token insert must stay tenant-isolated.
+        using var crossTenantSwitch = CrossTenantScope.Enter();
 
         // ISSUE-057 (US-AUTH-008): resolve membership BEFORE inspecting the target tenant's lifecycle status,
         // so a NON-member can never learn that tenant's state. A non-member gets the same generic membership
