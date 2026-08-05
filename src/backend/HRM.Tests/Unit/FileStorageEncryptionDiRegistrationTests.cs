@@ -84,6 +84,22 @@ public sealed class FileStorageEncryptionDiRegistrationTests
                 "disabling NEW encryption must never remove the read path that opens existing sealed files");
     }
 
+    /// <summary>
+    /// Report exports are a SEPARATE seam living outside FileStorage:BasePath, so they need their own wiring
+    /// guard — the uploads decorator being correctly wired says nothing about this one, and a payroll register
+    /// is whole-workforce salary in a single file.
+    /// </summary>
+    [Fact]
+    public void IReportExportStorage_resolves_to_the_ENCRYPTING_decorator_by_default_ISSUE359()
+    {
+        using var provider = BuildProvider();
+        using var scope = provider.CreateScope();
+
+        scope.ServiceProvider.GetRequiredService<IReportExportStorage>()
+            .Should().BeOfType<EncryptingReportExportStorage>(
+                "generated payroll registers and HR PII exports must be sealed at rest too");
+    }
+
     /// <summary>The back-fill surface the admin endpoints dispatch to must resolve from the real container.</summary>
     [Fact]
     public void The_encryption_maintenance_service_is_registered_ISSUE359()

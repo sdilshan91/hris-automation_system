@@ -228,7 +228,15 @@ public static class DependencyInjection
         services.AddScoped<ILeaveReportService, LeaveReportService>();
 
         // Report-export storage seam (US-LV-012 FR-5) — local/log-only until a real blob store exists.
-        services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
+        //
+        // ISSUE-359: wrapped so generated exports are sealed at rest. These files hold whole-workforce salary
+        // (payroll registers, bank advice) and HR PII, and they live OUTSIDE FileStorage:BasePath, so the
+        // IFileStorage decorator does not reach them. Shares the FileEncryption:Enabled switch — one flag for
+        // "are stored files encrypted", not two that can disagree.
+        services.AddScoped<IReportExportStorage>(sp => new EncryptingReportExportStorage(
+            new LocalReportExportStorage(sp.GetRequiredService<ILogger<LocalReportExportStorage>>()),
+            sp.GetRequiredService<IDataProtectionProvider>(),
+            encryptNewWrites: configuration.GetValue("FileEncryption:Enabled", true)));
 
         // US-NTF-006 Phase 6: real in-app + email delivery for attendance/overtime/regularization notifications.
         // LogOnlyAttendanceNotificationService is kept as a sibling (integration tests may register it); this Real

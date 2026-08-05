@@ -407,6 +407,30 @@ invariant (final balance == sum of amounts) rather than a hard-coded number.
   derivation the class exists to enforce) and runs a redundant DB query when `ITenantContext.FeatureFlags` is
   already populated per-request by `TenantResolutionMiddleware`.
 
+### Wave 4f — ISSUE-359 file encryption at rest ✅ DONE (PR #469 + #470, 2026-08-05)
+Uploads (`IFileStorage`) and report exports (`IReportExportStorage`) both sealed via Data-Protection
+per-tenant purpose strings + an on-disk `MAGIC|VERSION|PAYLOAD` envelope; legacy plaintext still reads, so
+no migration. Admin status + sweep endpoints back-fill the remainder.
+
+**Two defects the 16 originally-passing tests could not see**, both caught by the auditors and worth
+remembering as classes, not incidents:
+1. *(integration-enforcer, CRITICAL)* The maintenance service scoped to the **ambient** tenant id. In system
+   context `TenantId` is `Guid.Empty` while `IsResolved` stays **true**, so the platform-wide plaintext report
+   would have read **0** for every operator who ever opened it, and the sweep would have sealed every file
+   under a key derived from `Guid.Empty` — reporting success while making the estate permanently unopenable.
+   Now resolved from disk (a de-provisioned tenant's directory still holds salary/PII; the tenants table
+   would skip exactly those).
+2. *(test-authenticator, HIGH)* Every arm built the decorator by hand, so **reverting the one DI line would
+   have returned plaintext to production with zero tests failing.** DI-wiring guards added for both decorators.
+
+**Recurring pattern, now 5 instances this session: tests passing for the wrong reason.** The own-key sweep arm
+*survived* its wrong-key mutation — sealing to the wrong directory left the original file in place, and the
+decorator's legacy tolerance made the read-back succeed. Round-trip assertions are structurally blind to a
+write that lands somewhere else; only asserting on the bytes at the expected path catches it. **Fixture
+hostility, not fixture convenience.**
+
+Residual: bulk-import temp files still plaintext → `DF-359-bulk-import`.
+
 ### Wave 5 — ops flips (yours)
 RLS prod flip (largest security gain still deferred; reversible via `Rls:Enabled`) → ClamAV prod (real clamd) → GlitchTip hardening (**`ENABLE_OPEN_USER_REGISTRATION=false` is the sharp edge** on a reachable instance).
 
