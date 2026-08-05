@@ -14,6 +14,7 @@
 // ============================================================================
 
 using System.Text;
+using Microsoft.AspNetCore.DataProtection;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
@@ -51,7 +52,8 @@ public sealed class BulkImportAuditWriteTests
     }
 
     private BulkEmployeeImportService CreateService() =>
-        new(TestDbContextFactory.Create(_tenantContext, _dbName), _tenantContext, _currentUser, _logger);
+        new(TestDbContextFactory.Create(_tenantContext, _dbName), _tenantContext, _currentUser, _logger,
+            DataProtectionProvider.Create(nameof(BulkImportAuditWriteTests)));
 
     private async Task SeedTenantAndReferenceData()
     {

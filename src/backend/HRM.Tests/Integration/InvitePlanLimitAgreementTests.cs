@@ -14,6 +14,7 @@
 // ============================================================================
 
 using FluentAssertions;
+using Microsoft.AspNetCore.DataProtection;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Employees.DTOs;
@@ -164,7 +165,8 @@ public sealed class InvitePlanLimitAgreementTests
         currentUser.UserId.Returns(Guid.NewGuid());
         return new BulkEmployeeImportService(
             Db(), _tenantContext, currentUser,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<BulkEmployeeImportService>.Instance);
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<BulkEmployeeImportService>.Instance,
+            DataProtectionProvider.Create(nameof(InvitePlanLimitAgreementTests)));
     }
 
 }

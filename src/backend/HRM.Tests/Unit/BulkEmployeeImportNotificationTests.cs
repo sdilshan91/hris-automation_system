@@ -18,6 +18,7 @@
 // ============================================================================
 
 using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
@@ -52,7 +53,8 @@ public sealed class BulkEmployeeImportNotificationTests
 
     private BulkEmployeeImportService Service(INotificationDispatcher dispatcher)
         => new(TestDbContextFactory.Create(_tenantContext, _dbName), _tenantContext, _currentUser,
-            NullLogger<BulkEmployeeImportService>.Instance, dispatcher);
+            NullLogger<BulkEmployeeImportService>.Instance,
+            DataProtectionProvider.Create(nameof(BulkEmployeeImportNotificationTests)), dispatcher);
 
     private BulkImportJob CompletedJob(string? initiatedBy) => new()
     {
