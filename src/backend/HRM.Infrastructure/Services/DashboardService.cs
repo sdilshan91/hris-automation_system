@@ -235,7 +235,7 @@ public sealed class DashboardService : IDashboardService
     {
         WidgetKey = "team-leave-calendar",
         Label = "Team Leave Calendar",
-        LinkUrl = "/leave/calendar",
+        LinkUrl = "/leave/team-calendar",
     };
 
     private static DashboardWidget QuickActionsWidget() => new()
@@ -245,8 +245,8 @@ public sealed class DashboardService : IDashboardService
         Items =
         [
             new() { Label = "Review pending leave", LinkUrl = "/leave/approvals", LinkFilters = Filters(("status", "Pending")) },
-            new() { Label = "Review attendance regularizations", LinkUrl = "/attendance/approvals", LinkFilters = Filters(("status", "Pending")) },
-            new() { Label = "View team", LinkUrl = "/team" },
+            new() { Label = "Review attendance regularizations", LinkUrl = "/attendance/regularization-approvals", LinkFilters = Filters(("status", "Pending")) },
+            new() { Label = "View team", LinkUrl = null },  // no team route exists; null renders a non-clickable region
         ],
     };
 
@@ -427,7 +427,7 @@ public sealed class DashboardService : IDashboardService
             WidgetKey = "pending-leave",
             Label = "Pending Leave Requests",
             Value = count,
-            LinkUrl = "/leave/requests",
+            LinkUrl = "/leave/my-requests",
             LinkFilters = Filters(("status", "Pending")),
         };
     }
@@ -605,7 +605,7 @@ public sealed class DashboardService : IDashboardService
             WidgetKey = "onboarding-in-progress",
             Label = "Onboarding In Progress",
             Value = count,
-            LinkUrl = "/onboarding/checklists",
+            LinkUrl = "/onboarding/templates",
             LinkFilters = Filters(("status", "Active")),
         };
     }
@@ -649,7 +649,7 @@ public sealed class DashboardService : IDashboardService
             WidgetKey = "team-size",
             Label = "Team Size",
             Value = count,
-            LinkUrl = "/team",
+            LinkUrl = null, // no team route exists; a null LinkUrl renders a non-clickable region,
         };
     }
 
@@ -675,7 +675,7 @@ public sealed class DashboardService : IDashboardService
                 new() { Label = "Current phase", Value = c.CurrentPhaseName ?? "—" },
                 new() { Label = "Manager review window", Value = c.ManagerReviewOpen ? "Open" : "Closed" },
             ],
-            LinkUrl = "/performance/reviews",
+            LinkUrl = "/performance/team-reviews",
         };
     }
 
@@ -708,7 +708,7 @@ public sealed class DashboardService : IDashboardService
                     new() { Label = "Used", Value = used },
                 ],
             },
-            LinkUrl = "/leave/balance",
+            LinkUrl = "/leave/entitlements",
         };
     }
 
@@ -741,7 +741,7 @@ public sealed class DashboardService : IDashboardService
                 Max = 100,
                 Series = [new() { Label = "Present", Value = rate }],
             },
-            LinkUrl = "/attendance/me",
+            LinkUrl = null, // no attendance self-view route exists; renders as a non-clickable region,
         };
     }
 
@@ -768,7 +768,7 @@ public sealed class DashboardService : IDashboardService
                 Max = 100,
                 Series = [new() { Label = "Complete", Value = p.ProgressPercent }],
             },
-            LinkUrl = "/onboarding/me",
+            LinkUrl = "/onboarding/my-checklist",
         };
     }
 
@@ -797,7 +797,7 @@ public sealed class DashboardService : IDashboardService
                     Value = h.Date.ToString("MMM d", CultureInfo.InvariantCulture),
                 })
                 .ToList(),
-            LinkUrl = "/holidays",
+            LinkUrl = "/leave/holidays",
         };
     }
 
@@ -820,10 +820,10 @@ public sealed class DashboardService : IDashboardService
                 {
                     Label = $"{s.PayYear}-{s.PayMonth:D2}",
                     Value = s.NetSalary,
-                    LinkUrl = $"/payslips/{s.PayslipId}",
+                    LinkUrl = null, // no payslip deep-link route (my-payslips has no :id child); the widget header links to the list,
                 })
                 .ToList(),
-            LinkUrl = "/payslips",
+            LinkUrl = "/my-payslips",
         };
     }
 
@@ -844,14 +844,14 @@ public sealed class DashboardService : IDashboardService
                 {
                     Label = "Onboarding tasks to complete",
                     Value = p.PendingTasks,
-                    LinkUrl = "/onboarding/me",
+                    LinkUrl = "/onboarding/my-checklist",
                 });
                 if (p.OverdueTasks > 0)
                     items.Add(new DashboardListItem
                     {
                         Label = "Overdue onboarding tasks",
                         Value = p.OverdueTasks,
-                        LinkUrl = "/onboarding/me",
+                        LinkUrl = "/onboarding/my-checklist",
                     });
             }
         }
@@ -862,7 +862,7 @@ public sealed class DashboardService : IDashboardService
             Label = "Pending Actions",
             Value = count,
             Items = items,
-            LinkUrl = "/tasks",
+            LinkUrl = null, // no tasks route exists; a null LinkUrl renders a non-clickable region,
         };
     }
 

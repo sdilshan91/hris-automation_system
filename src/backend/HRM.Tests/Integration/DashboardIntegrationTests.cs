@@ -271,7 +271,11 @@ public sealed class DashboardIntegrationTests
             Widget(dash, "attendance-today").Value.Should().Be(92.5m);
             Widget(dash, "attendance-today").Unit.Should().Be("%");
             // AC-4 click-through.
-            Widget(dash, "pending-leave").LinkUrl.Should().Be("/leave/requests");
+            // Was "/leave/requests" — a path that matches NO Angular route, so this assertion pinned a dead
+            // click-through in place. The real route is leave/my-requests (leave-management.routes.ts).
+            // AuthEmailLinkRouteTests now sweeps every emitted link against the route table so a dead one
+            // cannot be asserted into permanence again.
+            Widget(dash, "pending-leave").LinkUrl.Should().Be("/leave/my-requests");
             Widget(dash, "pending-leave").LinkFilters!["status"].Should().Be("Pending");
         }
     }

@@ -640,7 +640,7 @@ public sealed class ApplicantConversionService : IApplicantConversionService
                 payload["login"] = new Dictionary<string, object?> { ["email"] = loginEmail };
                 payload["forgotPassword"] = new Dictionary<string, object?>
                 {
-                    ["url"] = $"https://{_tenantContext.Subdomain}.{baseDomain}/forgot-password",
+                    ["url"] = $"https://{_tenantContext.Subdomain}.{baseDomain}/auth/forgot-password",
                 };
                 eventKey = "employee_welcome_credentials";
             }

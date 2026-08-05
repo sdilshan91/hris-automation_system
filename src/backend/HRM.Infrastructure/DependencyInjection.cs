@@ -1,5 +1,6 @@
 using EFCoreSecondLevelCacheInterceptor;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Common.Security;
 using HRM.Domain.Interfaces;
 using HRM.Infrastructure.Caching;
 using HRM.Infrastructure.Identity;
@@ -35,6 +36,25 @@ public static class DependencyInjection
     /// an operator who believes they flipped tenant isolation ON is running with it OFF — the one outcome worse
     /// than an outage, because nobody investigates a service that came up clean.</para>
     /// </summary>
+    /// <summary>
+    /// ISSUE-203: refuse to start below the OWASP bcrypt floor. Lowering the cost factor is a legitimate
+    /// throughput decision; lowering it <b>too far</b> is a silent weakening of every stored password, and the
+    /// symptom of that never appears until a breach — the exact moment nobody is reading config files.
+    /// </summary>
+    private static void GuardPasswordHashingConfiguration(IConfiguration configuration)
+    {
+        var workFactor = configuration.GetValue(
+            $"{PasswordHashingOptions.SectionName}:WorkFactor", PasswordHashingOptions.DefaultWorkFactor);
+
+        if (workFactor < PasswordHashingOptions.MinimumWorkFactor)
+        {
+            throw new InvalidOperationException(
+                $"{PasswordHashingOptions.SectionName}:WorkFactor is {workFactor}, below the minimum of "
+                + $"{PasswordHashingOptions.MinimumWorkFactor} (OWASP guidance for bcrypt). Raise it, or leave "
+                + $"it unset to use the default of {PasswordHashingOptions.DefaultWorkFactor}.");
+        }
+    }
+
     private static void GuardRlsConfiguration(IConfiguration configuration)
     {
         if (!configuration.GetValue("Rls:Enabled", false))
@@ -54,6 +74,7 @@ public static class DependencyInjection
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         GuardRlsConfiguration(configuration);
+        GuardPasswordHashingConfiguration(configuration);
 
         // P3-4: field-at-rest encryptor (AES-256-GCM key ring). Singleton — stateless/thread-safe, so the EF value
         // converters on Pip notes / Recommendation compensation can safely close over the one instance. Fail-fast:

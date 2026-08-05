@@ -40,7 +40,7 @@ public sealed class RealTenantWelcomeEmailService : ITenantWelcomeEmailService
         try
         {
             var baseDomain = (_configuration["Platform:BaseDomain"] ?? "yourhrm.com").Trim().TrimStart('.');
-            var forgotPasswordUrl = $"https://{message.Subdomain}.{baseDomain}/forgot-password";
+            var forgotPasswordUrl = $"https://{message.Subdomain}.{baseDomain}/auth/forgot-password";
             var eventKey = message.IsTrial ? "tenant_welcome_trial" : "tenant_welcome_active";
 
             var payloadJson = JsonSerializer.Serialize(new Dictionary<string, object?>
