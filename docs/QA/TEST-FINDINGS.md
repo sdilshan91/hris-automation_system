@@ -4495,7 +4495,7 @@ BLOCKED: this is a UI/a11y/cross-browser TC; FE :4200 is pinned-to-platform and 
 - **ID:** ISSUE-194
 - **Type:** ISSUE (data-quality / aggregation grouping; partly seed-data driven)
 - **Severity:** LOW
-- **Status:** OPEN — **NARROWED 2026-08-03 (P1 reconciliation).** Mostly stale: the HR/org/performance aggregations now group by `DepartmentId` (a GUID), so case is irrelevant on those paths. **One residual site remains** — `LeaveReportService.cs:709` still does `.GroupBy(a => a.DepartmentName)`, which retains the original case-sensitive split. Scope is now that single call site, not the report family.
+- **Status:** ✅ **RESOLVED (PR #459, re-verified against code 2026-08-06)** — `LeaveReportService.cs:718` groups with `StringComparer.OrdinalIgnoreCase` on the MATERIALISED list; all nine other department aggregations group by `DepartmentId` (a GUID). The ledger carried this as OPEN for weeks after the fix shipped. A **real-Postgres** arm now pins it (`LeaveUtilizationDepartmentMergePostgresTests`, #475) — the prior coverage was InMemory-only, where the merge appears to work whether or not it survives translation.
 - **Layer:** BE (grouping) / DATA
 - **Module / US / TC:** Reports & Analytics / US-RPT-001 / TC-RPT-001-05 (department-distribution), TC-RPT-001-01 (headcount by dept)
 - **Title:** Headcount-by-department / department-distribution / demographics group departments by exact (case-sensitive) name, splitting "Engineering" (32) from "engineering" (1)
@@ -4872,7 +4872,7 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 - **ID:** ISSUE-203
 - **Type:** ISSUE (performance / capacity — correct behavior, but SLA-breaching under concurrency)
 - **Severity:** MEDIUM
-- **Status:** OPEN
+- **Status:** ✅ **RESOLVED (PR #474)** — **the filed diagnosis was wrong**: it claimed three BCrypt verifies per login, but those sit on mutually exclusive early-return branches (user-not-found, account-locked), so every path performs exactly ONE. There was no redundant work to remove; the single unavoidable hash was priced too high with no lever. Measured on 8 cores: **607 ms at factor 12 (~13 logins/sec), 370 ms at 11, 149 ms at 10** — which is precisely how 20 VU produce a 3.86 s p95 against an 800 ms SLA. Work factor is now configurable, default **12 → 11** (user decision), pinned in appsettings, with rehash-on-login so existing users actually migrate, and a startup refusal below the OWASP floor of 10. A source-level guard asserts login performs exactly one `Verify`: the first rehash implementation called it twice, doubling the very cost being reduced, and no behavioural test would have failed. **Margin at 11 is thin — re-run the k6 login scenario if production has fewer than 8 cores.**
 - **Layer:** BE
 - **Module / US / TC:** Authentication / US-AUTH-001 (login) / perf auth-login scenario (`perf/scripts/02-auth-login.js`)
 - **Title:** Each login verifies the password with `BCrypt.Net.BCrypt.Verify` against a **workFactor-12** hash (cost set at hash time in `DbInitializer`/`AuthService`, `workFactor: 12`). BCrypt(12) is deliberately CPU-heavy (~0.4s solo here); under concurrent logins the work serializes on available cores, so latency climbs ~linearly: **p95 3.86s, avg 1.78s, max 5.04s at 20 VU** vs the **800ms** TC SLA. 0 failures (every login returned a valid token) — purely a throughput/latency ceiling.
@@ -5761,7 +5761,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ENH-024
 - **Type:** ENH (accessibility improvement)
 - **Severity:** LOW
-- **Status:** OPEN
+- **Status:** ✅ **RESOLVED (PR #459, re-verified 2026-08-06)** — `payslip-distribution.component.ts:98-102` binds `[attr.aria-describedby]` conditionally, with the hint element rendered under the identical condition so there is no dangling IDREF. Specs at `:183` and `:198`.
 - **Layer:** FE
 - **Module / US / TC:** Payroll / US-PAY-011 / TC-PAY-011-12
 - **Title:** On the payslip distribution card, the "Send payslips" button correctly exposes `disabled` + `aria-disabled=true` (good), but its disabling-reason hint ("Generate payslip PDFs before sending them by email.") is not linked via `aria-describedby`, so an AT user tabbing to the dimmed button hears no reason. Suggested direction: wire the hint via `aria-describedby` on the button.
@@ -7712,7 +7712,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Status update:** 📋 **DECISION TAKEN 2026-07-31: report the affected population, change NOTHING.** Correcting balances downward is an employee-detriment change to be decided case-by-case by HR/Finance, not a side effect of a bug fix. Shipped a **read-only** exposure report — `GET /api/v1/tenant/leave-entitlements/accrual-over-credit-exposure?asOfDate=` (`Leave.ConfigurePolicy`) — giving credited vs should-have-accrued vs over-credited days per employee. Verified read-only (no SaveChanges / DbSet writes / IgnoreQueryFilters). Reuses the merged fix's own period maths so the figure is byte-identical to what the corrected job credits; employees already period-tagged post-fix are excluded so the report cannot double-count. **This finding stays OPEN** until the per-employee correction policy is settled — the code side is done, the business decision is not.
 - **Type:** BUG (money — over-credit reaching encashment and final settlement)
 - **Severity:** **HIGH**
-- **Status:** OPEN
+- **Status:** ⏸ **OPEN — awaiting a BUSINESS decision, not engineering work.** The accrual CODE is fixed (`ad7be7a6`, 2026-07-30): frequency is consumed, credits are per-period, with a period-granular idempotency guard and 7 real-Postgres arms. What remains is the legacy estate: rows written before that fix carry `AccrualPeriod == null` and `LeaveEntitlementService.cs:944-946` deliberately refuses to touch them, because correcting a balance downward is an employee-detriment change. **#475 added the reproduction** (12 days credited on 1 Jan vs 3 accrued by 31 Mar — 9 unearned, payable days on one employee/type/quarter; nothing had asserted this before) **and the remediation tool**: `POST .../accrual-over-credit-correction`, dry-run by default, idempotent, writing an auditable negative `Adjusted` entry rather than editing history. **It has not been run.** Next step is the exposure query against PRODUCTION (the dev DB has zero ledger rows, so it cannot be quantified locally), then a decision: correct / honour / block encashment.
 - **Layer:** BE
 - **Module / US / TC:** Leave Management / US-LV-002 (AC-K2 / FR-5) / TC-LV-002-* — found 2026-07-30 during the 2026-07-06 reconciliation sweep
 - **Title:** `LeaveType.AccrualFrequency` is settable by a tenant admin but **read by nothing in the accrual path**. `LeaveEntitlementService.ProcessSingleAccrualAsync` (`:747-798`) credits the **entire annual prorated entitlement in a single ledger entry**, and its idempotency guard (`:761-767`) is scoped to `(employee, leaveType, LeaveYear, EntryType == Accrual)`. So the first accrual run of the year credits 12/12 and every later run is skipped as "already accrued". A leave type configured **Monthly** or **Quarterly** therefore behaves exactly like Annual.
@@ -7762,7 +7762,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-358
 - **Type:** ISSUE (billable-but-inert entitlements — the ISSUE-356 class, four more instances)
 - **Severity:** LOW (narrowed from MED — 4 of the 5 flags are now enforced)
-- **Status:** OPEN — **NARROWED to `WhiteLabel` only** (decision **D3**, commit `13e77332`, merged 2026-08-03)
+- **Status:** ✅ **RESOLVED (PR #464 + #475)** — #464 gated the whole white-label surface (logo/emailLogo/favicon, not just the custom colour). #475 closed the residual: the three flags that gate NOTHING (`customDomain`, `scim`, `sandbox` — SCIM middleware matches no controller, the custom-domain branch is self-documented inert, `requestedSandbox` is hard-coded false) are no longer sellable. They are disabled **at the FormControl** and labelled with why — an `[attr.disabled]` binding is ignored by reactive forms, so a template-only treatment would have looked right in review and stayed fully clickable. Disabled rather than deleted so plans already carrying a flag are not stranded; the save path uses `getRawValue()` so nothing is wiped.
 - **Status update 2026-08-03:** D3 pre-registered real entitlement seams for three of the four inert flags, verified by grep at merge: **`Scim`** → gated at `ScimEntitlementMiddleware.cs:56` · **`CustomDomain`** → gated at `TenantResolutionMiddleware.cs:137` · **`Sandbox`** → gated at `TenantProvisioningService.cs:114`. `Sso` was already enforced (`AuthService.cs:1893`). **`WhiteLabel` remains theatre** — its only two references are `PlanFeatureFlagKeys.cs:40` (derive-set membership) and `SubscriptionPlanService.cs:375` (DTO mapping); there is still **no enforcement site**, so a platform admin unchecking "White Label" changes nothing. The tenant-side half of the original finding also stands: the backend still emits no `plan` block, so `branding-section.component.ts:245-247`'s "Upgrade your plan" badge can never fire and US-ADM-006 BR-3's *"rejected by the API"* is unimplemented for branding. Pinned by `PlanFeatureFlagKeysTests` + `ScimEntitlementMiddlewareTests`.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-006 (BR-3) / — found 2026-07-31 during the deferred-AC verification sweep
@@ -7796,7 +7796,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-294
 - **Type:** BUG (shipped feature that cannot complete its own happy path)
 - **Severity:** **HIGH**
-- **Status:** OPEN
+- **Status:** ✅ **RESOLVED (PR #460, re-verified 2026-08-06)** — `POST /api/v1/auth/accept-invitation` exists and the token is hashed, verified, expiry-checked and single-use (`AuthService.cs:832-849,942`). One mint/verify definition in `InvitationToken.cs` closes the UPPERCASE/lowercase hex trap. The emailed `acceptUrl` resolves to a real route.
 - **Layer:** BE (+ FE dead route)
 - **Module / US / TC:** Admin Console — Tenant Users / US-ADM-005 (AC-2/FR-2/NFR-3) / — found 2026-08-04 while mapping the US-REC-010 FR-9 credential-delivery seam (P5 Wave 2)
 - **Title:** `UserInvitation.TokenHash` is **written and rotated but never read for verification anywhere in the solution**. An invited user receives a real email containing a real one-time token, and there is no backend that will accept it.
@@ -7811,7 +7811,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** BUG-295
 - **Type:** BUG (shipped feature that cannot complete its own happy path)
 - **Severity:** **HIGH**
-- **Status:** OPEN
+- **Status:** ✅ **RESOLVED (PR #460 + #474)** — the filed break (reset email) was closed by #460, but the SAME defect class stayed live on three OTHER emitted links: `RealTenantWelcomeEmailService` and `ApplicantConversionService` both pointed at a root-level `/forgot-password`, which matches no Angular route (it is nested under `auth`). That is the tenant-owner welcome email — the documented ONLY route to a first password. **The recurrence guard written for THIS finding did not catch it**, because it enumerated links by hand: a TheoryData of two while the codebase emitted four. #474 rebuilt it to DISCOVER links from backend source and follow `loadChildren` into the 34 lazy-loaded route files. That sweep then found **13 dead dashboard click-throughs** in no ledger at all.
 - **Layer:** FE routing + BE link construction (the reset LOGIC is correct and well-tested — only the link is)
 - **Module / US / TC:** Authentication / US-AUTH-* (forgot/reset password) / — found 2026-08-04 while mapping the BUG-294 accept-invitation seam (P5 Wave 2b)
 - **Title:** A user who clicks "reset your password" lands on the login screen with the token silently discarded. **Two independent breaks on the same rail**, either of which alone is fatal.
