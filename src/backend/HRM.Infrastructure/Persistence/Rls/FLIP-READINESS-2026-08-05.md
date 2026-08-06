@@ -75,6 +75,10 @@ subdomain, leaving the ambient unresolved (⇒ privileged). **If the production 
 tenant-shaped subdomain, those three flip from safe to broken for every tenant except that one.** Confirm the
 production value before flipping. *(Confidence the current config is safe: 80% — read from dev config only.)*
 
+> **Wider go-live context:** this document covers the RLS flip only. The full production gate — required
+> secrets, the Data-Protection ring backup rule, ClamAV, GlitchTip, SSO and capacity checks, and the open
+> BUG-291 decision — is [`docs/DEV/PRODUCTION-CHECKLIST.md`](../../../../../docs/DEV/PRODUCTION-CHECKLIST.md).
+
 ## 5. Flip procedure
 
 **Preconditions (all must hold):**
