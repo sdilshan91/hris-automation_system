@@ -141,6 +141,70 @@ public sealed class LeaveAccrualFrequencyPostgresTests : IAsyncLifetime
         return (rows.Sum(r => r.Amount), rows.Select(r => r.AccrualPeriod ?? 0).OrderBy(p => p).ToList(), rows.Count);
     }
 
+    // ── (0) BUG-291 RESIDUAL — the legacy over-credit is permanent, by design ───────────────────────────────
+    //
+    // The accrual CODE is fixed: a Monthly type now credits one period per elapsed month. What is NOT fixed is
+    // the estate written BEFORE that fix — rows with AccrualPeriod == null, which credited the whole year on
+    // day one. LeaveEntitlementService deliberately refuses to touch them (the `existingPeriods.Any(p => p ==
+    // null)` guard), because correcting a balance downward is an employee-detriment change gated on a business
+    // decision, not an engineering one.
+    //
+    // Nothing asserted that. Nine arms cover the exposure REPORT, but none proved the underlying residual: a
+    // legacy employee stays over-credited forever, and every subsequent accrual run is a no-op. This arm pins
+    // that behaviour so it is a recorded, deliberate state rather than an assumption — and so any future
+    // correction mechanism has something to flip.
+    [Fact]
+    public async Task BUG291_LegacyFullYearAccrual_IsNeverHealed_BalanceStaysOverCredited_OnPostgres()
+    {
+        await using var db = CreateContext();
+        await db.Database.MigrateAsync();
+        var (deptId, jobId) = await SeedTenantScaffoldAsync(db);
+
+        // Joined at the start of the leave year, Monthly, 12 days/year ⇒ 1 day per elapsed month.
+        var emp = NewEmployee(_tenantId, deptId, jobId, "LEGACY-1", new DateTime(2026, 1, 1));
+        var type = NewLeaveType(_tenantId, annual: 12m, AccrualFrequency.Monthly, "Annual (Monthly)");
+        db.Employees.Add(emp);
+        db.LeaveTypes.Add(type);
+
+        // The pre-fix row: the FULL year credited at once, with no period tag.
+        db.LeaveLedgerEntries.Add(new LeaveLedger
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantId,
+            EntryType = LedgerEntryType.Accrual,
+            EmployeeId = emp.Id,
+            LeaveTypeId = type.Id,
+            LeaveYear = 2026,
+            AccrualPeriod = null,          // ← the legacy marker
+            Amount = 12m,                  // ← a whole year, on 1 January
+            BalanceAfter = 12m,
+            Description = "Annual accrual (legacy): 12 days",
+            OccurredAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+        await db.SaveChangesAsync();
+
+        // Run accrual at the end of MARCH. A correctly-accruing employee would hold 3 days by now; this one
+        // already holds 12.
+        var clock = new MutableClock(new DateTimeOffset(2026, 3, 31, 12, 0, 0, TimeSpan.Zero));
+        var service = BuildService(db, clock);
+
+        await service.ProcessAccrualsAsync(2026, type.Id);
+
+        var (sum, periods, count) = await AccrualSummaryAsync(db, emp.Id, type.Id);
+
+        count.Should().Be(1, "the run must not add period rows on top of a legacy full-year credit — that "
+            + "would compound the over-credit rather than correct it");
+        periods.Should().Equal([0], "the single row is still the untagged legacy one (0 == null in this projection)");
+        sum.Should().Be(12m,
+            "the balance is UNCHANGED and still over-credited: 12 days granted where 3 have accrued. This is "
+            + "deliberate (correcting downward is an employee-detriment change), but it is permanent until a "
+            + "business decision says otherwise — and it flows into encashment and final settlement.");
+
+        // The size of the problem, stated as an assertion so it cannot be hand-waved: 9 days of unearned leave
+        // on ONE employee, ONE leave type, ONE quarter.
+        (sum - 3m).Should().Be(9m, "9 days of unearned, payable leave for this employee at end of Q1");
+    }
+
     // ── (1) Monthly: one period per elapsed month, twelve runs sum to exactly the annual entitlement ────────
     [Fact]
     public async Task Monthly_CreditsOnePeriodPerElapsedMonth_SumsToAnnual_OnPostgres()

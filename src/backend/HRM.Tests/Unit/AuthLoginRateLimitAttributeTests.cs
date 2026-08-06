@@ -41,6 +41,26 @@ public sealed class AuthLoginRateLimitAttributeTests
             "the login action must bind the registered auth-login policy (10/min/IP)");
     }
 
+    /// <summary>
+    /// DF-accept-invite-ratelimit — the anonymous invitation-redemption endpoint.
+    ///
+    /// <para>The attribute was there; nothing asserted it. This endpoint matters MORE than the reset endpoint
+    /// it sits beside: an invitation token is valid for 72 hours (versus one hour for a reset token), so the
+    /// window available to guess one is materially larger, and the endpoint is anonymous. Losing the throttle
+    /// here would be silent — redemption would keep working perfectly for legitimate users.</para>
+    /// </summary>
+    [Fact]
+    public void AcceptInvitation_HasRateLimitAttribute_DF_ACCEPT_INVITE()
+    {
+        var attribute = GetRateLimitingAttribute(nameof(AuthController.AcceptInvitation));
+
+        attribute.Should().NotBeNull(
+            "POST /api/v1/auth/accept-invitation is anonymous and guards a 72-hour token — it must be "
+            + "throttled against token guessing");
+        attribute!.PolicyName.Should().Be(ExpectedPolicy,
+            "the invitation-redemption action must bind the registered auth-login policy (10/min/IP)");
+    }
+
     // Binds @TC-AUTH-RL-001.
     [Fact]
     public void MfaChallenge_HasRateLimitAttribute_AUTH001()

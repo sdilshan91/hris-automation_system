@@ -305,4 +305,38 @@ public sealed class LeaveEntitlementsController : ControllerBase
 
         return Ok(ApiResponse<AccrualOverCreditExposureReportDto>.Ok(result.Value!));
     }
+
+    /// <summary>
+    /// POST /api/v1/tenant/leave-entitlements/accrual-over-credit-correction?asOfDate=YYYY-MM-DD&amp;dryRun=false
+    ///
+    /// <para>BUG-291 remediation. Writes a corrective negative <c>Adjusted</c> ledger entry for every employee
+    /// still holding a legacy over-credited balance, bringing them to what should have accrued by
+    /// <paramref name="asOfDate"/>. Idempotent — a pair already carrying a correction is skipped and counted.</para>
+    ///
+    /// <para><b>Defaults to a DRY RUN.</b> Omitting <c>dryRun</c> reports what would change and writes nothing.
+    /// Reducing a visible leave balance is an employee-detriment change, so it must be asked for explicitly
+    /// rather than being the accidental outcome of a curious call.</para>
+    ///
+    /// <para>Gated on <c>Leave.ConfigurePolicy</c> — the same permission as the exposure report it consumes.</para>
+    /// </summary>
+    [HttpPost("accrual-over-credit-correction")]
+    [RequirePermission("Leave.ConfigurePolicy")]
+    [ProducesResponseType(typeof(ApiResponse<AccrualOverCreditCorrectionResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> CorrectAccrualOverCredit(
+        [FromQuery] DateOnly asOfDate,
+        [FromQuery] bool? dryRun,
+        CancellationToken cancellationToken)
+    {
+        // NULLABLE, and null means DRY RUN. A plain `bool` binds to false when the parameter is omitted, so
+        // `POST .../accrual-over-credit-correction?asOfDate=…` would have silently APPLIED the deduction —
+        // the precise accidental employee-detriment this endpoint is supposed to make impossible.
+        var result = await _mediator.Send(
+            new CorrectAccrualOverCreditCommand(asOfDate, dryRun ?? true), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<AccrualOverCreditCorrectionResultDto>.Ok(result.Value!));
+    }
 }

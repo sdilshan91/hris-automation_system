@@ -138,6 +138,33 @@ public sealed record AccrualOverCreditExposureRow
 /// <summary>
 /// BUG-291 exposure report envelope. Tenant-scoped (current tenant only, under the normal query filters).
 /// </summary>
+/// <summary>
+/// Outcome of a BUG-291 legacy over-credit correction run.
+///
+/// <para>The correction is OPT-IN and defaults to a dry run, because reducing a leave balance is an
+/// employee-detriment change: the days are visible to staff, may already have been planned around, and in
+/// several jurisdictions accrued leave is a contractual entitlement. Engineering supplies the mechanism; the
+/// decision to run it for real is a business one.</para>
+/// </summary>
+public sealed record AccrualOverCreditCorrectionResultDto
+{
+    public DateOnly AsOfDate { get; init; }
+    public int LeaveYear { get; init; }
+
+    /// <summary>When true nothing was written — the figures below are what WOULD change.</summary>
+    public bool DryRun { get; init; }
+
+    public int EmployeesCorrected { get; init; }
+
+    /// <summary>Total days removed (positive number), across all corrected employee/leave-type pairs.</summary>
+    public decimal TotalDaysCorrected { get; init; }
+
+    /// <summary>Pairs skipped because a correction entry already exists — makes a re-run safe and visible.</summary>
+    public int AlreadyCorrected { get; init; }
+
+    public IReadOnlyList<AccrualOverCreditExposureRow> Rows { get; init; } = [];
+}
+
 public sealed record AccrualOverCreditExposureReportDto
 {
     public DateOnly AsOfDate { get; init; }

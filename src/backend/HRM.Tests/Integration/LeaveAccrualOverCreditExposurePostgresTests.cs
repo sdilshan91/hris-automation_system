@@ -132,6 +132,42 @@ public sealed class LeaveAccrualOverCreditExposurePostgresTests : IAsyncLifetime
         OccurredAt = new DateTime(2026, period, 1, 0, 0, 0, DateTimeKind.Utc),
     };
 
+    /// <summary>12 days on a Monthly type, all credited on 1 January the legacy way. By 31 March only 3 have
+    /// genuinely accrued, so the employee holds 9 unearned, payable days.</summary>
+    private async Task<(Guid EmpId, Guid TypeId)> SeedLegacyOverCreditedEmployeeAsync(AppDbContext db, Guid tenantId)
+    {
+        var (deptId, jobId) = await SeedTenantScaffoldAsync(db, tenantId, "acme");
+        var emp = NewEmployee(tenantId, deptId, jobId, "LEGACY-1");
+        var type = NewLeaveType(tenantId, annual: 12m, AccrualFrequency.Monthly, "Annual (Monthly)");
+        db.Employees.Add(emp);
+        db.LeaveTypes.Add(type);
+        db.LeaveLedgerEntries.Add(LegacyAccrual(tenantId, emp.Id, type.Id, 12m));
+        await db.SaveChangesAsync();
+        return (emp.Id, type.Id);
+    }
+
+    /// <summary>Period-tagged rows — what the FIXED accrual writes. Must be invisible to the correction.</summary>
+    private async Task<(Guid EmpId, Guid TypeId)> SeedPostFixEmployeeAsync(AppDbContext db, Guid tenantId)
+    {
+        var (deptId, jobId) = await SeedTenantScaffoldAsync(db, tenantId, "acme");
+        var emp = NewEmployee(tenantId, deptId, jobId, "POSTFIX-1");
+        var type = NewLeaveType(tenantId, annual: 12m, AccrualFrequency.Monthly, "Annual (Monthly)");
+        db.Employees.Add(emp);
+        db.LeaveTypes.Add(type);
+        for (var period = 1; period <= 3; period++)
+            db.LeaveLedgerEntries.Add(PeriodAccrual(tenantId, emp.Id, type.Id, period, 1m, period));
+        await db.SaveChangesAsync();
+        return (emp.Id, type.Id);
+    }
+
+    private static async Task<decimal> BalanceAsync(AppDbContext db, Guid empId, Guid typeId) =>
+        await db.LeaveLedgerEntries.AsNoTracking()
+            .Where(l => l.EmployeeId == empId && l.LeaveTypeId == typeId)
+            .SumAsync(l => l.Amount);
+
+    private static async Task<int> LedgerRowCountAsync(AppDbContext db, Guid empId) =>
+        await db.LeaveLedgerEntries.AsNoTracking().CountAsync(l => l.EmployeeId == empId);
+
     // ── (1) Monthly legacy full-year accrual appears with the correct mid-year over-credit ──────────────────
     [Fact]
     public async Task Monthly_LegacyFullYearAccrual_Appears_WithCorrectMidYearOverCredit_OnPostgres()
@@ -315,6 +351,108 @@ public sealed class LeaveAccrualOverCreditExposurePostgresTests : IAsyncLifetime
     }
 
     // ── (6) CSV: content type, non-empty, header row, and the seeded over-credit figure appear ──────────────
+    // ── BUG-291 CORRECTION — the remediation the exposure report exists to feed ─────────────────────────────
+    //
+    // The exposure report tells you WHO is over-credited. These arms cover the tool that fixes it. The
+    // correction is deliberately opt-in and dry-run-by-default: reducing a visible leave balance is an
+    // employee-detriment change, so it must be asked for, not stumbled into.
+
+    [Fact]
+    public async Task Correction_DryRun_ReportsTheDeductionButWritesNOTHING_BUG291()
+    {
+        var tenantId = BaseEntity.NewUuidV7();
+        await using var db = CreateContext(tenantId);
+        await db.Database.MigrateAsync();
+        var (empId, typeId) = await SeedLegacyOverCreditedEmployeeAsync(db, tenantId);
+
+        var before = await LedgerRowCountAsync(db, empId);
+
+        var result = await BuildService(db, tenantId).CorrectAccrualOverCreditAsync(
+            new DateOnly(2026, 3, 31), dryRun: true);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.DryRun.Should().BeTrue();
+        result.Value.EmployeesCorrected.Should().Be(1, "the affected pair must still be REPORTED");
+        result.Value.TotalDaysCorrected.Should().BeGreaterThan(0m);
+
+        (await LedgerRowCountAsync(db, empId)).Should().Be(before,
+            "a dry run must not write a single ledger row — otherwise 'preview' silently deducts leave");
+    }
+
+    [Fact]
+    public async Task Correction_Applied_WritesANegativeAdjustment_ThatBringsTheBalanceToWhatAccrued_BUG291()
+    {
+        var tenantId = BaseEntity.NewUuidV7();
+        await using var db = CreateContext(tenantId);
+        await db.Database.MigrateAsync();
+        var (empId, typeId) = await SeedLegacyOverCreditedEmployeeAsync(db, tenantId);
+
+        var asOf = new DateOnly(2026, 3, 31);
+        var result = await BuildService(db, tenantId).CorrectAccrualOverCreditAsync(asOf, dryRun: false);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.DryRun.Should().BeFalse();
+        result.Value.EmployeesCorrected.Should().Be(1);
+
+        var rows = await db.LeaveLedgerEntries.AsNoTracking()
+            .Where(l => l.EmployeeId == empId && l.LeaveTypeId == typeId)
+            .ToListAsync();
+
+        var adjustment = rows.SingleOrDefault(l => l.EntryType == LedgerEntryType.Adjusted);
+        adjustment.Should().NotBeNull("the correction must be an explicit ledger entry, never an edit of history");
+        adjustment!.Amount.Should().BeLessThan(0m, "a correction removes days");
+
+        // 12 credited on day one, 3 accrued by 31 March ⇒ the balance must land on 3.
+        rows.Sum(l => l.Amount).Should().Be(3m,
+            "after correction the employee holds exactly what has accrued by the as-of date");
+
+        adjustment.Description.Should().Contain("BUG-291",
+            "a payroll officer reading one employee's ledger must see WHY the balance dropped");
+    }
+
+    [Fact]
+    public async Task Correction_IsIdempotent_ASecondRunDeductsNothingMore_BUG291()
+    {
+        // Without this guard a nervous operator running it twice would halve the balance again.
+        var tenantId = BaseEntity.NewUuidV7();
+        await using var db = CreateContext(tenantId);
+        await db.Database.MigrateAsync();
+        var (empId, typeId) = await SeedLegacyOverCreditedEmployeeAsync(db, tenantId);
+
+        var asOf = new DateOnly(2026, 3, 31);
+        var service = BuildService(db, tenantId);
+
+        await service.CorrectAccrualOverCreditAsync(asOf, dryRun: false);
+        var balanceAfterFirst = await BalanceAsync(db, empId, typeId);
+
+        var second = await service.CorrectAccrualOverCreditAsync(asOf, dryRun: false);
+
+        second.Value!.EmployeesCorrected.Should().Be(0, "nothing new to correct");
+        second.Value.AlreadyCorrected.Should().Be(1, "the skip must be COUNTED, not silent");
+        (await BalanceAsync(db, empId, typeId)).Should().Be(balanceAfterFirst,
+            "a re-run must not deduct a second time");
+    }
+
+    [Fact]
+    public async Task Correction_LeavesACorrectlyAccruingEmployeeALONE_BUG291()
+    {
+        // The blast-radius arm: an employee whose rows are period-tagged accrued correctly and must never be
+        // touched by a remediation aimed at legacy rows.
+        var tenantId = BaseEntity.NewUuidV7();
+        await using var db = CreateContext(tenantId);
+        await db.Database.MigrateAsync();
+        var (empId, typeId) = await SeedPostFixEmployeeAsync(db, tenantId);
+
+        var before = await BalanceAsync(db, empId, typeId);
+
+        var result = await BuildService(db, tenantId).CorrectAccrualOverCreditAsync(
+            new DateOnly(2026, 3, 31), dryRun: false);
+
+        result.Value!.EmployeesCorrected.Should().Be(0);
+        (await BalanceAsync(db, empId, typeId)).Should().Be(before,
+            "a correctly-accruing employee must not lose days to someone else's remediation");
+    }
+
     [Fact]
     public async Task Export_Csv_HasHeaderAndOverCreditFigure_OnPostgres()
     {

@@ -116,13 +116,20 @@ export class PlanEditorComponent implements OnInit {
         return acc;
       }, {}),
     ),
-    flags: this.fb.group({
-      sso: [false],
-      customDomain: [false],
-      whiteLabel: [false],
-      scim: [false],
-      sandbox: [false],
-    }),
+    // ISSUE-358: flags whose feature does not exist are DISABLED at the control, not merely styled. An
+    // [attr.disabled] binding is ignored by reactive forms — the control's own state is what governs — so a
+    // template-only treatment would have looked right and still been sellable. Built from
+    // FEATURE_FLAG_FIELDS so the list lives in exactly one place, mirroring the modules group above.
+    // The save path uses getRawValue(), so a disabled flag still round-trips and is never silently wiped.
+    flags: this.fb.group(
+      FEATURE_FLAG_FIELDS.reduce<Record<string, unknown>>((acc, ff) => {
+        acc[ff.key] = this.fb.nonNullable.control({
+          value: false,
+          disabled: !!ff.unavailableReason,
+        });
+        return acc;
+      }, {}),
+    ),
   });
 
   get limitsGroup(): FormGroup {

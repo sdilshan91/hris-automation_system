@@ -1342,6 +1342,98 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         => _leaveYearResolver.GetStartMonthAsync(cancellationToken);
 
     // ── BUG-291 exposure report — spreadsheet export (READ-ONLY) ───────────────────────────────────────────
+    /// <summary>Marks a BUG-291 correction row so a re-run can detect it (mirrors RecalcAdjustmentPrefix).</summary>
+    internal const string Bug291CorrectionPrefix = "BUG-291 over-credit correction";
+
+    /// <inheritdoc />
+    public async Task<Result<AccrualOverCreditCorrectionResultDto>> CorrectAccrualOverCreditAsync(
+        DateOnly asOfDate, bool dryRun = true, CancellationToken cancellationToken = default)
+    {
+        // Reuses the exposure report rather than recomputing "who is over-credited and by how much". Two
+        // implementations of that arithmetic would eventually disagree, and the one nobody reads would be the
+        // one writing to the ledger.
+        var exposure = await GetAccrualOverCreditExposureAsync(asOfDate, cancellationToken);
+        if (exposure.IsFailure)
+        {
+            return Result<AccrualOverCreditCorrectionResultDto>.Failure(
+                exposure.Error!, exposure.StatusCode ?? 400, exposure.ErrorCode);
+        }
+
+        var report = exposure.Value!;
+        var corrected = new List<AccrualOverCreditExposureRow>();
+        decimal totalDays = 0m;
+        var alreadyCorrected = 0;
+
+        foreach (var row in report.Rows.Where(r => r.OverCreditedDays > 0m))
+        {
+            // Idempotency: never deduct twice for the same pair.
+            var hasCorrection = await _dbContext.LeaveLedgerEntries
+                .AnyAsync(l =>
+                    l.EmployeeId == row.EmployeeId &&
+                    l.LeaveTypeId == row.LeaveTypeId &&
+                    l.LeaveYear == row.LeaveYear &&
+                    l.EntryType == LedgerEntryType.Adjusted &&
+                    l.Description != null &&
+                    l.Description.StartsWith(Bug291CorrectionPrefix),
+                    cancellationToken);
+
+            if (hasCorrection)
+            {
+                alreadyCorrected++;
+                continue;
+            }
+
+            corrected.Add(row);
+            totalDays += row.OverCreditedDays;
+
+            if (dryRun)
+                continue;
+
+            var balance = await GetLedgerBalanceAsync(
+                row.EmployeeId, row.LeaveTypeId, row.LeaveYear, cancellationToken);
+
+            _dbContext.LeaveLedgerEntries.Add(new LeaveLedger
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                EntryType = LedgerEntryType.Adjusted,
+                EmployeeId = row.EmployeeId,
+                LeaveTypeId = row.LeaveTypeId,
+                LeaveYear = row.LeaveYear,
+                Amount = -row.OverCreditedDays,
+                BalanceAfter = balance - row.OverCreditedDays,
+                // The full reasoning lives in the row so a payroll officer reading one employee's ledger can
+                // see WHY the balance dropped without needing this changelog.
+                Description =
+                    $"{Bug291CorrectionPrefix}: -{row.OverCreditedDays:0.##} days "
+                    + $"(credited {row.CreditedDays:0.##}, accrued by {asOfDate:yyyy-MM-dd} "
+                    + $"{row.ShouldHaveAccruedDays:0.##}; {row.AccrualFrequency} type credited a full year "
+                    + "before the accrual fix)",
+                OccurredAt = _timeProvider.GetUtcNow().UtcDateTime,
+            });
+        }
+
+        if (!dryRun && corrected.Count > 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogWarning(
+                "BUG-291 over-credit correction APPLIED for tenant {TenantId}: {Employees} pair(s), "
+                + "{Days} day(s) removed, as of {AsOfDate}.",
+                _tenantContext.TenantId, corrected.Count, totalDays, asOfDate);
+        }
+
+        return Result<AccrualOverCreditCorrectionResultDto>.Success(new AccrualOverCreditCorrectionResultDto
+        {
+            AsOfDate = report.AsOfDate,
+            LeaveYear = report.LeaveYear,
+            DryRun = dryRun,
+            EmployeesCorrected = corrected.Count,
+            TotalDaysCorrected = totalDays,
+            AlreadyCorrected = alreadyCorrected,
+            Rows = corrected,
+        });
+    }
+
     // Additive: renders the SAME rows GetAccrualOverCreditExposureAsync returns to CSV/XLSX for Finance to work
     // case-by-case. Reuses the Performance ClosedXML/CSV idiom (RecommendationService.ExportSummaryAsync) and
     // the PerformanceExportFile download shape. The as-of date is embedded (headers + filename) so a saved
