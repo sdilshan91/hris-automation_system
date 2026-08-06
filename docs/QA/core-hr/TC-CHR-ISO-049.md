@@ -4,7 +4,7 @@ user_story: US-CHR-013
 module: Core HR
 priority: high
 type: security
-status: draft
+status: automated
 created: 2026-07-15
 ---
 
@@ -37,6 +37,17 @@ Verify US-CHR-013 NFR-1 and Critical Rule #1: `Employee.Fte` and `Employee.WorkA
 
 ## 6. Postconditions
 - FTE/work-arrangement remain strictly tenant-isolated.
+
+## 6a. Automation
+Bound 2026-08-06 by `HRM.Tests/Integration/Http/RlsOnAuthFlowsApiTests.cs` →
+`Another_tenants_employee_is_invisible_and_unmutable_under_RLS_TC_CHR_ISO_049`
+(`[Trait("TC", "TC-CHR-ISO-049")]`).
+
+Implemented on the RLS-ON HTTP harness (`RlsOnApiTestFactory`) rather than as a plain integration test,
+because this TC explicitly targets real Postgres isolation: the harness runs the app as the NOBYPASSRLS
+`hrm_app` role with `ENABLE + FORCE ROW LEVEL SECURITY` applied, so both the EF query filter AND the RLS
+policy are exercised through the genuine HTTP pipeline. The victim row is seeded on the privileged
+connection so the arrangement itself is not subject to the isolation under test.
 
 ## 7. Test Category Tags
 - [ ] Happy path
