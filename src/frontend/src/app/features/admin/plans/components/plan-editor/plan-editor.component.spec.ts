@@ -194,4 +194,43 @@ describe('PlanEditorComponent', () => {
     expect(req.request.method).toBe('POST');
     req.flush(null);
   });
+
+  // ── ISSUE-358: flags with no feature behind them must not be sellable ──────────────────────────────
+  //
+  // Of the five plan feature flags only `sso` and `whiteLabel` gate real behaviour. The other three are
+  // inert — SCIM middleware matches no controller, the custom-domain branch is self-documented as inert,
+  // and the sandbox branch is unreachable (`requestedSandbox` is hard-coded false). Offering them as
+  // toggles in the plan editor is selling capability the platform does not deliver, which is the charge
+  // ISSUE-358 was raised on.
+  it('disables the feature flags that gate nothing, and says why (ISSUE-358)', () => {
+    const { fixture } = setup(null);
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+
+    for (const key of ['customDomain', 'scim', 'sandbox']) {
+      const toggle = el.querySelector<HTMLInputElement>(`[data-testid="flag-${key}"]`);
+      expect(toggle)
+        .withContext(`${key} toggle should still be rendered, not deleted`)
+        .toBeTruthy();
+      expect(toggle!.hasAttribute('disabled'))
+        .withContext(`${key} gates no feature, so it must not be sellable`)
+        .toBeTrue();
+      expect(toggle!.getAttribute('aria-describedby'))
+        .withContext(`${key} must explain WHY it is disabled, or it reads as a bug`)
+        .toBeTruthy();
+    }
+  });
+
+  it('leaves the flags that DO gate behaviour enabled (ISSUE-358)', () => {
+    const { fixture } = setup(null);
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+
+    for (const key of ['sso', 'whiteLabel']) {
+      const toggle = el.querySelector<HTMLInputElement>(`[data-testid="flag-${key}"]`);
+      expect(toggle!.hasAttribute('disabled'))
+        .withContext(`${key} gates real behaviour and must stay sellable`)
+        .toBeFalse();
+    }
+  });
 });

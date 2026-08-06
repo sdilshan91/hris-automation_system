@@ -178,13 +178,28 @@
         <h2 class="text-sm font-semibold text-neutral-800">{{ 'admin.plans.editor.flags' | translate }}</h2>
         <div class="space-y-2">
           @for (ff of featureFlagFields; track ff.key) {
-            <label class="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2.5 text-sm text-neutral-700">
-              <span>{{ ff.label }}</span>
+            <label
+              class="flex items-center justify-between rounded-lg border border-neutral-100 px-3 py-2.5 text-sm"
+              [class.text-neutral-700]="!ff.unavailableReason"
+              [class.text-neutral-400]="!!ff.unavailableReason"
+            >
+              <span class="flex flex-col">
+                <span>{{ ff.label }}</span>
+                @if (ff.unavailableReason) {
+                  <!-- ISSUE-358: say WHY it is off. A silently disabled toggle reads as a bug; a labelled one
+                       reads as a roadmap item, and stops the flag being sold as a delivered capability. -->
+                  <span class="text-xs text-neutral-400" [attr.id]="'flag-hint-' + ff.key">
+                    {{ ff.unavailableReason }}
+                  </span>
+                }
+              </span>
               <input
                 type="checkbox"
                 role="switch"
-                class="h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500"
+                class="h-4 w-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-50"
                 [formControlName]="ff.key"
+                [attr.disabled]="ff.unavailableReason ? true : null"
+                [attr.aria-describedby]="ff.unavailableReason ? 'flag-hint-' + ff.key : null"
                 [attr.data-testid]="'flag-' + ff.key"
               />
             </label>

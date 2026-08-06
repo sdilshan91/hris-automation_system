@@ -175,14 +175,31 @@ export const LIMIT_FIELDS: ILimitField[] = [
 export interface IFeatureFlagField {
   key: keyof IPlanFeatureFlags;
   label: string;
+  /**
+   * ISSUE-358 — set when the flag is sellable in this editor but enforced by NOTHING, because the feature
+   * behind it does not exist yet.
+   *
+   * Of the five flags, only `sso` and `whiteLabel` gate real behaviour. The other three are inert:
+   * `ScimEntitlementMiddleware` matches no controller, the `customDomain` branch in
+   * `TenantResolutionMiddleware` is self-documented as inert, and `TenantProvisioningService` hard-codes
+   * `requestedSandbox = false`, making its branch unreachable.
+   *
+   * They are DISABLED rather than deleted: removing them would strand plans that already carry the flag with
+   * no way to see or unset it, and the flags remain part of the backend contract. Disabling stops them being
+   * sold while keeping the data honest — the original ISSUE-358 charge was that the console sells what the
+   * platform does not deliver.
+   */
+  unavailableReason?: string;
 }
+
+const NOT_IMPLEMENTED = 'Not available yet — no feature is gated by this flag';
 
 export const FEATURE_FLAG_FIELDS: IFeatureFlagField[] = [
   { key: 'sso', label: 'Single Sign-On (SSO)' },
-  { key: 'customDomain', label: 'Custom domain' },
+  { key: 'customDomain', label: 'Custom domain', unavailableReason: NOT_IMPLEMENTED },
   { key: 'whiteLabel', label: 'White-label' },
-  { key: 'scim', label: 'SCIM provisioning' },
-  { key: 'sandbox', label: 'Sandbox environment' },
+  { key: 'scim', label: 'SCIM provisioning', unavailableReason: NOT_IMPLEMENTED },
+  { key: 'sandbox', label: 'Sandbox environment', unavailableReason: NOT_IMPLEMENTED },
 ];
 
 export const SLA_TIERS: SlaTier[] = ['standard', 'business', 'enterprise'];

@@ -95,6 +95,20 @@ public interface ILeaveEntitlementService
     /// handles them, so counting them would double-report. Only rows with a strictly positive over-credit are
     /// returned. Tenant-scoped under the normal EF query filters (no <c>IgnoreQueryFilters</c>).
     /// </summary>
+    /// <summary>
+    /// BUG-291 remediation: writes a corrective negative <c>Adjusted</c> ledger entry for every employee still
+    /// holding a legacy over-credited balance, bringing them to what should have accrued by
+    /// <paramref name="asOfDate"/>.
+    ///
+    /// <para><b>Dry run by default.</b> Reducing a visible leave balance is an employee-detriment change, so
+    /// an accidental call must do nothing. Pass <paramref name="dryRun"/> = false to actually write.</para>
+    ///
+    /// <para><b>Idempotent.</b> A pair that already carries a correction entry is skipped and counted, so a
+    /// re-run cannot double-deduct.</para>
+    /// </summary>
+    Task<Result<AccrualOverCreditCorrectionResultDto>> CorrectAccrualOverCreditAsync(
+        DateOnly asOfDate, bool dryRun = true, CancellationToken cancellationToken = default);
+
     Task<Result<AccrualOverCreditExposureReportDto>> GetAccrualOverCreditExposureAsync(
         DateOnly asOfDate,
         CancellationToken cancellationToken = default);
