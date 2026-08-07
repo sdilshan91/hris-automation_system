@@ -7677,7 +7677,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-361
 - **Type:** ISSUE (CI / test-infrastructure)
 - **Severity:** HIGH (a permanently-red gate trains everyone to merge through red — and six PRs were)
-- **Status:** ⏳ **ROOT-CAUSED AND FIXED 2026-08-07, awaiting CI confirmation.** ⚠ **The first diagnosis was WRONG** and is recorded here because the mistake is instructive: the varying failure TIMING (11m / 17m / 2m elapsed) was read as resource pressure, and `maxParallelThreads` was lowered 4→2. It changed nothing — still exactly 58 failures. The signal that mattered was the one held CONSTANT: **58 every single run**. Resource exhaustion varies; determinism does not. The parallelism change is reverted.
+- **Status:** ✅ **RESOLVED (PR #478, CI CONFIRMED 2026-08-07).** `ci-gate` run 31189082810: **5297 passed / 0 failed**, all three jobs green — the first green gate since **2026-07-01**, and the total matches the local run exactly, so it is a full pass rather than a partial. ⚠ **The first diagnosis was WRONG** and is kept on the record because the mistake is instructive: the varying failure TIMING (11m / 17m / 2m) was read as resource pressure and `maxParallelThreads` was lowered 4→2. It changed nothing — still exactly 58 failures. The signal that mattered was the one held CONSTANT: **58 every single run**. Resource exhaustion varies; determinism does not. That change is reverted.
 - **Layer:** CI / BE-tests
 - **Module / US / TC:** Platform / — / — — found 2026-08-06 while answering "what remains in dev?"
 - **Title:** `ci-gate` had not run on a merged PR since **2026-07-01**: its trigger pointed at `main` while the
