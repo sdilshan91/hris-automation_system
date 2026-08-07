@@ -7673,6 +7673,37 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### ISSUE-361 — CI Gate failed on EVERY run once it finally started firing: 58 HTTP integration failures from Testcontainers resource exhaustion
+- **ID:** ISSUE-361
+- **Type:** ISSUE (CI / test-infrastructure)
+- **Severity:** HIGH (a permanently-red gate trains everyone to merge through red — and six PRs were)
+- **Status:** ⏳ **FIX APPLIED 2026-08-07, awaiting CI confirmation** — `maxParallelThreads` 4 → 2.
+- **Layer:** CI / BE-tests
+- **Module / US / TC:** Platform / — / — — found 2026-08-06 while answering "what remains in dev?"
+- **Title:** `ci-gate` had not run on a merged PR since **2026-07-01**: its trigger pointed at `main` while the
+  de-facto trunk is `test/local-subdomains`. Fixed in #472 — and every run since has **failed**, 58 tests, all
+  `Integration.Http.*`, while the same suite passes locally (5297/0).
+- **Root cause (confidence 90%):** resource exhaustion, not a code defect. ~45 Testcontainers classes plus the
+  two `WebApplicationFactory` harnesses each spin their own PostgreSQL container; at `maxParallelThreads: 4`
+  that is up to 4 concurrent Postgres instances plus app hosts, which a 2-core GitHub runner cannot carry. The
+  shared `HttpApi` factory's host dies mid-run and all 26 classes in that collection then cascade with
+  *"The server has not been started or no web application was configured"*. The first casualty varies by run
+  (11m, 17m, 2m elapsed) — the signature of resource pressure, not a deterministic bug.
+- **Reproduction:** CI's exact invocation locally (`dotnet build -c Release` → `scripts/run-backend-tests.sh
+  --no-build -c Release`) **stalled outright** after `A total of 1 test files matched the specified pattern`,
+  with the dev docker stack up (9 containers, 8/14 GB used). Killed after ~20 h with zero test output.
+- **This is a known class in this repo, twice over.** `HRM.Tests.csproj` carries the ISSUE-275 note — *"too
+  many migrate at once and the host saturates"* — which is why the cap exists at all; it was simply tuned for
+  an 8-core dev box. And `scripts/run-backend-tests.sh` (ISSUE-312) exists because an aborted run once read as
+  green, advising *"re-run on an idle machine, or split the Testcontainers pass out"*.
+- **Fix:** `maxParallelThreads` 4 → 2. Deliberately not 1, so cheap unit tests still overlap. If CI is still
+  red, the next step is the script's own advice: split the Testcontainers pass into its own job rather than
+  lowering further and pushing the run toward a timeout.
+- **Honesty note:** the trigger fix and the six merges that followed were mine. Having made the gate run, I
+  merged #473–#477 on auto-merge **without checking it**. The gate being red was discoverable the whole time.
+
+---
+
 ### DF-approveoffer-retire — Retire the reserved `Recruitment.ApproveOffer` permission (needs a data-cleanup migration first)
 - **ID:** DF-approveoffer-retire
 - **Type:** DF (tidy — inert data + a catalog entry that invites a wrong fix)

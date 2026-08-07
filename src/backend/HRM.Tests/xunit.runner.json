@@ -1,4 +1,5 @@
 {
   "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json",
-  "maxParallelThreads": 4
+  "_comment": "maxParallelThreads lowered 4 -> 2 (2026-08-07). The suite has ~45 Testcontainers classes plus two WebApplicationFactory harnesses, each spinning its own PostgreSQL container. At 4 parallel collections that is up to 4 concurrent Postgres containers plus the app hosts, which exceeds what a 2-core GitHub runner can carry: the shared HttpApi factory's host dies mid-run and all 26 classes in that collection then report 'The server has not been started', 11-17 minutes in — 58 failures, every CI run since the gate started firing. Reproduced locally: the same Release invocation stalled outright after 'A total of 1 test files matched the specified pattern' with the dev docker stack up. Resource exhaustion, not a code defect — exactly what scripts/run-backend-tests.sh warns about (ISSUE-312: 're-run on an idle machine, or split the Testcontainers pass out'). 2 rather than 1 so cheap unit tests still overlap; raise it only with evidence the runner can carry it.",
+  "maxParallelThreads": 2
 }
