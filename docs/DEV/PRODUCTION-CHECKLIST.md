@@ -15,7 +15,7 @@ disables tenant isolation. §3–§5 can follow the first deploy.
 
 ## 0. Before you start
 
-- [ ] **`ci-gate` has run green on `test/local-subdomains`** at least once.
+- [x] **`ci-gate` has run green on `test/local-subdomains`** — run 31189082810, 2026-08-07: 5297/0, all three jobs green. It took ISSUE-361 to get there: once the trigger was fixed the gate ran and failed *every* time, because Hangfire was reading a blank-password connection string. This box is now earned rather than assumed.
       It triggered on PRs into `main` only until 2026-08-05, and `main` is stale — so the gate had not run on
       a merged PR since **2026-07-01**, while the RLS Testcontainers suites landed **2026-07-10/11**. They had
       literally never run in CI. Fixed in #474; this box stays unticked until a run actually completes.
