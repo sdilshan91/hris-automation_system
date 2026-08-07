@@ -93,6 +93,9 @@ public sealed class RlsOnApiTestFactory : WebApplicationFactory<Program>, IAsync
             GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {AppRole}, {OwnerRole};
             GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {AppRole}, {OwnerRole};
             GRANT CREATE ON SCHEMA public TO {OwnerRole};
+            -- Hangfire bootstraps its OWN schema, which needs CREATE on the DATABASE, not just on public.
+            -- This is the same grant the production checklist calls out for the real flip.
+            GRANT CREATE ON DATABASE {DatabaseName(superCs)} TO {OwnerRole};
             """);
 
         // Ownership of the PUBLIC-SCHEMA objects only. `REASSIGN OWNED BY CURRENT_USER` fails here (2BP01):
@@ -123,6 +126,12 @@ public sealed class RlsOnApiTestFactory : WebApplicationFactory<Program>, IAsync
     {
         builder.UseEnvironment(Environments.Development);
         builder.UseSetting("RateLimiting:Disabled", "true");
+
+        // ISSUE-361: Program.cs reads the Hangfire connection string inline before Build, so
+        // ConfigureAppConfiguration is too late for it. Here the privileged role is the correct target —
+        // Hangfire bootstraps its own schema (DDL) and hrm_app has no rights to it.
+        builder.UseSetting("ConnectionStrings:DefaultConnection", _appConnString);
+        builder.UseSetting("ConnectionStrings:PrivilegedConnection", _ownerConnString);
 
         builder.ConfigureAppConfiguration((_, config) =>
         {
@@ -184,6 +193,10 @@ public sealed class RlsOnApiTestFactory : WebApplicationFactory<Program>, IAsync
             .UseNpgsql(_ownerConnString)
             .UseSnakeCaseNamingConvention()
             .Options, new NullTenantContext());
+
+    /// <summary>The database name out of a connection string — needed for a GRANT ... ON DATABASE.</summary>
+    private static string DatabaseName(string connectionString) =>
+        new NpgsqlConnectionStringBuilder(connectionString).Database!;
 
     private static string WithRole(string connectionString, string user, string password) =>
         new NpgsqlConnectionStringBuilder(connectionString) { Username = user, Password = password }
