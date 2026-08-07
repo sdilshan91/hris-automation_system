@@ -1,4 +1,5 @@
 {
   "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json",
+  "_comment": "maxParallelThreads caps concurrent Testcontainers (ISSUE-275: too many migrating at once saturates the host). Briefly lowered to 2 chasing the ISSUE-361 CI failure; that was the WRONG diagnosis \u2014 the real cause was Hangfire reading a blank-password connection string because Program.cs resolves it before builder.Build(). Restored to 4.",
   "maxParallelThreads": 4
 }

@@ -37,10 +37,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- ISSUE-275: ~40 integration classes each spin up their own postgres:17 Testcontainer and run the full
+    <!-- ISSUE-275: ~45 integration classes each spin up their own postgres:17 Testcontainer and run the full
          migration chain in IAsyncLifetime. At xUnit's default parallelism (= CPU cores) too many migrate at once and
          the host saturates → intermittent Npgsql "Timeout during reading attempt" during MigrateAsync. xunit.runner.json
-         caps maxParallelThreads to bound the concurrent-container count (the runner reads it from the output dir). -->
+         caps maxParallelThreads to bound the concurrent-container count (the runner reads it from the output dir).
+
+         2026-08-07: the cap was 4, which held on an 8-core dev box but NOT on the 2-core CI runner. Once ci-gate
+         actually started firing (the trigger had pointed at a stale branch, so it had not run on a merged PR since
+         2026-07-01) every run failed the same way: the shared HttpApi factory's host dies mid-run and all 26 classes
+         in that collection report "The server has not been started" — 58 failures, 11-17 minutes in. The two
+         WebApplicationFactory harnesses added in #476 each carry their own container too, which pushed it over.
+         Lowered to 2. Same failure class ISSUE-275 identified; the cap was simply tuned for the wrong machine. -->
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

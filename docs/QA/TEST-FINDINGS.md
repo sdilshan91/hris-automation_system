@@ -7673,6 +7673,54 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### ISSUE-361 — CI Gate failed on EVERY run once it finally started firing: 58 HTTP integration failures from Testcontainers resource exhaustion
+- **ID:** ISSUE-361
+- **Type:** ISSUE (CI / test-infrastructure)
+- **Severity:** HIGH (a permanently-red gate trains everyone to merge through red — and six PRs were)
+- **Status:** ⏳ **ROOT-CAUSED AND FIXED 2026-08-07, awaiting CI confirmation.** ⚠ **The first diagnosis was WRONG** and is recorded here because the mistake is instructive: the varying failure TIMING (11m / 17m / 2m elapsed) was read as resource pressure, and `maxParallelThreads` was lowered 4→2. It changed nothing — still exactly 58 failures. The signal that mattered was the one held CONSTANT: **58 every single run**. Resource exhaustion varies; determinism does not. The parallelism change is reverted.
+- **Layer:** CI / BE-tests
+- **Module / US / TC:** Platform / — / — — found 2026-08-06 while answering "what remains in dev?"
+- **Title:** `ci-gate` had not run on a merged PR since **2026-07-01**: its trigger pointed at `main` while the
+  de-facto trunk is `test/local-subdomains`. Fixed in #472 — and every run since has **failed**, 58 tests, all
+  `Integration.Http.*`, while the same suite passes locally (5297/0).
+- **Root cause (CONFIRMED, reproduced locally):** `Program.cs:302` resolves Hangfire's storage connection
+  string INLINE from `builder.Configuration` — **before `builder.Build()`**. `WebApplicationFactory`'s
+  `ConfigureAppConfiguration` overrides are only applied at Build, so they arrive too late: Hangfire read
+  `appsettings.json`'s connection string, whose password is blank by design. On CI (no user-secrets) that threw
+  `Npgsql: No password has been provided but the backend requires one (SASL/SCRAM-SHA-256)` from
+  `AddOrUpdate` at `Program.cs:689`. The host never started, and all 27 classes sharing `ApiTestFactory` then
+  cascaded with the uninformative *"The server has not been started"*.
+- **Why nobody ever saw it locally — and the worse thing it hid:** a developer's user-secrets supply a working
+  `ConnectionStrings:DefaultConnection`, so the host started. Which means **Hangfire in the HTTP test harness
+  was connecting to the developer's REAL dev database**, not the throwaway container — for as long as these
+  tests have existed. The factory's own comments claimed hermetic isolation; it was never hermetic for
+  Hangfire.
+- **Fix:** set the connection strings via `builder.UseSetting(...)` in BOTH HTTP factories, which lands early
+  enough for Program.cs to read. The same file already used exactly this technique for `RateLimiting:Disabled`,
+  with a comment explaining why — the mechanism was present, the connection strings just never used it. The
+  RLS-ON harness additionally needed `GRANT CREATE ON DATABASE` (Hangfire bootstraps its own schema), which is
+  the same grant the production checklist calls out for the real flip.
+- **Verified:** 9/9 HTTP arms pass with `secrets.json` moved aside — the exact CI condition — across both
+  factories. Reproducing the failure was as simple as moving that file.
+- **Reproduction:** CI's exact invocation locally (`dotnet build -c Release` → `scripts/run-backend-tests.sh
+  --no-build -c Release`) **stalled outright** after `A total of 1 test files matched the specified pattern`,
+  with the dev docker stack up (9 containers, 8/14 GB used). Killed after ~20 h with zero test output.
+- **This is a known class in this repo, twice over.** `HRM.Tests.csproj` carries the ISSUE-275 note — *"too
+  many migrate at once and the host saturates"* — which is why the cap exists at all; it was simply tuned for
+  an 8-core dev box. And `scripts/run-backend-tests.sh` (ISSUE-312) exists because an aborted run once read as
+  green, advising *"re-run on an idle machine, or split the Testcontainers pass out"*.
+- **Fix:** `maxParallelThreads` 4 → 2. Deliberately not 1, so cheap unit tests still overlap. If CI is still
+  red, the next step is the script's own advice: split the Testcontainers pass into its own job rather than
+  lowering further and pushing the run toward a timeout.
+- **Separate observation (not the CI cause):** the FULL suite in Release stalls on this dev machine — twice,
+  at ~20 h and ~4.5 h, with no test output after `A total of 1 test files matched the specified pattern`, while
+  the dev docker stack is up. Targeted subsets run fine and the Debug full suite passes (5297). Likely the
+  ISSUE-275 saturation class on a loaded box; recorded so it is not re-diagnosed from scratch.
+- **Honesty note:** the trigger fix and the six merges that followed were mine. Having made the gate run, I
+  merged #473–#477 on auto-merge **without checking it**. The gate being red was discoverable the whole time.
+
+---
+
 ### DF-approveoffer-retire — Retire the reserved `Recruitment.ApproveOffer` permission (needs a data-cleanup migration first)
 - **ID:** DF-approveoffer-retire
 - **Type:** DF (tidy — inert data + a catalog entry that invites a wrong fix)

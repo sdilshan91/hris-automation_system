@@ -59,6 +59,22 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         // for Program.cs to read it at build. forgot-password/public-application limits stay on (RateLimitClusterApiTests).
         builder.UseSetting("RateLimiting:Disabled", "true");
 
+        // ISSUE-361 — these MUST be UseSetting, not just ConfigureAppConfiguration.
+        //
+        // Program.cs resolves Hangfire's storage connection INLINE from `builder.Configuration` before
+        // `builder.Build()` runs. ConfigureAppConfiguration callbacks are applied at Build, so they are too
+        // late: Hangfire read appsettings.json's connection string instead, whose password is blank by
+        // design. On CI (no user-secrets) that threw
+        //   "No password has been provided but the backend requires one (SASL/SCRAM-SHA-256)"
+        // from AddOrUpdate at Program.cs:689 — the host never started, and all 27 classes in this collection
+        // then reported the useless "The server has not been started", 58 failures every run.
+        //
+        // On a developer machine it LOOKED fine only because user-secrets supplied a working
+        // DefaultConnection — which means Hangfire was quietly writing to the developer's real dev database
+        // instead of this throwaway container. The harness was never as isolated as it claimed.
+        builder.UseSetting("ConnectionStrings:DefaultConnection", _postgres.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:PrivilegedConnection", string.Empty);
+
         builder.ConfigureAppConfiguration((_, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
