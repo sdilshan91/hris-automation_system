@@ -469,6 +469,11 @@ Needs a data-cleanup migration before the constant can be removed (`UpdateRoleVa
 
 ### G0 — P0: isolation, money, compliance (before the next production deploy)
 
+> **Filed to `TEST-FINDINGS.md` 2026-08-08 — these five have finding IDs and are `/fix-finding`-ready:**
+> **GAP-001 → [[BUG-297]]** · **GAP-002 (+GAP-017) → [[BUG-298]]** · **GAP-003 → [[BUG-299]]** ·
+> **GAP-004 → [[BUG-300]]** · **GAP-005 → [[BUG-301]]**. Everything below G0 has **no finding ID yet** —
+> file before starting a `/fix-finding` on it, or the `/verify-fix` close-out has nothing to flip.
+
 | ID | Component | Gap detail (evidence) | Scope required to cover | Size |
 |---|---|---|---|---:|
 | **GAP-001** | `TenantResolutionMiddleware` · `AppDbContext` filters · `ConnectionRoutingInterceptor` · `TenantAccessGuardMiddleware` | **An unresolved tenant context disengages ALL FOUR isolation layers at once.** Resolution passes the request through (`:90-93`, `:105-110`); the EF filter is `!IsResolved \|\| …` so it becomes a tautology (`AppDbContext.cs:269-270`); routing sends it to the **BYPASSRLS `hrm_owner`** role (`ConnectionRoutingInterceptor.cs:92-93`); the BUG-003 guard requires `IsResolved` and skips (`:38-42`). **`api` and `app` are both in the shipped reserved-subdomain list** (`:54`). **No US-PLT AC covers this** — the nearest, US-PLT-002 AC-4, is unmet and never negatively tested. *Mitigation: `SystemEndpointHostGuardMiddleware` protects `/api/v1/system/*`; `/api/v1/tenant/*` is unprotected.* | **1.** Run the probe first — authenticate as tenant A, `GET /api/v1/tenant/employees` with `Host: api.<basedomain>`, count rows. **This converts a 60%-confidence risk into a yes/no and must precede the fix.** **2.** Invert the default in `SelectPrivileged()`: privileged **only** when `IsSystemContext` is explicitly true, never merely because nothing resolved. **3.** 400 reserved-subdomain requests to `/api/v1/tenant/*`. **4.** Prove no legitimate path relies on "unresolved ⇒ privileged" — Hangfire, `DbInitializer` seeding, health probes. **5.** Add the missing US-PLT-002 AC + an HTTP-level negative test. | **M** (2–3 is S; 4 is the M) |

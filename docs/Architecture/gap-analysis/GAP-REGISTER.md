@@ -77,6 +77,10 @@ IDs are stable — never renumber; append only.
 
 ### P0 — act before the next production deploy
 
+> **Filed to [`docs/QA/TEST-FINDINGS.md`](../../QA/TEST-FINDINGS.md) 2026-08-08 so `/fix-finding` can act on them:**
+> `GAP-001 → BUG-297` · `GAP-002 (+GAP-017) → BUG-298` · `GAP-003 → BUG-299` · `GAP-004 → BUG-300` · `GAP-005 → BUG-301`.
+> The remaining 35 gaps are **not** filed — they live here and in the COMPLETION-PLAN's §GAP-PLAN.
+
 | ID | Gap | Evidence | Size |
 |---|---|---|---:|
 | **GAP-001** | **An unresolved tenant context disengages ALL FOUR isolation layers.** Resolution passes the request through (`TenantResolutionMiddleware.cs:90-93,105-110`); the EF filter becomes a tautology (`AppDbContext.cs:269-270`); the connection routes to the **BYPASSRLS** `hrm_owner` role (`ConnectionRoutingInterceptor.cs:92-93`); the cross-tenant guard skips (`TenantAccessGuardMiddleware.cs:38-42`). **`api` and `app` are both in the shipped reserved-subdomain list.** Latent today; live the moment the API is served at `api.<domain>`. **No US-PLT AC covers this case** — the nearest (US-PLT-002 AC-4) is unmet and never negatively tested. *Mitigation found: `SystemEndpointHostGuardMiddleware` protects `/api/v1/system/*`; `/api/v1/tenant/*` is unprotected.* | 6 links, all verified | **M** |

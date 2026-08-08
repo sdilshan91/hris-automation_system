@@ -7902,3 +7902,126 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Reproduction steps:** on real Postgres, configure an encashable leave type with `MaxEncashDays` **below** the forfeitable balance, give an employee a carry-in that forces a forfeit, run `ProcessYearEndAsync`, then read the running balance for that (employee, type, year). It may return the pre-residual balance.
 - **Fix applied:** the residual-expire draw is now stamped `yearEndUtc + PoolRowTickOffset * 2` when an encashment row was written (×2 because a single draw already occupies `occurredAt` and `occurredAt + PoolRowTickOffset` when it splits across the carry and accrual pools, so ×1 would collide with the encashment's own second row). Unchanged when nothing is encashed.
 - **Severity rationale:** MED — an overstated balance is employee-favourable but wrong, non-deterministic (so it can differ between reads), and feeds downstream decisions (leave approval headroom, and a later encashment of days the employee no longer holds). Not HIGH: it does not move money directly, requires an encashable type WITH a cap below the forfeit, and the sweep's own arithmetic was always correct — only the persisted ordering was ambiguous.
+
+---
+
+> **Batch filed 2026-08-08 by `/gap-analysis` (BUG-297…BUG-301).** These are the five P0s from the
+> whole-product requirement-to-code trace. Full evidence and 35 further gaps:
+> [`Architecture/gap-analysis/GAP-REGISTER.md`](../Architecture/gap-analysis/GAP-REGISTER.md) + 17 per-pass
+> reports. **All five were verified twice** — by the auditing agent and independently re-read by the
+> orchestrator against the cited lines. **Static analysis only: no stack was run, nothing was executed.**
+
+---
+
+### BUG-297 — An unresolved tenant context disengages ALL FOUR isolation layers at once
+- **ID:** BUG-297
+- **Type:** BUG (tenant isolation — Critical Rule #1)
+- **Severity:** **HIGH** — latent, not currently reachable. **Escalates to CRIT on any deployment that serves the API from a reserved subdomain** (`api.`, `app.`, `www.`) or the apex domain, which is the most conventional layout.
+- **Status:** `OPEN`
+- **Layer:** BE
+- **Module / US / TC:** Platform / US-PLT-002 (nearest AC) / — — found 2026-08-08 by `/gap-analysis` Pass C (NFR §6.1) and confirmed by Pass A10 (platform)
+- **Title:** When tenant resolution is **skipped** rather than **failed**, the EF query filter, the RLS connection routing, and the BUG-003 cross-tenant guard all disengage simultaneously.
+- **The chain (all four links re-read by the orchestrator):**
+  1. `HRM.Api/Middleware/TenantResolutionMiddleware.cs:90-93` — no subdomain ⇒ `await _next(context); return;`. Same at `:105-110` for a **reserved** subdomain.
+  2. `HRM.Infrastructure/Persistence/AppDbContext.cs:269-270` — every filter is `!_tenantContext.IsResolved || x.TenantId == …`. Unresolved makes the predicate a **tautology**: no row is excluded.
+  3. `HRM.Infrastructure/Persistence/Interceptors/ConnectionRoutingInterceptor.cs:92-93` — `SelectPrivileged() => AmbientTenant.Current is not { IsResolved: true, IsSystemContext: false }`. Its own docstring: *"unresolved / null / system ⇒ privileged"*. That routes to **`hrm_owner`, which is `BYPASSRLS`** (`Persistence/Rls/roles.sql:18,38`).
+  4. `HRM.Api/Middleware/TenantAccessGuardMiddleware.cs:38-42` — enforcement requires `tenantContext.IsResolved`, so the guard built for exactly this bug class (BUG-003) **skips**.
+- **Reachability:** `TenantResolutionMiddleware.cs:54` ships the reserved list `["www", "api", "admin", "app", "mail", "status", "docs", …]`. **`api` and `app` are both in it.** Today's rig uses per-tenant subdomains, so this is latent. It goes live the moment the API is fronted at `api.<basedomain>`.
+- **Mitigation that already exists (found during the audit, worth knowing):** `HRM.Api/Middleware/SystemEndpointHostGuardMiddleware.cs:62-90` fails closed on an unresolved context, so **`/api/v1/system/*` IS protected**. `/api/v1/tenant/*` is not.
+- **Not anonymous access.** Authentication still applies. The exposure is an **authenticated tenant-A user reading tenant-B rows**.
+- **Requirement it breaks:** tech doc §6.1 bullet 2 — *"a request without a valid tenant context must be **rejected, not assumed**"*. There is no `RequireTenant` filter anywhere in the codebase. **No US-PLT acceptance criterion covers this case**; the nearest, US-PLT-002 AC-4 (*"keep this bypass surface narrow and auditable"*), is unmet and has never been negatively tested — `RlsIsolationPostgresTests` proves the privileged path **works**, never that the unresolved path is **denied** it.
+- **Reproduction (NOT yet run — this is the settling test, and it should precede any fix):** authenticate as tenant A, then `GET /api/v1/tenant/employees` with `Host: api.<basedomain>`. Count the rows. If it returns more than tenant A's employees, this is live.
+- **Confidence:** **100%** on the four code facts (each re-read directly). **~60%** on real-world exploitability, which depends entirely on deployment topology.
+- **Smallest fix:** invert the default in `SelectPrivileged()` — privileged **only** when `IsSystemContext` is explicitly true, never merely because nothing resolved — and 400 reserved-subdomain requests to `/api/v1/tenant/*`. The M-sized part is proving no legitimate path relies on "unresolved ⇒ privileged" (Hangfire, `DbInitializer` seeding, health probes). Then add the missing AC and an HTTP-level negative test.
+- **Related:** [[BUG-003]] (the guard that skips here) · GAP-006 (six entities with no EF filter, which this chain also strips) · `TEST-FINDINGS` has no prior entry for this — greps for "reserved subdomain" / "unresolved tenant" return nothing.
+
+---
+
+### BUG-298 — SSO tenant isolation is appsettings-backed, not DB-backed; the BR-5 production gate is claimed satisfied and is not
+- **ID:** BUG-298
+- **Type:** BUG (tenant isolation / false ledger claim)
+- **Severity:** **HIGH** — fails *closed* in the dangerous direction, so not a live leak; but the entire US-AUTH-012 configuration surface is decorative, and a production gate is recorded as passed on a false premise.
+- **Status:** `OPEN`
+- **Layer:** BE
+- **Module / US / TC:** Authentication / US-AUTH-012, US-AUTH-013, US-AUTH-014 / TC-AUTH-115..125 — found 2026-08-08 by `/gap-analysis` Pass A3
+- **Title:** `EntraSsoService.CheckIsolation` reads the allow-list from **appsettings**, not from the tenant record. The five per-tenant DB fields have **zero read sites on any login path**.
+- **Evidence (exhaustive grep, orchestrator-verified):**
+  - `HRM.Infrastructure/Identity/EntraSsoService.cs:358` — `_options.TenantAllowList.TryGetValue(subdomain, …)`; `:368-370` computes `tidAllowed`/`domainAllowed` from `allow.AllowedTenantIds` / `allow.AllowedDomains`; `:384-385` gates JIT on `allow.JitProvisioning` / `allow.DefaultRole`. All from the `Authentication:Entra` config section.
+  - `Tenant.AllowedEntraTenantIds`, `AllowedEmailDomains`, `SsoEnabled`, `JitEnabled`, `JitDefaultRole` appear **only** in DTOs, the validator, the snapshot mapper (`AuthService.cs:1948-1951, 2018-2021`), the settings-write path (`:2189-2306`), the audit snapshot, and admin-consent capture (`:2478-2507`). **Not once on a login path.**
+  - `AuthService.SsoSignInAsync` (`:2782-2950`) — the only other gate — checks tenant existence, tenant status, user active, membership active. It never reads any of the five.
+  - **The source says so itself:** `Identity/EntraSsoOptions.cs:9-13` — *"the **dev-POC home** for the security-critical tenant-isolation config (US-AUTH-013). **In the full feature this moves into per-tenant DB config (US-AUTH-012)**."*
+- **Three consequences:**
+  1. A tenant admin editing the SSO allow-list in the UI changes **nothing** about who can sign in.
+  2. US-AUTH-016's admin-consent flow writes the customer's directory id into `Tenant.AllowedEntraTenantIds` (`AuthService.cs:2485-2490`) — a value the guard never reads. **Admin-consent onboarding cannot actually enable anyone.**
+  3. `Tenant.SsoEnabled = false` does **not** block SSO. Neither `BuildAuthorizeUrlAsync` (`:59-76`, checks only global `IsConfigured`) nor `CompleteSignInAsync` consults it. A tenant present in the appsettings list can complete SSO login with SSO switched **off** in its own settings.
+- **The false claim (this is the reason it is filed as a BUG, not an ENH):** `docs/BA/STATUS.md:43` — *"DB-backed form delivered by 012 (#444) — allow-list now reads `TenantAuthSettings`, not appsettings"*; `:44` — *"JIT now gated by the per-tenant `jit_enabled`/`jit_default_role`"*; `:40` — *"**the BR-5 prod gate is satisfied (DB-backed per-tenant isolation shipped)**"*. **All three are false.**
+- **Bundled sub-item (GAP-017, US-AUTH-013 AC-7 — one of only 2 MISSING ACs in 448):** `EntraSsoService.cs:473-487` returns the `email` claim, falling back to `preferred_username`, with **no `xms_edov` / `email_verified` check anywhere**. FR-5 requires the verified claim only. Same file, same guard — fix together.
+- **Also missing:** the two SSO isolation audit events **`sso_isolation_rejected`** (AC-3/FR-6) and **`sso_misconfigured`** (AC-5) have **zero occurrences repo-wide**. `CheckIsolation` writes Serilog warnings the in-app audit search cannot read, while every *other* SSO failure path correctly calls `RecordSsoFailureAsync`.
+- **Confidence:** **97%** — established by exhaustive read-site enumeration of all five fields plus full reads of `CompleteSignInAsync` and `SsoSignInAsync`.
+- **Reproduction:** set `Tenant.AllowedEntraTenantIds` via the API for a tenant with **no** matching appsettings entry, then attempt SSO login. Expected: permitted. Observed (predicted): rejected — proving the DB value is ignored. Inverse also holds.
+- **Smallest fix:** in `CompleteSignInAsync`, replace `CheckIsolation(...)` (`:218`) with an async guard loading the tenant's `SsoSettingsSnapshot` — **the cache already exists** (`AuthService.GetSsoSettingsAsync`) — evaluating `SsoEnabled` + both allow-lists + the JIT gate from it. Keep appsettings only as an explicit dev-override behind an env check, or delete it. Add the two audit events. **Then correct `STATUS.md:40,43,44`.**
+- **⚠ Do not ship SSO to production against the current BR-5 claim.**
+
+---
+
+### BUG-299 — MONEY: Loss-of-Pay is under-deducted for every mid-month joiner and leaver (pro-ration applied twice)
+- **ID:** BUG-299
+- **Type:** BUG (payroll correctness — money)
+- **Severity:** **HIGH** (money, employee-favourable, silent) — same class as [[BUG-291]] / [[BUG-293]]
+- **Status:** `OPEN`
+- **Layer:** BE
+- **Module / US / TC:** Payroll / US-PAY-010 AC-1 / TC-PAY-010-01 — found 2026-08-08 by `/gap-analysis` Pass A2
+- **Title:** `PayrollSlipCalculator` divides the **already pro-rated** basic by the **full** working-day count, so the pro-ration factor is applied twice to the LOP daily rate. **The code contradicts its own comment.**
+- **Evidence (orchestrator re-read the full block `:118-150`):**
+  - `HRM.Domain/Payroll/PayrollSlipCalculator.cs:126` — `var proRated = Round(c.MonthlyAmount * proRataFactor);` … `if (c.Code == BasicCode) proRatedBasic = proRated;`
+  - `:138` — the comment states the rule: `// BR-2: LOP deduction line. daily_rate = monthly_basic / working_days`
+  - `:142` — the code does: `var dailyRate = proRatedBasic / workingDays;`
+- **Worked example:** 22 working days · BASIC 22,000 · employee joins mid-month (`ProRataPaidDays = 11`) · 2 LOP days.
+  - Code: `(11,000 / 22) × 2 = **1,000**`
+  - Correct per AC: `(22,000 / 22) × 2 = **2,000**`
+  - **Under-deducted by exactly `(1 − proRataFactor)`.**
+- **Why no test catches it:** every case in `HRM.Tests/Unit/PayrollSlipCalculatorTests.cs` has **either** `LopDays: 0` (`:41,68,109,125,149,175,192`) **or** `ProRataPaidDays: null` (`:85`, the only `LopDays: 3` case). **The two conditions are never combined.** The real-Postgres joiner test `PayrollWorkingDaysDenominatorTests.cs:206` is also LOP-free.
+- **Confidence:** **85%.** The arithmetic and the test gap are certain; the residual is whether an upstream caller pre-scales `LopDays`. ⚠ **A late sub-explorer claimed this line was an "exact formula match" — it read the LOP line without tracing `proRatedBasic` to its assignment 16 lines above.** That claim is overruled and recorded in the payroll pass report; the orchestrator verified the code directly.
+- **Reproduction / the one test that settles it:** `WorkingDays: 22, ProRataPaidDays: 11, LopDays: 2` → assert the LOP line is **2,000**, not 1,000.
+- **Smallest fix:** divide by `paidDaysBeforeLop`, or use the un-pro-rated basic. Add the combined test above.
+- **⚠ Requires a business decision, like BUG-291:** do already-issued slips need correction, or only future runs? **Do not assume** — decide on an exposure report.
+
+---
+
+### BUG-300 — COMPLIANCE: a daily job hard-deletes audit logs at 90 days against a documented 7-year retention
+- **ID:** BUG-300
+- **Type:** BUG (compliance — GDPR/audit retention)
+- **Severity:** **HIGH** — a running job destroys the evidence the requirement exists to preserve, with no archival path
+- **Status:** `OPEN`
+- **Layer:** BE / DATA
+- **Module / US / TC:** Notifications-Audit / US-NTF-004, tech doc §6.9 / — — found 2026-08-08 by `/gap-analysis` Pass C (NFR §6.9)
+- **Title:** `AuditLogPurgeJob` runs daily and **hard-deletes** audit rows at a **90-day** default. Tech doc §6.9 (`hrm_technical_document_v4.0.md:369`) states verbatim: *"GDPR-aligned: data subject access & erasure (per tenant, per user), **7-year audit retention**."*
+- **Evidence:**
+  - `HRM.Infrastructure/Services/AuditLogPurgeService.cs:41` — `var retentionDays = tenant.AuditLogRetentionDays <= 0 ? 90 : tenant.AuditLogRetentionDays;` then `_db.AuditLogs.RemoveRange(expired)` — a **hard delete**, not a soft one.
+  - `HRM.Domain/Entities/Tenant.cs:319` — `public int AuditLogRetentionDays { get; set; } = 90;`
+  - `:315` promises *"Business=365, **Enterprise=2555**"* **in a comment only** — no seed, plan row, or migration sets 2555. Confirmed against `SubscriptionPlan.cs:83`, which also defaults 90.
+  - Scheduled daily at `HRM.Api/Program.cs:714-716`.
+- **Gap size:** 90 days is **~1/28th** of the stated requirement.
+- **Confidence:** **90%.** The code path is unambiguous. Residual: a deployment could set `AuditLogRetentionDays = 2555` per tenant via the plan admin API — **but nothing in the repo does**, and the default is what ships.
+- **Reproduction:** seed an audit row with `CreatedAt` 100 days ago on a tenant with default settings, run `AuditLogPurgeJob`, observe the row is gone.
+- **Smallest fix:** raise the default **and/or** archive-then-delete (cold storage), then seed the plan-tier values the comment already promises.
+- **⚠ Interacts with BUG-301:** the purge needs `DELETE` on `audit_logs`. Once audit tables are locked down, the purge must run under the privileged role.
+
+---
+
+### BUG-301 — Audit log is append-only by convention only; the runtime DB role holds UPDATE and DELETE
+- **ID:** BUG-301
+- **Type:** BUG (security / defence-in-depth — NFR-3)
+- **Severity:** **MED** — no active exploit path found; this is the absence of a control, not a breach. Rated MED rather than LOW because the control is *stated as implemented* in the code and required by NFR-3.
+- **Status:** `OPEN`
+- **Layer:** DB
+- **Module / US / TC:** Admin-Console / US-ADM-008 AC-5 (NFR-3) / — — found 2026-08-08 by `/gap-analysis` Pass A1 and Pass C
+- **Title:** Audit immutability is enforced only by the absence of an update/delete endpoint. **Nothing at the database layer prevents rewriting audit history**, and the application's own credentials can do it.
+- **Evidence:**
+  - `HRM.Infrastructure/Persistence/Rls/roles.sql:43,47` — grants `SELECT, INSERT, UPDATE, DELETE` on **all** tables in `public` to the runtime role `hrm_app`, audit tables included.
+  - `HRM.Api/Controllers/AuditLogController.cs:19-21` concedes it: *"append-only **by code convention** … **REVOKE DEFERRED**"*.
+  - No `CREATE TRIGGER`, no `REVOKE`, and no interceptor guard exists in any migration or in `Persistence/` — searched.
+- **Why it matters:** anything holding the app's DB credentials — a SQL-injection foothold, a stray `ExecuteDelete`, or a compromised connection string — can silently rewrite the audit trail. **That is the one record class whose integrity the rest of the compliance story depends on.**
+- **Confidence:** **95%.** Direct read of the grant file and the controller comment; absence confirmed by search.
+- **Smallest fix:** `REVOKE UPDATE, DELETE ON audit_logs, employee_field_audit_logs FROM hrm_app;` in `roles.sql`, **plus** route the purge (BUG-300) and the `AnonymizeUserAsync` path to `hrm_owner`, which is already the privileged route. Re-run the local RLS-on validation afterwards (method in `Rls/README` §runbook).
+- **Related:** BUG-300 (the purge needs the DELETE this revokes) · GAP-025 in the register (employee changes bypass `audit_logs` entirely via `IAuditExempt`, so they are invisible to the US-NTF-005 viewer).
