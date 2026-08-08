@@ -1,5 +1,22 @@
 # HRM — Implemented vs Documented Gap Analysis (execution plan + live status)
 
+> ## ✅ COMPLETE — 2026-08-08
+> **All 17 passes run. ~674 verdicts. Deliverable: [`GAP-REGISTER.md`](GAP-REGISTER.md).**
+>
+> | | Planned | Actual |
+> |---|---|---|
+> | Passes | 17 (13 modules + B/C/D/E) | **17** ✔ |
+> | Verdicts | ~550–570 | **~674** |
+> | Module rows | 491 | 492 — **297 implemented (60%)**, 156 partial, 2 missing, 36 contradicted |
+>
+> **Headline: a product the ledger calls 99% done is ~60% done at AC level — and only 2 of 448 Must-Have ACs are MISSING.** The shortfall is reachability, not capability.
+>
+> **Deviations from plan, all recorded:**
+> - `maxTurns: 60` was below the floor for AC-level work; two auditors returned nothing. Raised to 140 (`fd0b99ce`); five passes were recovered by resuming them to emit from existing context rather than re-running.
+> - The Asset Management "first candidate gap" logged below was **wrong and is retracted** — see Pass B.
+> - The pilot gate paid for itself: **8 of 12 auditors corrected the orchestrator's briefs**, and one orchestrator error reached a commit before being caught (`66c78be3`).
+
+
 > **Started:** 2026-08-08 · **Tree:** `test/local-subdomains` (de-facto trunk, 810 ahead of stale `main`)
 > **Driver:** [`/gap-analysis`](../../../.claude/skills/gap-analysis.md) · **Agent:** [`@requirements-auditor`](../../../.claude/agents/review/requirements-auditor.md)
 > **Mode:** REPORT-ONLY. This effort produces a gap register. It fixes nothing, edits no `src/`, and
