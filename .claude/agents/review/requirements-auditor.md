@@ -6,7 +6,7 @@ tools:
   - Glob
   - Grep
   - Bash
-maxTurns: 60
+maxTurns: 140
 memory: project
 ---
 
