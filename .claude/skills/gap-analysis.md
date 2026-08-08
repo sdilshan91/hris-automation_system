@@ -11,7 +11,7 @@ and what does the code deliver that no document describes?** Output is a ranked,
 register with file:line evidence for every claim.
 
 This is **not** `/advisor` (tech health, dependency currency, ADR drift), **not** `/test-all`
-(executes tests against a running stack), and **not** `/integration-enforcer` (wiring of one change).
+(executes tests against a running stack), and **not** `@integration-enforcer` (wiring of one change).
 It is requirement-to-code tracing across the whole product.
 
 ## The premise you must not forget
@@ -19,10 +19,10 @@ It is requirement-to-code tracing across the whole product.
 `docs/BA/STATUS.md` claims **124 of 125 stories done**. That ledger has been measured wrong in **both**
 directions. `docs/QA/TEST-STATUS.md` and `TEST-FINDINGS.md` inherit the same disease. So:
 
-> **Ledgers are claims to be tested, never evidence.** Every verdict in this skill's output must be
-> anchored to `src/`. Where a ledger claim and the code disagree, that contradiction is itself a
-> first-class finding (`CONTRADICTED`) — usually more valuable than the underlying gap, because the
-> false "done" is what prevents anyone from fixing it.
+> **Ledgers are claims to be tested, never evidence.** Every verdict must be anchored to `src/`. Where
+> a ledger claim and the code disagree, that contradiction is itself a first-class finding
+> (`CONTRADICTED`) — usually more valuable than the gap underneath it, because the false "done" is
+> what prevents anyone from fixing it.
 
 ## Invocation
 
@@ -43,63 +43,70 @@ directions. `docs/QA/TEST-STATUS.md` and `TEST-FINDINGS.md` inherit the same dis
 | `priority: Should Have` / `Could Have` stories | **Per story** — one verdict per story |
 | Tech-doc NFR / architecture bullets | Per documented requirement bullet |
 
-Rationale: story-level granularity is precisely what produced the current wrong ledger. The Must-Have
-tier is where a wrong verdict is expensive, so it gets AC-level scrutiny; the Should/Could tail does
-not earn that cost.
+Story-level granularity is precisely what produced the current wrong ledger. The Must-Have tier is
+where a wrong verdict is expensive, so it gets AC-level scrutiny; the Should/Could tail does not earn
+that cost.
 
 ## Evidence bar
 
-A requirement is `IMPLEMENTED` only if **code exists** + **it is wired/reachable** + **a test is bound
-to it**. Test existence is *recorded, not executed* — running tests is `/test-all`'s job. Failing any
-one of the three yields `PARTIAL` with the specific failure named. Full taxonomy and the stack-specific
-wiring checklist live in the agent definition:
+`IMPLEMENTED` requires **code exists** + **wired/reachable** + **a bound test exists**. Test existence
+is *recorded, not executed* — running tests is `/test-all`'s job. Failing any leg yields `PARTIAL`
+with the failing leg named. Full taxonomy and the stack-specific wiring checklist live in
 [`.claude/agents/review/requirements-auditor.md`](../agents/review/requirements-auditor.md).
+
+**Leg 2 includes the FE/BE contract.** The pilot found the single highest-value gap class in this
+codebase is an Angular layer coded against a response shape the API cannot emit, with green Karma
+specs mocking the wrong shape. A strong backend does not make the AC implemented.
 
 ## The five passes
 
 | Pass | Question | Scope | Agents |
-|---|---|---|---|
-| **A — Functional forward** | Do the stories' ACs exist in code? | 125 US files across 13 BA modules | one `@requirements-auditor` per module |
-| **B — Doc→story coverage** | Does the tech doc promise modules/features no story covers? | tech doc §3.1, §5.1, §5.2, §11.1–11.14 vs `docs/BA/INDEX.md` | 1 |
-| **C — NFR** | Are the §6 non-functional requirements actually satisfied? | tech doc §6.1–6.12 | 1 |
-| **D — Reverse** | Is there shipped code no document describes? | 36 backend feature folders + 15 frontend features vs stories/doc | 1 |
-| **E — Architecture conformance** | Does the built structure match §8/§9/§10? | request pipeline, Clean Architecture layering, tenancy touchpoints, folder layout | 1 |
-| **F — Synthesis** | What is the ranked gap register? | orchestrator, no agent | — |
+|---|---|---|---:|
+| **A — Functional forward** | Do the stories' ACs exist in code? | 125 stories / 13 BA modules | 13 |
+| **B — Doc→story coverage** | Does the tech doc promise modules/features no story covers? | §3.1, §5.1, §5.2, §11.1–11.14 vs `BA/INDEX.md` | 1 |
+| **C — NFR** | Are the §6 non-functional requirements satisfied? | §6.1–6.12 | 1 |
+| **D — Reverse** | Is there shipped code no document describes? | 36 BE features + 15 FE features | 1 |
+| **E — Architecture conformance** | Does the build match §8/§9/§10? | request pipeline, layering, tenancy touchpoints, layout | 1 |
+| **F — Synthesis** | What is the ranked register? | orchestrator, no agent | — |
 
 Pass A carries the bulk. Passes B–E are single-agent and run concurrently with it.
 
 ## Execution protocol
 
-1. **Pilot first — do not fan out blind.** Run Pass A against **one** module and read the output
-   yourself. Spot-check two or three verdicts by opening the cited files. If the agent is
-   rubber-stamping (IMPLEMENTED with vague evidence) or manufacturing gaps (MISSING for code that
-   plainly exists under another name), fix the prompt before spending the other twelve agents. A
-   fan-out of unvalidated auditors just produces a second wrong ledger faster.
-2. **Fan out** the remaining Pass A modules in waves, plus B/C/D/E concurrently. Independent scopes
-   only — never parallelize two agents that write the same output file (they write nothing; the
-   orchestrator persists).
-3. **Persist** each pass's returned text verbatim to
+1. **Check the working tree is exclusively yours.** `git reflog --date=iso -8` and `ps aux | grep claude`.
+   If another session is mutating this tree, **stop** — a concurrent `checkout`/`pull` will silently
+   destroy untracked pass outputs mid-run. (This happened during the pilot; see the plan's incident log.)
+   Commit pass outputs as they land rather than holding them untracked.
+2. **Pilot first — do not fan out blind.** Run Pass A against **one** module and read the output
+   yourself. Spot-check three verdicts by opening the cited files. If the agent is rubber-stamping
+   (IMPLEMENTED with vague evidence) or manufacturing gaps (MISSING for code that plainly exists
+   under another name), fix the prompt before spending the other twelve agents. A fan-out of
+   unvalidated auditors just produces a second wrong ledger, faster.
+3. **Fan out** the remaining Pass A modules in waves, plus B/C/D/E concurrently. Independent scopes
+   only.
+4. **Persist** each pass's returned text verbatim to
    `docs/Architecture/gap-analysis/pass-{a-module|b|c|d|e}.md`.
-4. **Synthesize (Pass F)** into `docs/Architecture/gap-analysis/GAP-REGISTER.md`:
-   - Assign each gap a stable ID `GAP-001…` (never renumber; append only on re-runs).
+5. **Synthesize (Pass F)** into `docs/Architecture/gap-analysis/GAP-REGISTER.md`:
+   - Stable ID `GAP-001…` — never renumber; append only on re-runs.
    - Columns: ID · requirement source · MoSCoW · verdict · severity · evidence · closing move · size.
    - Sort: **Must+CONTRADICTED → Must+MISSING → Must+PARTIAL → Should+… → Could+…**, tie-broken by
      blast radius (tenant isolation and auth outrank cosmetic gaps at every tier).
-   - Roll up a headline table: claimed-done vs verified-done per MoSCoW tier.
-5. **Do not silently cap.** If a pass sampled rather than covered, say what was left out and why.
-   Silent truncation reads as "we checked everything" when we did not.
-6. **Hand off, do not fix.** Fold actionable gaps into
-   [`docs/QA/plans/COMPLETION-PLAN.md`](../../docs/QA/plans/COMPLETION-PLAN.md) and the live session
-   TODO via [`/auto-heal`](auto-heal.md). Findings that are genuine defects also get filed to
-   `docs/QA/TEST-FINDINGS.md` with the standard schema. Fixing is a separate, human-decided cycle
-   (`/fix-finding`, `/implement-story`).
+   - Headline rollup: claimed-done vs verified-done per MoSCoW tier.
+6. **Do not silently cap.** If a pass sampled rather than covered, say what was left out and why.
+7. **Hand off, do not fix.** Fold actionable gaps into
+   [`docs/QA/plans/COMPLETION-PLAN.md`](../../docs/QA/plans/COMPLETION-PLAN.md) and the session TODO
+   via [`/auto-heal`](auto-heal.md). Genuine defects also get filed to `docs/QA/TEST-FINDINGS.md`
+   with the standard schema. Fixing is a separate, human-decided cycle (`/fix-finding`,
+   `/implement-story`).
 
 ## Hard boundaries
 
 - **Never edits `src/`.** Not one line, not "while I was in there".
 - **Never edits `docs/BA/STATUS.md` or `docs/QA/TEST-STATUS.md`.** Correcting a false ledger line is a
   real change with real consequences; this skill *reports* the contradiction and lets the human decide.
-  (`/verify-fix` is the only skill authorized to close findings.)
+  (`/verify-fix` is the only skill authorized to close a finding.)
+- **Never runs a mutating git command.** No `checkout`, `stash`, `clean`, `pull`, `commit`, `restore`
+  from an auditor — the tree may be shared.
 - **Never opens a PR.**
 - **Never lets a ledger promote a verdict.** If the only evidence for "done" is that a doc says done,
   the verdict is MISSING or UNVERIFIABLE.
