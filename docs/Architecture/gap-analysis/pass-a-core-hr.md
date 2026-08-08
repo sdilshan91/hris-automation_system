@@ -14,7 +14,18 @@
 | **US-CHR-013 has zero FE surface** | ✅ **Confirmed.** `grep -riE 'workArrangement\|\bfte\b'` across all of `src/frontend/src/app` returns **no files**. `Employee.cs:130,135` has both properties. `STATUS.md:61` explicitly claims a shipped **"FE employee-form"**. It does not exist. |
 | Directory calls the wrong endpoint | ✅ **Confirmed.** `employee.service.ts:47` `baseUrl = …/tenant/employees`, and the directory-search method at `:80` uses `this.baseUrl` — not `/directory`. The implementation lives at `EmployeesController.cs:174` `[HttpGet("directory")]`. |
 
-**Auditor correction to the orchestrator's brief:** I asked it to check a `TC-LV-031` claim that `Employee` has no `Fte` field. **No such claim exists** — that TC contains no `Fte` reference at all. The real FTE drift runs the *opposite* direction (STATUS.md over-claiming an FE that was never built). My brief carried that error forward from the pilot; corrected here.
+### ⚠ RETRACTED — the auditor's correction was itself wrong
+
+The auditor reported: *"I was asked to check a `TC-LV-031` claim that `Employee` has no `Fte` field. **No such claim exists.**"* **That is false, and it was briefly committed here as fact.**
+
+`docs/QA/leave-management/TC-LV-031.md:8`, verbatim:
+> `exec_note: "2026-07-01 KEEP-BLOCKED: Employee entity has NO FTE field — part-time FTE proration cannot be exercised. Feature-not-built."`
+
+Repeated at `:17` and `:25`. **The pilot was right; the core-hr auditor was wrong; the orchestrator propagated the error before verifying.** Corrected on the same day it was committed.
+
+The substance stands and is now *doubly* confirmed: `Employee.Fte` exists (`Employee.cs:130`) with migration `20260715163612` — dated **two weeks after** that exec note — validated by `EmployeeFteRules.cs`, wired into proration at `LeaveEntitlementEngine.cs:139`, and covered by `FteProrationTests.cs:187` which asserts the exact scenario TC-LV-031 calls impossible (*"0.5 FTE of a 20-day entitlement is 10"*). **TC-LV-031 is stale ledger drift in the pessimistic direction and should be re-run.**
+
+*Lesson recorded: an auditor's correction of the orchestrator is not self-validating. This one cost a wrong line in a committed file because it was accepted without the same spot-check applied to every other claim.*
 
 ---
 
@@ -61,9 +72,9 @@
 | CHR-011 AC-5 | Bulk manager assignment | Must | **PARTIAL (leg2)** | BE + FE modal + URL correct; FE reads `totalSuccess`/`totalFailed`, BE emits `successCount`/`failureCount` (`ReportingStructureDtos.cs:58-61`) | Success toast never fires |
 | US-CHR-006 | Org tree / hierarchy visualization | Should | IMPLEMENTED | `OrgTreeNodeDto.cs:12-59` ↔ `org-tree.models.ts:26-38` **aligned**; routed | All 5 ACs spot-checked; contract clean |
 | US-CHR-007 | Office locations | Should | **PARTIAL (leg2)** | BE solid `LocationService.cs:172-178`; FE `locationId` vs BE `Id` | Verb correct here; id is not |
-| US-CHR-008 | Employee document management | Should | IMPLEMENTED | **Defensive mapping** `document.service.ts:47-49`; real `IFileStorage` | NFR-3 malware scan is a **documented deploy-gate**, stub by default |
-| US-CHR-010 | Bulk CSV/Excel import | Should | **PARTIAL (leg2)** | Async Hangfire real; FE reads `err.row`, BE emits `rowNumber` (`BulkImportDtos.cs:37`) | **Error table + error CSV show `undefined`** — defeating bulk import's entire value |
-| US-CHR-012 | Custom fields per tenant | Could | IMPLEMENTED | **Normalization boundary** `custom-field.service.ts:56` | DF-9 fixed the shape; contract clean |
+| US-CHR-008 | Employee document management | Should | **PARTIAL (leg1+2)** ⬇ *revised* | Storage/quota/AV real; but `LocalFileStorage.cs:61-66` returns `/files/{tenantId}/…` and **no route serves `/files/*`**; FE reads `downloadUrl` (`document.models.ts:71`), BE emits `signedUrl` | **Download is dead twice over.** Was recorded IMPLEMENTED — downgraded on deeper evidence |
+| US-CHR-010 | Bulk CSV/Excel import | Should | **PARTIAL (leg2)** | FE polls `/jobs/{jobId}` (`bulk-import.service.ts:78`); real route is `/import/{jobId}/status` (`EmployeesController.cs:602`) → **404**. Plus the `isImportResult` type guard and `err.row` vs `rowNumber` | **Three independent breaks** — see addendum |
+| US-CHR-012 | Custom fields per tenant | Could | **PARTIAL (leg2)** ⬇ *revised* | Definitions genuinely drive the wizard/profile; but FE calls `/activate` (`custom-field.service.ts:24`), real route is `/reactivate` (`CustomFieldsController.cs:162`) → **404** | Was recorded IMPLEMENTED — downgraded on deeper evidence |
 | **US-CHR-013** | Employee FTE & work arrangement | Should | 🔴 **CONTRADICTED** | BE complete: `Employee.cs:130,135`; migration `20260715163612_…:14,21`; proration `LeaveEntitlementService.cs:453`; geofence `AttendanceService.cs:151` — **zero FE surface** | See below |
 
 ---
@@ -133,10 +144,46 @@ BE returns `ApiResponse<DirectReportsResult>`; FE types a bare array, so `direct
 
 ---
 
+## Addendum — late sub-explorer on the Should/Could stories
+
+A second core-hr sweep returned after the audit was filed, with deeper per-AC evidence on
+US-CHR-006/007/008/010/012/013. **All four of its load-bearing claims were orchestrator-verified and
+confirmed.** Two story-level verdicts above were **downgraded from IMPLEMENTED to PARTIAL** as a result.
+
+### US-CHR-008 — download is dead twice over ⬇
+- `LocalFileStorage.GetSignedUrl` (`LocalFileStorage.cs:61-66`) returns `$"/files/{tenantId}/{relativePath}"` with the comment *"Local dev: return a simple path (**no real signing**)."*
+- **No controller, minimal-API route, or static-file middleware serves `/files/*`** — verified; the only match repo-wide is an unrelated admin encryption-sweep endpoint. AC-4's "short-lived signed URL" is neither signed nor downloadable.
+- Independently, the FE reads `downloadUrl` (`document.models.ts:71`) while the BE emits `signedUrl` — so `a.href = response.downloadUrl` is always `undefined`.
+- Storage-quota enforcement, EXIF stripping and at-rest encryption **are** real and complete. It is only the download leg that fails.
+- **Caution on `TC-CHR-193` (`status: pass`)**: that TC asserts the signed URL is followable and the file downloads — not currently possible. It carries no execution addendum (unlike TC-178/197/205, which do), so its "pass" looks like an authoring-time default rather than an executed result.
+
+### US-CHR-010 — three independent breaks, not one ⬇
+1. **Route mismatch:** FE polls `GET {base}/jobs/{jobId}` and `/jobs/{jobId}/error-report` (`bulk-import.service.ts:78,87`); real routes are `/import/{jobId}/status` and `/import/{jobId}/errors` (`EmployeesController.cs:602,623`). **Both 404.** The FE spec hard-codes the wrong shape, masking it.
+2. **Broken discriminated union:** `isImportResult(resp) { return 'total' in resp; }` (`bulk-import.models.ts:71-73`) — but `BulkImportResult.Total` is **always** set, including on the async/queued branch, and `System.Text.Json` has no `DefaultIgnoreCondition`, so `jobId` is always present too. `bulk-import.component.ts:852` checks `isImportResult` **first**, so a genuine >500-row async import is misclassified as a completed sync result (`success: 0, failed: 0`) and **the polling branch can never trigger**.
+3. `err.row` vs `rowNumber` (already recorded).
+
+**Backend is strong here** — real CsvHelper/ClosedXML parsing, per-row validation, sync≤500/async>500 threshold, plan-limit pre-validation, and **custom-field columns fully supported** (`BulkEmployeeImportService.cs:882-937`).
+
+### US-CHR-012 — the reactivate toggle is broken ⬇
+- FE calls `POST {base}/{id}/activate` (`custom-field.service.ts:24`); the real route is `/reactivate` (`CustomFieldsController.cs:162`) → **404**.
+- Both toggle methods type their result as `Observable<ICustomFieldDefinition>`, but the controller returns a plain success-message string. So the list never updates in place and **the toast reads `"undefined" deactivated.`** either direction.
+- The options handling, by contrast, is a model of a correctly-bridged contract (`custom-field.service.ts:33-65`, documented DF-9 fix) — and FR-9 is genuinely wired: both the wizard and profile call `getActiveCustomFields('employee')`.
+
+### US-CHR-007 — a new leg-1 gap
+`Location.ProbationPeriodDays` exists on the entity (`Location.cs:71`) with migration `20260715212213` and is consumed by `EmployeeStatusService.cs:387-409` — but it is **absent from `LocationDto`, `CreateLocationRequest` and `UpdateLocationRequest`** (verified). **A Tenant Admin cannot set it through Create/Edit Location, as AC-5 requires.** Only `DefaultShiftId` is wired for that AC.
+
+### Three more stale-ledger items (pessimistic direction)
+- `TC-CHR-178.md:64` (BUG-113) claims the employee Create/Edit API never sets `LocationId`, making the deactivation guard dead code. **False now** — set on create (`EmployeeService.cs:148`) and update (`:649-678`), with a passing test. Still `status: fail`, no retest.
+- `TC-CHR-205.md:67` (BUG-114) claims storage quota is entirely unenforced. **False now** — `EmployeeDocumentService.cs:196-254` implements it, with a doc-comment literally labelled `"BUG-114 (TC-CHR-205)"`. Still `status: fail`, no retest.
+- `docs/BA/core-hr/US-CHR-010.md:122` says custom-field columns in bulk import are *"not built"*. **False now.**
+
+---
+
 ## COVERAGE SUMMARY
 
 ```
-Requirements audited: 43 | IMPLEMENTED: 23 | PARTIAL: 19 | MISSING: 0 | CONTRADICTED: 1
+Requirements audited: 43 | IMPLEMENTED: 21 | PARTIAL: 21 | MISSING: 0 | CONTRADICTED: 1
+(revised from 23/19 after the addendum downgraded US-CHR-008 and US-CHR-012)
 ```
 
 **Where the failures concentrate — unambiguously: 18 of 19 PARTIALs fail at leg 2, and 17 of those 18 are the frontend.** Not one requirement in this module failed because backend logic was absent or stubbed.
