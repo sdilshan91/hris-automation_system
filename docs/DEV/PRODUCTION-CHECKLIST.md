@@ -213,32 +213,30 @@ Self-hosted; see [`ops/glitchtip/README.md`](../../ops/glitchtip/README.md).
 
 ---
 
-## 6. One business decision — BUG-291
+## 6. BUG-291 — ✅ CLOSED 2026-08-07, no action required
 
-**Not an engineering task.** The accrual code is fixed, but balances over-credited *before* 2026-07-30 are
-never corrected: a Monthly/Quarterly leave type credited a full year on day one, and those inflated balances
-flow into encashment and final settlement.
+**Was** the one open business decision. It closed on two independent grounds:
 
-- [ ] **Quantify against production** (the dev database has zero ledger rows, so this cannot be measured
-      locally):
-      ```sql
-      SELECT lt.accrual_frequency::text     AS frequency,
-             count(*)                       AS legacy_credit_rows,
-             count(DISTINCT ll.employee_id) AS employees_affected,
-             coalesce(sum(ll.amount), 0)    AS days_over_credited
-      FROM leave_ledger ll
-      JOIN leave_types lt ON lt.id = ll.leave_type_id
-      WHERE ll.accrual_period IS NULL              -- written before the fix
-        AND lt.accrual_frequency::text <> 'Upfront'
-      GROUP BY 1 ORDER BY 1;
-      ```
-      Or the read-only report: `GET /api/v1/tenant/leave-entitlements/accrual-over-credit-exposure?asOfDate=…`
-- [ ] **Decide:** correct the balances · honour them and only fix going forward · block encashment pending
-      review. In several jurisdictions accrued leave is a contractual entitlement, so a downward correction
-      likely wants HR/legal sign-off, not just engineering's.
-- [ ] If correcting, the tool is `POST …/accrual-over-credit-correction`. It is **dry-run by default**
-      (omitting `dryRun` reports without writing), **idempotent**, and writes an auditable negative `Adjusted`
-      entry rather than editing history.
+1. **The accrual code is fixed** (2026-07-30) — every accrual written since is correct.
+2. **No affected data exists.** The residual only ever concerned balances written BEFORE that fix, and there is
+   no production or staging environment holding real tenant leave data. Exposure is zero by construction.
+
+**Verified live on 2026-08-07** (against seeded data, since no real data exists): detection is correct
+(`credited 12 / should-have 3 / over 9` at 31 Mar), the over-credit **converges within the leave year**
+— measured **9 → 6 → 3 → 0** across the quarters — and the correction endpoint is dry-run by default,
+idempotent, and writes an auditable `Adjusted` entry rather than editing history.
+
+**The one thing to remember for later:** if you ever **import historical leave data** (migrating a customer
+off another HRIS), an import that writes `Accrual` ledger rows with a NULL `AccrualPeriod` recreates exactly
+this shape. Run the exposure report afterwards — the correction tool is ready and proven.
+
+- [ ] *(only if historical leave data is imported)* run
+      `GET /api/v1/tenant/leave-entitlements/accrual-over-credit-exposure?asOfDate=…` and, if non-zero, decide
+      correct / honour / block.
+
+> ⚠ The report can serve a **stale** result if leave types were inserted by direct SQL — the second-level cache
+> is invalidated by API writes, not raw DML. Query the database directly, or make one API write first, before
+> trusting a zero. This nearly produced a false defect report against the tool during verification.
 
 ---
 
