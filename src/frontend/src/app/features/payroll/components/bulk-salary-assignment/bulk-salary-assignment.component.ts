@@ -364,7 +364,7 @@ export class BulkSalaryAssignmentComponent implements OnInit, OnDestroy {
     const request: IBulkAssignmentRequest = {
       salaryStructureId: this.setupForm.value.salaryStructureId,
       effectiveFrom: this.setupForm.value.effectiveFrom,
-      rows,
+      employees: rows,   // GAP-010: the wire field is `employees`; the local stays `rows`
     };
 
     this.isSubmitting.set(true);

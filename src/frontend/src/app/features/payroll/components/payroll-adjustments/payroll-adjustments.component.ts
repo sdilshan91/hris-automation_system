@@ -214,7 +214,7 @@ type SortDir = 'asc' | 'desc';
                       <p class="text-xs text-neutral-400">{{ a.employeeNo }}</p>
                     </td>
                     <td class="td">
-                      <span class="badge" [ngClass]="typeBadge[a.type]">{{ typeLabels[a.type] }}</span>
+                      <span class="badge" [ngClass]="typeBadge[a.adjustmentType]">{{ typeLabels[a.adjustmentType] }}</span>
                     </td>
                     <td class="td text-right font-mono tabular-nums text-neutral-800">
                       {{ a.amount | number: '1.2-2' }}
@@ -526,7 +526,7 @@ export class PayrollAdjustmentsComponent implements OnInit {
       case 'employee':
         return a.employeeName.localeCompare(b.employeeName);
       case 'type':
-        return a.type.localeCompare(b.type);
+        return a.adjustmentType.localeCompare(b.adjustmentType);
       case 'amount':
         return a.amount - b.amount;
       case 'period':

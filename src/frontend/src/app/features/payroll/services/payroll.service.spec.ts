@@ -176,6 +176,8 @@ describe('PayrollService', () => {
       let result: ISalaryComponent[] | undefined;
       service.reorderComponents(['c-2', 'c-1']).subscribe((r) => (result = r));
 
+      // ⚠ GAP-010 / ISSUE-372: `/payroll/salary-components/reorder` does not exist either (the sibling
+      // custom-fields and leave-types entities DO have one). Same caveat as validate-formula above.
       const req = httpMock.expectOne(`${componentsUrl}/reorder`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ orderedIds: ['c-2', 'c-1'] });
@@ -188,6 +190,10 @@ describe('PayrollService', () => {
   // ─── testFormula ─────────────────────────────────────────
 
   describe('testFormula', () => {
+    // ⚠ GAP-010 / ISSUE-372: `/payroll/salary-components/validate-formula` DOES NOT EXIST on the API — zero
+    // contract paths, zero controller routes. This arm passes because HttpTestingController answers whatever
+    // the service asks for, so it proves the service builds a URL, not that the URL works. Kept (not deleted)
+    // so the coverage is not silently lost, but it is NOT evidence that the "Test formula" button works.
     it('POSTs the expression + sample values to /validate-formula', () => {
       const expected: IFormulaTestResult = { valid: true, result: 120 };
       let result: IFormulaTestResult | undefined;

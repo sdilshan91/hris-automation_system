@@ -34,7 +34,7 @@ describe('PayslipService', () => {
     runId: 'r-1',
     isGenerating: false,
     totalCount: 250,
-    generatedCount: 250,
+    queuedCount: 250,
     failedCount: 0,
     pendingCount: 0,
   };

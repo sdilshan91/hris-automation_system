@@ -8181,3 +8181,21 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   2. **The pattern is 7 instances, not 2** — six here plus `TC-ATT-152` (GAP-022). The register named `TC-ADM-010-13` (a false positive) and `TC-ATT-152` (real).
 - **Worth copying:** `TC-NTF-004-11` shows the correct way to write a TC against a spec whose implementation may differ — an explicit `[PLATFORM NOTE -- CONDITIONAL]` step. That TC is honest and needs no change.
 - **Confidence:** 100% — table absence and step classification both verified mechanically.
+
+---
+
+### ISSUE-372 — two payroll features call endpoints that have never existed: "Test formula" and drag-to-reorder
+- **ID:** ISSUE-372
+- **Type:** ISSUE (FE↔BE contract — missing backend routes; S-1 class)
+- **Severity:** **MED** — two user-visible features fail silently. No data risk.
+- **Status:** `OPEN`
+- **Layer:** BE (the routes) + FE (the callers, left in place deliberately)
+- **Module / US / TC:** Payroll / US-PAY-001 (FR-4 §8 formula test), salary-component ordering / TC-PAY-001-* — found 2026-08-10 while fixing GAP-010
+- **Title:** `POST /payroll/salary-components/validate-formula` and `POST /payroll/salary-components/reorder` return 404 — neither exists in the contract or in any controller.
+- **Evidence:** zero paths in `contracts/openapi/hrm-v1.json`, zero controller routes. The FE calls both from live UI:
+  - `payroll.service.ts:testFormula()` ← the **"Test" button** in `component-form.component.ts:245`, whose whole purpose (FR-4/§8) is letting an admin verify a formula before saving. It cannot work.
+  - `payroll.service.ts:reorderComponents()` ← **drag-to-reorder** in `salary-components.component.ts:382`. Reordering appears to work in the UI and never persists.
+- **Why the specs did not catch it:** `payroll.service.spec.ts` mocks BOTH endpoints with `HttpTestingController`, which answers whatever URL the service asks for. The arms prove the service *builds a URL*, not that the URL exists — passing tests over two dead features. **The register spotted these two mocks; its instruction was "delete those".** I did **not** delete them: the arms are the only coverage of those methods, and deleting tests to tidy a finding is the wrong direction. They are annotated in place with the caveat instead.
+- **Recommended fix (backend, and there is a clear precedent):** add `POST /payroll/salary-components/reorder` — **both sibling entities already have one** (`/tenant/custom-fields/reorder`, `/tenant/leave-types/reorder`), so salary components are the inconsistent case, and an atomic reorder is better than N sequential `PUT`s. For formula validation, either add the evaluator endpoint (the safe evaluator already exists server-side — it runs payroll) or remove the "Test" button and let create/update report the error.
+- **Deliberately NOT done here:** the plan is explicit that G2 is *"the backend is correct; the frontend cannot reach it — do not re-scope as backend work."* These two are the opposite: the frontend is reasonable and the backend route is absent. Tracked separately rather than smuggled into an FE PR.
+- **Confidence:** 100% — absence verified in both the contract and the controllers; both callers traced to live UI.

@@ -54,7 +54,7 @@ describe('PayrollRunDetailComponent', () => {
     runId: 'r-1',
     isGenerating: false,
     totalCount: 0,
-    generatedCount: 0,
+    queuedCount: 0,
     failedCount: 0,
     pendingCount: 0,
   };

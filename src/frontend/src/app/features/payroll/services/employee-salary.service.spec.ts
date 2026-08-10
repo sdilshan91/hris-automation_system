@@ -103,7 +103,7 @@ describe('EmployeeSalaryService', () => {
     const request: IBulkAssignmentRequest = {
       salaryStructureId: 's-1',
       effectiveFrom: '2026-07-01',
-      rows: [
+      employees: [
         { employeeId: 'e-1', annualCtc: 600000 },
         { employeeId: 'e-2', annualCtc: 720000 },
       ],

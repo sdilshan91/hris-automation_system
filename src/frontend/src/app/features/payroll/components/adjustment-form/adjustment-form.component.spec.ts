@@ -45,7 +45,7 @@ const created: IAdjustment = {
   employeeId: 'e-1',
   employeeName: 'Alex HR',
   employeeNo: 'EMP001',
-  type: 'Bonus',
+  adjustmentType: 'Bonus',
   amount: 10000,
   description: 'Q2 bonus',
   applicablePayMonth: 6,

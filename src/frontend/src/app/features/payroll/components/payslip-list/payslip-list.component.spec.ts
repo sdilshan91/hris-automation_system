@@ -56,7 +56,7 @@ describe('PayslipListComponent', () => {
     runId: 'r-1',
     isGenerating: false,
     totalCount: 3,
-    generatedCount: 3,
+    queuedCount: 3,
     failedCount: 0,
     pendingCount: 0,
   };
@@ -216,7 +216,7 @@ describe('PayslipListComponent', () => {
       component.genStatus.set({
         ...status,
         totalCount: 200,
-        generatedCount: 150,
+        queuedCount: 150,
         failedCount: 10,
       });
       expect(component.genPercent()).toBe(80);

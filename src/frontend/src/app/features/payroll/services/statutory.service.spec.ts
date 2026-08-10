@@ -27,7 +27,7 @@ describe('StatutoryService', () => {
     effectiveFrom: '2026-04-01',
     effectiveTo: null,
     isActive: true,
-    slabs: [{ id: 's-1', slabFrom: 0, slabTo: 250000, ratePercentage: 0 }],
+    taxSlabs: [{ id: 's-1', slabFrom: 0, slabTo: 250000, ratePercentage: 0 }],
   };
 
   beforeEach(() => {
@@ -103,7 +103,7 @@ describe('StatutoryService', () => {
       countryCode: 'LK',
       fiscalYear: '2026-2027',
       effectiveFrom: '2026-04-01',
-      slabs: [{ slabFrom: 0, slabTo: null, ratePercentage: 10 }],
+      taxSlabs: [{ slabFrom: 0, slabTo: null, ratePercentage: 10 }],
     };
     service.createRule(request).subscribe();
     const req = httpMock.expectOne(rulesUrl);

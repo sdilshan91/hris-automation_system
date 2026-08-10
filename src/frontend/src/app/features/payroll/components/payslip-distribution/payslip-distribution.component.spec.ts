@@ -88,14 +88,14 @@ describe('PayslipDistributionComponent', () => {
     runId: 'r-1',
     isGenerating: false,
     totalCount: 5,
-    generatedCount: 5,
+    queuedCount: 5,
     failedCount: 0,
     pendingCount: 0,
   };
 
   const notGenerated: IPayslipGenerationStatus = {
     ...generated,
-    generatedCount: 0,
+    queuedCount: 0,
     pendingCount: 5,
   };
 

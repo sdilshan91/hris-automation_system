@@ -160,7 +160,7 @@ describe('BulkSalaryAssignmentComponent', () => {
 
     const req = salary.bulkAssign.calls.mostRecent().args[0];
     expect(req.salaryStructureId).toBe('s-1');
-    expect(req.rows.length).toBe(2);
+    expect(req.employees.length).toBe(2);
     expect(component.result()).toEqual(result);
     expect(component.rows()[0].status).toBe('success');
     expect(component.rows()[1].status).toBe('failed');

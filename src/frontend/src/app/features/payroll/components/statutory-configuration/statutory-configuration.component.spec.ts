@@ -28,7 +28,7 @@ describe('StatutoryConfigurationComponent', () => {
     effectiveFrom: '2026-04-01',
     effectiveTo: null,
     isActive: true,
-    slabs: [
+    taxSlabs: [
       { id: 's1', slabFrom: 0, slabTo: 250000, ratePercentage: 0 },
       { id: 's2', slabFrom: 250000, slabTo: null, ratePercentage: 10 },
     ],
