@@ -30,8 +30,7 @@ function makeHoliday(o: Partial<IHoliday> = {}): IHoliday {
 
 function makeLocation(o: Partial<ILocation> = {}): ILocation {
   return {
-    locationId: 'loc-1',
-    tenantId: 't-1',
+    id: 'loc-1',
     name: 'New York',
     addressLine1: null,
     addressLine2: null,

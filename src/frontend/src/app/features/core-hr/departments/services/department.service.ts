@@ -36,8 +36,8 @@ export class DepartmentService {
   }
 
   /** Get a single department by ID */
-  getDepartment(departmentId: string): Observable<IDepartment> {
-    return this.http.get<IDepartment>(`${this.baseUrl}/${departmentId}`, {
+  getDepartment(id: string): Observable<IDepartment> {
+    return this.http.get<IDepartment>(`${this.baseUrl}/${id}`, {
       withCredentials: true,
     });
   }
@@ -53,20 +53,21 @@ export class DepartmentService {
 
   /** Update an existing department (FR-1, FR-4) */
   updateDepartment(
-    departmentId: string,
+    id: string,
     request: IUpdateDepartmentRequest
   ): Observable<IDepartment> {
     return this.http.put<IDepartment>(
-      `${this.baseUrl}/${departmentId}`,
+      `${this.baseUrl}/${id}`,
       request,
       { withCredentials: true }
     );
   }
 
   /** Deactivate (soft-delete) a department (FR-6, FR-7) */
-  deactivateDepartment(departmentId: string): Observable<void> {
-    return this.http.patch<void>(
-      `${this.baseUrl}/${departmentId}/deactivate`,
+  deactivateDepartment(id: string): Observable<void> {
+    // GAP-014: the API exposes deactivate as POST /{id}/deactivate; PATCH returned 405 for every call.
+    return this.http.post<void>(
+      `${this.baseUrl}/${id}/deactivate`,
       null,
       { withCredentials: true }
     );

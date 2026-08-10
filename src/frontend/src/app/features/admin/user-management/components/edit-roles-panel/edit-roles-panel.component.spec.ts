@@ -72,12 +72,10 @@ describe('EditRolesPanelComponent', () => {
 
     component.save();
 
-    const req = httpMock.expectOne(`${usersUrl}/roles`);
+    const req = httpMock.expectOne(`${usersUrl}/ut-1/roles`);
     expect(req.request.method).toBe('PUT');
-    expect(req.request.body).toEqual({
-      userTenantId: 'ut-1',
-      roleIds: ['r-1', 'r-2', 'r-3'],
-    });
+    // GAP-009: the membership id is in the path now; the body carries only roleIds.
+    expect(req.request.body).toEqual({ roleIds: ['r-1', 'r-2', 'r-3'] });
     req.flush(null);
   });
 
@@ -86,7 +84,7 @@ describe('EditRolesPanelComponent', () => {
     component.saved.subscribe(savedSpy);
 
     component.save();
-    httpMock.expectOne(`${usersUrl}/roles`).flush(null);
+    httpMock.expectOne(`${usersUrl}/ut-1/roles`).flush(null);
 
     expect(savedSpy).toHaveBeenCalled();
     expect(component.saving()).toBeFalse();
@@ -95,8 +93,8 @@ describe('EditRolesPanelComponent', () => {
   it('removing a role drops it from the submitted set', () => {
     component.toggle('r-1'); // remove the only current role
     component.save();
-    const req = httpMock.expectOne(`${usersUrl}/roles`);
-    expect(req.request.body).toEqual({ userTenantId: 'ut-1', roleIds: [] });
+    const req = httpMock.expectOne(`${usersUrl}/ut-1/roles`);
+    expect(req.request.body).toEqual({ roleIds: [] });
     req.flush(null);
   });
 });

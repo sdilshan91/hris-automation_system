@@ -72,7 +72,7 @@ describe('UserDetailComponent', () => {
 
   it('loads the user detail on init', () => {
     fixture.detectChanges();
-    const req = httpMock.expectOne(`${usersUrl}/ut-1`);
+    const req = httpMock.expectOne(`${usersUrl}/ut-1/detail`);
     expect(req.request.method).toBe('GET');
     req.flush(detail);
     expect(component.user()?.displayName).toBe('Jane Doe');
@@ -81,7 +81,7 @@ describe('UserDetailComponent', () => {
 
   it('renders the linked employee section', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${usersUrl}/ut-1`).flush(detail);
+    httpMock.expectOne(`${usersUrl}/ut-1/detail`).flush(detail);
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('HR Lead');
   });
@@ -89,7 +89,7 @@ describe('UserDetailComponent', () => {
   it('shows an error state on failure', () => {
     fixture.detectChanges();
     httpMock
-      .expectOne(`${usersUrl}/ut-1`)
+      .expectOne(`${usersUrl}/ut-1/detail`)
       .flush('boom', { status: 500, statusText: 'Server Error' });
     expect(component.error()).toBeTruthy();
     expect(component.loading()).toBeFalse();

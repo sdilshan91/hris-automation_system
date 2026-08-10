@@ -19,8 +19,7 @@ describe('JobTitleService', () => {
   const baseUrl = `${environment.apiBaseUrl}/tenant/job-titles`;
 
   const mockJobTitle: IJobTitle = {
-    jobTitleId: 'jt-1',
-    tenantId: 'tenant-1',
+    id: 'jt-1',
     titleName: 'Software Engineer',
     description: 'Develops software applications',
     gradeId: null,
@@ -32,8 +31,7 @@ describe('JobTitleService', () => {
   };
 
   const mockJobTitle2: IJobTitle = {
-    jobTitleId: 'jt-2',
-    tenantId: 'tenant-1',
+    id: 'jt-2',
     titleName: 'Product Manager',
     description: 'Manages product development',
     gradeId: null,
@@ -92,7 +90,7 @@ describe('JobTitleService', () => {
   describe('getJobTitle', () => {
     it('should return a single job title by ID', () => {
       service.getJobTitle('jt-1').subscribe((jobTitle) => {
-        expect(jobTitle.jobTitleId).toBe('jt-1');
+        expect(jobTitle.id).toBe('jt-1');
         expect(jobTitle.titleName).toBe('Software Engineer');
       });
 
@@ -122,7 +120,7 @@ describe('JobTitleService', () => {
       expect(req.request.withCredentials).toBeTrue();
       req.flush({
         ...mockJobTitle,
-        jobTitleId: 'jt-3',
+        id: 'jt-3',
         titleName: 'UX Designer',
         description: 'User experience design',
       });
@@ -190,7 +188,7 @@ describe('JobTitleService', () => {
       service.deactivateJobTitle('jt-1').subscribe();
 
       const req = httpMock.expectOne(`${baseUrl}/jt-1/deactivate`);
-      expect(req.request.method).toBe('PATCH');
+      expect(req.request.method).toBe('POST'); // GAP-014: deactivate is POST; PATCH returned 405
       expect(req.request.withCredentials).toBeTrue();
       req.flush(null);
     });

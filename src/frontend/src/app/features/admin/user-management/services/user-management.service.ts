@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, forkJoin, map, of } from 'rxjs';
 import { environment } from '../../../../../environments/environment';
 import {
   IUserListParams,
@@ -25,18 +25,22 @@ import {
  * (added by the tenantInterceptor) on every call.
  *
  * Backend contract (finalized in parallel — keep models in one file):
- *   GET    /api/v1/users?page=&pageSize=&search=&status=&roleId=
- *   GET    /api/v1/users/:userTenantId            — full detail view
- *   POST   /api/v1/users/invite                   — single or bulk by email
- *   POST   /api/v1/users/invite/csv               — parsed CSV rows
- *   PUT    /api/v1/users/roles                     — replace complete role set
- *   POST   /api/v1/users/deactivate
- *   POST   /api/v1/users/force-password-reset
- *   POST   /api/v1/users/end-sessions
- *   GET    /api/v1/invitations                     — pending invitations
- *   POST   /api/v1/invitations/:id/resend
- *   POST   /api/v1/invitations/:id/revoke
- *   GET    /api/v1/users/assignable-roles          — built-in assignable roles
+ * GAP-009: this list previously documented routes that DO NOT EXIST, which is largely why the drift went
+ * unnoticed — the docstring corroborated the code. Verified against contracts/openapi/hrm-v1.json:
+ *
+ *   GET    /api/v1/tenant/users?page=&pageSize=&search=&status=&roleId=
+ *   GET    /api/v1/tenant/users/:userTenantId/detail          — full detail view
+ *   POST   /api/v1/tenant/users/invite                        — ONE { email, roleIds } per call
+ *   POST   /api/v1/tenant/users/invite/bulk                   — { rows: [{ email, roleNames }] }
+ *   PUT    /api/v1/tenant/users/:userTenantId/roles           — { roleIds }; id in the PATH
+ *   POST   /api/v1/tenant/users/:userTenantId/deactivate      — no body
+ *   POST   /api/v1/tenant/users/:userTenantId/force-password-reset
+ *   POST   /api/v1/tenant/users/:userTenantId/end-sessions
+ *   GET    /api/v1/tenant/users/invitations                   — pending invitations
+ *   POST   /api/v1/tenant/users/invitations/:id/resend
+ *   POST   /api/v1/tenant/users/invitations/:id/revoke
+ *   GET    /api/v1/tenant/roles                               — assignable roles (there is no
+ *                                                               /users/assignable-roles endpoint)
  */
 @Injectable({ providedIn: 'root' })
 export class UserManagementService {
@@ -70,27 +74,53 @@ export class UserManagementService {
 
   /** Full user detail view (profile, roles, employee, audit, sessions, invites). */
   getUserDetail(userTenantId: string): Observable<IUserDetail> {
-    return this.http.get<IUserDetail>(`${this.usersUrl}/${userTenantId}`, {
+    // GAP-009: the detail view is /{userTenantId}/detail; the bare /{userTenantId} route does not exist.
+    return this.http.get<IUserDetail>(`${this.usersUrl}/${userTenantId}/detail`, {
       withCredentials: true,
     });
   }
 
-  /** Built-in roles assignable to users in this tenant. */
+  /**
+   * Roles assignable to users in this tenant.
+   *
+   * GAP-009: this used to GET `/users/assignable-roles`, which has NEVER existed on the API — zero backend
+   * hits. The tenant's roles come from the roles endpoint, whose RoleDto already carries exactly the
+   * id/name/description this screen needs.
+   */
   getAssignableRoles(): Observable<IAssignableRole[]> {
-    return this.http.get<IAssignableRole[]>(
-      `${this.usersUrl}/assignable-roles`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<IAssignableRole[]>(`${environment.apiBaseUrl}/tenant/roles`, { withCredentials: true })
+      .pipe(
+        map((roles) =>
+          roles.map((r) => ({ id: r.id, name: r.name, description: r.description ?? '' }))
+        )
+      );
   }
 
   // ─── Invitations (AC-2, FR-2, FR-3) ──────────────────────
 
-  /** Invite one or many users by email with a shared role set. */
+  /**
+   * Invite one or many users by email with a shared role set.
+   *
+   * GAP-009: `POST /users/invite` takes a SINGLE `{ email, roleIds }`, not the `{ emails[], roleIds }` this
+   * used to send — so a multi-address invite posted a body the API could not bind. Fanned out one request
+   * per address and recombined, which preserves this method's `IInviteResult[]` contract and keeps the
+   * per-address outcome the UI renders. (`invite/bulk` is not the right endpoint here: it takes role NAMES
+   * for the CSV path, while this screen has role IDS.)
+   */
   inviteUsers(request: IInviteUsersRequest): Observable<IInviteResult[]> {
-    return this.http.post<IInviteResult[]>(
-      `${this.usersUrl}/invite`,
-      request,
-      { withCredentials: true }
+    if (request.emails.length === 0) {
+      return of([]);
+    }
+
+    return forkJoin(
+      request.emails.map((email) =>
+        this.http.post<IInviteResult>(
+          `${this.usersUrl}/invite`,
+          { email, roleIds: request.roleIds },
+          { withCredentials: true }
+        )
+      )
     );
   }
 
@@ -98,7 +128,8 @@ export class UserManagementService {
   inviteFromCsv(rows: ICsvInviteRow[]): Observable<IInviteResult[]> {
     const body: IBulkCsvInviteRequest = { rows };
     return this.http.post<IInviteResult[]>(
-      `${this.usersUrl}/invite/csv`,
+      // GAP-009: the endpoint is invite/bulk; invite/csv has never existed.
+      `${this.usersUrl}/invite/bulk`,
       body,
       { withCredentials: true }
     );
@@ -131,38 +162,48 @@ export class UserManagementService {
 
   // ─── Role assignment (AC-3, FR-4) ────────────────────────
 
-  /** Replace a user's complete role set with the supplied role ids. */
+  /**
+   * Replace a user's complete role set with the supplied role ids.
+   *
+   * GAP-009: the membership id belongs in the PATH (`/users/{userTenantId}/roles`); it used to be sent in
+   * the body against a `/users/roles` route that does not exist.
+   */
   editRoles(request: IEditRolesRequest): Observable<void> {
-    return this.http.put<void>(`${this.usersUrl}/roles`, request, {
-      withCredentials: true,
-    });
+    return this.http.put<void>(
+      `${this.usersUrl}/${request.userTenantId}/roles`,
+      { roleIds: request.roleIds },
+      { withCredentials: true }
+    );
   }
 
   // ─── Lifecycle actions (AC-4, AC-5, FR-5) ────────────────
 
   /** Deactivate (disable) a user's membership in this tenant. */
   deactivateUser(userTenantId: string): Observable<void> {
+    // GAP-009: the membership id is a PATH segment; the body-carrying /users/deactivate route does not exist.
     return this.http.post<void>(
-      `${this.usersUrl}/deactivate`,
-      { userTenantId },
+      `${this.usersUrl}/${userTenantId}/deactivate`,
+      null,
       { withCredentials: true }
     );
   }
 
   /** Force a (global) password reset for the user. */
   forcePasswordReset(userTenantId: string): Observable<void> {
+    // GAP-009: the membership id is a PATH segment; the body-carrying /users/force-password-reset route does not exist.
     return this.http.post<void>(
-      `${this.usersUrl}/force-password-reset`,
-      { userTenantId },
+      `${this.usersUrl}/${userTenantId}/force-password-reset`,
+      null,
       { withCredentials: true }
     );
   }
 
   /** Revoke all of the user's refresh tokens within this tenant. */
   endAllSessions(userTenantId: string): Observable<void> {
+    // GAP-009: the membership id is a PATH segment; the body-carrying /users/end-sessions route does not exist.
     return this.http.post<void>(
-      `${this.usersUrl}/end-sessions`,
-      { userTenantId },
+      `${this.usersUrl}/${userTenantId}/end-sessions`,
+      null,
       { withCredentials: true }
     );
   }

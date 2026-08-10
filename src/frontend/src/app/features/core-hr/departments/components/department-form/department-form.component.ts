@@ -145,8 +145,8 @@ import {
             class="input-notion select-input"
           >
             <option [ngValue]="null">None (Root Department)</option>
-            @for (opt of parentOptions(); track opt.department.departmentId) {
-              <option [ngValue]="opt.department.departmentId">
+            @for (opt of parentOptions(); track opt.department.id) {
+              <option [ngValue]="opt.department.id">
                 {{ opt.indent }}{{ opt.department.name }}
               </option>
             }
@@ -375,12 +375,14 @@ export class DepartmentFormComponent implements OnInit {
    */
   readonly parentOptions = computed(() => {
     const departments = this.allDepartments();
-    const editingId = this.department()?.departmentId ?? null;
+    const editingId = this.department()?.id ?? null;
 
     // Build a children-map
     const childrenMap = new Map<string | null, IDepartment[]>();
     for (const dept of departments) {
-      const parentId = dept.parentDepartmentId;
+      // parentDepartmentId is optional on the contract; the map is keyed by `string | null`, where
+      // null means 'root'. An absent value is a root department, same as an explicit null.
+      const parentId = dept.parentDepartmentId ?? null;
       if (!childrenMap.has(parentId)) {
         childrenMap.set(parentId, []);
       }
@@ -394,7 +396,7 @@ export class DepartmentFormComponent implements OnInit {
         excludeIds.add(id);
         const children = childrenMap.get(id) ?? [];
         for (const child of children) {
-          collectDescendants(child.departmentId);
+          collectDescendants(child.id);
         }
       };
       collectDescendants(editingId);
@@ -405,12 +407,12 @@ export class DepartmentFormComponent implements OnInit {
     const walk = (parentId: string | null, level: number): void => {
       const children = childrenMap.get(parentId) ?? [];
       for (const child of children) {
-        if (excludeIds.has(child.departmentId)) continue;
+        if (excludeIds.has(child.id)) continue;
         options.push({
           department: child,
           indent: '  '.repeat(level),
         });
-        walk(child.departmentId, level + 1);
+        walk(child.id, level + 1);
       }
     };
     walk(null, 0);
@@ -460,7 +462,7 @@ export class DepartmentFormComponent implements OnInit {
       };
 
       this.departmentService
-        .updateDepartment(dept.departmentId, request)
+        .updateDepartment(dept.id, request)
         .subscribe({
           next: () => {
             this.isSaving.set(false);

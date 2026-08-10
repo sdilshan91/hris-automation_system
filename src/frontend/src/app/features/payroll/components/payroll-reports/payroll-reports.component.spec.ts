@@ -35,8 +35,8 @@ describe('PayrollReportsComponent', () => {
   let authStub: { permissions: typeof permissions };
 
   const departments = [
-    { departmentId: 'd1', name: 'Engineering' } as IDepartment,
-    { departmentId: 'd2', name: 'People' } as IDepartment,
+    { id: 'd1', name: 'Engineering' } as IDepartment,
+    { id: 'd2', name: 'People' } as IDepartment,
   ];
 
   // PayrollSummary is a chart-bearing report → the FE derives a bar chart from these

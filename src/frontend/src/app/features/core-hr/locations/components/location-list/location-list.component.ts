@@ -192,7 +192,7 @@ import { LocationFormComponent } from '../location-form/location-form.component'
                   </tr>
                 </thead>
                 <tbody>
-                  @for (loc of filteredLocations(); track loc.locationId) {
+                  @for (loc of filteredLocations(); track loc.id) {
                     <tr
                       class="table-row-notion group"
                       [class.opacity-60]="!loc.isActive"
@@ -280,7 +280,7 @@ import { LocationFormComponent } from '../location-form/location-form.component'
 
             <!-- Mobile card list -->
             <div class="md:hidden divide-y divide-neutral-100">
-              @for (loc of filteredLocations(); track loc.locationId) {
+              @for (loc of filteredLocations(); track loc.id) {
                 <div
                   class="p-4 hover:bg-neutral-50 transition-colors duration-150 cursor-pointer"
                   [class.opacity-60]="!loc.isActive"
@@ -534,7 +534,7 @@ export class LocationListComponent implements OnInit {
         loc.name.toLowerCase().includes(query) ||
         (loc.city && loc.city.toLowerCase().includes(query)) ||
         (loc.country && loc.country.toLowerCase().includes(query)) ||
-        loc.timeZone.toLowerCase().includes(query)
+        (loc.timeZone ?? '').toLowerCase().includes(query)
     );
   });
 
@@ -602,7 +602,7 @@ export class LocationListComponent implements OnInit {
 
     this.isDeactivating.set(true);
 
-    this.locationService.deactivateLocation(loc.locationId).subscribe({
+    this.locationService.deactivateLocation(loc.id).subscribe({
       next: () => {
         this.toastr.success(`"${loc.name}" has been deactivated.`);
         this.locationToDeactivate.set(null);
@@ -642,7 +642,7 @@ export class LocationListComponent implements OnInit {
    */
   navigateToDirectory(location: ILocation, event: Event): void {
     event.stopPropagation();
-    if (location.employeeCount <= 0) return;
+    if ((location.employeeCount ?? 0) <= 0) return;
     this.router.navigate(['/employees'], {
       queryParams: { location: location.name },
     });

@@ -19,33 +19,25 @@ describe('DepartmentService', () => {
   const baseUrl = `${environment.apiBaseUrl}/tenant/departments`;
 
   const mockDepartment: IDepartment = {
-    departmentId: 'dept-1',
-    tenantId: 'tenant-1',
+    id: 'dept-1',
     name: 'Engineering',
     code: 'ENG',
     description: 'Software engineering team',
     parentDepartmentId: null,
     parentDepartmentName: null,
-    managerEmployeeId: null,
-    managerName: null,
     isActive: true,
-    employeeCount: 10,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   };
 
   const mockChildDepartment: IDepartment = {
-    departmentId: 'dept-2',
-    tenantId: 'tenant-1',
+    id: 'dept-2',
     name: 'Frontend',
     code: 'FE',
     description: 'Frontend development',
     parentDepartmentId: 'dept-1',
     parentDepartmentName: 'Engineering',
-    managerEmployeeId: null,
-    managerName: null,
     isActive: true,
-    employeeCount: 5,
     createdAt: '2026-01-15T00:00:00Z',
     updatedAt: '2026-01-15T00:00:00Z',
   };
@@ -98,7 +90,7 @@ describe('DepartmentService', () => {
   describe('getDepartment', () => {
     it('should return a single department by ID', () => {
       service.getDepartment('dept-1').subscribe((department) => {
-        expect(department.departmentId).toBe('dept-1');
+        expect(department.id).toBe('dept-1');
         expect(department.name).toBe('Engineering');
       });
 
@@ -129,7 +121,7 @@ describe('DepartmentService', () => {
       expect(req.request.withCredentials).toBeTrue();
       req.flush({
         ...mockDepartment,
-        departmentId: 'dept-3',
+        id: 'dept-3',
         name: 'Design',
         parentDepartmentId: 'dept-1',
         parentDepartmentName: 'Engineering',
@@ -201,7 +193,7 @@ describe('DepartmentService', () => {
       service.deactivateDepartment('dept-1').subscribe();
 
       const req = httpMock.expectOne(`${baseUrl}/dept-1/deactivate`);
-      expect(req.request.method).toBe('PATCH');
+      expect(req.request.method).toBe('POST'); // GAP-014: deactivate is POST; PATCH returned 405
       expect(req.request.withCredentials).toBeTrue();
       req.flush(null);
     });

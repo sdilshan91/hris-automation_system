@@ -19,8 +19,7 @@ describe('LocationListComponent', () => {
 
   const mockLocations: ILocation[] = [
     {
-      locationId: 'loc-1',
-      tenantId: 'tenant-1',
+      id: 'loc-1',
       name: 'Headquarters',
       addressLine1: '123 Main St',
       addressLine2: 'Suite 100',
@@ -36,8 +35,7 @@ describe('LocationListComponent', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     },
     {
-      locationId: 'loc-2',
-      tenantId: 'tenant-1',
+      id: 'loc-2',
       name: 'Branch Office',
       addressLine1: null,
       addressLine2: null,
@@ -53,8 +51,7 @@ describe('LocationListComponent', () => {
       updatedAt: '2026-02-01T00:00:00Z',
     },
     {
-      locationId: 'loc-3',
-      tenantId: 'tenant-1',
+      id: 'loc-3',
       name: 'Closed Office',
       addressLine1: null,
       addressLine2: null,
@@ -241,7 +238,7 @@ describe('LocationListComponent', () => {
     component.deactivateLocation();
 
     expect(locationServiceSpy.deactivateLocation).toHaveBeenCalledWith(
-      loc.locationId
+      loc.id
     );
     expect(toastrSpy.success).toHaveBeenCalled();
     expect(component.locationToDeactivate()).toBeNull();

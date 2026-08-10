@@ -344,7 +344,7 @@ export class JobTitleFormComponent implements OnInit {
       };
 
       this.jobTitleService
-        .updateJobTitle(jt.jobTitleId, request)
+        .updateJobTitle(jt.id, request)
         .subscribe({
           next: () => {
             this.isSaving.set(false);

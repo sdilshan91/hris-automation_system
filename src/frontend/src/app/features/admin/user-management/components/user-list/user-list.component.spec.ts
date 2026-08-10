@@ -57,7 +57,7 @@ describe('UserListComponent', () => {
   /** Flush the initial assignable-roles + users requests that fire on init. */
   function flushInit(): void {
     fixture.detectChanges();
-    httpMock.expectOne(`${usersUrl}/assignable-roles`).flush(mockRoles);
+    httpMock.expectOne(`${environment.apiBaseUrl}/tenant/roles`).flush(mockRoles);
     const usersReq = httpMock.expectOne(
       (r) => r.url === usersUrl && r.method === 'GET'
     );
@@ -113,7 +113,7 @@ describe('UserListComponent', () => {
 
   it('shows the empty state when no users match', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${usersUrl}/assignable-roles`).flush(mockRoles);
+    httpMock.expectOne(`${environment.apiBaseUrl}/tenant/roles`).flush(mockRoles);
     httpMock
       .expectOne((r) => r.url === usersUrl && r.method === 'GET')
       .flush({ items: [], totalCount: 0, totalPages: 0, page: 1, pageSize: 20 });
@@ -207,9 +207,10 @@ describe('UserListComponent', () => {
     expect(component.confirmAction()?.kind).toBe('deactivate');
 
     component.confirm();
-    const req = httpMock.expectOne(`${usersUrl}/deactivate`);
+    const req = httpMock.expectOne(`${usersUrl}/ut-1/deactivate`);
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ userTenantId: 'ut-1' });
+    // GAP-009: the membership id moved into the path, so the request carries no body.
+    expect(req.request.body).toBeNull();
     req.flush(null);
 
     // After deactivate it reloads the list.
@@ -223,7 +224,7 @@ describe('UserListComponent', () => {
     flushInit();
     component.askForceReset(component.users()[0]);
     component.confirm();
-    const req = httpMock.expectOne(`${usersUrl}/force-password-reset`);
+    const req = httpMock.expectOne(`${usersUrl}/ut-1/force-password-reset`);
     expect(req.request.method).toBe('POST');
     req.flush(null);
     expect(component.confirmAction()).toBeNull();
@@ -233,7 +234,7 @@ describe('UserListComponent', () => {
     flushInit();
     component.askEndSessions(component.users()[0]);
     component.confirm();
-    const req = httpMock.expectOne(`${usersUrl}/end-sessions`);
+    const req = httpMock.expectOne(`${usersUrl}/ut-1/end-sessions`);
     expect(req.request.method).toBe('POST');
     req.flush(null);
     expect(component.confirmAction()).toBeNull();
@@ -241,7 +242,7 @@ describe('UserListComponent', () => {
 
   it('shows an error state when the list fails to load', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${usersUrl}/assignable-roles`).flush(mockRoles);
+    httpMock.expectOne(`${environment.apiBaseUrl}/tenant/roles`).flush(mockRoles);
     httpMock
       .expectOne((r) => r.url === usersUrl && r.method === 'GET')
       .flush('boom', { status: 500, statusText: 'Server Error' });
@@ -298,7 +299,7 @@ describe('UserListComponent — BUG-103 pagination footer regression (BE totalCo
 
   it('usersList_paginationFooter_showsRealTotal_notNaN_BUG103', () => {
     fixture.detectChanges(); // ngOnInit -> GET assignable-roles + GET users
-    httpMock.expectOne(`${usersUrl}/assignable-roles`).flush([]);
+    httpMock.expectOne(`${environment.apiBaseUrl}/tenant/roles`).flush([]);
 
     // BE-shaped list envelope: page total under `totalCount`, NOT `total`.
     httpMock.expectOne((r) => r.url === usersUrl && r.method === 'GET').flush({
@@ -378,7 +379,7 @@ describe('UserListComponent — ISSUE-211 status label (BE PascalCase status)', 
 
   it('resolves the human status label for a PascalCase BE status (not the raw key)', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${usersUrl}/assignable-roles`).flush([]);
+    httpMock.expectOne(`${environment.apiBaseUrl}/tenant/roles`).flush([]);
     httpMock.expectOne((r) => r.url === usersUrl && r.method === 'GET').flush({
       items: [
         {

@@ -48,7 +48,7 @@ import { IDepartment, IDepartmentTreeNode } from '../../models/department.models
           <p class="text-sm text-neutral-500">No departments to display.</p>
         </div>
       } @else {
-        @for (node of treeNodes(); track node.department.departmentId) {
+        @for (node of treeNodes(); track node.department.id) {
           <ng-container
             *ngTemplateOutlet="treeNodeTpl; context: { $implicit: node }"
           ></ng-container>
@@ -62,7 +62,7 @@ import { IDepartment, IDepartmentTreeNode } from '../../models/department.models
         class="tree-node"
         [style.padding-left.rem]="node.level * 1.5"
         role="treeitem"
-        [attr.aria-expanded]="node.children.length > 0 ? isExpanded(node.department.departmentId) : null"
+        [attr.aria-expanded]="node.children.length > 0 ? isExpanded(node.department.id) : null"
         [attr.aria-level]="node.level + 1"
       >
         <div
@@ -74,15 +74,15 @@ import { IDepartment, IDepartmentTreeNode } from '../../models/department.models
             *ngIf="node.children.length > 0"
             type="button"
             class="expand-btn"
-            (click)="toggleExpand(node.department.departmentId)"
-            [attr.aria-label]="isExpanded(node.department.departmentId) ? 'Collapse ' + node.department.name : 'Expand ' + node.department.name"
+            (click)="toggleExpand(node.department.id)"
+            [attr.aria-label]="isExpanded(node.department.id) ? 'Collapse ' + node.department.name : 'Expand ' + node.department.name"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
               fill="currentColor"
               class="w-4 h-4 transition-transform duration-200"
-              [class.rotate-90]="isExpanded(node.department.departmentId)"
+              [class.rotate-90]="isExpanded(node.department.id)"
               aria-hidden="true"
             >
               <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd" />
@@ -142,9 +142,9 @@ import { IDepartment, IDepartmentTreeNode } from '../../models/department.models
         </div>
 
         <!-- Children (recursive) -->
-        @if (isExpanded(node.department.departmentId) && node.children.length > 0) {
+        @if (isExpanded(node.department.id) && node.children.length > 0) {
           <div @expandCollapse role="group">
-            @for (child of node.children; track child.department.departmentId) {
+            @for (child of node.children; track child.department.id) {
               <ng-container
                 *ngTemplateOutlet="treeNodeTpl; context: { $implicit: child }"
               ></ng-container>
@@ -262,7 +262,7 @@ export class DepartmentTreeComponent {
       const nodes = this.treeNodes();
       const rootsWithChildren = nodes
         .filter((n) => n.children.length > 0)
-        .map((n) => n.department.departmentId);
+        .map((n) => n.department.id);
 
       if (rootsWithChildren.length > 0) {
         this.expandedIds.update((ids) => {
@@ -276,17 +276,17 @@ export class DepartmentTreeComponent {
     });
   }
 
-  isExpanded(departmentId: string): boolean {
-    return this.expandedIds().has(departmentId);
+  isExpanded(id: string): boolean {
+    return this.expandedIds().has(id);
   }
 
-  toggleExpand(departmentId: string): void {
+  toggleExpand(id: string): void {
     this.expandedIds.update((ids) => {
       const next = new Set(ids);
-      if (next.has(departmentId)) {
-        next.delete(departmentId);
+      if (next.has(id)) {
+        next.delete(id);
       } else {
-        next.add(departmentId);
+        next.add(id);
       }
       return next;
     });
@@ -296,7 +296,8 @@ export class DepartmentTreeComponent {
     const childrenMap = new Map<string | null, IDepartment[]>();
 
     for (const dept of departments) {
-      const parentId = dept.parentDepartmentId;
+      // See department-form: an absent parentDepartmentId means a root department.
+      const parentId = dept.parentDepartmentId ?? null;
       if (!childrenMap.has(parentId)) {
         childrenMap.set(parentId, []);
       }
@@ -307,7 +308,7 @@ export class DepartmentTreeComponent {
       const children = childrenMap.get(parentId) ?? [];
       return children.map((dept) => ({
         department: dept,
-        children: buildLevel(dept.departmentId, level + 1),
+        children: buildLevel(dept.id, level + 1),
         expanded: false,
         level,
       }));
