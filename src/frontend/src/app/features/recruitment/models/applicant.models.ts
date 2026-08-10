@@ -78,10 +78,12 @@ export const COVER_LETTER_MAX = 2000;
  */
 export interface IPublicVacancy {
   id: string;
+  /** GAP-011: the detail route is keyed by SLUG (`GET /careers/vacancies/{slug}`), so the list must carry it. */
+  slug: string;
   referenceNumber: string;
   title: string;
   departmentName: string | null;
-  jobTitleName: string | null;
+  // GAP-011: `jobTitleName` removed — neither public DTO returns it, so it was always undefined.
   employmentType: string | null;
   locationName: string | null;
   /** Rich text (HTML). Rendered via Angular's default sanitizer (NFR-4). */
@@ -90,10 +92,12 @@ export interface IPublicVacancy {
   qualifications: string | null;
   salaryMin: number | null;
   salaryMax: number | null;
-  currency: string | null;
+  /** GAP-011: wire name is `salaryCurrency`. */
+  salaryCurrency: string | null;
   /** ISO date (yyyy-MM-dd) or null — applications close after this (BR-6). */
   applicationDeadline: string | null;
-  postedAt: string;
+  /** GAP-011: wire name is `publishedAt`. */
+  publishedAt: string;
 }
 
 /**

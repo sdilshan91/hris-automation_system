@@ -18,19 +18,19 @@ describe('InternalVacancyComponent', () => {
 
   const mockVacancy: IPublicVacancy = {
     id: 'vac-1',
+    slug: 'vac-slug',
     referenceNumber: 'VAC-1',
     title: 'Internal Role',
     departmentName: 'Engineering',
-    jobTitleName: null,
     employmentType: 'FullTime',
     locationName: 'HQ',
     description: '<p>Role</p>',
     qualifications: null,
     salaryMin: null,
     salaryMax: null,
-    currency: null,
+    salaryCurrency: null,
     applicationDeadline: null,
-    postedAt: '2026-06-01',
+    publishedAt: '2026-06-01',
   };
 
   const setup = async (id: string | null, fail = false) => {

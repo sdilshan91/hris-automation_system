@@ -82,7 +82,12 @@ public sealed record SessionPolicyDto(
     string ConcurrentSessionStrategy);
 
 /// <summary>US-REC-010 FR-5/BR-7 (ISSUE-140): tenant hiring settings — auto-create a login account on hire.</summary>
-public sealed record HiringSettingsDto(bool AutoCreateUserOnHire);
+/// <summary>
+/// GAP-011: <c>PublicCareersEnabled</c> joined this DTO because it had NO WRITER anywhere outside test
+/// fixtures — the public careers surface was gated on a flag no admin could turn on, so the whole feature
+/// was off for every real tenant regardless of how many vacancies were published.
+/// </summary>
+public sealed record HiringSettingsDto(bool AutoCreateUserOnHire, bool PublicCareersEnabled);
 
 // ── Update request bodies ────────────────────────────────────────────────────
 
@@ -134,7 +139,12 @@ public sealed record UpdateSessionPolicyRequest(
     string? ConcurrentSessionStrategy);
 
 /// <summary>US-REC-010 FR-5/BR-7 (ISSUE-140): update the tenant's auto-create-user-on-hire toggle.</summary>
-public sealed record UpdateHiringSettingsRequest(bool AutoCreateUserOnHire);
+/// <param name="PublicCareersEnabled">
+/// GAP-011. NULLABLE on purpose: null means "leave unchanged". A non-nullable bool with a false default
+/// would let an older client that omits the field silently switch the public careers page OFF — the exact
+/// class of silent failure this gap is about.
+/// </param>
+public sealed record UpdateHiringSettingsRequest(bool AutoCreateUserOnHire, bool? PublicCareersEnabled = null);
 
 public sealed record UpdatePrimaryColorRequest(string PrimaryColor);
 

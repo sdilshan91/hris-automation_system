@@ -361,6 +361,29 @@ public sealed class VacancyIntegrationTests
         detail.Value!.Title.Should().Be("Public Role");
     }
 
+    // ── GAP-011: the public payloads must carry the Id the APPLY route needs ────────────────────────
+    // POST /careers/vacancies/{vacancyId}/apply is keyed by ID, but both public DTOs exposed only Slug — so a
+    // visitor could browse the careers page and then never apply, because no payload the page received ever
+    // contained the id. Asserting it on BOTH surfaces, and that it is the real vacancy id, not a placeholder.
+
+    [Fact]
+    public async Task PublicCareers_payloads_carry_the_vacancy_Id_the_apply_route_needs_gap011()
+    {
+        var mediator = BuildPipeline(_tenantA);
+        var created = await mediator.Send(FullDraft("Applyable Role"));
+        var vacancyId = created.Value!.Id;
+        await mediator.Send(new PublishVacancyCommand(vacancyId));
+        SetCareersToggle(_tenantA, enabled: true);
+
+        var list = await mediator.Send(new ListPublicVacanciesQuery());
+        var item = list.Value!.Single(v => v.Slug == "applyable-role");
+        item.Id.Should().Be(vacancyId, "the list feeds the apply link");
+
+        var detail = await mediator.Send(new GetPublicVacancyBySlugQuery("applyable-role"));
+        detail.Value!.Id.Should().Be(vacancyId, "the detail page hosts the apply button");
+        detail.Value.Id.Should().NotBe(Guid.Empty);
+    }
+
     [Fact]
     public async Task PublicCareers_DraftVacancy_IsNeverExposed()
     {
