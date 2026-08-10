@@ -247,8 +247,14 @@ export interface IFeedbackAnswerInput {
 }
 
 /** Submit-feedback request body (AC-3). */
+/**
+ * GAP-012: the wire field is `items`, not `answers` — every 360 submission POSTed a body the API could not
+ * bind, so the answers were silently dropped. `overallComment` is accepted by
+ * PerformanceSubmitFeedback360Request and the FE never sent it.
+ */
 export interface ISubmitFeedbackRequest {
-  answers: IFeedbackAnswerInput[];
+  items: IFeedbackAnswerInput[];
+  overallComment?: string | null;
 }
 
 // ─── Results-dashboard DTOs (AC-4) ────────────────────────────

@@ -97,8 +97,9 @@ export class PipService {
     const url = `${this.baseUrl}/${pipId}/checkpoints`;
     if (file) {
       const form = new FormData();
-      form.append('status', request.status);
-      form.append('notes', request.notes);
+      // GAP-012: multipart KEY names are wire names — they must match the request DTO.
+      form.append('progressStatus', request.progressStatus);
+      form.append('evidenceNotes', request.evidenceNotes);
       form.append('file', file, file.name);
       return this.http.post<IPip>(url, form, { withCredentials: true });
     }

@@ -8199,3 +8199,39 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Recommended fix (backend, and there is a clear precedent):** add `POST /payroll/salary-components/reorder` — **both sibling entities already have one** (`/tenant/custom-fields/reorder`, `/tenant/leave-types/reorder`), so salary components are the inconsistent case, and an atomic reorder is better than N sequential `PUT`s. For formula validation, either add the evaluator endpoint (the safe evaluator already exists server-side — it runs payroll) or remove the "Test" button and let create/update report the error.
 - **Deliberately NOT done here:** the plan is explicit that G2 is *"the backend is correct; the frontend cannot reach it — do not re-scope as backend work."* These two are the opposite: the frontend is reasonable and the backend route is absent. Tracked separately rather than smuggled into an FE PR.
 - **Confidence:** 100% — absence verified in both the contract and the controllers; both callers traced to live UI.
+
+---
+
+### ISSUE-373 — GAP-012's remaining performance surface: 17 response-DTO gaps, and a warning about how to measure them
+- **ID:** ISSUE-373
+- **Type:** ISSUE (FE↔BE contract, S-1 class) — **partly a methodology note**
+- **Severity:** **MED–HIGH, unconfirmed per item.** Where the FE reads a field the API never sends, the value is `undefined`; the register reports US-PRF-002/009/010 hard-crashing rather than degrading. Not re-confirmed at runtime here.
+- **Status:** `OPEN`
+- **Layer:** FE
+- **Module / US / TC:** Performance / US-PRF-002/003/006/009/010 / — — found 2026-08-10 while fixing GAP-012's request half
+- **Title:** A mechanical diff of the 96 performance FE interfaces against the generated contract flags **17 response DTOs** with FE-only fields. **Each needs checking against its service before being called a defect.**
+- **★ The methodology warning — this cost me a wrong edit and would cost the next person more.** The diff compares an FE interface's fields to the same-named contract schema. It **cannot see the adapter layer**, and where a service maps at the boundary the FE name is *supposed* to differ. `ISaveMeetingNotesRequest.meetingNotesHtml` looked like a defect and is not: `review-signoff.service.ts` maps it to the backend's `Body` field, and the service's own docstring says so. **I "fixed" it, then reverted.** Since an adapter layer is exactly what the register RECOMMENDS for GAP-012, a name difference is as likely to be correct design as a bug. **Verify the service, then decide.**
+- **Verified in the request half (all four posted the request object DIRECTLY, no adapter — genuine defects, fixed):** `ISubmitFeedbackRequest.answers` → `items` (360 submissions dropped every answer) · `ICreatePipRequest.mentorId` → `mentorEmployeeId` · `IRecordCheckpointRequest.status/notes` → `progressStatus/evidenceNotes` (**including the multipart FormData keys**, which are wire names too — checkpoints recorded neither the status nor the note) · and `IResolveDisputeRequest` **cleared** (its service adapts).
+- **The 17 to triage** (FE-only fields listed; check each service for an adapter first):
+  | interface | contract schema | FE-only fields |
+  |---|---|---|
+  | `ISelfAssessment` | `PerformanceSelfAssessmentDto` | cycleName, goals, submittedOn, weightedScore, windowClosesOn, windowOpen |
+  | `IManagerReview` | `PerformanceManagerReviewDto` | cycleName, goals, jobTitle, managerScore, selfScore, submittedOn, windowOpen |
+  | `IFeedback360Results` | `PerformanceFeedback360ResultsDto` | anonymous, comments, competencies, cycleName, employeeId, employeeName, exportAvailable, jobTitle, released |
+  | `IPip` | `PerformancePipDto` | acknowledgedSignature, acknowledgement, escalation, jobTitle, outcome, pipId |
+  | `IPipSummary` | `PerformancePipSummaryDto` | acknowledgement, checkpointsRecorded, checkpointsTotal, jobTitle, pipId |
+  | `IPipCheckpoint` | `PerformancePipCheckpointDto` | attachmentName, checkpointId, dueDate, notes, overdue, recordedBy, recordedOn, status |
+  | `IPipObjective` | `PerformancePipObjectiveDto` | checkpoints, objectiveId |
+  | `IRecommendationSummary` | `PerformanceRecommendationSummaryDto` | bonusPoolAllocated, byDepartment, comparison, currency, totalBonuses, totalIncrements |
+  | `IRecommendationWorkspace` | `PerformanceRecommendationWorkspaceDto` | availableExportFormats, compensationVisible |
+  | `IGoalComment` | `PerformanceGoalCommentDto` | comment, commentId, createdOn |
+  | `ITeamGoalProgressRow` | `PerformanceTeamGoalProgressRowDto` | goalsAtRisk, jobTitle, lastUpdatedOn, overallCompletionPercent |
+  | `ITeamGoalStatus` | `PerformanceTeamGoalStatusDto` | jobTitle |
+  | `ICycleProgress` | `PerformanceCycleProgressDto` | goalSettingComplete, managerReviewComplete, selfAssessmentComplete |
+  | `IDepartmentEmployeeScore` | `PerformanceDepartmentEmployeeScoreDto` | grade, trend |
+  | `IDepartmentDrilldown` | `PerformanceDepartmentDrilldownDto` | cycleLabel, scoreScaleMax |
+  | `ICategoryAverage` | `PerformanceCategoryAverageDto` | average |
+  | `ICycle` | `PerformanceCycleDto` | cancelledReason |
+- **Coverage, stated so nobody reads this as a clean bill of health:** 39 of 96 interfaces name-matched a contract schema; **57 did not** and the diff says nothing about them (most are probably legitimate FE-only view models). The `id`-suffix pattern that matched `IXyz` ↔ `PerformanceXyzDto` is what raised coverage from 11 to 39 — a reminder that a low match rate is usually the matcher's fault, not the code's.
+- **Recommended:** work the table top-down (`ISelfAssessment`, `IManagerReview` first — US-PRF-002/003 are the register's named crashers). For each: if the service adapts, close the row; if not, decide add-to-DTO vs drop-the-UI, exactly as ISSUE-364 did for departments.
+- **Confidence:** 100% that these 17 have FE-only fields on the name-matched schema. **~50% that any given row is a real defect** rather than an adapter — which is precisely why they are listed for triage instead of being "fixed" in bulk.

@@ -425,7 +425,7 @@ export class PipFormComponent implements OnInit {
     reason: ['', [Validators.required, Validators.maxLength(2000)]],
     startDate: ['', Validators.required],
     endDate: ['', Validators.required],
-    mentorId: [''],
+    mentorId: [''],   // form control; the WIRE field is mentorEmployeeId (GAP-012)
     escalationAction: ['TerminationRecommendation', Validators.required],
     objectives: this.fb.array([this.newObjectiveGroup()]),
     checkpointDates: this.fb.array<string>([]),
@@ -576,7 +576,7 @@ export class PipFormComponent implements OnInit {
       reason: raw.reason,
       startDate: raw.startDate,
       endDate: raw.endDate,
-      mentorId: raw.mentorId ? raw.mentorId : null,
+      mentorEmployeeId: raw.mentorId ? raw.mentorId : null,   // form control stays mentorId (GAP-012)
       escalationAction: raw.escalationAction,
       objectives,
       checkpointDates: (raw.checkpointDates as string[]).filter((d) => !!d),
