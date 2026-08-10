@@ -1,9 +1,17 @@
 name: gitleaks
 
-# Secret scanning — ADVISORY (does not fail the build yet). Complements the
-# secret-guard hook by scanning full history + tree. Flip `--exit-code 0` to
-# `--exit-code 1` (and drop continue-on-error) once the history is clean to make
-# it a hard gate.
+# Secret scanning — BLOCKING (GAP-031b, 2026-08-10). Complements the secret-guard
+# PreToolUse hook: that stops a secret being WRITTEN by an agent, this stops one
+# being MERGED by anyone.
+#
+# It was advisory pending a clean history. The history is clean: a full scan of
+# 1170 commits returns zero findings once the three documentation placeholders in
+# .gitleaks.toml are allow-listed. Advisory-plus-clean is the worst combination —
+# it pays the whole runtime cost and catches nothing — so it now fails the build.
+#
+# If this job ever goes red: read the SARIF artifact. Do NOT reach for
+# continue-on-error; either the finding is real, or it belongs in the .gitleaks.toml
+# allowlist with a comment saying why it is not a secret.
 on:
   push:
   pull_request:
@@ -19,9 +27,8 @@ jobs:
         with:
           fetch-depth: 0   # full history so the scan sees pre-hook commits
 
-      - name: Run gitleaks (advisory)
+      - name: Run gitleaks
         id: gitleaks
-        continue-on-error: true
         env:
           GITLEAKS_VERSION: "8.21.2"
         run: |
@@ -34,8 +41,8 @@ jobs:
             --redact \
             --report-format sarif \
             --report-path gitleaks.sarif \
-            --exit-code 0 \
-            --no-banner -v || true
+            --exit-code 1 \
+            --no-banner -v
 
       - name: Upload report
         if: always()

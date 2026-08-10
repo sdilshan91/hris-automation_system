@@ -172,8 +172,8 @@ interface ILineSeriesGeom {
                 <select id="f-dept" class="input-sm select-input" [ngModel]="filters().departmentId"
                   (ngModelChange)="patchFilter('departmentId', $event)">
                   <option [ngValue]="null">All departments</option>
-                  @for (d of departments(); track d.departmentId) {
-                    <option [ngValue]="d.departmentId">{{ d.name }}</option>
+                  @for (d of departments(); track d.id) {
+                    <option [ngValue]="d.id">{{ d.name }}</option>
                   }
                 </select>
               </div>

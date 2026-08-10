@@ -135,7 +135,7 @@ import { HasPermissionDirective } from '../../../../../shared/directives/has-per
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5">
                         <path fill-rule="evenodd" d="M6.955 1.45A.5.5 0 0 1 7.452 1h1.096a.5.5 0 0 1 .497.45l.17 1.699c.484.12.94.312 1.356.562l1.321-.916a.5.5 0 0 1 .67.033l.774.775a.5.5 0 0 1 .034.67l-.916 1.32c.25.417.443.873.563 1.357l1.699.17a.5.5 0 0 1 .45.497v1.096a.5.5 0 0 1-.45.497l-1.7.17c-.12.484-.312.94-.562 1.356l.916 1.321a.5.5 0 0 1-.034.67l-.774.774a.5.5 0 0 1-.67.033l-1.32-.916c-.417.25-.874.443-1.357.563l-.17 1.699a.5.5 0 0 1-.497.45H7.452a.5.5 0 0 1-.497-.45l-.17-1.7a4.973 4.973 0 0 1-1.356-.562l-1.321.916a.5.5 0 0 1-.67-.033l-.774-.775a.5.5 0 0 1-.034-.67l.916-1.32a4.972 4.972 0 0 1-.563-1.357l-1.699-.17A.5.5 0 0 1 1 8.548V7.452a.5.5 0 0 1 .45-.497l1.7-.17c.12-.484.312-.94.562-1.356l-.916-1.321a.5.5 0 0 1 .034-.67l.774-.774a.5.5 0 0 1 .67-.033l1.32.916c.417-.25.874-.443 1.357-.563l.17-1.699ZM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" clip-rule="evenodd" />
                       </svg>
-                      {{ role.permissions.length }} permissions
+                      {{ (role.permissions?.length ?? 0) }} permissions
                     </span>
                   </div>
                 </div>
@@ -206,7 +206,7 @@ import { HasPermissionDirective } from '../../../../../shared/directives/has-per
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5">
                         <path fill-rule="evenodd" d="M6.955 1.45A.5.5 0 0 1 7.452 1h1.096a.5.5 0 0 1 .497.45l.17 1.699c.484.12.94.312 1.356.562l1.321-.916a.5.5 0 0 1 .67.033l.774.775a.5.5 0 0 1 .034.67l-.916 1.32c.25.417.443.873.563 1.357l1.699.17a.5.5 0 0 1 .45.497v1.096a.5.5 0 0 1-.45.497l-1.7.17c-.12.484-.312.94-.562 1.356l.916 1.321a.5.5 0 0 1-.034.67l-.774.774a.5.5 0 0 1-.67.033l-1.32-.916c-.417.25-.874.443-1.357.563l-.17 1.699a.5.5 0 0 1-.497.45H7.452a.5.5 0 0 1-.497-.45l-.17-1.7a4.973 4.973 0 0 1-1.356-.562l-1.321.916a.5.5 0 0 1-.67-.033l-.774-.775a.5.5 0 0 1-.034-.67l.916-1.32a4.972 4.972 0 0 1-.563-1.357l-1.699-.17A.5.5 0 0 1 1 8.548V7.452a.5.5 0 0 1 .45-.497l1.7-.17c.12-.484.312-.94.562-1.356l-.916-1.321a.5.5 0 0 1 .034-.67l.774-.774a.5.5 0 0 1 .67-.033l1.32.916c.417-.25.874-.443 1.357-.563l.17-1.699ZM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" clip-rule="evenodd" />
                       </svg>
-                      {{ role.permissions.length }} permissions
+                      {{ (role.permissions?.length ?? 0) }} permissions
                     </span>
                   </div>
                 </div>
@@ -236,10 +236,10 @@ import { HasPermissionDirective } from '../../../../../shared/directives/has-per
             <p class="text-sm text-neutral-600 mb-1">
               Are you sure you want to delete <strong>{{ roleToDelete()!.name }}</strong>?
             </p>
-            @if (roleToDelete()!.userCount > 0) {
+            @if ((roleToDelete()!.userCount ?? 0) > 0) {
               <p class="text-sm text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mt-3">
-                This role is currently assigned to {{ roleToDelete()!.userCount }}
-                {{ roleToDelete()!.userCount === 1 ? 'user' : 'users' }}.
+                This role is currently assigned to {{ (roleToDelete()!.userCount ?? 0) }}
+                {{ (roleToDelete()!.userCount ?? 0) === 1 ? 'user' : 'users' }}.
                 They will lose the permissions granted by this role.
               </p>
             }

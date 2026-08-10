@@ -163,7 +163,7 @@ import { IRole, IUserWithRoles } from '../../models/role.models';
                     }
                   </div>
                   <span class="text-xs text-neutral-400 flex-shrink-0">
-                    {{ role.permissions.length }} perms
+                    {{ (role.permissions?.length ?? 0) }} perms
                   </span>
                 </label>
               }

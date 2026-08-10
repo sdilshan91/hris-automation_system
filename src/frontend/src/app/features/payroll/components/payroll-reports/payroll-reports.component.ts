@@ -126,8 +126,8 @@ interface IChartBar {
                 <select class="field" [ngModel]="departmentId()"
                   (ngModelChange)="setDepartment($event)" data-test="department-select">
                   <option [ngValue]="null">All departments</option>
-                  @for (d of departments(); track d.departmentId) {
-                    <option [ngValue]="d.departmentId">{{ d.name }}</option>
+                  @for (d of departments(); track d.id) {
+                    <option [ngValue]="d.id">{{ d.name }}</option>
                   }
                 </select>
               </label>

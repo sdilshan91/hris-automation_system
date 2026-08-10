@@ -221,12 +221,12 @@ import { LocationFormComponent } from '../location-form/location-form.component'
                         <button
                           type="button"
                           class="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium transition-colors duration-150"
-                          [ngClass]="loc.employeeCount > 0 ? 'bg-brand-50 text-brand-700 hover:bg-brand-100 cursor-pointer' : 'bg-neutral-100 text-neutral-500 cursor-default'"
+                          [ngClass]="(loc.employeeCount ?? 0) > 0 ? 'bg-brand-50 text-brand-700 hover:bg-brand-100 cursor-pointer' : 'bg-neutral-100 text-neutral-500 cursor-default'"
                           (click)="navigateToDirectory(loc, $event)"
-                          [attr.aria-label]="loc.employeeCount + ' employees at ' + loc.name"
-                          [attr.title]="loc.employeeCount > 0 ? 'View employees at this location' : ''"
+                          [attr.aria-label]="(loc.employeeCount ?? 0) + ' employees at ' + loc.name"
+                          [attr.title]="(loc.employeeCount ?? 0) > 0 ? 'View employees at this location' : ''"
                         >
-                          {{ loc.employeeCount }}
+                          {{ (loc.employeeCount ?? 0) }}
                         </button>
                       </td>
                       <td class="td-notion text-center">
@@ -315,13 +315,13 @@ import { LocationFormComponent } from '../location-form/location-form.component'
                     <button
                       type="button"
                       class="flex items-center gap-1"
-                      [ngClass]="loc.employeeCount > 0 ? 'text-brand-600 hover:text-brand-800' : 'text-neutral-400'"
+                      [ngClass]="(loc.employeeCount ?? 0) > 0 ? 'text-brand-600 hover:text-brand-800' : 'text-neutral-400'"
                       (click)="navigateToDirectory(loc, $event)"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
                         <path fill-rule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0Zm-5-2a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-2 9c-2.841 0-4.263-.722-5.004-1.483-.173-.177-.18-.454-.023-.644A4.504 4.504 0 0 1 6.5 10.5h3a4.504 4.504 0 0 1 3.527 2.373c.157.19.15.467-.023.644C12.263 14.278 10.841 15 8 15Z" clip-rule="evenodd" />
                       </svg>
-                      {{ loc.employeeCount }} employees
+                      {{ (loc.employeeCount ?? 0) }} employees
                     </button>
                   </div>
                   <div class="flex items-center gap-2 mt-3">

@@ -305,7 +305,7 @@ export const PRIVILEGED_ROLE_NAMES = [
                     class="input-notion select-input max-w-xs"
                   >
                     <option value="">Select a role...</option>
-                    @for (role of nonPrivilegedRoles(); track role.roleId) {
+                    @for (role of nonPrivilegedRoles(); track role.id) {
                       <option [value]="role.name">{{ role.name }}</option>
                     }
                   </select>

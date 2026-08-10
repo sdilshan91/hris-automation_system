@@ -1,7 +1,9 @@
 # Gitleaks config for the HRM SaaS repo.
 # Complements the `secret-guard` PreToolUse hook: that blocks *pending* writes;
 # Gitleaks scans committed history + the full tree for what predates the hook.
-# Starts ADVISORY (the CI job does not fail the build) — see .github/workflows/gitleaks.yml.
+# BLOCKING since 2026-08-10 (GAP-031b) — see .github/workflows/gitleaks.yml. It was advisory
+# "until the history is clean"; the history IS clean: a full scan of 1170 commits returns only
+# the three documentation placeholders allow-listed below.
 
 title = "HRM gitleaks config"
 
@@ -17,10 +19,18 @@ paths = [
   '''(^|/)node_modules/''',
   '''(^|/)\.playwright-artifacts/''',
   '''(^|/)(bin|obj|dist)/''',
+  '''(^|/)\.angular/cache/''',        # Angular build cache: binary webpack packs, never committed
+  '''(^|/)perf/results/''',           # k6 run output, gitignored
 ]
 regexes = [
   '''\$\{[A-Z0-9_]+\}''',                       # ${ENV_VAR} interpolation is not a secret
   '''Password\s*=\s*;''',                        # empty password in the appsettings connstring template
   '''(?i)your[-_]?(secret|key|token|password|api[-_]?key)[-_]?here''',
   '''(?i)(changeme|placeholder|example|dummy|test)[-_]?(secret|key|token|password)''',
+  # GAP-031b: the only three findings in the entire history, both in IEEE-829 test documentation.
+  '''idem-key-[a-z0-9-]+''',                                            # TC-CHR-226 idempotency-key fixtures
+  '''\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b''',   # bare UUIDs (entity ids quoted in
+                                                                            # findings/log excerpts). Narrow risk
+                                                                            # accepted: no secret this codebase
+                                                                            # issues is UUID-shaped.
 ]

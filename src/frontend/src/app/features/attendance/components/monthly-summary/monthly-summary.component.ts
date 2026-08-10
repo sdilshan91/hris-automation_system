@@ -111,15 +111,15 @@ const HIGH_ABSENT_THRESHOLD = 3;
           <select class="chip" [ngModel]="departmentId()" (ngModelChange)="onFilterChange('department', $event)"
             aria-label="Filter by department" data-test="filter-department">
             <option value="">All departments</option>
-            @for (d of departments(); track d.departmentId) {
-              <option [value]="d.departmentId">{{ d.name }}</option>
+            @for (d of departments(); track d.id) {
+              <option [value]="d.id">{{ d.name }}</option>
             }
           </select>
           <select class="chip" [ngModel]="locationId()" (ngModelChange)="onFilterChange('location', $event)"
             aria-label="Filter by location" data-test="filter-location">
             <option value="">All locations</option>
-            @for (l of locations(); track l.locationId) {
-              <option [value]="l.locationId">{{ l.name }}</option>
+            @for (l of locations(); track l.id) {
+              <option [value]="l.id">{{ l.name }}</option>
             }
           </select>
           <select class="chip" [ngModel]="shiftId()" (ngModelChange)="onFilterChange('shift', $event)"

@@ -1,5 +1,5 @@
 {
   "$schema": "https://xunit.net/schema/current/xunit.runner.schema.json",
-  "_comment": "maxParallelThreads caps concurrent Testcontainers (ISSUE-275: too many migrating at once saturates the host). Briefly lowered to 2 chasing the ISSUE-361 CI failure; that was the WRONG diagnosis \u2014 the real cause was Hangfire reading a blank-password connection string because Program.cs resolves it before builder.Build(). Restored to 4.",
+  "_comment": "KEEP THIS FILE PURE ASCII WITH NO BACKSLASH ESCAPES. ISSUE-362: xUnit 2.9.3 reads this with a hand-rolled JSON parser that cannot handle unicode escape sequences. One escaped em dash in this very comment made the WHOLE file unparseable, so every run logged 'Couldn't parse config file ... the JSON appears to be malformed' and maxParallelThreads never loaded -- the cap below had never once been in effect, while the standing rule in COMPLETION-PLAN credited it for making the suite reliable. maxParallelThreads caps concurrent Testcontainers (ISSUE-275: too many migrating at once saturates the host). Briefly lowered to 2 chasing the ISSUE-361 CI failure; that was the WRONG diagnosis -- the real cause was Hangfire reading a blank-password connection string because Program.cs resolves it before builder.Build(). Restored to 4.",
   "maxParallelThreads": 4
 }

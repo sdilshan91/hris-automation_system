@@ -167,11 +167,9 @@ import {
               <path fill-rule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0Zm-5-2a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-2 9c-2.841 0-4.263-.722-5.004-1.483-.173-.177-.18-.454-.023-.644A4.504 4.504 0 0 1 6.5 10.5h3a4.504 4.504 0 0 1 3.527 2.373c.157.19.15.467-.023.644C12.263 14.278 10.841 15 8 15Z" clip-rule="evenodd" />
             </svg>
             <span class="text-sm text-neutral-400">
-              @if (department()?.managerName) {
-                {{ department()!.managerName }}
-              } @else {
-                Not assigned
-              }
+              <!-- ISSUE-364: managerName is not on DepartmentDto (only managerId is), so this always
+                   rendered the empty branch. Shows the honest state until the backend field lands. -->
+              Not shown
             </span>
           </div>
         </div>

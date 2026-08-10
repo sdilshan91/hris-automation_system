@@ -65,7 +65,15 @@ public sealed class TenantStatusEnforcementMiddleware
         }
 
         var status = tenantContext.Status;
-        if (status is not (TenantStatus.Suspended or TenantStatus.Terminating))
+        // GAP-032: Terminated was missing here, so a tenant whose lifecycle had COMPLETED fell through to
+        // `await _next` and kept serving requests — an access token minted before termination stayed usable
+        // until it expired, which is the one window termination exists to close. Suspended/Terminating were
+        // enforced; the terminal state was not.
+        //
+        // PastDue is deliberately still absent: it is defined on the enum, unreachable (nothing sets it) and
+        // unenforced, because Phase 1 has no billing. Enforcing a status nothing can produce would be dead
+        // code pretending to be a control -- tracked as a §9.5 doc correction instead (GAP-032, second half).
+        if (status is not (TenantStatus.Suspended or TenantStatus.Terminating or TenantStatus.Terminated))
         {
             await _next(context);
             return;
@@ -73,9 +81,18 @@ public sealed class TenantStatusEnforcementMiddleware
 
         var path = context.Request.Path.Value ?? string.Empty;
 
-        // Non-API and always-allowed endpoints (auth/export/notice) pass through regardless of status.
+        // Non-API paths pass through regardless of status.
+        //
+        // GAP-032: the always-allowed set is status-dependent. Auth and the lifecycle notice stay reachable
+        // for EVERY status — a user must still be able to log out, and the UI must be able to read the
+        // notice that explains why the workspace is unavailable; blocking that would leave the front end
+        // unable to say what happened. The EXPORT carve-out, however, exists for the grace window, and a
+        // Terminated tenant has no grace window: its data is already deleted, so an export there would at
+        // best return nothing and at worst read residue.
+        var exportAllowed = status != TenantStatus.Terminated;
         if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
-            || IsAlwaysAllowed(path))
+            || AlwaysAllowedPrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase))
+            || (exportAllowed && IsExport(path)))
         {
             await _next(context);
             return;
@@ -101,6 +118,20 @@ public sealed class TenantStatusEnforcementMiddleware
             return;
         }
 
+        // GAP-032: Terminated is the TERMINAL state — the workspace is gone and its data deleted, so unlike
+        // Terminating there is no read-only grace and no export window; every API path is refused. Placed
+        // before the Terminating read-only branch so a terminated tenant can never take the GET pass.
+        if (status == TenantStatus.Terminated)
+        {
+            _logger.LogInformation(
+                "Blocked request to terminated tenant {TenantId} ({Method} {Path}) with HTTP 451.",
+                tenantContext.TenantId, context.Request.Method, path);
+            await WriteAsync(context, StatusCodes.Status451UnavailableForLegalReasons,
+                "This organization's workspace has been closed.",
+                "tenant_terminated");
+            return;
+        }
+
         // Terminating (BR-6): read-only. GET/HEAD/OPTIONS + export pass; writes are 403.
         if (ReadMethods.Contains(context.Request.Method) || IsExport(path))
         {
@@ -115,10 +146,6 @@ public sealed class TenantStatusEnforcementMiddleware
             "This organization's workspace is read-only pending termination. Write operations are disabled.",
             "tenant_terminating_readonly");
     }
-
-    private static bool IsAlwaysAllowed(string path)
-        => AlwaysAllowedPrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase))
-           || IsExport(path);
 
     private static bool IsExport(string path)
         => ExportMarkers.Any(m => path.Contains(m, StringComparison.OrdinalIgnoreCase));
