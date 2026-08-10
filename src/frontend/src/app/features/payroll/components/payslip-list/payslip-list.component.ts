@@ -127,7 +127,7 @@ import { TrappedDialogDirective } from '../../../../shared/directives';
           >
             <div class="mb-2 flex items-center justify-between">
               <p class="text-sm font-medium text-neutral-900">
-                {{ g.generatedCount | number }} /
+                {{ g.queuedCount | number }} /
                 {{ g.totalCount | number }} generated
               </p>
               <span class="text-sm font-medium text-neutral-500"
@@ -515,7 +515,7 @@ export class PayslipListComponent implements OnInit, OnDestroy {
     if (!g || g.totalCount <= 0) {
       return 0;
     }
-    const done = g.generatedCount + g.failedCount;
+    const done = g.queuedCount + g.failedCount;
     return Math.min(100, Math.round((done / g.totalCount) * 100));
   });
 

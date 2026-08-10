@@ -494,7 +494,7 @@ export class PayslipDistributionComponent implements OnInit, OnDestroy {
       .getGenerationStatus(this.runId())
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (g) => this.hasGeneratedPdfs.set(g.generatedCount > 0),
+        next: (g) => this.hasGeneratedPdfs.set(g.queuedCount > 0),
         error: () => this.hasGeneratedPdfs.set(false),
       });
   }

@@ -114,7 +114,11 @@ export interface IStatutoryRule {
   /** ISO date or null (open-ended). */
   effectiveTo: string | null;
   isActive: boolean;
-  slabs?: ITaxSlab[];
+  /**
+   * GAP-010: the wire name is `taxSlabs`, not `slabs`. With the wrong name the API bound no slabs, so
+   * **income-tax slabs could not be saved from the UI at all** — the rule saved with an empty band set.
+   */
+  taxSlabs?: ITaxSlab[];
   socialSecurity?: ISocialSecurityRule | null;
   /** Server audit timestamp — drives the version-history timeline (FR-4). */
   updatedAt?: string;
@@ -131,7 +135,11 @@ export interface IStatutoryRuleRequest {
   countryCode: string;
   fiscalYear: string;
   effectiveFrom: string;
-  slabs?: ITaxSlab[];
+  /**
+   * GAP-010: the wire name is `taxSlabs`, not `slabs`. With the wrong name the API bound no slabs, so
+   * **income-tax slabs could not be saved from the UI at all** — the rule saved with an empty band set.
+   */
+  taxSlabs?: ITaxSlab[];
   socialSecurity?: ISocialSecurityRule | null;
 }
 

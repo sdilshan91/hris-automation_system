@@ -87,7 +87,12 @@ export interface IPayslipGenerationStatus {
   /** True while the background generation job is running (drives the poll loop). */
   isGenerating: boolean;
   totalCount: number;
-  generatedCount: number;
+  /**
+   * GAP-010: the API emits `queuedCount` on PayslipDistributionAcceptedDto. (Note: the gap register said the
+   * wire name was `generated`; the contract says `queuedCount` — checked, not assumed.) Reading a field the
+   * API never sends left this `undefined`, so the Send button's enable condition could never be satisfied.
+   */
+  queuedCount: number;
   failedCount: number;
   pendingCount: number;
 }

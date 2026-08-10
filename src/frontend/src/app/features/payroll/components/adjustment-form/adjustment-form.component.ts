@@ -468,7 +468,7 @@ export class AdjustmentFormComponent implements OnDestroy {
   );
 
   readonly form = this.fb.nonNullable.group({
-    type: ['Bonus' as AdjustmentType, Validators.required],
+    type: ['Bonus' as AdjustmentType, Validators.required],   // form control; the WIRE field is adjustmentType
     amount: [
       null as number | null,
       [Validators.required, Validators.min(0.01)],
@@ -604,7 +604,7 @@ export class AdjustmentFormComponent implements OnDestroy {
     const recurring = raw.isRecurring;
     const request: IAdjustmentRequest = {
       employeeId: employee.employeeId,
-      type: raw.type,
+      adjustmentType: raw.type,   // form control stays `type`; the WIRE field is adjustmentType (GAP-010)
       amount: raw.amount as number,
       description: raw.description.trim(),
       applicablePayMonth: raw.applicablePayMonth,

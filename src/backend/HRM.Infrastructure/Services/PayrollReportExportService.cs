@@ -189,6 +189,20 @@ public sealed class PayrollReportExportService : IPayrollReportExportService
 
     // ── Generation (async body) ──────────────────────────────────────────────
 
+    /// <summary>
+    /// GAP-008: this reads by id with NO owner check, and that is DELIBERATE — do not "harden" it.
+    ///
+    /// <para>The only caller is <c>PayrollReportExportJob</c> (Hangfire). A background job has no acting user,
+    /// so an owner check has nothing to compare against, and it runs outside any resolved tenant context, so it
+    /// must be able to load the export it was handed. Adding either check here would break payroll exports
+    /// while protecting nothing: the export row was created by <c>QueueAsync</c>, which stamps TenantId and
+    /// RequestedByUserId from the authenticated request, and the user-facing DOWNLOAD path enforces both
+    /// (resolved tenant + <c>RequestedByUserId == _currentUser.UserId</c>).</para>
+    ///
+    /// <para>The audit's other GAP-008 items are now closed by GAP-006: <c>PayrollReportExport</c> has an EF
+    /// global query filter, so <c>ListAsync</c> and the concurrency count are tenant-scoped, and the two class
+    /// comments that asserted a filter "that does not exist" are now accurate.</para>
+    /// </summary>
     public async Task<Result> GenerateAsync(Guid exportId, CancellationToken cancellationToken = default)
     {
         var export = await _db.PayrollReportExports

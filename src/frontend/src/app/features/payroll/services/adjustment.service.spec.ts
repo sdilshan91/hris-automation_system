@@ -23,7 +23,7 @@ describe('AdjustmentService', () => {
     employeeId: 'e-1',
     employeeName: 'Alex HR',
     employeeNo: 'EMP001',
-    type: 'Bonus',
+    adjustmentType: 'Bonus',
     amount: 10000,
     description: 'Q2 bonus',
     applicablePayMonth: 6,
@@ -122,7 +122,7 @@ describe('AdjustmentService', () => {
   it('createAdjustment POSTs the request body', () => {
     const request: IAdjustmentRequest = {
       employeeId: 'e-1',
-      type: 'Bonus',
+      adjustmentType: 'Bonus',
       amount: 10000,
       description: 'Q2 bonus',
       applicablePayMonth: 6,

@@ -143,7 +143,11 @@ export interface IBulkAssignmentRow {
 export interface IBulkAssignmentRequest {
   salaryStructureId: string;
   effectiveFrom: string;
-  rows: IBulkAssignmentRow[];
+  /**
+   * GAP-010: the wire name is `employees`, not `rows`. Sending `rows` meant the API bound an EMPTY
+   * collection and the bulk assign silently did nothing for every row.
+   */
+  employees: IBulkAssignmentRow[];
 }
 
 /** Per-row outcome of a bulk assignment so the UI can show success/failure. */

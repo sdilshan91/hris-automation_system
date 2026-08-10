@@ -14,7 +14,7 @@ function adj(over: Partial<IAdjustment>): IAdjustment {
     employeeId: 'e-1',
     employeeName: 'Alex HR',
     employeeNo: 'EMP001',
-    type: 'Bonus',
+    adjustmentType: 'Bonus',
     amount: 10000,
     description: 'bonus',
     applicablePayMonth: 6,

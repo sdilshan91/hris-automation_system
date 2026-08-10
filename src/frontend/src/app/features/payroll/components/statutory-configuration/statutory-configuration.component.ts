@@ -690,7 +690,7 @@ export class StatutoryConfigurationComponent implements OnInit {
   /** Populate the editors from the loaded rules for the active fiscal year. */
   private hydrateForms(rules: IStatutoryRule[]): void {
     const tax = rules.find((r) => r.ruleType === 'IncomeTax');
-    this.taxSlabs.set(tax?.slabs ? tax.slabs.map((s) => ({ ...s })) : []);
+    this.taxSlabs.set(tax?.taxSlabs ? tax.taxSlabs.map((s) => ({ ...s })) : []);
 
     const epf = rules.find((r) => r.ruleType === 'EPF')?.socialSecurity;
     this.epf.set({
@@ -779,7 +779,7 @@ export class StatutoryConfigurationComponent implements OnInit {
       countryCode: this.countryCode,
       fiscalYear: this.fiscalYear(),
       effectiveFrom: this.fiscalYearStart(this.fiscalYear()),
-      slabs: this.taxSlabs(),
+      taxSlabs: this.taxSlabs(),
     };
     this.persist('IncomeTax', request, 'Tax slabs saved.');
   }

@@ -100,7 +100,8 @@ export interface IAdjustment {
   /** Denormalized for the table; point-in-time snapshot. */
   employeeName: string;
   employeeNo: string;
-  type: AdjustmentType;
+  /** GAP-010: the wire name is `adjustmentType`. Sending `type` made every adjustment POST 400. */
+  adjustmentType: AdjustmentType;
   amount: number;
   description: string;
   /** §7 applicable_pay_month (1–12). */
@@ -128,7 +129,8 @@ export interface IAdjustment {
  */
 export interface IAdjustmentRequest {
   employeeId: string;
-  type: AdjustmentType;
+  /** GAP-010: the wire name is `adjustmentType`. Sending `type` made every adjustment POST 400. */
+  adjustmentType: AdjustmentType;
   amount: number;
   description: string;
   applicablePayMonth: number;
