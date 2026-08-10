@@ -8046,6 +8046,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ---
 
 ### ISSUE-362 — `xunit.runner.json` fails to parse, so `maxParallelThreads: 4` has NEVER been in effect
+- **Status update:** **`RESOLVED` 2026-08-10.** The escaped em dash is gone and the file is now pure ASCII with no backslash escapes at all; the "Couldn't parse config file" warning no longer appears on any run, so the cap finally loads. The comment now states the constraint explicitly (*"KEEP THIS FILE PURE ASCII WITH NO BACKSLASH ESCAPES"*) with the reason, because the trap is invisible — the file is valid JSON by every normal tool, and only xUnit's hand-rolled reader rejects it. **Amusing confirmation of how easy the trap is:** my first fix re-introduced it, by writing the literal text `\uXXXX` into the explanatory comment.
 - **ID:** ISSUE-362
 - **Type:** ISSUE (test infrastructure / false standing rule)
 - **Severity:** **MED** — no product impact; it silently removes the concurrency cap that exists to stop Testcontainers saturating the host, which is the documented cause of ISSUE-275 and the first (wrong) diagnosis of ISSUE-361.
@@ -8095,3 +8096,43 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Fix:** add `EmployeeCount` and `ManagerName` to `DepartmentDto`, mirroring `JobTitleService.ToDto(j, employeeCount, gradeName)` (counts computed in the list query, not per row — avoid the N+1). Then regenerate the contract, restore the count column and the manager line, and restore the pre-flight warning on the deactivate dialog.
 - **Why it was not fixed with GAP-014:** the GAP-PLAN is explicit that G2 is *"the backend is correct; the frontend cannot reach it — do not re-scope as backend work."* This is the one place in GAP-014 where the backend genuinely lacks a field, so it is tracked separately rather than smuggled into an FE-only change.
 - **Related:** GAP-014 · S-1.
+
+---
+
+### BUG-302 — `ng build` was broken on trunk for ~2 hours: `tsc --noEmit` does not type-check Angular templates
+- **ID:** BUG-302
+- **Type:** BUG (self-inflicted regression + a gap in the verification gate that let it through)
+- **Severity:** **HIGH while it lasted** — trunk did not build. Caught and fixed the same session, before any consumer pulled it.
+- **Status:** **`RESOLVED` 2026-08-10** (fixed in the same branch that found it)
+- **Layer:** FE / CI
+- **Module / US / TC:** Core HR + Admin + Attendance + Leave + Payroll / GAP-014, GAP-016 / — — found 2026-08-10 by starting `ng serve` for an unrelated reason
+- **Title:** PRs #484 and #485 renamed FE model fields and verified with `npx tsc --noEmit`, which **does not compile Angular templates**. 41 template references to the old field names survived and broke the build.
+- **What happened:** the contract migration renamed `IDepartment.departmentId` → `id` (and the same for job titles, locations, roles) and removed three phantom fields. I verified each step with `tsc --noEmit -p tsconfig.app.json` because it is ~10x faster than a full build. **Angular templates — including inline `template:` literals — are type-checked only by the Angular compiler**, so `tsc` reported zero errors while 41 template expressions still referenced fields that no longer existed. Both PRs merged green on their unit suites (backend 5322, frontend 4053) because Karma compiles specs, not the production template set.
+- **How it surfaced:** entirely by luck — `ng serve` was started to investigate an unrelated e2e problem and immediately printed the errors.
+- **Fixed:** all 41 sites — entity-id renames in templates (`dept.departmentId` → `dept.id` etc.), nullable-property guards the generated types now expose (`role.permissions?.length ?? 0`, `loc.employeeCount ?? 0`), and removal of the phantom-field UI (see [[ISSUE-364]]). Verified with a real `ng build`, not `tsc`.
+- **Two traps worth recording for the next person:**
+  1. **`tsc --noEmit` is not a sufficient gate for an Angular refactor.** It is fine for service/model code and useless for templates. Use `ng build` for anything that renames a field a template might touch.
+  2. **A `//` comment containing backticks, inserted into an inline `template:` literal, terminates the string** and produces a cascade of nonsense parse errors (`Incorrect number of arguments to @Component decorator`) far from the real edit. Cost two build cycles to spot.
+- **Prevention:** the CI gate already ran `npm run build`, so **CI would have caught this on the PR** — the failure was that I merged without waiting for it. The durable fix is not another tool but the discipline of running the same command CI runs. `ng build` is now part of the local FE verification step for contract work.
+- **Confidence:** 100% — reproduced, fixed, and verified with a clean `ng build --configuration development` (the production build additionally fails in this sandbox on a Google-Fonts network fetch, which is environmental).
+
+---
+
+### ISSUE-365 — the Docker `frontend` on :4200 cannot reach the API, and the e2e suite points at it
+- **ID:** ISSUE-365
+- **Type:** ISSUE (local-dev topology / test-harness mismatch)
+- **Severity:** **MED** — no production impact (prod terminates at the `nginx.docker.conf` front door). It makes `http://localhost:4200` a dead entry point and silently invalidates any e2e run pointed there.
+- **Status:** `OPEN` (partly mitigated — the Playwright baseURL is now overridable)
+- **Layer:** Infra / test harness
+- **Module / US / TC:** — / GAP-034 / — — found 2026-08-10 while trying to verify GAP-034's premise
+- **Title:** `src/frontend/nginx.conf` (the image the compose `frontend` service publishes on :4200) has **no `/api` proxy**, so the SPA served there cannot call the backend.
+- **Evidence:** the container's config has only `location /` with `try_files $uri $uri/ /index.html` plus a static-asset block. Consequences, measured:
+  - `GET http://localhost:4200/api/v1/tenant/context` returns **`index.html` with HTTP 200** (the SPA fallback swallows it) — the same call against `:5000` returns the real JSON.
+  - `POST http://localhost:4200/api/v1/auth/login` returns **405**, because you cannot POST to a static file. Login is impossible.
+  - The built app uses `apiBaseUrl: '/api/v1'` (same-origin), so it depends on a reverse proxy the image does not contain.
+- **Why it is not simply "broken":** `local-dev/nginx.docker.conf` **is** the intended front door and does proxy `/api/`, `/hangfire/` and `/hubs/` to `backend:5000` while serving the SPA from `frontend:80`. It runs as a separate container in the TLS/subdomain rig. So the supported entry point is that front door, and plain-compose `:4200` is a leftover that looks usable and is not.
+- **The trap it sets:** `playwright.config.ts` hard-codes `baseURL: 'http://localhost:4200'` and its header documents the prerequisite as *"`ng serve` on :4200"*. `ng serve` proxies `/api` via `proxy.conf.json`, so the suite is correct **for `ng serve`** — but anyone with the Docker stack up has something else on :4200, and every test then fails at login with a 30s timeout. **That is exactly what happened here: a 30-failure run that said nothing about the application.**
+- **Done so far:** `baseURL` now honours `E2E_BASE_URL`, with a comment naming the requirement (the origin must proxy `/api`) and the Docker-container pitfall.
+- **Recommended:** either add an `/api` proxy to `src/frontend/nginx.conf` so `:4200` behaves like the front door, or stop publishing :4200 in plain compose and document the front door as the only entry point. **Prefer the first** — a port that serves a login page which cannot log in will keep costing people time.
+- **★ Consequence for GAP-034:** its premise — *"the tests are already written … highest ratio of coverage-gained to work-done"* — is **still unverified**. The suite has not been shown to pass or fail against a correctly-proxied origin, so wiring it into CI is not the small job the register assumes: CI must also stand up Postgres + backend + a proxying frontend. Sizing S → **M at least**, and the first step is one clean local run against `ng serve`.
+- **Confidence:** 100% on the proxy gap (measured both ways). 100% that the 30 e2e failures were caused by it — every one timed out in `loginAsE2EOwner`.

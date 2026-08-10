@@ -623,8 +623,8 @@ import {
                       <label class="label-notion" for="emp-department">Department</label>
                       <select id="emp-department" formControlName="departmentId" class="input-notion select-input">
                         <option [ngValue]="''">Not assigned</option>
-                        @for (dept of departments(); track dept.departmentId) {
-                          <option [ngValue]="dept.departmentId">{{ dept.name }}</option>
+                        @for (dept of departments(); track dept.id) {
+                          <option [ngValue]="dept.id">{{ dept.name }}</option>
                         }
                       </select>
                     </div>
@@ -633,8 +633,8 @@ import {
                       <label class="label-notion" for="emp-jobTitle">Job Title</label>
                       <select id="emp-jobTitle" formControlName="jobTitleId" class="input-notion select-input">
                         <option [ngValue]="''">Not assigned</option>
-                        @for (jt of jobTitles(); track jt.jobTitleId) {
-                          <option [ngValue]="jt.jobTitleId">{{ jt.titleName }}</option>
+                        @for (jt of jobTitles(); track jt.id) {
+                          <option [ngValue]="jt.id">{{ jt.titleName }}</option>
                         }
                       </select>
                     </div>
@@ -643,8 +643,8 @@ import {
                       <label class="label-notion" for="emp-location">Location</label>
                       <select id="emp-location" formControlName="locationId" class="input-notion">
                         <option [ngValue]="''">No location</option>
-                        @for (loc of locations(); track loc.locationId) {
-                          <option [ngValue]="loc.locationId">{{ loc.name }}</option>
+                        @for (loc of locations(); track loc.id) {
+                          <option [ngValue]="loc.id">{{ loc.name }}</option>
                         }
                       </select>
                     </div>

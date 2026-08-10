@@ -63,8 +63,8 @@
           data-test="location-filter"
         >
           <option value="">All locations</option>
-          @for (loc of locations(); track loc.locationId) {
-            <option [value]="loc.locationId">{{ loc.name }}</option>
+          @for (loc of locations(); track loc.id) {
+            <option [value]="loc.id">{{ loc.name }}</option>
           }
         </select>
       }
@@ -397,8 +397,8 @@
               <label for="h-loc" class="label-notion">Applicable Location</label>
               <select id="h-loc" class="input-notion" formControlName="locationId">
                 <option value="">All locations (tenant-wide)</option>
-                @for (loc of locations(); track loc.locationId) {
-                  <option [value]="loc.locationId">{{ loc.name }}</option>
+                @for (loc of locations(); track loc.id) {
+                  <option [value]="loc.id">{{ loc.name }}</option>
                 }
               </select>
               <p class="text-xs text-neutral-400 mt-1">Leave blank to apply to the entire tenant.</p>

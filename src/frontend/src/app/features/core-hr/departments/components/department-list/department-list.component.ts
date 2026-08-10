@@ -242,19 +242,10 @@ import { DepartmentTreeComponent } from '../department-tree/department-tree.comp
                         Root
                       </span>
                     }
-                    <span class="flex items-center gap-1">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
-                        <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12.735 14c.618 0 1.093-.561.872-1.139a6.002 6.002 0 0 0-11.215 0c-.22.578.255 1.139.872 1.139h9.47Z" />
-                      </svg>
-                      {{ dept.employeeCount }} {{ dept.employeeCount === 1 ? 'employee' : 'employees' }}
-                    </span>
-                    <!-- Manager: TODO(US-CHR-001) — shows dash until Employee entity exists -->
-                    <span class="flex items-center gap-1" title="Department manager">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="w-3.5 h-3.5" aria-hidden="true">
-                        <path fill-rule="evenodd" d="M15 8A7 7 0 1 1 1 8a7 7 0 0 1 14 0Zm-5-2a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm-2 9c-2.841 0-4.263-.722-5.004-1.483-.173-.177-.18-.454-.023-.644A4.504 4.504 0 0 1 6.5 10.5h3a4.504 4.504 0 0 1 3.527 2.373c.157.19.15.467-.023.644C12.263 14.278 10.841 15 8 15Z" clip-rule="evenodd" />
-                      </svg>
-                      {{ dept.managerName || '—' }}
-                    </span>
+                    <!-- ISSUE-364: employee-count badge removed — DepartmentDto sends no count, so this
+                         rendered "undefined employees". Restore with the backend field. -->
+                    <!-- ISSUE-364: manager name removed — DepartmentDto carries managerId but no
+                         managerName, so this always rendered the em-dash fallback. -->
                   </div>
                 </div>
               }
@@ -328,13 +319,9 @@ import { DepartmentTreeComponent } from '../department-tree/department-tree.comp
               Are you sure you want to deactivate
               <strong>{{ departmentToDeactivate()!.name }}</strong>?
             </p>
-            @if (departmentToDeactivate()!.employeeCount > 0) {
-              <p class="text-sm text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mt-3">
-                This department has {{ departmentToDeactivate()!.employeeCount }}
-                active {{ departmentToDeactivate()!.employeeCount === 1 ? 'employee' : 'employees' }}.
-                Please reassign them before deactivating.
-              </p>
-            }
+            <!-- ISSUE-364: the "this department has N active employees" warning was here and could never
+                 fire -- employeeCount is not on DepartmentDto, so the guard compared undefined against 0. The rule is
+                 enforced server-side by DepartmentService; its refusal surfaces as an error toast. -->
             <div class="flex justify-end gap-3 mt-6">
               <button
                 type="button"
@@ -347,7 +334,7 @@ import { DepartmentTreeComponent } from '../department-tree/department-tree.comp
                 type="button"
                 class="btn-danger"
                 (click)="deactivateDepartment()"
-                [disabled]="isDeactivating() || departmentToDeactivate()!.employeeCount > 0"
+                [disabled]="isDeactivating()"
               >
                 @if (isDeactivating()) {
                   <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">

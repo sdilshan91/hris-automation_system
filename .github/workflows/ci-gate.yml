@@ -60,7 +60,22 @@ jobs:
       - name: Test
         # ISSUE-312: wrap `dotnet test` so an ABORTED run (test-host crash) FAILS the gate
         # instead of exiting 0 with a partial `Passed!` line that hides the tests that never ran.
+        # GAP-031: COVERAGE=1 turns on coverlet, which is referenced by HRM.Tests but had never been
+        # invoked — so §6.6's >=70%/>=85% target could be neither met nor missed. Measure-only for now;
+        # no threshold is enforced until the real figure has been seen at least once.
+        env:
+          COVERAGE: '1'
         run: bash scripts/run-backend-tests.sh src/backend/HRM.sln --no-build -c Release --logger "trx;LogFileName=backend-tests.trx"
+
+      - name: Report backend line coverage
+        if: always()
+        run: |
+          report=$(find . -name 'coverage.cobertura.xml' | head -1)
+          if [ -z "$report" ]; then
+            echo "No coverage report produced -- check that COVERAGE=1 reached the test step."
+            exit 0
+          fi
+          python3 -c "import sys,xml.etree.ElementTree as ET; r=ET.parse(sys.argv[1]).getroot(); print(f\"Backend coverage: lines {float(r.get('line-rate',0))*100:.1f}% branches {float(r.get('branch-rate',0))*100:.1f}%\")" "$report" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test results
         if: always()
@@ -171,4 +186,6 @@ jobs:
         # preinstalled, so ChromeHeadless works without --no-sandbox.
         # If a Chrome sandbox error ever appears, add a karma.conf.js with a
         # ChromeHeadlessNoSandbox launcher and switch --browsers to it.
-        run: npx ng test --watch=false --browsers=ChromeHeadless
+        # GAP-031: --code-coverage turns on the karma-coverage reporter, which ships in devDependencies
+        # but was never switched on. Measure-only, same rationale as the backend.
+        run: npx ng test --watch=false --browsers=ChromeHeadless --code-coverage

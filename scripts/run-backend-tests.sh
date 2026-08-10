@@ -14,14 +14,25 @@
 #
 # Works under bash on Linux CI and Git Bash on Windows. DOTNET_BIN overrides the binary
 # (used only by the self-test to replay canned transcripts); it defaults to `dotnet`.
+#
+# GAP-031: set COVERAGE=1 to collect line coverage (coverlet.collector is already referenced by
+# HRM.Tests but had never once been invoked, so tech-doc §6.6's >=70%/>=85% target could be neither
+# met nor missed — nobody knew the number). Off by default because it slows the run; CI turns it on.
+# Deliberately MEASURE-ONLY for now: no threshold is enforced, because setting a gate before anyone
+# has seen the figure is how you end up lowering the gate.
 set -uo pipefail
+
+coverage_args=()
+if [ "${COVERAGE:-0}" = "1" ]; then
+  coverage_args=(--collect:"XPlat Code Coverage")
+fi
 
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 
 # Stream to the console AND capture for post-run analysis. PIPESTATUS[0] is dotnet's own
 # exit code (tee would otherwise mask it).
-"${DOTNET_BIN:-dotnet}" test "$@" 2>&1 | tee "$log"
+"${DOTNET_BIN:-dotnet}" test "$@" ${coverage_args[@]+"${coverage_args[@]}"} 2>&1 | tee "$log"
 code=${PIPESTATUS[0]}
 
 # VSTest abort markers. Any of these means the run did NOT complete — a `Passed!` line

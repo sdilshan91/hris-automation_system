@@ -27,7 +27,11 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   use: {
-    baseURL: 'http://localhost:4200',
+    // E2E_BASE_URL lets CI (and a local run on a spare port) point at a different origin. It must be an
+    // origin that PROXIES /api to the backend: `ng serve` does via proxy.conf.json, but the Docker
+    // `frontend` container on :4200 does NOT — its nginx.conf serves static files only, so GETs silently
+    // return index.html and POSTs 405, and every test fails at login. See ISSUE-365.
+    baseURL: process.env['E2E_BASE_URL'] ?? 'http://localhost:4200',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 15_000,
