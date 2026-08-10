@@ -15,7 +15,11 @@ const MODULES = [
   'Job Titles',
   'Employees',
   'Leave',
-  'Attendance',
+  // GAP-034: the nav has no bare "Attendance" item — it exposes 'Attendance Dashboard' and
+  // 'Attendance Approvals'. The test asserted a label that does not exist, so it timed out for 15s
+  // and reported as an application failure. Asserting the real entry keeps the intent (the attendance
+  // area loads without a JS error or an error toast).
+  'Attendance Dashboard',
   'Payroll',
   'Recruitment',
   'Performance',
