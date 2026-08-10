@@ -18,47 +18,35 @@ describe('DepartmentListComponent', () => {
 
   const mockDepartments: IDepartment[] = [
     {
-      departmentId: 'dept-1',
-      tenantId: 'tenant-1',
+      id: 'dept-1',
       name: 'Engineering',
       code: 'ENG',
       description: 'Software engineering',
       parentDepartmentId: null,
       parentDepartmentName: null,
-      managerEmployeeId: null,
-      managerName: null,
       isActive: true,
-      employeeCount: 10,
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     },
     {
-      departmentId: 'dept-2',
-      tenantId: 'tenant-1',
+      id: 'dept-2',
       name: 'Frontend',
       code: 'FE',
       description: 'Frontend development',
       parentDepartmentId: 'dept-1',
       parentDepartmentName: 'Engineering',
-      managerEmployeeId: null,
-      managerName: null,
       isActive: true,
-      employeeCount: 0,
       createdAt: '2026-01-15T00:00:00Z',
       updatedAt: '2026-01-15T00:00:00Z',
     },
     {
-      departmentId: 'dept-3',
-      tenantId: 'tenant-1',
+      id: 'dept-3',
       name: 'Marketing',
       code: 'MKT',
       description: null,
       parentDepartmentId: null,
       parentDepartmentName: null,
-      managerEmployeeId: null,
-      managerName: null,
       isActive: false,
-      employeeCount: 0,
       createdAt: '2026-02-01T00:00:00Z',
       updatedAt: '2026-02-01T00:00:00Z',
     },
@@ -206,19 +194,25 @@ describe('DepartmentListComponent', () => {
     component.deactivateDepartment();
 
     expect(departmentServiceSpy.deactivateDepartment).toHaveBeenCalledWith(
-      dept.departmentId
+      dept.id
     );
     expect(toastrSpy.success).toHaveBeenCalled();
     expect(component.departmentToDeactivate()).toBeNull();
   });
 
-  it('should NOT deactivate department with active employees (AC-5)', () => {
+  // GAP-014: this used to assert a CLIENT-side AC-5 block, and passed only because the fixture supplied
+  // `employeeCount: 10` — a field DepartmentDto has never returned. Against the real API the value was
+  // undefined, `undefined > 0` was false, and the block never fired: the test proved a guard that did not
+  // exist in production. AC-5 is enforced by DepartmentService server-side (active-children AND
+  // active-employee guards), so the component's job is to CALL the endpoint and surface the refusal, which
+  // is what this now asserts (with the 422 path covered by the test below).
+  it('delegates the AC-5 active-employee check to the server rather than blocking locally', () => {
     fixture.detectChanges();
-    const dept = mockDepartments[0]; // 10 employees
+    const dept = mockDepartments[0];
     component.confirmDeactivate(dept);
     component.deactivateDepartment();
 
-    expect(departmentServiceSpy.deactivateDepartment).not.toHaveBeenCalled();
+    expect(departmentServiceSpy.deactivateDepartment).toHaveBeenCalledWith(dept.id);
   });
 
   it('should handle deactivation error from backend', () => {
@@ -229,7 +223,6 @@ describe('DepartmentListComponent', () => {
         error: {
           message: 'Department has active employees.',
           code: 'has_active_employees',
-          employeeCount: 5,
         },
       }))
     );

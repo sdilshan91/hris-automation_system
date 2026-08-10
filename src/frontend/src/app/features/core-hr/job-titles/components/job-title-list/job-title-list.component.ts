@@ -188,7 +188,7 @@ import { JobTitleFormComponent } from '../job-title-form/job-title-form.componen
                   </tr>
                 </thead>
                 <tbody>
-                  @for (jt of filteredJobTitles(); track jt.jobTitleId) {
+                  @for (jt of filteredJobTitles(); track jt.id) {
                     <tr
                       class="table-row-notion group"
                       [class.opacity-60]="!jt.isActive"
@@ -266,7 +266,7 @@ import { JobTitleFormComponent } from '../job-title-form/job-title-form.componen
 
             <!-- Mobile card list -->
             <div class="sm:hidden divide-y divide-neutral-100">
-              @for (jt of filteredJobTitles(); track jt.jobTitleId) {
+              @for (jt of filteredJobTitles(); track jt.id) {
                 <div
                   class="p-4 hover:bg-neutral-50 transition-colors duration-150 cursor-pointer"
                   [class.opacity-60]="!jt.isActive"
@@ -576,7 +576,7 @@ export class JobTitleListComponent implements OnInit {
 
     this.isDeactivating.set(true);
 
-    this.jobTitleService.deactivateJobTitle(jt.jobTitleId).subscribe({
+    this.jobTitleService.deactivateJobTitle(jt.id).subscribe({
       next: () => {
         this.toastr.success(`"${jt.titleName}" has been deactivated.`);
         this.jobTitleToDeactivate.set(null);

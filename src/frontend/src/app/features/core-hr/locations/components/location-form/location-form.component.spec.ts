@@ -19,8 +19,7 @@ describe('LocationFormComponent', () => {
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const mockLocation: ILocation = {
-    locationId: 'loc-1',
-    tenantId: 'tenant-1',
+    id: 'loc-1',
     name: 'Headquarters',
     addressLine1: '123 Main St',
     addressLine2: 'Suite 100',

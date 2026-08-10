@@ -181,7 +181,7 @@ import { DepartmentTreeComponent } from '../department-tree/department-tree.comp
           <!-- List view -->
           @if (viewMode() === 'list') {
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              @for (dept of departments(); track dept.departmentId) {
+              @for (dept of departments(); track dept.id) {
                 <div
                   class="card-notion group cursor-pointer hover:shadow-notion-md transition-shadow duration-200"
                   [class.opacity-60]="!dept.isActive"
@@ -497,14 +497,13 @@ export class DepartmentListComponent implements OnInit {
     const dept = this.departmentToDeactivate();
     if (!dept) return;
 
-    // AC-5: Block if department has active employees
-    if (dept.employeeCount > 0) {
-      return;
-    }
-
+    // AC-5 is enforced SERVER-side by DepartmentService (active-children and active-employee guards),
+    // which is what actually protects the invariant. The client-side pre-check that used to sit here read
+    // `dept.employeeCount`, a field the API has never returned — so it was `undefined > 0`, i.e. always
+    // false, and blocked nothing. Removed rather than left as decoration; the server error surfaces below.
     this.isDeactivating.set(true);
 
-    this.departmentService.deactivateDepartment(dept.departmentId).subscribe({
+    this.departmentService.deactivateDepartment(dept.id).subscribe({
       next: () => {
         this.toastr.success(`"${dept.name}" has been deactivated.`);
         this.departmentToDeactivate.set(null);

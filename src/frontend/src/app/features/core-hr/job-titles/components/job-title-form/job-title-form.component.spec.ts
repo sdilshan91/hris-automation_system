@@ -47,8 +47,7 @@ describe('JobTitleFormComponent', () => {
   ];
 
   const mockJobTitle: IJobTitle = {
-    jobTitleId: 'jt-1',
-    tenantId: 'tenant-1',
+    id: 'jt-1',
     titleName: 'Software Engineer',
     description: 'Develops software applications',
     gradeId: 'sg-2',

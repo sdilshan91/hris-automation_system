@@ -41,8 +41,8 @@ export class LocationService {
   }
 
   /** Get a single location by ID */
-  getLocation(locationId: string): Observable<ILocation> {
-    return this.http.get<ILocation>(`${this.baseUrl}/${locationId}`, {
+  getLocation(id: string): Observable<ILocation> {
+    return this.http.get<ILocation>(`${this.baseUrl}/${id}`, {
       withCredentials: true,
     });
   }
@@ -58,20 +58,20 @@ export class LocationService {
 
   /** Update an existing location (FR-1) */
   updateLocation(
-    locationId: string,
+    id: string,
     request: IUpdateLocationRequest
   ): Observable<ILocation> {
     return this.http.put<ILocation>(
-      `${this.baseUrl}/${locationId}`,
+      `${this.baseUrl}/${id}`,
       request,
       { withCredentials: true }
     );
   }
 
   /** Deactivate (soft-delete) a location (FR-5, FR-6) */
-  deactivateLocation(locationId: string): Observable<void> {
+  deactivateLocation(id: string): Observable<void> {
     return this.http.post<void>(
-      `${this.baseUrl}/${locationId}/deactivate`,
+      `${this.baseUrl}/${id}/deactivate`,
       null,
       { withCredentials: true }
     );

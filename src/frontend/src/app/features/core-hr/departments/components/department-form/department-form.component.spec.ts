@@ -19,17 +19,13 @@ describe('DepartmentFormComponent', () => {
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const mockDepartment: IDepartment = {
-    departmentId: 'dept-1',
-    tenantId: 'tenant-1',
+    id: 'dept-1',
     name: 'Engineering',
     code: 'ENG',
     description: 'Software engineering team',
     parentDepartmentId: null,
     parentDepartmentName: null,
-    managerEmployeeId: null,
-    managerName: null,
     isActive: true,
-    employeeCount: 10,
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   };
@@ -37,32 +33,24 @@ describe('DepartmentFormComponent', () => {
   const allDepartments: IDepartment[] = [
     mockDepartment,
     {
-      departmentId: 'dept-2',
-      tenantId: 'tenant-1',
+      id: 'dept-2',
       name: 'Frontend',
       code: 'FE',
       description: null,
       parentDepartmentId: 'dept-1',
       parentDepartmentName: 'Engineering',
-      managerEmployeeId: null,
-      managerName: null,
       isActive: true,
-      employeeCount: 5,
       createdAt: '2026-01-15T00:00:00Z',
       updatedAt: '2026-01-15T00:00:00Z',
     },
     {
-      departmentId: 'dept-3',
-      tenantId: 'tenant-1',
+      id: 'dept-3',
       name: 'Design',
       code: 'DSGN',
       description: null,
       parentDepartmentId: null,
       parentDepartmentName: null,
-      managerEmployeeId: null,
-      managerName: null,
       isActive: true,
-      employeeCount: 3,
       createdAt: '2026-02-01T00:00:00Z',
       updatedAt: '2026-02-01T00:00:00Z',
     },
@@ -264,7 +252,7 @@ describe('DepartmentFormComponent', () => {
     it('should exclude current department and descendants from parent options (FR-5)', () => {
       // dept-1 (Engineering) and dept-2 (Frontend, child of Engineering) should be excluded
       const options = component.parentOptions();
-      const optionIds = options.map((o) => o.department.departmentId);
+      const optionIds = options.map((o) => o.department.id);
       expect(optionIds).not.toContain('dept-1');
       expect(optionIds).not.toContain('dept-2');
       // Only dept-3 (Design) should remain

@@ -18,8 +18,7 @@ describe('JobTitleListComponent', () => {
 
   const mockJobTitles: IJobTitle[] = [
     {
-      jobTitleId: 'jt-1',
-      tenantId: 'tenant-1',
+      id: 'jt-1',
       titleName: 'Software Engineer',
       description: 'Develops software applications',
       gradeId: null,
@@ -30,8 +29,7 @@ describe('JobTitleListComponent', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     },
     {
-      jobTitleId: 'jt-2',
-      tenantId: 'tenant-1',
+      id: 'jt-2',
       titleName: 'Product Manager',
       description: 'Manages product development',
       gradeId: null,
@@ -42,8 +40,7 @@ describe('JobTitleListComponent', () => {
       updatedAt: '2026-01-15T00:00:00Z',
     },
     {
-      jobTitleId: 'jt-3',
-      tenantId: 'tenant-1',
+      id: 'jt-3',
       titleName: 'Data Analyst',
       description: null,
       gradeId: null,
@@ -208,7 +205,7 @@ describe('JobTitleListComponent', () => {
     component.deactivateJobTitle();
 
     expect(jobTitleServiceSpy.deactivateJobTitle).toHaveBeenCalledWith(
-      jt.jobTitleId
+      jt.id
     );
     expect(toastrSpy.success).toHaveBeenCalled();
     expect(component.jobTitleToDeactivate()).toBeNull();

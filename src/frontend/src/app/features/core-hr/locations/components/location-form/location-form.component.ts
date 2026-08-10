@@ -554,7 +554,7 @@ export class LocationFormComponent implements OnInit {
       // Set the search display text for the time zone
       const tzOption = TIME_ZONES.find((tz) => tz.id === loc.timeZone);
       this.tzSearch.set(
-        tzOption ? `${tzOption.label} (${tzOption.id})` : loc.timeZone
+        tzOption ? `${tzOption.label} (${tzOption.id})` : (loc.timeZone ?? '')
       );
 
       // Set the search display text for the country
@@ -637,7 +637,7 @@ export class LocationFormComponent implements OnInit {
     if (loc) {
       // Edit mode
       this.locationService
-        .updateLocation(loc.locationId, payload as IUpdateLocationRequest)
+        .updateLocation(loc.id, payload as IUpdateLocationRequest)
         .subscribe({
           next: () => {
             this.isSaving.set(false);

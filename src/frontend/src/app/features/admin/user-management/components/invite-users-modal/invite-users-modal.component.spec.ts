@@ -111,16 +111,14 @@ describe('InviteUsersModalComponent', () => {
 
     component.submit();
 
-    const req = httpMock.expectOne(`${usersUrl}/invite`);
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({
-      emails: ['a@acme.com', 'b@acme.com'],
-      roleIds: ['r-1'],
-    });
-    req.flush([
-      { email: 'a@acme.com', status: 'invited' },
-      { email: 'b@acme.com', status: 'error', error: 'Already a member' },
-    ]);
+    // GAP-009: POST /users/invite takes ONE { email, roleIds }, so two addresses are two requests.
+    const reqs = httpMock.match(`${usersUrl}/invite`);
+    expect(reqs.length).toBe(2);
+    expect(reqs[0].request.method).toBe('POST');
+    expect(reqs[0].request.body).toEqual({ email: 'a@acme.com', roleIds: ['r-1'] });
+    expect(reqs[1].request.body).toEqual({ email: 'b@acme.com', roleIds: ['r-1'] });
+    reqs[0].flush({ email: 'a@acme.com', status: 'invited' });
+    reqs[1].flush({ email: 'b@acme.com', status: 'error', error: 'Already a member' });
 
     expect(component.results()?.length).toBe(2);
     expect(component.invitedCount()).toBe(1);
@@ -164,7 +162,7 @@ describe('InviteUsersModalComponent', () => {
 
     component.submit();
 
-    const req = httpMock.expectOne(`${usersUrl}/invite/csv`);
+    const req = httpMock.expectOne(`${usersUrl}/invite/bulk`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({
       rows: [

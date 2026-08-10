@@ -39,8 +39,8 @@ export class JobTitleService {
   }
 
   /** Get a single job title by ID */
-  getJobTitle(jobTitleId: string): Observable<IJobTitle> {
-    return this.http.get<IJobTitle>(`${this.baseUrl}/${jobTitleId}`, {
+  getJobTitle(id: string): Observable<IJobTitle> {
+    return this.http.get<IJobTitle>(`${this.baseUrl}/${id}`, {
       withCredentials: true,
     });
   }
@@ -76,20 +76,21 @@ export class JobTitleService {
 
   /** Update an existing job title (FR-1) */
   updateJobTitle(
-    jobTitleId: string,
+    id: string,
     request: IUpdateJobTitleRequest
   ): Observable<IJobTitle> {
     return this.http.put<IJobTitle>(
-      `${this.baseUrl}/${jobTitleId}`,
+      `${this.baseUrl}/${id}`,
       request,
       { withCredentials: true }
     );
   }
 
   /** Deactivate (soft-delete) a job title (FR-5, FR-7) */
-  deactivateJobTitle(jobTitleId: string): Observable<void> {
-    return this.http.patch<void>(
-      `${this.baseUrl}/${jobTitleId}/deactivate`,
+  deactivateJobTitle(id: string): Observable<void> {
+    // GAP-014: the API exposes deactivate as POST /{id}/deactivate; PATCH returned 405 for every call.
+    return this.http.post<void>(
+      `${this.baseUrl}/${id}/deactivate`,
       null,
       { withCredentials: true }
     );

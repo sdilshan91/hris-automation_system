@@ -54,14 +54,13 @@ describe('MonthlySummaryComponent', () => {
 
   const departments: IDepartment[] = [
     {
-      departmentId: 'd1', tenantId: 't1', name: 'Engineering', description: null,
-      parentDepartmentId: null, parentDepartmentName: null, managerEmployeeId: null,
-      managerName: null, isActive: true, employeeCount: 2,
+      id: 'd1', name: 'Engineering', code: 'ENG', description: null,
+      parentDepartmentId: null, parentDepartmentName: null, managerId: null,
     } as IDepartment,
   ];
 
   const locations: ILocation[] = [
-    { locationId: 'l1', tenantId: 't1', name: 'HQ', isActive: true } as ILocation,
+    { id: 'l1', name: 'HQ', isActive: true } as ILocation,
   ];
 
   function setup(res: IMonthlySummaryResult = result): void {

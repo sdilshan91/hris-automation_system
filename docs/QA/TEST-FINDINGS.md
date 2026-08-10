@@ -8079,3 +8079,19 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Why it is filed rather than fixed:** each key needs an authorization decision, not a guess — is `Admin.View` meant to be a real permission, a UI-only grouping, or a rename of something that exists? Mapping a permission string by inference is precisely the change that silently grants or removes access. **Recommendation:** work through them with the product owner in one pass, then delete each from the baseline as it is resolved.
 - **Confidence:** **100%** on the 17 (mechanically diffed and now asserted by a test). Severity assumes at least one of the 17 is being granted in a real tenant — unverified.
 - **Related:** GAP-016 (the two literals already fixed: `Admin.Roles.Manage` → `Roles.Manage`, `ExitInterview.Conduct` → `ExitInterview.ViewDetail`) · S-1 · S-2 · [[ISSUE-290]] (the docstring-only permission-string trap US-PRF-011 warned about).
+
+---
+
+### ISSUE-364 — `DepartmentDto` returns no employee count or manager name, so two UI surfaces were rendering nothing
+- **ID:** ISSUE-364
+- **Type:** ISSUE (FE↔BE contract — missing backend fields)
+- **Severity:** **LOW-MED** — cosmetic/UX only. The invariant these fields supported is enforced server-side, so nothing unsafe is reachable.
+- **Status:** `OPEN`
+- **Layer:** BE (+ the FE surfaces that were removed pending it)
+- **Module / US / TC:** Core HR / US-CHR-004 / — — found 2026-08-08 while fixing GAP-014
+- **Title:** The department list showed "undefined employees" and the manager line was permanently blank, because `DepartmentDto` carries neither `EmployeeCount` nor `ManagerName` — while both sibling DTOs do.
+- **Evidence:** `DepartmentDto` = `Id, Name, Code, Description, ParentDepartmentId, ParentDepartmentName, ManagerId, IsActive, CreatedAt, UpdatedAt`. **`JobTitleDto` has `EmployeeCount` and `GradeName`; `LocationDto` has `EmployeeCount`.** Departments is the odd one out, which reads like an oversight rather than a decision. The FE model had invented `employeeCount`, `managerName` and `managerEmployeeId` fields; all three were always `undefined`.
+- **What was removed (and why that is not a regression):** the count column and manager line rendered `undefined`/blank already, so deleting them removes broken output, not working output. The department-list also had an **AC-5 client-side block** (`if (dept.employeeCount > 0) return;`) that never fired in production — `undefined > 0` is false — and whose test passed only because the fixture supplied a field the API never sends. **Textbook test theater;** the test is now repurposed to assert the component delegates to the server. `DepartmentService` enforces both the active-children and active-employee guards server-side, so the invariant was never at risk — only the pre-warning was lost.
+- **Fix:** add `EmployeeCount` and `ManagerName` to `DepartmentDto`, mirroring `JobTitleService.ToDto(j, employeeCount, gradeName)` (counts computed in the list query, not per row — avoid the N+1). Then regenerate the contract, restore the count column and the manager line, and restore the pre-flight warning on the deactivate dialog.
+- **Why it was not fixed with GAP-014:** the GAP-PLAN is explicit that G2 is *"the backend is correct; the frontend cannot reach it — do not re-scope as backend work."* This is the one place in GAP-014 where the backend genuinely lacks a field, so it is tracked separately rather than smuggled into an FE-only change.
+- **Related:** GAP-014 · S-1.

@@ -113,7 +113,8 @@ describe('UserManagementService', () => {
       service.getUserDetail('ut-1').subscribe((d) => {
         expect(d.userTenantId).toBe('ut-1');
       });
-      const req = httpMock.expectOne(`${usersUrl}/ut-1`);
+      // GAP-009: the detail route is /{userTenantId}/detail.
+      const req = httpMock.expectOne(`${usersUrl}/ut-1/detail`);
       expect(req.request.method).toBe('GET');
       req.flush(detail);
     });
@@ -127,7 +128,8 @@ describe('UserManagementService', () => {
       service.getAssignableRoles().subscribe((r) => {
         expect(r.length).toBe(1);
       });
-      const req = httpMock.expectOne(`${usersUrl}/assignable-roles`);
+      // GAP-009: /users/assignable-roles has never existed; roles come from the roles endpoint.
+      const req = httpMock.expectOne(`${environment.apiBaseUrl}/tenant/roles`);
       expect(req.request.method).toBe('GET');
       req.flush(roles);
     });
@@ -146,14 +148,15 @@ describe('UserManagementService', () => {
           expect(res[1].status).toBe('error');
         });
 
-      const req = httpMock.expectOne(`${usersUrl}/invite`);
-      expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({
-        emails: ['a@acme.com', 'b@acme.com'],
-        roleIds: ['r-1'],
-      });
-      expect(req.request.withCredentials).toBeTrue();
-      req.flush(results);
+      // GAP-009: the API takes ONE { email, roleIds } per call, so a two-address invite is two requests.
+      const reqs = httpMock.match(`${usersUrl}/invite`);
+      expect(reqs.length).toBe(2);
+      expect(reqs[0].request.method).toBe('POST');
+      expect(reqs[0].request.body).toEqual({ email: 'a@acme.com', roleIds: ['r-1'] });
+      expect(reqs[1].request.body).toEqual({ email: 'b@acme.com', roleIds: ['r-1'] });
+      expect(reqs[0].request.withCredentials).toBeTrue();
+      reqs[0].flush(results[0]);
+      reqs[1].flush(results[1]);
     });
   });
 
@@ -162,7 +165,8 @@ describe('UserManagementService', () => {
       const rows = [{ email: 'a@acme.com', roleNames: ['Employee'] }];
       service.inviteFromCsv(rows).subscribe();
 
-      const req = httpMock.expectOne(`${usersUrl}/invite/csv`);
+      // GAP-009: the bulk endpoint is invite/bulk.
+      const req = httpMock.expectOne(`${usersUrl}/invite/bulk`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ rows });
       req.flush([{ email: 'a@acme.com', status: 'invited' }]);
@@ -212,12 +216,10 @@ describe('UserManagementService', () => {
         .editRoles({ userTenantId: 'ut-1', roleIds: ['r-1', 'r-2'] })
         .subscribe();
 
-      const req = httpMock.expectOne(`${usersUrl}/roles`);
+      // GAP-009: the membership id is a PATH segment and the body carries only roleIds.
+      const req = httpMock.expectOne(`${usersUrl}/ut-1/roles`);
       expect(req.request.method).toBe('PUT');
-      expect(req.request.body).toEqual({
-        userTenantId: 'ut-1',
-        roleIds: ['r-1', 'r-2'],
-      });
+      expect(req.request.body).toEqual({ roleIds: ['r-1', 'r-2'] });
       req.flush(null);
     });
   });
@@ -225,25 +227,25 @@ describe('UserManagementService', () => {
   describe('lifecycle actions', () => {
     it('POSTs deactivate with userTenantId', () => {
       service.deactivateUser('ut-1').subscribe();
-      const req = httpMock.expectOne(`${usersUrl}/deactivate`);
+      // GAP-009: the membership id is a PATH segment; there is no body.
+      const req = httpMock.expectOne(`${usersUrl}/ut-1/deactivate`);
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({ userTenantId: 'ut-1' });
       req.flush(null);
     });
 
     it('POSTs force-password-reset with userTenantId', () => {
       service.forcePasswordReset('ut-1').subscribe();
-      const req = httpMock.expectOne(`${usersUrl}/force-password-reset`);
+      // GAP-009: the membership id is a PATH segment; there is no body.
+      const req = httpMock.expectOne(`${usersUrl}/ut-1/force-password-reset`);
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({ userTenantId: 'ut-1' });
       req.flush(null);
     });
 
     it('POSTs end-sessions with userTenantId', () => {
       service.endAllSessions('ut-1').subscribe();
-      const req = httpMock.expectOne(`${usersUrl}/end-sessions`);
+      // GAP-009: the membership id is a PATH segment; there is no body.
+      const req = httpMock.expectOne(`${usersUrl}/ut-1/end-sessions`);
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({ userTenantId: 'ut-1' });
       req.flush(null);
     });
   });

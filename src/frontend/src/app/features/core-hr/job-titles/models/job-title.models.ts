@@ -1,3 +1,5 @@
+import type { Schema } from '@core/api';
+
 /**
  * US-CHR-005: Job Title models matching the backend API contract.
  *
@@ -14,21 +16,14 @@
  */
 
 /** Job title entity returned by the API */
-export interface IJobTitle {
-  jobTitleId: string;
-  tenantId: string;
+/**
+ * GAP-014: was hand-written with `jobTitleId` and a `tenantId` the API does not return, so every
+ * deactivate call sent `undefined` in the URL. Now derived from the generated contract.
+ */
+export type IJobTitle = Schema<'JobTitlesJobTitleDto'> & {
+  id: string;
   titleName: string;
-  description: string | null;
-  /** TODO(US-CHR-005): Will be populated once Grade entity exists */
-  gradeId: string | null;
-  /** TODO(US-CHR-005): Will be populated once Grade entity exists */
-  gradeName: string | null;
-  isActive: boolean;
-  /** TODO(US-CHR-001): Will be populated once Employee entity exists */
-  employeeCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
+};
 
 /** Request payload for creating a job title (FR-1) */
 export interface ICreateJobTitleRequest {

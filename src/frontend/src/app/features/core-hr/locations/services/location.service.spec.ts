@@ -19,8 +19,7 @@ describe('LocationService', () => {
   const baseUrl = `${environment.apiBaseUrl}/tenant/locations`;
 
   const mockLocation: ILocation = {
-    locationId: 'loc-1',
-    tenantId: 'tenant-1',
+    id: 'loc-1',
     name: 'Headquarters',
     addressLine1: '123 Main St',
     addressLine2: 'Suite 100',
@@ -37,8 +36,7 @@ describe('LocationService', () => {
   };
 
   const mockLocation2: ILocation = {
-    locationId: 'loc-2',
-    tenantId: 'tenant-1',
+    id: 'loc-2',
     name: 'Branch Office',
     addressLine1: null,
     addressLine2: null,
@@ -112,7 +110,7 @@ describe('LocationService', () => {
   describe('getLocation', () => {
     it('should return a single location by ID', () => {
       service.getLocation('loc-1').subscribe((location) => {
-        expect(location.locationId).toBe('loc-1');
+        expect(location.id).toBe('loc-1');
         expect(location.name).toBe('Headquarters');
       });
 
@@ -143,7 +141,7 @@ describe('LocationService', () => {
       expect(req.request.withCredentials).toBeTrue();
       req.flush({
         ...mockLocation,
-        locationId: 'loc-3',
+        id: 'loc-3',
         name: 'New Office',
         city: 'London',
         country: 'United Kingdom',
