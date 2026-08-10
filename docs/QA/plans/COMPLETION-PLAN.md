@@ -554,22 +554,44 @@ Needs a data-cleanup migration before the constant can be removed (`UpdateRoleVa
 
 ---
 
-### G5 — DO EARLY, CHEAP: ledger reconciliation (unblocks accurate estimating for everything above)
+### G5 — ✅ **DONE 2026-08-10** — ledger reconciliation (was: do early, cheap)
 
-> **36 CONTRADICTED verdicts.** Per the 2026-07-30 and 2026-08-04 lessons — now measured product-wide — **every estimate built on these rows is wrong until they are reconciled.** The regression tests already exist, so the re-runs are cheap.
+> ✅ **APPLIED 2026-08-10 (PR pending).** Every id was re-checked against `TEST-FINDINGS.md` rather than
+> transcribed. **L8 was done FIRST and that ordering was load-bearing:** an intermediate check of mine reported
+> ISSUE-109 as OPEN, which was wrong — the grep had hit the PAYROLL twin of a colliding id. No count in this
+> section means anything until the ids are unique.
+>
+> **Verified outcomes, and four corrections to this register:**
+> * **7 true id collisions, not 3** — and the one it missed is **BUG-068**, the id the plan headlines. Renumbered
+>   the less-cited instance of each pair (→ BUG-303/304, ISSUE-366..370) with a redirect note on both sides.
+> * **L1 is 10 closed / 1 deferred / 1 partial**, not "twelve closed". **L2 undercounted** — all 11 attendance
+>   ids are closed, not 8.
+> * **L4's "split BUG-057" does not hold:** it is goal-scoped and RESOLVED, and `ManagerReviewConfiguration.cs:57`
+>   does call `.IsRowVersion()`, so the premise (manager-review lacks the token) is false at the DB layer.
+> * **L6 is 7 instances, not 2 — and one of the register's two was a FALSE POSITIVE.** `TC-ADM-010-13` never
+>   names `system_audit_log` (its step says "the system audit log" as prose, which `audit_logs` satisfies); I
+>   demoted it on the register's claim before reading the file and had to revert. The genuine set is six TCs
+>   marked `pass` with an executable step querying the phantom table (→ [[ISSUE-371]]) plus `TC-ATT-152`.
+> * **L10a self-corrected:** `PayrollReportExportService.cs:307`'s "the global query filter scopes this" became
+>   TRUE when GAP-006 added the filter.
+>
+> **Not done here, deliberately:** no `[!]` story marker was flipped. That requires re-running TCs
+> (`/verify-fix`), which is test execution, not ledger editing.
+>
+> Original note: **36 CONTRADICTED verdicts.** Per the 2026-07-30 and 2026-08-04 lessons — now measured product-wide — **every estimate built on these rows is wrong until they are reconciled.** The regression tests already exist, so the re-runs are cheap.
 
 | ID | Target | What is wrong | Scope |
 |---|---|---|---|
-| **GAP-L1** | `TEST-STATUS.md` recruitment (`:163-172`) | **Twelve closed findings still narrated as live** — BUG-055/058/059/060/066/068(CRIT)/003(CRIT), ISSUE-108/109/122/132/140. **Reading it today re-opens eight fixed tickets.** | `/verify-fix` per ID, or one batch pass over the module |
-| **GAP-L2** | `TEST-STATUS.md` attendance (`:154-158`) | **Eight stale** — BUG-047, ISSUE-065/066/067/069/071/073, BUG-050, ISSUE-086, ENH-005, ISSUE-068 | `/verify-fix` batch |
-| **GAP-L3** | `TEST-STATUS.md` reports (`:215`) | **Five stale** — ISSUE-193/195/197/198, BUG-086 | `/verify-fix` batch |
-| **GAP-L4** | `TEST-STATUS.md` performance (`:188-189`) | BUG-063, BUG-242 stale; **BUG-057 is half-fixed and the ledger does not distinguish** (goals have the concurrency token, manager-review does not) | `/verify-fix`; **split BUG-057** |
-| **GAP-L5** | `TEST-STATUS.md:233-235` | Calls training-benefits **"Actual zero test coverage"** against 6 test files (3 Testcontainers-Postgres) + 6 Karma specs, and US-NTF-006 **"not-yet-built"** against ~1,000 shipped lines and 34 test references. **Four Must-Have NTF stories have no row at all** despite 60 authored TCs. | Reword to *"no IEEE-829 TC suite"*; open `[!]` rows. **Re-rank P0-2 — authoring TCs here is lower value than the FE gaps.** |
-| **GAP-L6** | `TC-ADM-010-13` · `TC-ATT-152` | **Two TCs marked passing against code paths that do not exist.** | Re-run and flip; **audit sibling TCs for the same fabricated-assertion pattern** |
-| **GAP-L7** | `TEST-FINDINGS.md:302-303` · `:322-331` | BUG-003's header says RESOLVED while its body still reads *"STILL PRESENT"*. **A reader cannot tell which is current**, and the resolving code is cited nowhere. | Collapse to RESOLVED citing `TenantAccessGuardMiddleware.cs:38-53`; move the historical narrative into a dated sub-block |
-| **GAP-L8** | `TEST-FINDINGS.md` ID collisions | **BUG-060, ISSUE-108 and ISSUE-109 are each used TWICE** (Recruitment + Payroll), and the roll-up credits "#169 ISSUE-109" without saying which. Also **two `[Trait("TC",…)]` collisions** in the test project (`TC-PLT-004`, `TC-PLT-006`). | Renumber; **re-audit every RESOLVED line citing a colliding ID — a fix to one module currently reads as closing the other's finding** |
-| **GAP-L9** | `BA/STATUS.md` + `INDEX.md` | STATUS contradicts **itself** on US-PLT-002 (`:105/109` vs `:194/283`); INDEX **swaps the MoSCoW** of US-PLT-002/003 vs the story frontmatter; INDEX still calls US-TRN "STUBS"; `:61` claims an FE that does not exist; `:236` contradicts `:111` on the ApiCalls gauge | Reconcile to the code and to story frontmatter (**the spec of record — the gap-analysis depth rule keys off `priority:`**) |
-| **GAP-L10** | Stale code comments | Comments that **actively lie about their own code**: `PayrollReportExportService.cs:307` asserts a filter that does not exist · `PayrollReportService.cs:737-752` describes the pre-ISSUE-197 approximation · `DependencyInjection.cs:345-347` says "No attendance module yet" · 5 core-hr `TODO(module X)` comments whose modules shipped · `appsettings.json:3` + `DbInitializer.cs:66` say `Rls:Enabled=false` everywhere | Sweep and delete/correct. **This is the fourth arc where a stale comment produced a wrong conclusion — including inside this audit's own briefs.** |
+| ~~**GAP-L1**~~ ✅ | `TEST-STATUS.md` recruitment (`:163-172`) | **Twelve closed findings still narrated as live** — BUG-055/058/059/060/066/068(CRIT)/003(CRIT), ISSUE-108/109/122/132/140. **Reading it today re-opens eight fixed tickets.** | `/verify-fix` per ID, or one batch pass over the module |
+| ~~**GAP-L2**~~ ✅ | `TEST-STATUS.md` attendance (`:154-158`) | **Eight stale** — BUG-047, ISSUE-065/066/067/069/071/073, BUG-050, ISSUE-086, ENH-005, ISSUE-068 | `/verify-fix` batch |
+| ~~**GAP-L3**~~ ✅ | `TEST-STATUS.md` reports (`:215`) | **Five stale** — ISSUE-193/195/197/198, BUG-086 | `/verify-fix` batch |
+| ~~**GAP-L4**~~ ✅ | `TEST-STATUS.md` performance (`:188-189`) | BUG-063, BUG-242 stale; **BUG-057 is half-fixed and the ledger does not distinguish** (goals have the concurrency token, manager-review does not) | `/verify-fix`; **split BUG-057** |
+| ~~**GAP-L5**~~ ✅ | `TEST-STATUS.md:233-235` | Calls training-benefits **"Actual zero test coverage"** against 6 test files (3 Testcontainers-Postgres) + 6 Karma specs, and US-NTF-006 **"not-yet-built"** against ~1,000 shipped lines and 34 test references. **Four Must-Have NTF stories have no row at all** despite 60 authored TCs. | Reword to *"no IEEE-829 TC suite"*; open `[!]` rows. **Re-rank P0-2 — authoring TCs here is lower value than the FE gaps.** |
+| ~~**GAP-L6**~~ ✅ | `TC-ADM-010-13` · `TC-ATT-152` | **Two TCs marked passing against code paths that do not exist.** | Re-run and flip; **audit sibling TCs for the same fabricated-assertion pattern** |
+| ~~**GAP-L7**~~ ✅ | `TEST-FINDINGS.md:302-303` · `:322-331` | BUG-003's header says RESOLVED while its body still reads *"STILL PRESENT"*. **A reader cannot tell which is current**, and the resolving code is cited nowhere. | Collapse to RESOLVED citing `TenantAccessGuardMiddleware.cs:38-53`; move the historical narrative into a dated sub-block |
+| ~~**GAP-L8**~~ ✅ | `TEST-FINDINGS.md` ID collisions | **BUG-060, ISSUE-108 and ISSUE-109 are each used TWICE** (Recruitment + Payroll), and the roll-up credits "#169 ISSUE-109" without saying which. Also **two `[Trait("TC",…)]` collisions** in the test project (`TC-PLT-004`, `TC-PLT-006`). | Renumber; **re-audit every RESOLVED line citing a colliding ID — a fix to one module currently reads as closing the other's finding** |
+| ~~**GAP-L9**~~ ✅ | `BA/STATUS.md` + `INDEX.md` | STATUS contradicts **itself** on US-PLT-002 (`:105/109` vs `:194/283`); INDEX **swaps the MoSCoW** of US-PLT-002/003 vs the story frontmatter; INDEX still calls US-TRN "STUBS"; `:61` claims an FE that does not exist; `:236` contradicts `:111` on the ApiCalls gauge | Reconcile to the code and to story frontmatter (**the spec of record — the gap-analysis depth rule keys off `priority:`**) |
+| ~~**GAP-L10**~~ ✅ | Stale code comments | Comments that **actively lie about their own code**: `PayrollReportExportService.cs:307` asserts a filter that does not exist · `PayrollReportService.cs:737-752` describes the pre-ISSUE-197 approximation · `DependencyInjection.cs:345-347` says "No attendance module yet" · 5 core-hr `TODO(module X)` comments whose modules shipped · `appsettings.json:3` + `DbInitializer.cs:66` say `Rls:Enabled=false` everywhere | Sweep and delete/correct. **This is the fourth arc where a stale comment produced a wrong conclusion — including inside this audit's own briefs.** |
 
 ---
 

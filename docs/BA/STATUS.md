@@ -58,7 +58,13 @@
 - [x] US-CHR-010 — Bulk employee import via CSV/Excel *(PR #20)*
 - [x] US-CHR-011 — Employee reporting structure *(PR #21)*
 - [x] US-CHR-012 — Custom fields per tenant *(PR #22)*
-- [x] US-CHR-013 — Employee FTE & work arrangement *(**SHIPPED — CAL-6, PR #316**: `Employee.Fte` + proration (closes US-LV-002 AC-K1) · `FteScaledOvertimeBase` (default off) · `Employee.WorkArrangement` + Remote geofence exemption + FE employee-form. TCs TC-CHR-326/327/328/329 + TC-ATT-152 authored; **not yet executed** — see TEST-STATUS.)*
+- [x] US-CHR-013 — Employee FTE & work arrangement *(**SHIPPED — CAL-6, PR #316**: `Employee.Fte` + proration (closes US-LV-002 AC-K1) · `FteScaledOvertimeBase` (default off) · `Employee.WorkArrangement` + Remote geofence exemption + ~~FE employee-form~~ **⚠ CORRECTED 2026-08-10 (GAP-L9/GAP-023): there is NO frontend for either field.**
+  Zero hand-written FE files reference `workArrangement` or `fte` — the only occurrence in `src/frontend` is the
+  generated OpenAPI type, i.e. the contract exposes them and no UI consumes them. **HR cannot set either through
+  the product** (bulk import or SQL only). The backend half is genuinely complete and good (migration, leave
+  proration, Remote geofence exemption). TCs TC-CHR-326/327/328/329 authored; **not yet executed** — and
+  TC-ATT-152 has been demoted to `draft` (GAP-L6/GAP-022: it asserted stored earnings the pipeline cannot
+  produce). See TEST-STATUS.)*
 
 ## 3. Leave Management (12 stories)
 - [x] US-LV-001 — Configure leave types per tenant *(PR #23)*
@@ -102,7 +108,7 @@
 ## Platform / Cross-Cutting Tech Debt (6 stories)
 > Cross-cutting fixes surfaced during the feature loop. Not part of a feature module; schedule deliberately. NOT auto-picked by `/implement-all` unless scoped with the `platform` arg.
 - [x] US-PLT-001 — Global API response envelope unwrapping (frontend interceptor) *(PR #50; surfaced in US-REC-001 / PR #49)*
-- [~] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(Phases 1-3 plumbing in PR #51, inert by default. **Phase 4 switch-on = the remaining dev task** — full spec in [`src/backend/HRM.Infrastructure/Persistence/Rls/README.md`](src/backend/HRM.Infrastructure/Persistence/Rls/README.md):*
+- [~] US-PLT-002 — PostgreSQL Row-Level Security as defense-in-depth tenant isolation *(⚠ GAP-L9: this page also renders PLT-002 struck-through at the Wave-5 summary below, which reads as DONE. The `[~]` here is correct — the CODE is complete and proven on real Postgres; the remaining work is the **ops prod flip**, not development. Priority is **Should Have** per the story frontmatter, not Must Have as INDEX.md used to claim.)* *(Phases 1-3 plumbing in PR #51, inert by default. **Phase 4 switch-on = the remaining dev task** — full spec in [`src/backend/HRM.Infrastructure/Persistence/Rls/README.md`](src/backend/HRM.Infrastructure/Persistence/Rls/README.md):*
   1. *Enable-RLS EF migration: `ALTER TABLE … ENABLE/FORCE ROW LEVEL SECURITY` + `CREATE POLICY tenant_isolation … USING (tenant_id = current_setting('app.current_tenant', true)::uuid)` on every `TenantId`-filtered table (exclude `tenants`/`users`; `roles` = nullable-tenant special case).*
   2. *Route system/admin paths (`DbInitializer`, tenant lookup, system-context, cross-tenant Hangfire) to `ConnectionStrings:PrivilegedConnection` (BYPASSRLS `hrm_owner` from `roles.sql`).*
   3. *Flip `Rls:Enabled=true` + add CI RLS integration tests.*

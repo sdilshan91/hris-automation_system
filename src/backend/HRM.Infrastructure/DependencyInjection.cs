@@ -341,9 +341,15 @@ public static class DependencyInjection
         // Holiday provider — DB-backed (US-LV-007 AC-2). Replaced the NoOp seam left by US-LV-003.
         services.AddScoped<IHolidayProvider, HolidayProvider>();
 
-        // Attendance provider — NoOp seam (US-LV-011 FR-2). No attendance module yet (US-ATT-*), so
-        // the absenteeism auto-LOP job is wired/idempotent but generates nothing until a real provider
-        // lands (mirrors how IHolidayProvider was a NoOp until US-LV-007 swapped in the real impl).
+        // Attendance provider — NoOp seam (US-LV-011 FR-2).
+        //
+        // ⚠ GAP-L10 (2026-08-10): the justification here USED to read "No attendance module yet (US-ATT-*)".
+        // That is stale — the attendance module shipped 11 stories. The NoOp is now a DELIBERATE DEFERRAL
+        // (closed as ISSUE-357: implementing auto-LOP as the AC was written would DOUBLE-DEDUCT pay), not an
+        // absence of the module. Two independent gap-analysis passes converged on this comment and read it as
+        // "attendance is unbuilt", which it is not — the deferral is a LEAVE-module question about auto-LOP
+        // semantics, and it damages zero attendance ACs. Re-opening it for review is a G6 decision item.
+        // (Pattern reference: IHolidayProvider was a NoOp until US-LV-007 swapped in the real impl.)
         services.AddScoped<IAttendanceProvider, NoOpAttendanceProvider>();
 
         // ISSUE-188: real leave notification producer — persists + real-time-pushes via

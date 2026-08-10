@@ -63,7 +63,13 @@ public static class DbInitializer
 
         // RLS increment 3a: reconcile row-level-security ENFORCEMENT to the Rls:Enabled flag. Runs AFTER
         // migrate + seed so the schema, the dormant policies (migration 20260710120000), and the seed data all
-        // exist first. Gated + idempotent: a no-op on every current environment (Rls:Enabled=false everywhere).
+        // exist first. Gated + idempotent.
+        // ⚠ GAP-L10 (2026-08-10): this used to say "a no-op on every current environment (Rls:Enabled=false)".
+        // STALE — appsettings.json:20-22 ships "Rls": { "Enabled": true } with a fail-closed startup guard, and
+        // the Docker dev stack sets Rls__Enabled=true. It is appsettings.Development.json that overrides it to
+        // false, so DEV and CI run on two isolation layers while production runs on three. Do not read the
+        // remaining "Rls:Enabled = false" mentions below as the shipped default; they describe that BRANCH
+        // (Rls:Enabled=false everywhere).
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
         await ReconcileRowLevelSecurityAsync(dbContext, configuration, logger, cancellationToken);
     }
