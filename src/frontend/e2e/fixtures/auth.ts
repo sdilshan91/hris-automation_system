@@ -26,7 +26,11 @@ export async function loginAsE2EOwner(page: Page): Promise<void> {
   await page.getByTestId('login-submit').click();
 
   // Authenticated: the main sidebar (with the Dashboard nav link) renders once logged in.
+  //
+  // `exact: true` matters. The nav grew an "Attendance Dashboard" entry after this fixture was written, so
+  // the substring match resolved to TWO links and every test failed with a Playwright strict-mode violation
+  // before asserting anything — the suite had bit-rotted against its own application. See GAP-034/ISSUE-365.
   await page
-    .getByRole('link', { name: 'Dashboard' })
+    .getByRole('link', { name: 'Dashboard', exact: true })
     .waitFor({ state: 'visible', timeout: 30_000 });
 }

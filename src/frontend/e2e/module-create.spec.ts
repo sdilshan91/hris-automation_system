@@ -33,7 +33,7 @@ test('#2 leave: opens for the employee-linked owner (no fail-closed 403)', async
 });
 
 test('#2 attendance: opens for the employee-linked owner (no fail-closed 403)', async ({ page }) => {
-  await page.getByRole('link', { name: 'Attendance', exact: true }).click();
+  await page.getByRole('link', { name: 'Attendance Dashboard', exact: true }).click();
   await expect(page).not.toHaveURL(/\/forbidden/);
   await page.waitForTimeout(1500);
   await expect(page.locator('.toast-error')).toHaveCount(0);
