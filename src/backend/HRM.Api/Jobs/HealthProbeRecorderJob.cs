@@ -1,3 +1,4 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -41,6 +42,14 @@ public sealed class HealthProbeRecorderJob
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         using var scope = _scopeFactory.CreateScope();
+
+        // GAP-024: declare the cross-tenant intent explicitly rather than relying on "no context" happening to
+        // behave like system context. `health_probe` is platform-wide with no tenant_id, so nothing leaks today —
+        // but an unresolved context is ambiguous by construction: it cannot be told apart from a job that FORGOT
+        // to scope itself, and GAP-001 inverts the unresolved default from privileged to restricted, at which
+        // point silence here becomes a runtime failure instead of a lucky pass.
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().SetSystemContext();
+
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var health = scope.ServiceProvider.GetRequiredService<HealthCheckService>();
         var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();

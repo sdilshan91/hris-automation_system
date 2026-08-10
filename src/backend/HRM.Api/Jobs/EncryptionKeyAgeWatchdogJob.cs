@@ -1,3 +1,4 @@
+using HRM.Application.Common.Interfaces;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -40,6 +41,12 @@ public sealed class EncryptionKeyAgeWatchdogJob
     public async Task<EncryptionKeyAgeStatus?> RunAsync()
     {
         using var scope = _scopeFactory.CreateScope();
+
+        // GAP-024: `encryption_key_activation` is system-scope, so this sweep is cross-tenant BY DESIGN — say so.
+        // GAP-001 inverts the unresolved-context default from privileged to restricted; a job that never declares
+        // its scope would then silently lose the access it depends on.
+        scope.ServiceProvider.GetRequiredService<ITenantContext>().SetSystemContext();
+
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 

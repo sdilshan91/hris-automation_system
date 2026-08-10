@@ -35,6 +35,12 @@ public sealed class OnboardingOutboxReconcileJob
         List<Guid> tenantIds;
         using (var scope = _scopeFactory.CreateScope())
         {
+            // GAP-024: enumerating EVERY tenant is the point of this scope, so declare system context instead of
+            // leaving it unresolved. GAP-001 inverts the unresolved default from privileged to restricted, which
+            // would otherwise turn this tenant sweep into an empty list — a reconcile job that silently
+            // reconciles nothing.
+            scope.ServiceProvider.GetRequiredService<ITenantContext>().SetSystemContext();
+
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             tenantIds = await dbContext.Tenants
                 .Where(t => !t.IsDeleted && (t.Status == TenantStatus.Active || t.Status == TenantStatus.Trial))

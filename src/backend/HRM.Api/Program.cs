@@ -309,6 +309,11 @@ try
         {
             options.UseNpgsqlConnection(hangfireConnectionString);
         });
+
+        // GAP-024 / §9.4-3: stamp job_name, job_id and (for per-tenant jobs) tenant_id onto every log line the
+        // job writes. Without it no background-job line carried a tenant, so jobs were the one blind spot in an
+        // isolation investigation. Stateless, so a single instance serves every worker.
+        config.UseFilter(new HRM.Api.Jobs.Filters.JobLogContextFilter());
     });
     // The Hangfire background SERVER (job dispatcher + polling) can be disabled via config. The
     // storage and client API stay registered so enqueue/schedule calls still work; only the worker
