@@ -792,5 +792,46 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
         // cross-tenant monitoring gauge reads it with IgnoreQueryFilters, mirroring the storage/email helpers).
         modelBuilder.Entity<TenantApiUsage>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // ── GAP-006 / GAP-S2: three filters that were MISSING while their own doc comments claimed they
+        // existed. Found by TenantQueryFilterCoverageTests, the new reflection-driven coverage guard that
+        // mirrors the RLS layer's (RlsIsolationPostgresTests). The remaining three entities the guard reports
+        // as unfiltered — PlanLimitOverride, TenantLifecycleEvent, TenantScheduledJob — are DELIBERATE
+        // system/cross-tenant tables (each says so in its own XML doc, none inherits BaseEntity, and not one
+        // of their 23 read sites uses IgnoreQueryFilters, so filtering them would return zero rows in the
+        // system-admin context and break the console). They are excluded explicitly, with reasons, in the
+        // guard's allow-list rather than silently omitted here.
+
+        // US-PLT-004: per-tenant hourly latency histogram. TenantLatencyBucket's own summary already promised
+        // "EF global query filter … exactly like tenant_api_usage" — this makes that true. Inert for today's
+        // readers: all five read sites (TenantLatencyUsage ×4, PlatformMonitoringService) are cross-tenant
+        // platform rollups that ALREADY call IgnoreQueryFilters. It closes the hole for the next reader.
+        modelBuilder.Entity<TenantLatencyBucket>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // ISSUE-178: async payroll-report exports. PayrollReportExport's summary likewise claimed "inherits
+        // BaseEntity → EF global query filter"; it did not have one (GAP-008). This is NOT inert — it fixes a
+        // live defect: TenantStorageUsage.ComputeBytesAsync is documented as summing bytes "for the CURRENT
+        // tenant" and relies on the filter for its other three tables, so the unfiltered PayrollReportExports
+        // sum was silently counting EVERY tenant's export bytes into one tenant's storage figure. The genuine
+        // cross-tenant readers (TenantStorageUsage rollup, the expiry cleanup job) already use
+        // IgnoreQueryFilters and are unaffected. GAP-008's separate owner check on GenerateAsync is a G2 item
+        // and is deliberately NOT bundled here.
+        modelBuilder.Entity<PayrollReportExport>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PAY-012 / US-NTF-005: audit_logs. The ONLY filter here with a `TenantId == null` arm, and it is
+        // required: TenantId is NULLABLE because system-scoped rows (e.g. a failed login recorded before any
+        // tenant resolves) legitimately carry none. Dropping those rows from the model-level filter would hide
+        // them from the system-admin reads that expect them. Behaviour-preserving for every current caller —
+        // all six tenant reads in AuditLogService already scope `TenantId == tenantId` explicitly (with a hard
+        // IsResolved guard on GetAsync), and the three cross-tenant callers (purge job, platform monitoring,
+        // tenant data export) already use IgnoreQueryFilters or an explicit tenant id. What it adds is a floor
+        // for the NEXT reader who forgets: the worst case becomes own-tenant + system rows, never another
+        // tenant's audit trail.
+        modelBuilder.Entity<AuditLog>()
+            .HasQueryFilter(a => a.TenantId == null
+                || !_tenantContext.IsResolved
+                || a.TenantId == _tenantContext.TenantId);
     }
 }

@@ -8,6 +8,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
+    "api:types": "openapi-typescript ../../contracts/openapi/hrm-v1.json -o src/app/core/api/generated/api-types.ts",
+    "api:types:check": "npm run api:types && node scripts/check-api-types.mjs",
     "lint": "ng lint",
     "e2e": "playwright test",
     "e2e:ui": "playwright test --ui"
@@ -47,6 +49,7 @@
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
+    "openapi-typescript": "^7.13.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.8.0"

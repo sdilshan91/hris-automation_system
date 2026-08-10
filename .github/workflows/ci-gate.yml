@@ -48,6 +48,15 @@ jobs:
       - name: Build
         run: dotnet build src/backend/HRM.sln --no-restore -c Release
 
+      - name: Contract (OpenAPI) is up to date
+        # GAP-S1: the committed contracts/openapi/hrm-v1.json must still describe the built assembly.
+        # This is what turns a C# DTO/route change into a BUILD FAILURE at the point of change, instead
+        # of a runtime 400 discovered months later in a module nobody was looking at (the drift that hit
+        # 9 of 13 modules). CONFIGURATION=Release reuses the assembly the Build step just produced.
+        env:
+          CONFIGURATION: Release
+        run: bash scripts/gen-openapi.sh --check
+
       - name: Test
         # ISSUE-312: wrap `dotnet test` so an ABORTED run (test-host crash) FAILS the gate
         # instead of exiting 0 with a partial `Passed!` line that hides the tests that never ran.
@@ -146,6 +155,13 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: API models match the contract
+        # GAP-S1, frontend half: regenerate the TypeScript models from the committed OpenAPI document and
+        # fail if anything changed. Together with the backend's "Contract is up to date" step this closes
+        # the loop — C# DTO -> contract -> TS models — so the Angular layer can no longer be coded against
+        # a shape the API cannot emit. Runs before Build so the failure names the cause directly.
+        run: npm run api:types:check
 
       - name: Build
         run: npm run build
