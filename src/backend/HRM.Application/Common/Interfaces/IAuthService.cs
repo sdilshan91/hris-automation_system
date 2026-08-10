@@ -66,6 +66,16 @@ public interface IAuthService
     /// </summary>
     Task<Result<SsoSettingsSnapshot>> GetSsoSettingsAsync(Guid tenantId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// GAP-002 (US-AUTH-012/013): the same snapshot keyed by SUBDOMAIN, for the OIDC callback — which knows the
+    /// HRM tenant only by the subdomain carried on its signed state, never by id. Resolves the tenant then
+    /// delegates to <see cref="GetSsoSettingsAsync"/>, so the callback shares one cache entry with every other
+    /// reader rather than opening a second, divergent path to the same configuration.
+    /// <para>404 when no such tenant exists. The caller MUST treat any failure as DENY: this is the isolation
+    /// decision's only input, and the guard that consumes it is fail-closed by contract.</para>
+    /// </summary>
+    Task<Result<SsoSettingsSnapshot>> GetSsoSettingsBySubdomainAsync(string subdomain, CancellationToken cancellationToken = default);
+
     // ── SSO admin-consent onboarding (US-AUTH-016 FR-5/FR-6) ──────────────────
 
     /// <summary>

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Features.Auth;
 using HRM.Application.Features.Auth.DTOs;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging;
@@ -215,9 +216,29 @@ public sealed class EntraSsoService : IEntraSsoService
         }
 
         // ── US-AUTH-013 tenant-isolation guard (FAIL-CLOSED) ──
-        var guard = CheckIsolation(parsedState.Subdomain, tid!, email);
+        // GAP-002: the allow-list now comes from the TENANT RECORD (cache-aside), not from appsettings.
+        // A tenant that cannot be loaded is DENIED — the guard has no input, so there is nothing to permit on.
+        var settingsResult = await _authService.GetSsoSettingsBySubdomainAsync(parsedState.Subdomain, cancellationToken);
+        if (settingsResult.IsFailure || settingsResult.Value is null)
+        {
+            _logger.LogWarning(
+                "SSO isolation REJECTED: could not load SSO settings for HRM tenant '{Subdomain}' ({Error}).",
+                parsedState.Subdomain, settingsResult.Error);
+            await _authService.RecordSsoFailureAsync(
+                "sso_isolation_rejected", parsedState.Subdomain, "tenant_settings_unavailable",
+                ipAddress, userAgent, cancellationToken);
+            return Result<SsoSignInResult>.Failure("access_denied");
+        }
+
+        var guard = CheckIsolation(settingsResult.Value, parsedState.Subdomain, tid!, email, IsEmailVerified(jwt));
         if (!guard.Allowed)
         {
+            // US-AUTH-013 AC-3/FR-6 + AC-5: these two events had ZERO occurrences repo-wide, so every
+            // isolation refusal reached only a Serilog warning that the in-app audit search cannot read —
+            // exactly the events an auditor investigating a cross-tenant attempt would look for first.
+            await _authService.RecordSsoFailureAsync(
+                guard.Reason ?? "sso_isolation_rejected", parsedState.Subdomain,
+                guard.Reason ?? "isolation_denied", ipAddress, userAgent, cancellationToken);
             return Result<SsoSignInResult>.Failure("access_denied");
         }
 
@@ -353,36 +374,59 @@ public sealed class EntraSsoService : IEntraSsoService
 
     // ── Isolation guard ──────────────────────────────────────────────────────────────────────
 
-    private (bool Allowed, bool JitAllowed, string? DefaultRole) CheckIsolation(string subdomain, string tid, string email)
+    /// <summary>
+    /// US-AUTH-013 tenant-isolation guard — FAIL-CLOSED, and as of GAP-002 sourced from the TENANT RECORD
+    /// rather than from appsettings.
+    ///
+    /// <para>What was wrong: this read <c>_options.TenantAllowList</c>, an <c>appsettings</c> dictionary keyed
+    /// by subdomain, while the five per-tenant DB columns (<c>AllowedEntraTenantIds</c>,
+    /// <c>AllowedEmailDomains</c>, <c>SsoEnabled</c>, <c>JitEnabled</c>, <c>JitDefaultRole</c>) had ZERO read
+    /// sites on any login path. Three consequences: a tenant admin editing the allow-list in the UI changed
+    /// nothing; US-AUTH-016 admin-consent onboarding wrote the customer's directory id into a column the guard
+    /// never read, so it could not actually enable anyone; and <c>SsoEnabled = false</c> did not block SSO.
+    /// <c>EntraSsoOptions</c> said so itself — the allow-list was labelled "the dev-POC home … in the full
+    /// feature this moves into per-tenant DB config".</para>
+    ///
+    /// <para>The decision itself is the pure <see cref="SsoIsolationGuard"/> so it can be tested directly;
+    /// this wrapper only turns the outcome into operator-facing log lines.</para>
+    /// </summary>
+    private SsoIsolationDecision CheckIsolation(
+        SsoSettingsSnapshot settings, string subdomain, string tid, string email, bool emailVerified)
     {
-        if (!_options.TenantAllowList.TryGetValue(subdomain, out var allow) || allow is null || !allow.HasAnyAllowRule)
+        var decision = SsoIsolationGuard.Evaluate(settings, tid, email, emailVerified);
+
+        if (decision.DomainMatchedButUnverified)
         {
             _logger.LogWarning(
-                "SSO isolation REJECTED: HRM tenant '{Subdomain}' has no SSO allow-list configured (fail-closed). " +
-                "Incoming Entra tid='{Tid}'. Add it to Authentication:Entra:TenantAllowList:{Subdomain}:AllowedTenantIds to permit.",
-                subdomain, tid, subdomain);
-            return (false, false, null);
+                "SSO domain rule NOT honoured for HRM tenant '{Subdomain}': the email domain is allow-listed " +
+                "but the id_token does not assert a verified email (no xms_edov/email_verified = true). " +
+                "Falling back to the directory-id rule.",
+                subdomain);
         }
 
-        var domain = EmailDomain(email);
-        var tidAllowed = allow.AllowedTenantIds.Any(t => string.Equals(t, tid, StringComparison.OrdinalIgnoreCase));
-        var domainAllowed = !string.IsNullOrEmpty(domain)
-                            && allow.AllowedDomains.Any(d => string.Equals(d, domain, StringComparison.OrdinalIgnoreCase));
-
-        if (!tidAllowed && !domainAllowed)
+        switch (decision.Reason)
         {
-            _logger.LogWarning(
-                "SSO isolation REJECTED for HRM tenant '{Subdomain}': Entra tid='{Tid}' and email domain='{Domain}' " +
-                "are not allow-listed. To permit this org, add tid '{Tid}' to " +
-                "Authentication:Entra:TenantAllowList:{Subdomain}:AllowedTenantIds.",
-                subdomain, tid, domain, tid, subdomain);
-            return (false, false, null);
+            case "sso_disabled_for_tenant":
+                _logger.LogWarning(
+                    "SSO isolation REJECTED: HRM tenant '{Subdomain}' has SSO disabled. Incoming Entra tid='{Tid}'.",
+                    subdomain, tid);
+                break;
+            case "sso_misconfigured":
+                _logger.LogWarning(
+                    "SSO isolation REJECTED: HRM tenant '{Subdomain}' has SSO enabled but NO allow-list " +
+                    "configured (fail-closed). Incoming Entra tid='{Tid}'. Add the customer's directory id to " +
+                    "the tenant's AllowedEntraTenantIds, or a verified domain to AllowedEmailDomains.",
+                    subdomain, tid);
+                break;
+            case "sso_isolation_rejected":
+                _logger.LogWarning(
+                    "SSO isolation REJECTED for HRM tenant '{Subdomain}': Entra tid='{Tid}' and the email " +
+                    "domain are not allow-listed (email verified: {Verified}).",
+                    subdomain, tid, emailVerified);
+                break;
         }
 
-        // JIT only when the email domain itself is allow-listed (a tid-only match won't auto-create accounts
-        // for arbitrary domains in that directory).
-        var jitAllowed = allow.JitProvisioning && domainAllowed;
-        return (true, jitAllowed, allow.DefaultRole);
+        return decision;
     }
 
     // ── Code exchange ────────────────────────────────────────────────────────────────────────
@@ -484,6 +528,39 @@ public sealed class EntraSsoService : IEntraSsoService
         }
 
         return string.Empty;
+    }
+
+    /// <summary>
+    /// GAP-017 / US-AUTH-013 AC-7: is the id_token's email claim VERIFIED by the issuing directory?
+    ///
+    /// <para>Entra signals this with <c>xms_edov</c> ("email domain owner verified"). The claim is optional —
+    /// it is emitted only when the app registration opts in — so its ABSENCE means "unknown", never "verified".
+    /// We return false in that case, which downgrades the login to the directory-id (<c>tid</c>) rule rather
+    /// than refusing outright: <c>tid</c> is cryptographically bound to the issuing directory and cannot be
+    /// self-asserted, so it is safe on its own, whereas an email address in a permissive directory can be.</para>
+    ///
+    /// <para>The claim arrives as a JSON boolean from Entra, but some directories/proxies serialize it as the
+    /// string "true", so both are accepted. <c>email_verified</c> is also honoured for standards-compliant
+    /// OIDC providers — this pipeline is generic OIDC and is the intended reuse path for Google (GAP-019b).</para>
+    /// </summary>
+    private static bool IsEmailVerified(JsonWebToken jwt)
+    {
+        foreach (var claim in new[] { "xms_edov", "email_verified" })
+        {
+            if (jwt.TryGetPayloadValue<bool>(claim, out var flag))
+            {
+                if (flag) return true;
+                continue;
+            }
+
+            if (jwt.TryGetPayloadValue<string>(claim, out var text)
+                && bool.TryParse(text, out var parsed) && parsed)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string EmailDomain(string email)
