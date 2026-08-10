@@ -12,7 +12,7 @@ import { AuthService } from '../../core/auth/auth.service';
   `,
 })
 class TestHostComponent {
-  permission: string | string[] = 'Admin.Roles.Manage';
+  permission: string | string[] = 'Roles.Manage';
 }
 
 describe('HasPermissionDirective', () => {
@@ -36,7 +36,7 @@ describe('HasPermissionDirective', () => {
   }
 
   it('should show element when user has permission', () => {
-    createFixture(['Admin.Roles.Manage', 'Admin.View']);
+    createFixture(['Roles.Manage', 'Admin.View']);
 
     const guarded = fixture.nativeElement.querySelector('#guarded');
     expect(guarded).toBeTruthy();

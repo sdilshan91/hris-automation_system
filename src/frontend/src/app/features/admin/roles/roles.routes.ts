@@ -15,7 +15,7 @@ export const ROLES_ROUTES: Routes = [
       import('./components/role-form/role-form.component').then(
         (m) => m.RoleFormComponent
       ),
-    canActivate: [permissionGuard(['Admin.Roles.Manage'])],
+    canActivate: [permissionGuard(['Roles.Manage'])],
   },
   {
     path: 'users/:userId',
@@ -23,7 +23,7 @@ export const ROLES_ROUTES: Routes = [
       import(
         './components/user-role-assignment/user-role-assignment.component'
       ).then((m) => m.UserRoleAssignmentComponent),
-    canActivate: [permissionGuard(['Admin.Roles.Manage'])],
+    canActivate: [permissionGuard(['Roles.Manage'])],
   },
   {
     path: ':id',
@@ -38,6 +38,6 @@ export const ROLES_ROUTES: Routes = [
       import('./components/role-form/role-form.component').then(
         (m) => m.RoleFormComponent
       ),
-    canActivate: [permissionGuard(['Admin.Roles.Manage'])],
+    canActivate: [permissionGuard(['Roles.Manage'])],
   },
 ];

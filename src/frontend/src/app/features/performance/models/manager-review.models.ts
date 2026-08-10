@@ -52,6 +52,8 @@
  *  - ManagerReviewSubmitted: manager rated + submitted; awaiting completion.
  *  - Completed: review fully closed (e.g. HR sign-off / cycle closed).
  */
+import type { Schema } from '@core/api';
+
 export type ManagerReviewStatus =
   | 'PendingSelfAssessment'
   | 'SelfAssessmentSubmitted'
@@ -75,23 +77,29 @@ export const MANAGER_REVIEW_STATUS_LABEL: Record<ManagerReviewStatus, string> =
   };
 
 /**
- * FR-6: a manager may flag the employee for a follow-up action. `None` is the
- * default (no flag). Matches C# `ReviewFlag`.
+ * FR-6: a manager may flag the employee for a follow-up action. `None` is the default (no flag).
+ *
+ * GAP-012a: this was hand-written as `'None' | 'Recognition' | 'PromotionConsideration' | 'PIP'` under a
+ * comment claiming it "matches C# ReviewFlag". It did not: the API emits `Promotion` and `Pip`, so EVERY
+ * promotion-flagged submit 400'd and the PIP flag never round-tripped. Now DERIVED from the generated
+ * contract, so the same drift cannot recur — a backend rename becomes a compile error here instead of a
+ * runtime 400. `REVIEW_FLAG_BADGE` being a `Record<ReviewFlag, …>` means an added enum member also fails
+ * the build until it is given a badge.
  */
-export type ReviewFlag = 'None' | 'Recognition' | 'PromotionConsideration' | 'PIP';
+export type ReviewFlag = Schema<'ReviewFlag'>;
 
 export const REVIEW_FLAG_OPTIONS: { value: ReviewFlag; label: string }[] = [
   { value: 'None', label: 'No flag' },
   { value: 'Recognition', label: 'Recognition' },
-  { value: 'PromotionConsideration', label: 'Promotion consideration' },
-  { value: 'PIP', label: 'Performance improvement (PIP)' },
+  { value: 'Promotion', label: 'Promotion consideration' },
+  { value: 'Pip', label: 'Performance improvement (PIP)' },
 ];
 
 export const REVIEW_FLAG_BADGE: Record<ReviewFlag, string> = {
   None: 'bg-neutral-100 text-neutral-600 ring-neutral-500/20',
   Recognition: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  PromotionConsideration: 'bg-indigo-50 text-indigo-700 ring-indigo-600/20',
-  PIP: 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  Promotion: 'bg-indigo-50 text-indigo-700 ring-indigo-600/20',
+  Pip: 'bg-rose-50 text-rose-700 ring-rose-600/20',
 };
 
 // ─── DTOs ─────────────────────────────────────────────────────

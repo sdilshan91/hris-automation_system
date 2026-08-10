@@ -13,7 +13,7 @@ import { AuthService } from '../../core/auth/auth.service';
  * based on whether the current user has the required permission(s).
  *
  * Usage:
- *   <button *appHasPermission="'Admin.Roles.Manage'">Edit Role</button>
+ *   <button *appHasPermission="'Roles.Manage'">Edit Role</button>
  *   <div *appHasPermission="['Leave.View', 'Leave.Apply']">...</div>
  *
  * When an array is passed, the user needs ANY of the listed permissions.

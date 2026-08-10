@@ -22,18 +22,16 @@ describe('RoleListComponent', () => {
 
   const mockRoles: IRole[] = [
     {
-      roleId: 'role-1',
-      tenantId: null,
+      id: 'role-1',
       name: 'Tenant Admin',
       description: 'Full admin access',
       isBuiltIn: true,
-      permissions: ['Admin.View', 'Admin.Roles.Manage'],
+      permissions: ['Admin.View', 'Roles.Manage'],
       userCount: 2,
       createdAt: '2026-01-01T00:00:00Z',
     },
     {
-      roleId: 'role-2',
-      tenantId: 'tenant-1',
+      id: 'role-2',
       name: 'Custom HR',
       description: 'Custom HR role',
       isBuiltIn: false,
@@ -45,10 +43,10 @@ describe('RoleListComponent', () => {
 
   beforeEach(async () => {
     const mockAuthService = {
-      permissions: signal(['Admin.View', 'Admin.Roles.Manage']),
-      hasPermission: (p: string) => ['Admin.View', 'Admin.Roles.Manage'].includes(p),
+      permissions: signal(['Admin.View', 'Roles.Manage']),
+      hasPermission: (p: string) => ['Admin.View', 'Roles.Manage'].includes(p),
       hasAnyPermission: (perms: string[]) =>
-        perms.some((p) => ['Admin.View', 'Admin.Roles.Manage'].includes(p)),
+        perms.some((p) => ['Admin.View', 'Roles.Manage'].includes(p)),
       hasRole: () => true,
       isAuthenticated: signal(true),
       currentUser: signal({ displayName: 'Test', email: 'test@test.com' }),

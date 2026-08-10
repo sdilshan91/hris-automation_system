@@ -136,15 +136,15 @@ import { IRole, IUserWithRoles } from '../../models/role.models';
             </div>
 
             <div class="space-y-1 max-h-72 overflow-y-auto">
-              @for (role of filteredRoles(); track role.roleId) {
+              @for (role of filteredRoles(); track role.id) {
                 <label
                   class="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer hover:bg-neutral-50 transition-colors"
                 >
                   <input
                     type="checkbox"
                     class="w-4 h-4 rounded border-neutral-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
-                    [checked]="selectedRoleIds().has(role.roleId)"
-                    (change)="toggleRole(role.roleId, $event)"
+                    [checked]="selectedRoleIds().has(role.id)"
+                    (change)="toggleRole(role.id, $event)"
                     style="accent-color: var(--brand-primary)"
                   />
                   <div class="flex-1 min-w-0">
@@ -260,7 +260,7 @@ export class UserRoleAssignmentComponent implements OnInit {
     this.rolesService.getRoles().subscribe({
       next: (roles) => {
         this.allRoles.set(roles);
-        this.roleMap = new Map(roles.map((r) => [r.roleId, r]));
+        this.roleMap = new Map(roles.map((r) => [r.id, r]));
         this.updateFilteredRoles();
         this.isLoading.set(false);
       },
@@ -356,7 +356,8 @@ export class UserRoleAssignmentComponent implements OnInit {
       roles = roles.filter(
         (r) =>
           r.name.toLowerCase().includes(query) ||
-          r.description.toLowerCase().includes(query)
+          // description is nullable on the contract; a role saved without one used to crash this filter.
+          (r.description ?? '').toLowerCase().includes(query)
       );
     }
     this.filteredRoles.set(roles);

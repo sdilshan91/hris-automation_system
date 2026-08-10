@@ -25,8 +25,7 @@ const GUID_B = '22222222-2222-2222-2222-222222222222';
 
 function makeRole(name: string): IRole {
   return {
-    roleId: name.replace(/\s/g, '-').toLowerCase(),
-    tenantId: 't1',
+    id: name.replace(/\s/g, '-').toLowerCase(),
     name,
     description: '',
     isBuiltIn: true,

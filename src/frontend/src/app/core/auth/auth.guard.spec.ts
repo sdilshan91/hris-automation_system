@@ -27,7 +27,7 @@ describe('Auth Guards', () => {
   describe('permissionGuard', () => {
     it('should return true when user has required permission', () => {
       mockAuthService.hasAnyPermission.and.returnValue(true);
-      const guard = permissionGuard(['Admin.Roles.Manage']);
+      const guard = permissionGuard(['Roles.Manage']);
 
       TestBed.runInInjectionContext(() => {
         const result = guard({} as never, {} as never);
@@ -37,7 +37,7 @@ describe('Auth Guards', () => {
 
     it('should redirect to /forbidden when user lacks permission', () => {
       mockAuthService.hasAnyPermission.and.returnValue(false);
-      const guard = permissionGuard(['Admin.Roles.Manage']);
+      const guard = permissionGuard(['Roles.Manage']);
 
       TestBed.runInInjectionContext(() => {
         const result = guard({} as never, {} as never);

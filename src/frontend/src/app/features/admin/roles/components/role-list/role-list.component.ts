@@ -42,7 +42,7 @@ import { HasPermissionDirective } from '../../../../../shared/directives/has-per
             Manage roles and permissions for your workspace.
           </p>
         </div>
-        <div *appHasPermission="'Admin.Roles.Manage'">
+        <div *appHasPermission="'Roles.Manage'">
           <a
             routerLink="create"
             class="btn-primary"
@@ -95,7 +95,7 @@ import { HasPermissionDirective } from '../../../../../shared/directives/has-per
               Built-in Roles
             </h2>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              @for (role of builtInRoles(); track role.roleId) {
+              @for (role of builtInRoles(); track role.id) {
                 <div
                   class="card-notion group cursor-pointer hover:shadow-notion-md transition-shadow duration-200"
                   @fadeSlideIn
@@ -163,7 +163,7 @@ import { HasPermissionDirective } from '../../../../../shared/directives/has-per
             </div>
           } @else {
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              @for (role of customRoles(); track role.roleId) {
+              @for (role of customRoles(); track role.id) {
                 <div
                   class="card-notion group cursor-pointer hover:shadow-notion-md transition-shadow duration-200"
                   @fadeSlideIn
@@ -177,7 +177,7 @@ import { HasPermissionDirective } from '../../../../../shared/directives/has-per
                     <h3 class="text-base font-semibold text-neutral-900">
                       {{ role.name }}
                     </h3>
-                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" *appHasPermission="'Admin.Roles.Manage'">
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" *appHasPermission="'Roles.Manage'">
                       <button
                         class="w-7 h-7 rounded-md flex items-center justify-center text-neutral-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                         (click)="confirmDelete(role, $event)"
@@ -320,14 +320,14 @@ export class RoleListComponent implements OnInit {
   }
 
   viewRole(role: IRole): void {
-    this.router.navigate(['/admin/roles', role.roleId]);
+    this.router.navigate(['/admin/roles', role.id]);
   }
 
   editRole(role: IRole): void {
-    if (this.authService.hasPermission('Admin.Roles.Manage')) {
-      this.router.navigate(['/admin/roles', role.roleId, 'edit']);
+    if (this.authService.hasPermission('Roles.Manage')) {
+      this.router.navigate(['/admin/roles', role.id, 'edit']);
     } else {
-      this.router.navigate(['/admin/roles', role.roleId]);
+      this.router.navigate(['/admin/roles', role.id]);
     }
   }
 
@@ -345,7 +345,7 @@ export class RoleListComponent implements OnInit {
     if (!role) return;
 
     this.isDeleting.set(true);
-    this.rolesService.deleteRole(role.roleId).subscribe({
+    this.rolesService.deleteRole(role.id).subscribe({
       next: () => {
         this.toastr.success(`Role "${role.name}" deleted successfully.`);
         this.roleToDelete.set(null);

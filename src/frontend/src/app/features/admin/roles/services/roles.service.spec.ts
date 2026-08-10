@@ -16,8 +16,7 @@ describe('RolesService', () => {
   const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
   const mockRole: IRole = {
-    roleId: 'role-1',
-    tenantId: 'tenant-1',
+    id: 'role-1',
     name: 'HR Officer',
     description: 'Manages HR operations',
     isBuiltIn: true,
@@ -79,7 +78,7 @@ describe('RolesService', () => {
   describe('getRole', () => {
     it('should return a single role by ID', () => {
       service.getRole('role-1').subscribe((role) => {
-        expect(role.roleId).toBe('role-1');
+        expect(role.id).toBe('role-1');
         expect(role.name).toBe('HR Officer');
       });
 

@@ -150,7 +150,7 @@ describe('ManagerReviewService', () => {
         },
       ],
       summaryComment: 'Promote next cycle',
-      flag: 'PromotionConsideration',
+      flag: 'Promotion',
     };
     const submitted: IManagerReview = {
       ...mockReview,
