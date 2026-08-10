@@ -11,10 +11,14 @@ using Microsoft.Extensions.Logging;
 namespace HRM.Infrastructure.Services;
 
 /// <summary>
-/// US-ADM-008: Tenant-Admin audit-log READ + EXPORT. Runs in the NORMAL resolved-tenant context. The
-/// <c>audit_logs</c> table has NO EF global query filter (its TenantId is nullable and shared with system-scoped
-/// rows), so EVERY query here filters EXPLICITLY by <see cref="ITenantContext.TenantId"/> (AC-1/FR-1) — this is
-/// the deliberate tenant scoping the story calls out.
+/// US-ADM-008: Tenant-Admin audit-log READ + EXPORT. Runs in the NORMAL resolved-tenant context. EVERY query
+/// here filters EXPLICITLY by <see cref="ITenantContext.TenantId"/> (AC-1/FR-1) — the deliberate tenant scoping
+/// the story calls out, and still the primary control here.
+///
+/// <para>GAP-006: <c>audit_logs</c> gained an EF global query filter (it previously had none). It is the one
+/// filter with a <c>TenantId == null</c> arm, because this table's TenantId is nullable and shared with
+/// system-scoped rows. That does NOT relax the explicit scoping above — the filter is a floor beneath it, not
+/// a replacement for it, and the two are deliberately redundant.</para>
 ///
 /// <para>Sensitive values are masked on read (FR-4) by <see cref="SensitiveFieldMasker"/>; the export shape is
 /// produced by the pure <see cref="AuditLogExporter"/>. The export action audits itself (BR-4). The table is

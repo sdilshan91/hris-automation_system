@@ -110,7 +110,14 @@ public sealed class AuthTenantSwitchTests
             .IgnoreQueryFilters()
             .Any(rt => rt.UserId == _userId && rt.TenantId == _targetTenantId && rt.RevokedAt == null)
             .Should().BeTrue();
-        assertDb.AuditLogs.Count(log => log.EventType == "tenant_switch").Should().Be(2);
+        // Two rows by design — one audited against the SOURCE tenant, one against the TARGET. Reading them
+        // needs IgnoreQueryFilters for the same reason the two RefreshToken assertions above do: this context
+        // resolves to a single tenant, so a tenant-scoped read sees only half a cross-tenant switch. Explicit
+        // since GAP-006 gave audit_logs the query filter it had always been missing; the assertion itself is
+        // unchanged (still exactly 2), and it now verifies what it always meant to.
+        assertDb.AuditLogs
+            .IgnoreQueryFilters()
+            .Count(log => log.EventType == "tenant_switch").Should().Be(2);
         assertDb.Roles.Single(r => r.Id == sourceRoleId).Name.Should().Be("Source Admin");
     }
 
