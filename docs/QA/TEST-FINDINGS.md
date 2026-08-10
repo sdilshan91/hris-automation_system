@@ -8235,3 +8235,25 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Coverage, stated so nobody reads this as a clean bill of health:** 39 of 96 interfaces name-matched a contract schema; **57 did not** and the diff says nothing about them (most are probably legitimate FE-only view models). The `id`-suffix pattern that matched `IXyz` ↔ `PerformanceXyzDto` is what raised coverage from 11 to 39 — a reminder that a low match rate is usually the matcher's fault, not the code's.
 - **Recommended:** work the table top-down (`ISelfAssessment`, `IManagerReview` first — US-PRF-002/003 are the register's named crashers). For each: if the service adapts, close the row; if not, decide add-to-DTO vs drop-the-UI, exactly as ISSUE-364 did for departments.
 - **Confidence:** 100% that these 17 have FE-only fields on the name-matched schema. **~50% that any given row is a real defect** rather than an adapter — which is precisely why they are listed for triage instead of being "fixed" in bulk.
+
+---
+
+### ISSUE-374 — three more onboarding routes the FE calls that do not exist, plus the modify request shape
+- **ID:** ISSUE-374
+- **Type:** ISSUE (FE↔BE contract — missing routes + one request restructure)
+- **Severity:** **MED** — three live UI flows fail silently; one write (modify) sends a shape the API cannot bind.
+- **Status:** `OPEN`
+- **Layer:** BE (two routes) + FE (the modify flow)
+- **Module / US / TC:** Onboarding / US-ONB-002 AC-4, template builder / — — found 2026-08-10 while fixing GAP-013
+- **Title:** GAP-013 named "2 dead routes". Verified against the contract, there were **four**, and only one was a genuinely missing endpoint the register identified.
+- **The four, sorted by what they actually needed:**
+  | FE call | reality | disposition |
+  |---|---|---|
+  | `GET /checklists/applicable` | route is `applicable-templates` | ✅ **fixed** — a rename, not a missing endpoint |
+  | `GET /checklists/employee/{id}` | genuinely absent | ✅ **built** (query + handler + service + controller + 3 arms) — AC-3's replace/merge prompt now reachable |
+  | `GET /checklists/preview` | **absent, and never mentioned by the register** | ❌ open — called by `checklist-assignment.component.ts:794`, so the assignment preview silently fails |
+  | `GET /templates/lookups` | **absent, and never mentioned** | ❌ open — called by `template-builder.component.ts:607` |
+- **Plus a request-shape restructure (not a rename):** `IModifyChecklistRequest.tasks` vs the contract's `OnboardingModifyChecklistRequest { addTasks, taskChanges }`. This is **not** a field rename — the API models modification as *added tasks* plus *per-task changes*, while the FE sends one flat replacement list. Fixing it means changing the FE modify flow, not a field name, so it is filed rather than half-done. `assign` **was** a rename (`tasks` → `additionalTasks`) and **is fixed** — the HR officer's inline-edited task set was being discarded on every assignment (AC-2).
+- **Recommended:** `/templates/lookups` may be composable FE-side from existing endpoints (departments + job titles), which would need no backend change — check before building. `/checklists/preview` needs real backend logic (resolve template tasks + compute due dates from the start date), so it is a genuine endpoint. Do `modify` last, with the FE flow change.
+- **Also corrected while here:** the "5 clearance field mismatches" GAP-013 lists did not hold as stated. The clearance **request** body matches the contract (`{status, remarks}`). The real mismatches were **8 field names across onboarding/offboarding/exit-interview/template models**, all fixed — `taskId`→`id`, `offboardingId`→`id`, `exitInterviewId`→`id`, `applicableDepartmentIds`→`applicableDepartments`, and the same for job titles. Note the exit-interview REQUEST keeps `offboardingId` while its RESPONSE uses `offboardingInstanceId` — deliberately different, and conflating them broke two specs before I caught it.
+- **Confidence:** 100% on route absence (checked in the contract and the controllers) and on the modify shape.

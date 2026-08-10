@@ -279,8 +279,8 @@ describe('ChecklistAssignmentComponent', () => {
     expect(arg.employeeId).toBe('emp-1');
     expect(arg.templateId).toBe('tpl-1');
     expect(arg.mode).toBe('merge');
-    expect(arg.tasks.length).toBe(2);
-    expect(arg.tasks[0].sortOrder).toBe(0);
+    expect(arg.additionalTasks.length).toBe(2);
+    expect(arg.additionalTasks[0].sortOrder).toBe(0);
 
     expect(toastrSpy.success).toHaveBeenCalledWith(
       'Onboarding checklist assigned. Notifications sent to 3 people.',

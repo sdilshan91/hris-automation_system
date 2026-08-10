@@ -487,4 +487,53 @@ public sealed class OnboardingChecklistServiceTests
         result.IsFailure.Should().BeTrue();
         result.StatusCode.Should().Be(400);
     }
+
+    // ── GAP-013 / AC-3: the employee's ACTIVE checklist, which drives the replace/merge prompt ──────────
+    // The FE has always called GET /onboarding/checklists/employee/{employeeId} for this and the route did
+    // not exist, so `canAssign` never resolved and AC-3's replace/merge prompt was unreachable. Note the
+    // deliberate contract: NO active checklist is Success(null), not a 404 — "none yet" is the ordinary
+    // state before a first assignment, and a 404 would make the FE treat it as an error.
+
+    [Fact]
+    public async Task GetActiveByEmployee_returns_the_active_checklist_with_its_tasks_gap013()
+    {
+        SeedEmployees(DateTime.UtcNow.AddDays(10).Date);
+        var templateId = SeedTemplate();
+        var assigned = (await Service().AssignAsync(Assign(templateId))).Value!;
+
+        var result = await Service().GetActiveByEmployeeAsync(_employeeId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value!.Id.Should().Be(assigned.Id);
+        result.Value.Status.Should().Be(OnboardingChecklistStatus.Active);
+        result.Value.Tasks.Should().NotBeEmpty("the prompt shows what would be replaced, so tasks must load");
+    }
+
+    [Fact]
+    public async Task GetActiveByEmployee_returns_success_with_NULL_when_the_employee_has_none_gap013()
+    {
+        SeedEmployees(DateTime.UtcNow.AddDays(10).Date);
+
+        var result = await Service().GetActiveByEmployeeAsync(_employeeId);
+
+        result.IsSuccess.Should().BeTrue("no checklist is the normal pre-assignment state, not an error");
+        result.Value.Should().BeNull();
+        result.StatusCode.Should().NotBe(404);
+    }
+
+    [Fact]
+    public async Task GetActiveByEmployee_fails_closed_without_a_tenant_context_gap013()
+    {
+        var ctx = Substitute.For<ITenantContext>();
+        ctx.IsResolved.Returns(false);
+        var svc = new OnboardingChecklistService(
+            TestDbContextFactory.Create(ctx, _dbName), ctx, _user, Substitute.For<IFileStorage>(),
+            CleanScanner(), Substitute.For<ILogger<OnboardingChecklistService>>());
+
+        var result = await svc.GetActiveByEmployeeAsync(_employeeId);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+    }
 }

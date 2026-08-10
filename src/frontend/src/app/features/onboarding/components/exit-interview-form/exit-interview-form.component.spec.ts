@@ -42,8 +42,8 @@ describe('ExitInterviewFormComponent', () => {
   };
 
   const recorded: IExitInterview = {
-    exitInterviewId: 'ei-1',
-    offboardingId: 'off-1',
+    id: 'ei-1',
+    offboardingInstanceId: 'off-1',
     interviewMode: 'hr_conducted',
     interviewDate: '2026-06-17',
     responses: [],

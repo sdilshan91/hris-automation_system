@@ -90,12 +90,12 @@ describe('OnboardingChecklistService', () => {
 
   // ─── getApplicableTemplates (AC-1 / FR-1) ──────────────────
 
-  it('getApplicableTemplates GETs /applicable with the employeeId param', () => {
+  it('getApplicableTemplates GETs /applicable-templates with the employeeId param', () => {
     let result: IApplicableTemplate[] | undefined;
     service.getApplicableTemplates('emp-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(
-      (r) => r.url === `${base}/applicable` && r.params.get('employeeId') === 'emp-1',
+      (r) => r.url === `${base}/applicable-templates` && r.params.get('employeeId') === 'emp-1',
     );
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
@@ -157,7 +157,7 @@ describe('OnboardingChecklistService', () => {
       templateId: 'tpl-1',
       overrideStartDate: '2026-07-01',
       mode: null,
-      tasks: [
+      additionalTasks: [
         {
           id: null,
           templateTaskId: 'tt-1',
@@ -187,7 +187,7 @@ describe('OnboardingChecklistService', () => {
         employeeId: 'emp-1',
         templateId: 'tpl-1',
         mode: 'replace',
-        tasks: [],
+        additionalTasks: [],
       })
       .subscribe();
 
@@ -199,7 +199,7 @@ describe('OnboardingChecklistService', () => {
   it('assign surfaces a server error to the subscriber', () => {
     let errored: HttpErrorResponse | undefined;
     service
-      .assign({ employeeId: 'emp-1', templateId: 'tpl-1', tasks: [] })
+      .assign({ employeeId: 'emp-1', templateId: 'tpl-1', additionalTasks: [] })
       .subscribe({ error: (e) => (errored = e) });
 
     const req = httpMock.expectOne(base);
@@ -216,7 +216,7 @@ describe('OnboardingChecklistService', () => {
 
   // ─── modify (AC-4 / FR-5 / FR-6) ───────────────────────────
 
-  it('modify PATCHes the instance endpoint with the task set', () => {
+  it('modify PUTs the instance endpoint with the task set', () => {
     let result: IAssignedChecklist | undefined;
     service
       .modify('ci-1', {
@@ -232,7 +232,7 @@ describe('OnboardingChecklistService', () => {
       .subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${base}/ci-1`);
-    expect(req.request.method).toBe('PATCH');
+    expect(req.request.method).toBe('PUT');
     expect(req.request.withCredentials).toBeTrue();
     req.flush(assigned());
 

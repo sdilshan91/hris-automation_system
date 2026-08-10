@@ -157,7 +157,7 @@ type TaskGroup = FormGroup<{
                   id="t-depts"
                   multiple
                   class="field h-28"
-                  formControlName="applicableDepartmentIds"
+                  formControlName="applicableDepartments"
                 >
                   @for (d of lookups().departments; track d.id) {
                     <option [value]="d.id">{{ d.name }}</option>
@@ -171,7 +171,7 @@ type TaskGroup = FormGroup<{
                   id="t-titles"
                   multiple
                   class="field h-28"
-                  formControlName="applicableJobTitleIds"
+                  formControlName="applicableJobTitles"
                 >
                   @for (j of lookups().jobTitles; track j.id) {
                     <option [value]="j.id">{{ j.name }}</option>
@@ -586,8 +586,8 @@ export class TemplateBuilderComponent implements OnInit {
     description: this.fb.control<string | null>(null, [
       Validators.maxLength(2000),
     ]),
-    applicableDepartmentIds: this.fb.nonNullable.control<string[]>([]),
-    applicableJobTitleIds: this.fb.nonNullable.control<string[]>([]),
+    applicableDepartments: this.fb.nonNullable.control<string[]>([]),
+    applicableJobTitles: this.fb.nonNullable.control<string[]>([]),
     isActive: this.fb.nonNullable.control(true),
     tasks: this.fb.array<TaskGroup>([]),
   });
@@ -745,8 +745,8 @@ export class TemplateBuilderComponent implements OnInit {
     this.form.patchValue({
       templateName: tpl.templateName,
       description: tpl.description ?? null,
-      applicableDepartmentIds: tpl.applicableDepartmentIds ?? [],
-      applicableJobTitleIds: tpl.applicableJobTitleIds ?? [],
+      applicableDepartments: tpl.applicableDepartments ?? [],
+      applicableJobTitles: tpl.applicableJobTitles ?? [],
       isActive: tpl.isActive ?? true,
     });
     this.tasks.clear();
@@ -767,8 +767,8 @@ export class TemplateBuilderComponent implements OnInit {
     return {
       templateName: v.templateName.trim(),
       description: v.description?.trim() || null,
-      applicableDepartmentIds: v.applicableDepartmentIds ?? [],
-      applicableJobTitleIds: v.applicableJobTitleIds ?? [],
+      applicableDepartments: v.applicableDepartments ?? [],
+      applicableJobTitles: v.applicableJobTitles ?? [],
       isActive: v.isActive,
       tasks: v.tasks.map((t, i) => ({
         title: t.title.trim(),

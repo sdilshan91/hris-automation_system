@@ -48,7 +48,7 @@ export type ClearanceDecision = 'approved' | 'pending_issues';
  * drives the card chip + the department traffic light.
  */
 export interface IOffboardingTask {
-  taskId: string;
+  id: string;
   title: string;
   responsibleRole: string;
   /** ISO date (yyyy-MM-dd) computed as LWD - offset (FR-2). */
@@ -69,7 +69,7 @@ export interface IClearanceDepartment {
 
 /** The full offboarding instance returned by GET endpoints (Output §7). */
 export interface IOffboardingInstance {
-  offboardingId: string;
+  id: string;
   employeeId: string;
   employeeName?: string | null;
   lastWorkingDay: string;
@@ -219,7 +219,7 @@ export function assetReturnLines(
     .flatMap((d) => d.tasks)
     .filter((t): t is IOffboardingTask & { linkedAssetId: string } => !!t.linkedAssetId)
     .map((t) => ({
-      taskId: t.taskId,
+      taskId: t.id,
       title: t.title,
       assetId: t.linkedAssetId,
       status: t.status,

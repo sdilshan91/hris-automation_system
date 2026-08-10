@@ -63,6 +63,21 @@ public interface IOnboardingChecklistService
         AssignChecklistInput input, CancellationToken cancellationToken = default);
 
     /// <summary>Gets an assigned checklist instance (with its task instances), tenant-scoped.</summary>
+    /// <summary>
+    /// GAP-013 / US-ONB-002 AC-3: the employee's CURRENT ACTIVE checklist, or null when they have none.
+    ///
+    /// <para>This is what drives the replace/merge prompt: before assigning, the UI has to know whether the
+    /// employee already has an active checklist. The frontend has always called
+    /// <c>GET /onboarding/checklists/employee/{employeeId}</c> for it and the route did not exist, so
+    /// <c>canAssign</c> could never resolve and AC-3 was unreachable.</para>
+    ///
+    /// <para>Returns <c>Success(null)</c> — NOT a 404 — when the employee has no active checklist: "no
+    /// checklist" is the normal case for a first assignment, and a 404 would make the FE treat an expected
+    /// state as an error.</para>
+    /// </summary>
+    Task<Result<OnboardingChecklistInstanceDto?>> GetActiveByEmployeeAsync(
+        Guid employeeId, CancellationToken cancellationToken = default);
+
     Task<Result<OnboardingChecklistInstanceDto>> GetInstanceAsync(
         Guid checklistInstanceId, CancellationToken cancellationToken = default);
 

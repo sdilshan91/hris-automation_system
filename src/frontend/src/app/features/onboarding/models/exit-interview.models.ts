@@ -70,8 +70,8 @@ export interface IRecordExitInterviewRequest {
 
 /** The persisted interview returned by GET ?offboardingId= and POST. */
 export interface IExitInterview {
-  exitInterviewId: string;
-  offboardingId: string;
+  id: string;
+  offboardingInstanceId: string;
   interviewMode: InterviewMode;
   interviewDate: string;
   responses: IExitResponse[];
