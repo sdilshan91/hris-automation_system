@@ -35052,11 +35052,14 @@ export interface components {
             /** Format: date-time */
             createdAt?: string;
             description?: string | null;
+            /** Format: int32 */
+            employeeCount?: number;
             /** Format: uuid */
             id?: string;
             isActive?: boolean;
             /** Format: uuid */
             managerId?: string | null;
+            managerName?: string | null;
             name?: string | null;
             /** Format: uuid */
             parentDepartmentId?: string | null;

@@ -180,6 +180,21 @@ bulk-import spreadsheets — is sealed with a key derived from it.
 
 ---
 
+## Email delivery — HARD GATE (GAP-015)
+
+- [ ] **`Smtp:Host` is set** (plus `Smtp:Username` / `Smtp:Password` via user-secrets or the environment).
+
+**The app now refuses to start in Production without it.** A blank `Smtp:Host` selects `LogOnlyEmailSender`,
+whose own config comment calls itself *"the safe default that sends nothing"* — correct for dev and CI,
+unacceptable in production, because **BR-1 designates password-reset and account-lockout mail
+non-suppressible**. Before this gate, a production deployment with no SMTP configured would accept a
+password-reset request, log it, and send nothing: the user simply never receives the mail and cannot get back
+in. That is a security-relevant silent failure, not a degraded feature, which is why it is fail-fast rather
+than a warning.
+
+Verify after deploy by triggering one real password reset and confirming receipt — a successful HTTP 200 from
+the reset endpoint proves only that the request was accepted.
+
 ## 3. Malware scanning — ClamAV
 
 Committed default is a **blank host**, which selects the allow-with-log stub so local dev, the xUnit gate and
@@ -265,3 +280,4 @@ Kept because each one cost real time and would otherwise be repeated.
 | **Tests can assert the bug.** | Three tests asserted dead URLs, encoding the defect as expected behaviour. |
 | **The ledger is not evidence.** | Measured ~62% wrong in the OPEN direction: six findings marked open were already fixed. Grep the code first. |
 | **A count you memorise becomes a false gate.** | "Abort unless the reconciler says 137" would have fired on a perfectly good flip; the number changes with every new table. |
+

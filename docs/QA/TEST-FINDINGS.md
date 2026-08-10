@@ -8100,6 +8100,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 ---
 
 ### ISSUE-364 — `DepartmentDto` returns no employee count or manager name, so two UI surfaces were rendering nothing
+- **Status update:** **`RESOLVED` 2026-08-10.** `EmployeeCount` and `ManagerName` added to `DepartmentDto` and populated **batched** — one grouped count query and one manager-name lookup for the whole list, mirroring `JobTitleService.GetAllAsync`, so a department list is not turned into an N+1. `GetByIdAsync` uses two scalar reads (single row, no N+1 risk). The FE surfaces are restored: the count badge, the manager line, and the deactivate dialog's active-employee warning. **One deliberate change from the original:** the warning is now PRE-FLIGHT only and the deactivate button stays **enabled** — the server remains the authority. The old version disabled the button on `employeeCount > 0`, which read `undefined > 0` and therefore never fired; re-adding that disable would move an invariant the server already enforces into the client. 3 arms: active-only counting (an inactive employee and another department's employee must not count), the manager display name, and the null-manager/zero-count case.
 - **ID:** ISSUE-364
 - **Type:** ISSUE (FE↔BE contract — missing backend fields)
 - **Severity:** **LOW-MED** — cosmetic/UX only. The invariant these fields supported is enforced server-side, so nothing unsafe is reachable.

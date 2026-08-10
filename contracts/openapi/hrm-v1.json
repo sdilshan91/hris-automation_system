@@ -13862,6 +13862,10 @@
             "nullable": true,
             "type": "string"
           },
+          "employeeCount": {
+            "format": "int32",
+            "type": "integer"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -13871,6 +13875,10 @@
           },
           "managerId": {
             "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "managerName": {
             "nullable": true,
             "type": "string"
           },
