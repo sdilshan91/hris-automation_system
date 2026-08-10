@@ -4,11 +4,20 @@ user_story: US-ATT-011
 module: Attendance
 priority: high
 type: integration
-status: automated
+status: draft
 created: 2026-07-15
 ---
 
 # TC-ATT-152: FteScaledOvertimeBase flag — OT hourly base unscaled by default, scaled by FTE when on (AC-5)
+
+> **⚠ GAP-L6 + GAP-022 / 2026-08-10 — demoted `automated` → `draft`.** This TC claims automated coverage of
+> *stored* overtime earnings under both `FteScaledOvertimeBase` states, but the bound tests are pure-function
+> arms that cannot produce a persisted `PayrollSlip.OvertimeAmount` — and its own header concedes it "proves
+> the MATH, not the plumbing". GAP-022 additionally found the flag is **dead wiring**:
+> `PayrollRunProcessor.ComputeOvertime` calls `Compute` with 4 of 7 arguments, so `fte`/`fteScaledBase` fall to
+> defaults and `.Fte` appears zero times in the file — enabling the flag changes no payroll output.
+> **To re-qualify:** thread the per-location policy map + `emp.Fte` through `ComputeOvertime` (GAP-022), then
+> bind an integration arm asserting a PERSISTED `OvertimeAmount` under both flag states.
 
 ## 1. Test Objective
 Verify US-ATT-011 AC-5 / FR-6: with `FteScaledOvertimeBase` **off (default)**, a 0.5-FTE part-timer's overtime hourly base equals a full-timer's (base NOT scaled by FTE); with the flag **on**, the OT hourly base scales by FTE (`standardHours * Fte`). Depends on `Employee.Fte` (US-CHR-013).

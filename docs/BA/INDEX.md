@@ -6,6 +6,16 @@
 >
 > **Reconciliation note (2026-07-06):** 10 net-new stories added from [COMPLETION-PLAN Part II](../QA/plans/archive/COMPLETION-PLAN-2026-07-06.md) —
 > US-NTF-006 & US-ADM-011 (FULL); US-ADM-012, US-PRF-011, US-PLT-004, US-PLT-005 (STUBS); US-TRN-EPIC/001/002/003 (Training & Benefits, STUBS).
+>
+> **⚠ CORRECTED 2026-08-10 (GAP-L9).** Two things on this page were wrong and both affected planning:
+> 1. **The MoSCoW of US-PLT-002 and US-PLT-003 was SWAPPED** relative to the story frontmatter. This table said
+>    PLT-002 = Must / PLT-003 = Should; the stories say the opposite. Reconciled to the **frontmatter**, which is
+>    the spec of record — and it matters mechanically, because `/gap-analysis` keys its audit DEPTH off
+>    `priority:` (AC-level for Must Have, story-level otherwise). The swap meant one story was audited at the
+>    wrong depth.
+> 2. **US-TRN-EPIC/001/002/003 are no longer STUBS** — Training & Benefits shipped 2026-07-10 with 6 backend
+>    test files (3 Testcontainers-Postgres) and 6 Karma specs. The "STUBS" label above is retained as history;
+>    treat the per-story rows below as current.
 > Additionally ~40 `[x]`-done stories carry unbuilt ACs — see the **Deferred-AC Reconciliation** table in [STATUS.md](STATUS.md).
 
 ## Summary
@@ -218,7 +228,7 @@
 | ID | Title | Priority | Persona |
 |----|-------|----------|---------|
 | [US-PLT-001](platform/US-PLT-001.md) | Global API response envelope unwrapping | Must Have | System |
-| [US-PLT-002](platform/US-PLT-002.md) | PostgreSQL Row-Level Security (defense-in-depth) | Must Have | System / Security |
-| [US-PLT-003](platform/US-PLT-003.md) | Serialize API enums as strings + FE enum casing | Should Have | System |
+| [US-PLT-002](platform/US-PLT-002.md) | PostgreSQL Row-Level Security (defense-in-depth) | Should Have | System / Security |
+| [US-PLT-003](platform/US-PLT-003.md) | Serialize API enums as strings + FE enum casing | Must Have | System |
 | [US-PLT-004](platform/US-PLT-004.md) | Observability & platform NFRs (OTel/health/usage/SLO) *(net-new STUB)* | Should Have | System Admin / Operator |
 | [US-PLT-005](platform/US-PLT-005.md) | Encryption-at-rest for PII & MFA secrets (pgcrypto/KEK) *(net-new STUB)* | Must Have | System / Security |
