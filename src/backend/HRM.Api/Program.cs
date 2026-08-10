@@ -22,6 +22,7 @@ using Polly;
 using Polly.Extensions.Http;
 using Serilog;
 using System.Threading.RateLimiting;
+using HRM.Api.RateLimiting;
 
 // ===== Serilog Bootstrap =====
 Log.Logger = new LoggerConfiguration()
@@ -521,6 +522,40 @@ try
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        // ── GAP-018: the GLOBAL limiter ────────────────────────────────────────────────────────────────
+        // Every named policy below partitions on CLIENT IP and is attached to an ANONYMOUS endpoint, which
+        // left every AUTHENTICATED tenant endpoint completely unthrottled: one compromised token, runaway
+        // client loop or scripted scrape had no ceiling at all. The partition key IS the control, so it lives
+        // in a testable pure function — see GlobalRateLimitPartition for why (tenantId, userId) beats IP and
+        // for the three exemptions.
+        //
+        // Still in-memory, so the limit is PER API INSTANCE (same caveat as the named policies below). Move to
+        // the Redis fixed-window already used for portal links when this runs multi-instance.
+        options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        {
+            var key = GlobalRateLimitPartition.Resolve(
+                httpContext.Request.Path.Value,
+                rateLimitDisabled,
+                httpContext.RequestServices.GetService<ITenantContext>(),
+                httpContext.RequestServices.GetService<ICurrentUser>(),
+                ResolveClientIp(httpContext));
+
+            if (key is GlobalRateLimitPartition.Unlimited or GlobalRateLimitPartition.SystemContext)
+            {
+                return RateLimitPartition.GetNoLimiter(key);
+            }
+
+            // Deliberately GENEROUS: a runaway/abuse backstop, not a quota. A dashboard load legitimately
+            // fires tens of requests; the failure mode being prevented is thousands per minute.
+            return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 300,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst
+            });
+        });
 
         // ISSUE-052 (US-AUTH-004 FR-9): throttle POST /api/v1/auth/forgot-password. FR-9 specifies "max
         // 5/email/hour"; per-email would require reading the request body here, so the practical primary
