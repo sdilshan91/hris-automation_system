@@ -8062,3 +8062,20 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Confidence:** **95%** on the root cause (reproduced both ways). 100% that the config does not load.
 - **Smallest fix:** replace the `—` in `_comment` with an ASCII hyphen (one character class, same file). **Deliberately NOT bundled into the GAP-S1/S2 branch** — it changes suite-wide test concurrency, which is exactly the kind of unrelated behaviour change that branch should not carry. Verify by confirming the warning is gone and the suite still passes.
 - **Related:** ISSUE-275 (the host-saturation problem the cap exists to prevent) · ISSUE-361 (whose first diagnosis wrongly blamed this cap) · ISSUE-312 (the abort-detection wrapper — note `dotnet test` exited **0** on the run that surfaced this while reporting `Failed: 1`, which is the same "a green exit code is not a green suite" class).
+
+---
+
+### ISSUE-363 — 17 of the 44 permissions the role editor offers as assignable exist in no backend catalog
+- **ID:** ISSUE-363
+- **Type:** ISSUE (authorization / FE↔BE contract — S-1 and S-2 combined)
+- **Severity:** **HIGH** — silent and user-visible. A tenant admin can grant permissions that do nothing; the role saves, the checkboxes render as ticked, and the user gets no access. No error anywhere.
+- **Status:** `OPEN`
+- **Layer:** FE (+ an authz decision per key)
+- **Module / US / TC:** Admin Console / US-ADM-006 (roles) / — — found 2026-08-08 while fixing GAP-016
+- **Title:** `permission-catalog.ts` is a hand-maintained mirror of `PermissionCatalog.cs` and has drifted by 39% (17 of 44 keys).
+- **Evidence:** the FE catalog defines 44 keys; the backend defines 116. Diffing them, these 17 FE keys have **no backend counterpart** — `Admin.Audit.View` · `Admin.Tenant.Configure` · `Admin.Users.Manage` · `Admin.View` · `Attendance.Configure` · `Attendance.View` · `Employee.Edit.All` · `Employee.Edit.Self` · `Employee.View.Self` · `Leave.Configure` · `Leave.View` · `Performance.Configure` · `Performance.Review` · `Performance.View` · `Recruitment.Interview` · `Recruitment.Offer` · `Reports.Create`.
+- **Why it matters beyond the checkbox:** `PERMISSION_CATALOG` is rendered by `role-form.component.ts:257` as the assignable-permission list and by `role-detail.component.ts:217-220` as the grouping for an existing role's permissions. A permission granted from this list is stored on the role and then never matches anything the API checks.
+- **Root cause is structural, not clerical:** two hand-written descriptions of one contract with nothing comparing them — the same shape as S-1 (FE↔BE DTOs) and S-2 (RLS guard vs EF filters). **A guard now exists** (`FrontendPermissionLiteralTests`, added with GAP-016): it fails on any NEW mismatch and carries these 17 as an explicit, documented baseline that **must only shrink**. A second arm fails if a baseline entry is ever fixed but left in the list, so the baseline cannot rot into a hiding place. *(That second arm immediately caught two entries I had wrongly included — `Employee.View.All` and `Payroll.Run` both DO exist in the catalog; my shell-based diff had produced false positives. The guard corrected the person writing it on its first run.)*
+- **Why it is filed rather than fixed:** each key needs an authorization decision, not a guess — is `Admin.View` meant to be a real permission, a UI-only grouping, or a rename of something that exists? Mapping a permission string by inference is precisely the change that silently grants or removes access. **Recommendation:** work through them with the product owner in one pass, then delete each from the baseline as it is resolved.
+- **Confidence:** **100%** on the 17 (mechanically diffed and now asserted by a test). Severity assumes at least one of the 17 is being granted in a real tenant — unverified.
+- **Related:** GAP-016 (the two literals already fixed: `Admin.Roles.Manage` → `Roles.Manage`, `ExitInterview.Conduct` → `ExitInterview.ViewDetail`) · S-1 · S-2 · [[ISSUE-290]] (the docstring-only permission-string trap US-PRF-011 warned about).

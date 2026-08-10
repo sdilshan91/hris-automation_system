@@ -102,7 +102,7 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     icon: 'settings',
     permissions: [
       { key: 'Admin.View', label: 'View admin settings', description: 'Access tenant administration settings' },
-      { key: 'Admin.Roles.Manage', label: 'Manage roles', description: 'Create, edit, and delete custom roles and assign roles to users' },
+      { key: 'Roles.Manage', label: 'Manage roles', description: 'Create, edit, and delete custom roles and assign roles to users' },
       { key: 'Admin.Users.Manage', label: 'Manage users', description: 'Invite, deactivate, and manage user accounts' },
       { key: 'Admin.Tenant.Configure', label: 'Configure tenant', description: 'Manage tenant settings, branding, and subscription' },
       { key: 'Admin.Audit.View', label: 'View audit log', description: 'Access the tenant audit trail' },

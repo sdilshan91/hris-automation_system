@@ -28,8 +28,8 @@ describe('PermissionCatalog', () => {
     expect(modules).toContain('Admin');
   });
 
-  it('should have Admin.Roles.Manage permission', () => {
-    expect(ALL_PERMISSION_KEYS).toContain('Admin.Roles.Manage');
+  it('should have Roles.Manage permission', () => {
+    expect(ALL_PERMISSION_KEYS).toContain('Roles.Manage');
   });
 
   it('each group should have label and permissions', () => {

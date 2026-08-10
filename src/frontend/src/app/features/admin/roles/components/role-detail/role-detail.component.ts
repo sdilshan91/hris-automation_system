@@ -253,7 +253,8 @@ export class RoleDetailComponent implements OnInit {
   }
 
   hasPermission(key: string): boolean {
-    return this.role()?.permissions.includes(key) ?? false;
+    // permissions is nullable on the contract, so the optional chain must cover it too, not just role().
+    return this.role()?.permissions?.includes(key) ?? false;
   }
 
   getGroupGrantedCount(group: IPermissionGroup): number {

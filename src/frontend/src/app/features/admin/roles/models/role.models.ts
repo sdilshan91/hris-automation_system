@@ -1,14 +1,22 @@
-/** A role within a tenant */
-export interface IRole {
-  roleId: string;
-  tenantId: string | null;
+import type { Schema } from '@core/api';
+
+/**
+ * GAP-016: was hand-written with `roleId` and a `tenantId` the API does not return, so every navigate and
+ * delete hit `/roles/undefined` — and the specs stayed green because they mocked the invented shape. Now
+ * derived from the generated contract (`RolesRoleDto` = id/name/description/permissions/isBuiltIn/
+ * userCount/createdAt), so a backend rename is a compile error rather than a broken link.
+ */
+export type IRole = Schema<'RolesRoleDto'> & {
+  /**
+   * Narrowed from the generated type, which marks EVERY property optional because Swashbuckle emits no
+   * `required` for non-nullable C# reference types. The API always sends these two for a role, and the UI
+   * cannot render a row without them, so asserting them here keeps call sites readable while the field
+   * NAMES — the thing that actually drifted — stay contract-derived. Narrow only what the UI genuinely
+   * requires; do not blanket-`Required<>` a generated DTO, which would also strip legitimate nulls.
+   */
+  id: string;
   name: string;
-  description: string;
-  isBuiltIn: boolean;
-  permissions: string[];
-  userCount: number;
-  createdAt: string;
-}
+};
 
 /** Request payload for creating a new custom role */
 export interface ICreateRoleRequest {

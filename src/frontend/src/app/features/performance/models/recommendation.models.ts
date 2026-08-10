@@ -147,7 +147,7 @@ export interface IRecommendationRow {
   currentCompensation: number | null;
   /** Tenure in whole months (AC-1). */
   tenureMonths: number | null;
-  /** Manager recommendation flag from US-PRF-003 (e.g. PromotionConsideration). */
+  /** Manager recommendation flag from US-PRF-003 (e.g. `Promotion`) — see `ReviewFlag`, GAP-012a. */
   managerFlag: string | null;
   status: RecommendationStatus;
   /** True when the current detail was produced by auto-generation (FR-3 override gate). */

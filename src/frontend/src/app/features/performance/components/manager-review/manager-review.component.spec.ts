@@ -252,9 +252,9 @@ describe('ManagerReviewComponent', () => {
 
   it('lets the manager set a follow-up flag (FR-6)', async () => {
     await setup(makeReview());
-    component.setFlag('PIP');
+    component.setFlag('Pip');
     fixture.detectChanges();
-    expect(component.flagValue()).toBe('PIP');
+    expect(component.flagValue()).toBe('Pip');
   });
 
   // ─── Window closed ───────────────────────────────────────────

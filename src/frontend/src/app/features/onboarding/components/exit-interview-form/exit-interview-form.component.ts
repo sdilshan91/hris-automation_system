@@ -480,7 +480,11 @@ export class ExitInterviewFormComponent implements OnInit {
 
   ngOnInit(): void {
     this.mode.set(
-      this.auth.hasAnyPermission(['ExitInterview.Conduct']) ||
+      // GAP-016: was 'ExitInterview.Conduct', which exists in no catalog — so this half of the check was
+      // always false and the HR-conducted mode depended entirely on the isHrRole() fallback below.
+      // ExitInterview.ViewDetail is the permission the backend itself uses for exactly this distinction
+      // (ExitInterviewsController.HasDetailPermission drives AllowEdit).
+      this.auth.hasAnyPermission(['ExitInterview.ViewDetail']) ||
         this.isHrRole()
         ? 'hr_conducted'
         : 'self_service',
