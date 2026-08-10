@@ -5,10 +5,17 @@ namespace HRM.Infrastructure.Identity;
 /// <c>Authentication:Entra</c> config section. Secrets (<see cref="ClientSecret"/>) come from
 /// user-secrets / environment, never appsettings (Critical Rule #6).
 ///
-/// The per-tenant allow-list (<see cref="TenantAllowList"/>) is the dev-POC home for the security-critical
-/// tenant-isolation config (US-AUTH-013). In the full feature this moves into per-tenant DB config
-/// (US-AUTH-012); here it is keyed by HRM tenant subdomain. It is FAIL-CLOSED: a subdomain with no entry,
-/// or an entry whose allow-lists are all empty, can never complete SSO.
+/// <para><b>GAP-002 — <see cref="TenantAllowList"/> IS NO LONGER READ ON ANY LOGIN PATH.</b> It was the
+/// "dev-POC home" for the security-critical tenant-isolation config (US-AUTH-013) and was supposed to move
+/// into per-tenant DB config with US-AUTH-012. That move never happened, so for a while the DB columns a
+/// tenant admin edits were decorative and this dictionary was the real control. The guard in
+/// <c>EntraSsoService.CheckIsolation</c> now reads the tenant record (<c>SsoEnabled</c>,
+/// <c>AllowedEntraTenantIds</c>, <c>AllowedEmailDomains</c>, <c>JitEnabled</c>, <c>JitDefaultRole</c>) via
+/// the cached <c>SsoSettingsSnapshot</c>.</para>
+///
+/// <para>The property is retained ONLY so existing <c>Authentication:Entra:TenantAllowList</c> config binds
+/// without error instead of throwing on startup in an environment that still carries it. It grants nothing.
+/// Delete it, and the stanza from every appsettings file, once no deployment ships that section.</para>
 /// </summary>
 public sealed class EntraSsoOptions
 {
@@ -39,6 +46,12 @@ public sealed class EntraSsoOptions
     public string AdminConsentRedirectUri { get; set; } = string.Empty;
 
     /// <summary>Per-HRM-tenant SSO allow-list, keyed by tenant subdomain. See class remarks.</summary>
+    /// <summary>
+    /// GAP-002: DEAD CONFIG — bound for backwards compatibility, read by nothing. The live allow-list is the
+    /// tenant record. See the type-level remarks before adding a reader.
+    /// </summary>
+    [Obsolete("GAP-002: SSO isolation is DB-backed. This appsettings allow-list is never consulted; configure " +
+              "AllowedEntraTenantIds / AllowedEmailDomains on the tenant instead.")]
     public Dictionary<string, EntraTenantAllowList> TenantAllowList { get; set; }
         = new(StringComparer.OrdinalIgnoreCase);
 

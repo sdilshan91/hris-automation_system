@@ -2010,6 +2010,31 @@ public sealed class AuthService : IAuthService
         return Result<SsoSettingsSnapshot>.Success(snapshot);
     }
 
+    /// <inheritdoc />
+    public async Task<Result<SsoSettingsSnapshot>> GetSsoSettingsBySubdomainAsync(
+        string subdomain,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(subdomain))
+        {
+            return Result<SsoSettingsSnapshot>.Failure("Tenant not found.", 404);
+        }
+
+        // IgnoreQueryFilters: the OIDC callback runs BEFORE any tenant context is resolved (it is an anonymous
+        // endpoint on the platform host), so the ambient filter would exclude every row. Scoped explicitly by
+        // the subdomain carried on the signed state — the same lookup SsoSignInAsync performs.
+        var tenantId = await _dbContext.Tenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .Where(t => t.Subdomain == subdomain && !t.IsDeleted)
+            .Select(t => (Guid?)t.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return tenantId is null
+            ? Result<SsoSettingsSnapshot>.Failure("Tenant not found.", 404)
+            : await GetSsoSettingsAsync(tenantId.Value, cancellationToken);
+    }
+
     private static string SsoSettingsCacheKey(Guid tenantId) => $"sso-settings:{tenantId}";
 
     private static SsoSettingsSnapshot ToSsoSnapshot(Tenant tenant) => new()
