@@ -119,7 +119,7 @@ describe('Feedback360FormComponent', () => {
     fixture.detectChanges();
 
     expect(serviceSpy.submitFeedback).toHaveBeenCalledWith('a-1', {
-      answers: [
+      items: [
         { questionId: 'q-1', rating: 4, comment: 'Clear comms' },
         { questionId: 'q-2', rating: 5, comment: '' },
       ],

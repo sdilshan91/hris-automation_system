@@ -329,7 +329,7 @@ export class Feedback360FormComponent implements OnInit {
       return;
     }
     const request: ISubmitFeedbackRequest = {
-      answers: f.questions.map((q) => ({
+      items: f.questions.map((q) => ({
         questionId: q.questionId,
         rating: q.rating,
         comment: q.comment,

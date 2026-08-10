@@ -159,7 +159,7 @@ describe('PipDetailComponent', () => {
 
     expect(serviceSpy.recordCheckpoint).toHaveBeenCalledWith(
       'pip-1',
-      { status: 'OnTrack', notes: 'Met all PRs in 24h.' },
+      { progressStatus: 'OnTrack', evidenceNotes: 'Met all PRs in 24h.' },
       null,
     );
     expect(component.checkpointOpen()).toBeFalse();

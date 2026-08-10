@@ -155,7 +155,7 @@ describe('Feedback360Service', () => {
 
   it('submitFeedback() POSTs the answers to the submit route', () => {
     const body: ISubmitFeedbackRequest = {
-      answers: [{ questionId: 'q-1', rating: 4, comment: 'Strong work' }],
+      items: [{ questionId: 'q-1', rating: 4, comment: 'Strong work' }],
     };
     const submitted: IFeedbackForm = {
       ...mockForm,

@@ -292,7 +292,8 @@ export interface ICreatePipRequest {
   reason: string;
   startDate: string;
   endDate: string;
-  mentorId: string | null;
+  /** GAP-012: the wire field is `mentorEmployeeId`. */
+  mentorEmployeeId: string | null;
   escalationAction: EscalationAction;
   objectives: IPipObjectiveInput[];
   /** Extra checkpoint dates beyond the per-objective due dates (§7). */
@@ -308,9 +309,13 @@ export interface IPipObjectiveInput {
 }
 
 /** Record-checkpoint body (AC-3). The file (if any) is sent multipart, field `file`. */
+/**
+ * GAP-012: the wire fields are `progressStatus` and `evidenceNotes`, not `status`/`notes` — so every PIP
+ * checkpoint POST recorded a row with neither the status nor the note the reviewer typed.
+ */
 export interface IRecordCheckpointRequest {
-  status: CheckpointStatus;
-  notes: string;
+  progressStatus: CheckpointStatus;
+  evidenceNotes: string;
 }
 
 /** Set-outcome body (AC-4). */

@@ -131,7 +131,7 @@ describe('PipService', () => {
       reason: 'r',
       startDate: '2026-06-01',
       endDate: '2026-08-30',
-      mentorId: null,
+      mentorEmployeeId: null,
       escalationAction: 'Demotion' as const,
       objectives: [
         {
@@ -152,7 +152,7 @@ describe('PipService', () => {
   });
 
   it('recordCheckpoint() POSTs JSON when no file is attached', () => {
-    const body = { status: 'OnTrack' as const, notes: 'good progress' };
+    const body = { progressStatus: 'OnTrack' as const, evidenceNotes: 'good progress' };
     service.recordCheckpoint('pip-1', body).subscribe();
 
     const req = httpMock.expectOne(`${baseUrl}/pip-1/checkpoints`);
@@ -164,15 +164,15 @@ describe('PipService', () => {
   it('recordCheckpoint() POSTs multipart FormData when a file is attached', () => {
     const file = new File(['x'], 'evidence.pdf', { type: 'application/pdf' });
     service
-      .recordCheckpoint('pip-1', { status: 'AtRisk', notes: 'note' }, file)
+      .recordCheckpoint('pip-1', { progressStatus: 'AtRisk', evidenceNotes: 'note' }, file)
       .subscribe();
 
     const req = httpMock.expectOne(`${baseUrl}/pip-1/checkpoints`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body instanceof FormData).toBeTrue();
     const form = req.request.body as FormData;
-    expect(form.get('status')).toBe('AtRisk');
-    expect(form.get('notes')).toBe('note');
+    expect(form.get('progressStatus')).toBe('AtRisk');
+    expect(form.get('evidenceNotes')).toBe('note');
     expect(form.get('file')).toBeTruthy();
     req.flush(mockPip);
   });

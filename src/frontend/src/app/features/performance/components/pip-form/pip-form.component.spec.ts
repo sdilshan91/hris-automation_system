@@ -191,7 +191,7 @@ describe('PipFormComponent (AC-1/AC-2 create form)', () => {
       reason: 'Performance below expectations',
       startDate: '2026-06-01',
       endDate: '2026-08-30',
-      mentorId: 'm-1',
+      mentorId: 'm-1',   // FORM control name; the wire field asserted below is mentorEmployeeId
     });
     component.submit();
 
@@ -199,7 +199,7 @@ describe('PipFormComponent (AC-1/AC-2 create form)', () => {
     const req = serviceSpy.createPip.calls.mostRecent().args[0];
     expect(req.employeeId).toBe('e-1');
     expect(req.objectives.length).toBe(1);
-    expect(req.mentorId).toBe('m-1');
+    expect(req.mentorEmployeeId).toBe('m-1');
     expect(toastrSpy.success).toHaveBeenCalled();
     expect(navSpy).toHaveBeenCalledWith(['/performance/pips', 'pip-9']);
   });
