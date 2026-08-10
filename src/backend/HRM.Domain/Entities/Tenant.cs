@@ -312,9 +312,17 @@ public sealed class Tenant
     /// <summary>
     /// US-ADM-008 (FR-6/BR-5): number of days audit-log rows are retained before the
     /// <c>AuditLogPurgeJob</c> deletes them. PLAN-GOVERNED — surfaced READ-ONLY to the Tenant Admin
-    /// (they can VIEW but not change it, BR-5). Default 90 (Starter plan); Business=365, Enterprise=2555 etc.
-    /// TODO(subscription): derive from the plan tier once a proper Subscription/Plan entity exists; for now a
-    /// plain int on the tenant mirroring the other Max*/policy columns.
+    /// (they can VIEW but not change it, BR-5). Tiers per the technical doc's plan matrix and §19.13:
+    /// Starter 90, Professional 365, Enterprise 2555 (7 years).
+    ///
+    /// <para>GAP-004: this is a DENORMALIZED SNAPSHOT of <c>SubscriptionPlan.AuditLogRetentionDays</c>, copied
+    /// on provisioning (<c>TenantProvisioningService</c>) and on plan change (<c>TenantLifecycleService</c>) —
+    /// the same rule as <see cref="MaxEmployees"/>. <c>AuditLogPurgeService</c> reads THIS column, so a plan
+    /// value that is not copied here has no effect on what gets deleted. The 90 below is the fallback for
+    /// tenants created before the tiers were seeded, not the intended value for a paying tier.</para>
+    ///
+    /// <para>The former <c>TODO(subscription)</c> here ("derive from the plan tier once a proper
+    /// Subscription/Plan entity exists") was stale — <see cref="SubscriptionPlan"/> shipped with US-ADM-009.</para>
     /// </summary>
     public int AuditLogRetentionDays { get; set; } = 90;
 

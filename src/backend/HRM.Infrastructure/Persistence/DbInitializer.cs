@@ -570,11 +570,20 @@ public static class DbInitializer
     /// </summary>
     private static async Task SeedSubscriptionPlansAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
-        var defaults = new (string Name, string Code, decimal PriceMonthly, int TrialDays, int? MaxEmployees)[]
+        // GAP-004: AuditLogRetentionDays per tier, from the technical doc's plan matrix
+        // ("Audit log retention (days) | 90 / 365 / 7y") and §19.13 ("7 years (configurable; some plans =
+        // 90 days/1 year)"). These were previously unset, so all three tiers fell to the entity default of
+        // 90 and an Enterprise tenant paying for 7-year retention was purged at 90 days.
+        const int RetentionStarter = 90;
+        const int RetentionProfessional = 365;
+        const int RetentionEnterprise = 2555;   // 7 years
+
+        var defaults = new (string Name, string Code, decimal PriceMonthly, int TrialDays, int? MaxEmployees,
+            int AuditLogRetentionDays)[]
         {
-            ("Starter", "starter", 0m, 30, 25),
-            ("Professional", "professional", 49m, 14, 200),
-            ("Enterprise", "enterprise", 199m, 0, null),
+            ("Starter", "starter", 0m, 30, 25, RetentionStarter),
+            ("Professional", "professional", 49m, 14, 200, RetentionProfessional),
+            ("Enterprise", "enterprise", 199m, 0, null, RetentionEnterprise),
         };
 
         var existingCodes = await db.SubscriptionPlans
@@ -583,7 +592,7 @@ public static class DbInitializer
         var existing = existingCodes.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var added = 0;
-        foreach (var (name, code, price, trialDays, maxEmployees) in defaults)
+        foreach (var (name, code, price, trialDays, maxEmployees, auditLogRetentionDays) in defaults)
         {
             if (existing.Contains(code))
                 continue;
@@ -596,6 +605,7 @@ public static class DbInitializer
                 PriceMonthly = price,
                 TrialDays = trialDays,
                 MaxEmployees = maxEmployees,
+                AuditLogRetentionDays = auditLogRetentionDays,
                 // DF-5/BR-6: seed the historical default of 2 template language variants so existing behaviour
                 // is preserved for freshly-seeded plans. The consuming service also falls back to 2 when unset.
                 MaxTemplateLanguageVariants = 2,

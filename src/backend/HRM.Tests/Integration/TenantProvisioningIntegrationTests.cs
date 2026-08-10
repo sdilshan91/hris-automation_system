@@ -79,7 +79,8 @@ public sealed class TenantProvisioningIntegrationTests
     }
 
     /// <summary>Seeds an active plan and returns its id. TrialDays controls trial-vs-active behaviour (BR-3).</summary>
-    private async Task<Guid> SeedPlanAsync(int trialDays = 14, bool isActive = true, int? maxEmployees = 50)
+    private async Task<Guid> SeedPlanAsync(int trialDays = 14, bool isActive = true, int? maxEmployees = 50,
+        int auditLogRetentionDays = 365)
     {
         var plan = new SubscriptionPlan
         {
@@ -89,6 +90,7 @@ public sealed class TenantProvisioningIntegrationTests
             PriceMonthly = 99m,
             TrialDays = trialDays,
             MaxEmployees = maxEmployees,
+            AuditLogRetentionDays = auditLogRetentionDays,
             IsActive = isActive,
             CreatedAt = DateTime.UtcNow,
         };
@@ -272,6 +274,27 @@ public sealed class TenantProvisioningIntegrationTests
         tenant.EnabledModules.Should().Contain(HRM.Domain.Authorization.PlanModules.Payroll);
         tenant.EnabledModules.Should().NotContain(HRM.Domain.Authorization.PlanModules.Recruitment);
         tenant.MaxEmployees.Should().Be(25); // also inherited from the plan
+    }
+
+    // ── GAP-004: the plan's audit-retention window must reach the tenant column ─────────────
+    // AuditLogPurgeService reads Tenant.AuditLogRetentionDays, so a plan value that provisioning never
+    // copies has no effect on what is deleted: every tenant, on every tier, was purged on the entity
+    // default of 90 days. An Enterprise tenant paying for 7-year retention (tech doc §19.13, plan matrix
+    // "90 / 365 / 7y") lost six and three-quarter years of audit history to a daily job.
+    [Fact]
+    public async Task Provision_InheritsAuditLogRetentionFromPlan_GAP004()
+    {
+        var planId = await SeedPlanAsync(auditLogRetentionDays: 2555);   // Enterprise tier: 7 years
+
+        var (service, _) = Service();
+        var result = await service.ProvisionAsync(Input(planId));
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+        tenant.AuditLogRetentionDays.Should().Be(2555,
+            "the purge job reads this column -- leaving it at the 90-day default silently overrides the "
+            + "retention tier the customer is paying for");
     }
 
     // ── §7: default master data seeded for the new tenant ───────────────────

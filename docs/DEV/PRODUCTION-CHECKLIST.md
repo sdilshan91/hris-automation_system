@@ -69,6 +69,14 @@ SELECT table_name, string_agg(privilege_type, ',')
 FROM information_schema.role_table_grants
 WHERE grantee = 'hrm_app' AND table_schema = 'public' GROUP BY 1;
 
+-- (d2) GAP-005 audit immutability: the runtime role must hold SELECT+INSERT and NOT UPDATE/DELETE on the
+-- audit tables — expect exactly two rows, each reading "INSERT,SELECT".
+SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type)
+FROM information_schema.role_table_grants
+WHERE grantee = 'hrm_app' AND table_schema = 'public'
+  AND table_name IN ('audit_logs', 'employee_field_audit_logs')
+GROUP BY 1;
+
 -- (d) THE check: zero tenant-scoped tables missing their policy — expect 0 ROWS
 SELECT c.table_name
 FROM information_schema.columns c
@@ -83,7 +91,12 @@ WHERE c.table_schema = 'public'
 ```
 
 - [ ] (a) roles have the right flags · [ ] (b) `not_owned = 0` · [ ] (c) grants cover every written table ·
-      [ ] (d) **zero rows**
+      [ ] (d2) **both audit tables read exactly `INSERT,SELECT`** · [ ] (d) **zero rows**
+
+> **(d2) is a security control, not hygiene.** If either audit table still shows UPDATE or DELETE for
+> `hrm_app`, the audit trail is rewritable by anything holding the app's credentials, and the "append-only"
+> claim in `AuditLogController` is false for that environment. Re-run `roles.sql` — its REVOKE block is
+> idempotent. The retention purge is unaffected: it runs on the privileged connection.
 
 > **Do not check a table count against a memorised number.** It was 120 at the 2026-07-11 validation and 135
 > on the current dev database — both correct for their schema. Query (d) compares the estate against itself,

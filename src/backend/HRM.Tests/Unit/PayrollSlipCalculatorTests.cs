@@ -116,6 +116,54 @@ public sealed class PayrollSlipCalculatorTests
         r.PaidDays.Should().Be(11m);
     }
 
+    // ── GAP-003 (MONEY): pro-ration AND LOP together — the combination nothing covered ──────────
+    // Every other arm in this file sets LopDays: 0 OR ProRataPaidDays: null, never both, which is exactly
+    // why a double-applied pro-ration survived: the LOP daily rate was computed from the ALREADY pro-rated
+    // basic, so it halved for a half-month joiner and every mid-month joiner/leaver was under-deducted.
+    //
+    // 22 working days, BASIC 22,000, 11 paid days, 2 LOP days.
+    //   Earnings pro-rate to 11,000 for 11 paid days = 1,000/day, so two unpaid days must remove 2,000.
+    //   The pre-fix code produced 1,000 (a 500/day rate). This asserts the 2,000.
+    [Fact]
+    public void Compute_MidMonthJoinerWithLop_DeductsFullDailyRate_NotDoubleProRated_GAP003()
+    {
+        var input = new PayrollSlipInput(
+            Guid.NewGuid(),
+            new[] { Comp("BASIC", SalaryComponentType.Earning, 22_000m, 1) },
+            WorkingDays: 22m, LopDays: 2m, ProRataPaidDays: 11m);
+
+        var r = PayrollSlipCalculator.Compute(input, LopId);
+
+        var lop = r.Lines.Single(l => l.ComponentId == LopId);
+        lop.Amount.Should().Be(2_000m,
+            "the LOP daily rate is monthly_basic / working_days = 22000/22 = 1000, and the pro-ration is "
+            + "already applied to the earnings line -- applying it to the daily rate too would halve the "
+            + "deduction to 1000 and silently overpay every mid-month joiner and leaver");
+
+        // The rest of the slip pins that the fix did not disturb the pro-ration itself.
+        r.GrossEarnings.Should().Be(11_000m);    // 22000 * 11/22
+        r.TotalDeductions.Should().Be(2_000m);
+        r.NetSalary.Should().Be(9_000m);         // 9 genuinely-paid days at 1000/day
+        r.LopDays.Should().Be(2m);
+    }
+
+    // The same rate, reached from the leaver side and with a non-halving factor, so the arm above cannot
+    // pass on a coincidence of 11/22. 20 working days, 15 paid, BASIC 40,000 -> 2,000/day, 3 LOP days.
+    [Fact]
+    public void Compute_MidMonthLeaverWithLop_DailyRateIsIndependentOfProRataFactor_GAP003()
+    {
+        var input = new PayrollSlipInput(
+            Guid.NewGuid(),
+            new[] { Comp("BASIC", SalaryComponentType.Earning, 40_000m, 1) },
+            WorkingDays: 20m, LopDays: 3m, ProRataPaidDays: 15m);
+
+        var r = PayrollSlipCalculator.Compute(input, LopId);
+
+        r.Lines.Single(l => l.ComponentId == LopId).Amount.Should().Be(6_000m);  // 40000/20 * 3
+        r.GrossEarnings.Should().Be(30_000m);                                    // 40000 * 15/20
+        r.NetSalary.Should().Be(24_000m);                                        // 12 paid days * 2000
+    }
+
     [Fact]
     public void Compute_JoinerAfterPeriod_ZeroPaidDays_YieldsZeroPay()
     {

@@ -135,6 +135,13 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
             BillingEmail = ownerEmail,
             ContactEmail = ownerEmail,
             MaxEmployees = plan.MaxEmployees,
+            // GAP-004: the plan's audit-log retention window, snapshotted onto the tenant exactly like
+            // MaxEmployees above — AuditLogPurgeService reads the tenant column, so a plan value that is
+            // never copied here means EVERY tenant is purged on the 90-day default no matter what they pay
+            // for. Tech doc §19.13 and the plan matrix (§"Audit log retention (days) | 90 / 365 / 7y")
+            // define this as a plan-tiered value, so an Enterprise tenant silently getting 90 days is both
+            // a compliance and a commercial defect.
+            AuditLogRetentionDays = plan.AuditLogRetentionDays,
             // US-ADM-009 (FR-6 / test hint): inherit the chosen plan's enabled modules. CoreHR is always on. A
             // legacy plan with no configured modules falls back to all canonical modules so existing provisioning
             // behaviour is preserved.
