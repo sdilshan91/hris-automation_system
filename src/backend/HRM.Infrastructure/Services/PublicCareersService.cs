@@ -55,6 +55,9 @@ public sealed class PublicCareersService : IPublicCareersService
 
         var items = vacancies.Select(v => new PublicVacancyListItemDto
         {
+            // GAP-011: without Id the careers page could browse but never apply — POST
+            // /careers/vacancies/{vacancyId}/apply needs it and no public payload carried it.
+            Id = v.Id,
             Slug = v.Slug!,
             ReferenceNumber = v.ReferenceNumber,
             Title = v.Title,
@@ -98,6 +101,7 @@ public sealed class PublicCareersService : IPublicCareersService
 
         return Result<PublicVacancyDetailDto>.Success(new PublicVacancyDetailDto
         {
+            Id = v.Id,   // GAP-011 — see ListOpenAsync
             Slug = v.Slug!,
             ReferenceNumber = v.ReferenceNumber,
             Title = v.Title,

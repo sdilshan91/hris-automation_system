@@ -40217,6 +40217,8 @@ export interface components {
             description?: string | null;
             employmentType?: components["schemas"]["EmploymentType"];
             employmentTypeName?: string | null;
+            /** Format: uuid */
+            id?: string;
             locationName?: string | null;
             /** Format: date-time */
             publishedAt?: string | null;
@@ -40236,6 +40238,8 @@ export interface components {
             departmentName?: string | null;
             employmentType?: components["schemas"]["EmploymentType"];
             employmentTypeName?: string | null;
+            /** Format: uuid */
+            id?: string;
             locationName?: string | null;
             /** Format: date-time */
             publishedAt?: string | null;
@@ -40831,6 +40835,7 @@ export interface components {
         };
         TenantSettingsHiringSettingsDto: {
             autoCreateUserOnHire?: boolean;
+            publicCareersEnabled?: boolean;
         };
         TenantSettingsLocalizationDto: {
             currency?: string | null;
@@ -40892,6 +40897,7 @@ export interface components {
         };
         TenantSettingsUpdateHiringSettingsRequest: {
             autoCreateUserOnHire?: boolean;
+            publicCareersEnabled?: boolean | null;
         };
         TenantSettingsUpdateLocalizationRequest: {
             currency?: string | null;

@@ -224,6 +224,47 @@ public sealed class TenantSettingsServiceTests
 
     // ── Hiring settings (US-REC-010 FR-5/BR-7, ISSUE-140) ────────────────────
 
+    // ── GAP-011: PublicCareersEnabled had NO WRITER outside test fixtures ───────────────────────────
+    // The whole public careers surface is gated on this flag, so with nothing able to set it the feature was
+    // off for every real tenant no matter how many vacancies were published. It rides on the hiring-settings
+    // surface because that is the adjacent recruitment-config endpoint.
+
+    [Fact]
+    public async Task UpdateHiringSettings_can_finally_turn_the_public_careers_page_ON_gap011()
+    {
+        await SeedTenantAsync(_tenantId);
+        var service = CreateService();
+
+        var result = await service.UpdateHiringSettingsAsync(
+            new UpdateHiringSettingsRequest(AutoCreateUserOnHire: false, PublicCareersEnabled: true));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.PublicCareersEnabled.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == _tenantId);
+        tenant.PublicCareersEnabled.Should().BeTrue("the flag the careers page reads must be persisted");
+    }
+
+    [Fact]
+    public async Task UpdateHiringSettings_with_a_NULL_careers_flag_leaves_it_unchanged_gap011()
+    {
+        // The nullable is the safety property: an older client that omits the field must not silently switch
+        // the careers page off. A non-nullable bool defaulting to false would do exactly that.
+        await SeedTenantAsync(_tenantId);
+        var service = CreateService();
+        await service.UpdateHiringSettingsAsync(
+            new UpdateHiringSettingsRequest(AutoCreateUserOnHire: false, PublicCareersEnabled: true));
+
+        await service.UpdateHiringSettingsAsync(
+            new UpdateHiringSettingsRequest(AutoCreateUserOnHire: true));   // careers flag omitted entirely
+
+        using var db = CreateDbContext();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Id == _tenantId);
+        tenant.PublicCareersEnabled.Should().BeTrue("omitting the field means 'leave unchanged', not 'disable'");
+        tenant.AutoCreateUserOnHire.Should().BeTrue("the field that WAS supplied still applies");
+    }
+
     [Fact]
     public async Task UpdateHiringSettings_Persists_AndWritesBeforeAfterAudit()
     {

@@ -258,6 +258,9 @@ public sealed class TenantSettingsService : ITenantSettingsService
         var before = ToHiringSettingsDto(tenant);
 
         tenant.AutoCreateUserOnHire = request.AutoCreateUserOnHire;
+        // GAP-011: null = leave unchanged (see UpdateHiringSettingsRequest).
+        if (request.PublicCareersEnabled.HasValue)
+            tenant.PublicCareersEnabled = request.PublicCareersEnabled.Value;
         tenant.UpdatedAt = DateTime.UtcNow;
 
         var after = ToHiringSettingsDto(tenant);
@@ -599,5 +602,5 @@ public sealed class TenantSettingsService : ITenantSettingsService
     private static SessionPolicyDto ToSessionPolicyDto(Tenant t) => new(
         t.IdleTimeoutMinutes, t.AbsoluteTimeoutHours, t.MaxConcurrentSessions, t.ConcurrentSessionStrategy);
 
-    private static HiringSettingsDto ToHiringSettingsDto(Tenant t) => new(t.AutoCreateUserOnHire);
+    private static HiringSettingsDto ToHiringSettingsDto(Tenant t) => new(t.AutoCreateUserOnHire, t.PublicCareersEnabled);
 }

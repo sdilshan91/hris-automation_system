@@ -75,9 +75,15 @@ export class CareersService {
       .pipe(map((res) => this.normalizeList(res)));
   }
 
-  /** Single public vacancy detail by id (§8). Anonymous — no credentials. */
-  getPublicVacancy(id: string): Observable<IPublicVacancy> {
-    return this.http.get<IPublicVacancy>(`${this.careersBase}/${id}`);
+  /**
+   * Single public vacancy detail by SLUG (§8). Anonymous — no credentials.
+   *
+   * GAP-011: this took an `id` and interpolated it into `GET /careers/vacancies/{slug}`, so every detail
+   * fetch 404'd. The route is keyed by slug; the vacancy ID is what the APPLY route needs, and both are now
+   * on the public DTOs.
+   */
+  getPublicVacancy(slug: string): Observable<IPublicVacancy> {
+    return this.http.get<IPublicVacancy>(`${this.careersBase}/${slug}`);
   }
 
   // ─── Apply (multipart, progress) ─────────────────────────

@@ -28989,6 +28989,10 @@
             "nullable": true,
             "type": "string"
           },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
           "locationName": {
             "nullable": true,
             "type": "string"
@@ -29048,6 +29052,10 @@
           },
           "employmentTypeName": {
             "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
             "type": "string"
           },
           "locationName": {
@@ -30944,6 +30952,9 @@
         "properties": {
           "autoCreateUserOnHire": {
             "type": "boolean"
+          },
+          "publicCareersEnabled": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -31129,6 +31140,10 @@
         "additionalProperties": false,
         "properties": {
           "autoCreateUserOnHire": {
+            "type": "boolean"
+          },
+          "publicCareersEnabled": {
+            "nullable": true,
             "type": "boolean"
           }
         },

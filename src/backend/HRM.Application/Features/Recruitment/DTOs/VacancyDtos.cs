@@ -67,6 +67,14 @@ public sealed record VacancyListItemDto
 /// </summary>
 public sealed record PublicVacancyListItemDto
 {
+    /// <summary>
+    /// GAP-011: the public DTOs exposed only <c>Slug</c>, but <c>POST /careers/vacancies/{vacancyId}/apply</c>
+    /// takes the ID — so a visitor could browse the careers page and then never apply, because the id was
+    /// never in any payload the page received. Exposing it publicly is consistent with the contract that
+    /// already exists: the apply route puts the same id in a public URL.
+    /// </summary>
+    public Guid Id { get; init; }
+
     public string Slug { get; init; } = string.Empty;
     public string ReferenceNumber { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;
@@ -83,6 +91,14 @@ public sealed record PublicVacancyListItemDto
 /// </summary>
 public sealed record PublicVacancyDetailDto
 {
+    /// <summary>
+    /// GAP-011: the public DTOs exposed only <c>Slug</c>, but <c>POST /careers/vacancies/{vacancyId}/apply</c>
+    /// takes the ID — so a visitor could browse the careers page and then never apply, because the id was
+    /// never in any payload the page received. Exposing it publicly is consistent with the contract that
+    /// already exists: the apply route puts the same id in a public URL.
+    /// </summary>
+    public Guid Id { get; init; }
+
     public string Slug { get; init; } = string.Empty;
     public string ReferenceNumber { get; init; } = string.Empty;
     public string Title { get; init; } = string.Empty;

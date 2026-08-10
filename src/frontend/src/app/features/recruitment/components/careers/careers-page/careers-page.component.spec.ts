@@ -16,19 +16,19 @@ describe('CareersPageComponent', () => {
 
   const vac = (over: Partial<IPublicVacancy>): IPublicVacancy => ({
     id: 'v',
+    slug: 'vac-slug',
     referenceNumber: 'VAC-1',
     title: 'Role',
     departmentName: null,
-    jobTitleName: null,
     employmentType: null,
     locationName: null,
     description: null,
     qualifications: null,
     salaryMin: null,
     salaryMax: null,
-    currency: null,
+    salaryCurrency: null,
     applicationDeadline: null,
-    postedAt: '2026-06-01',
+    publishedAt: '2026-06-01',
     ...over,
   });
 

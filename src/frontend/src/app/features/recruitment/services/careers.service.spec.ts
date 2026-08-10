@@ -26,19 +26,19 @@ describe('CareersService', () => {
 
   const mockVacancy: IPublicVacancy = {
     id: 'vac-1',
+    slug: 'vac-slug',
     referenceNumber: 'VAC-2026-0001',
     title: 'Senior Engineer',
     departmentName: 'Engineering',
-    jobTitleName: 'Engineer',
     employmentType: 'FullTime',
     locationName: 'HQ',
     description: '<p>Role</p>',
     qualifications: '<p>Skills</p>',
     salaryMin: 100,
     salaryMax: 200,
-    currency: 'USD',
+    salaryCurrency: 'USD',
     applicationDeadline: '2026-12-31',
-    postedAt: '2026-06-01T00:00:00Z',
+    publishedAt: '2026-06-01T00:00:00Z',
   };
 
   const mockApplicant: IApplicant = {
