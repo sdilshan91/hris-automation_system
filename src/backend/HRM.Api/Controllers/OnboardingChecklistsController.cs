@@ -66,6 +66,30 @@ public sealed class OnboardingChecklistsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/onboarding/checklists/employee/{employeeId}
+    /// GAP-013 / AC-3: the employee's current ACTIVE checklist, or 200 with a null body when they have none.
+    ///
+    /// <para>Route ordering matters: this is declared AFTER <c>{id:guid}</c> in the file but the literal
+    /// <c>employee/</c> segment makes it unambiguous — <c>{id:guid}</c> cannot match a two-segment path.</para>
+    ///
+    /// <para>200-with-null rather than 404: having no checklist is the normal state before a first
+    /// assignment, and the assignment screen needs to distinguish "none yet" (assign freely) from
+    /// "already has one" (show the AC-3 replace/merge prompt). A 404 would collapse those two.</para>
+    /// </summary>
+    [HttpGet("employee/{employeeId:guid}")]
+    [RequirePermission("Onboarding.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<OnboardingChecklistInstanceDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetActiveByEmployee(Guid employeeId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetActiveChecklistByEmployeeQuery(employeeId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<OnboardingChecklistInstanceDto?>.Ok(result.Value));
+    }
+
+    /// <summary>
     /// POST /api/v1/onboarding/checklists
     /// AC-2/AC-3: assigns a checklist to a new hire. Creates task instances with calculated due dates and
     /// pending status, resolves responsible parties (FR-3), and queues notifications via the outbox (NFR-3).

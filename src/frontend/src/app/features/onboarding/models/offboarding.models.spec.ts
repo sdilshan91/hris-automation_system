@@ -14,7 +14,7 @@ describe('offboarding.models helpers', () => {
   const FIXED = new Date(2026, 5, 17); // 2026-06-17 local
 
   const inst = (over: Partial<IOffboardingInstance> = {}): IOffboardingInstance => ({
-    offboardingId: 'off-1',
+    id: 'off-1',
     employeeId: 'emp-1',
     lastWorkingDay: '2026-07-31',
     reason: 'Resignation',
@@ -27,7 +27,7 @@ describe('offboarding.models helpers', () => {
         clearanceStatus: 'pending',
         tasks: [
           {
-            taskId: 't1',
+            id: 't1',
             title: 'Return laptop',
             responsibleRole: 'IT',
             dueDate: '2026-07-30',
@@ -37,7 +37,7 @@ describe('offboarding.models helpers', () => {
             linkedAssetId: 'a-1',
           },
           {
-            taskId: 't2',
+            id: 't2',
             title: 'Optional survey',
             responsibleRole: 'HR',
             dueDate: '2026-07-25',
@@ -87,7 +87,7 @@ describe('offboarding.models helpers', () => {
           clearanceStatus: 'cleared',
           tasks: [
             {
-              taskId: 't1',
+              id: 't1',
               title: 'Return laptop',
               responsibleRole: 'IT',
               dueDate: '2026-07-30',

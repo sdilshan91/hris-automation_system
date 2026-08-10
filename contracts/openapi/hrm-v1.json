@@ -43075,6 +43075,46 @@
         ]
       }
     },
+    "/api/v1/onboarding/checklists/employee/{employeeId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "employeeId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingOnboardingChecklistInstanceDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingOnboardingChecklistInstanceDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingOnboardingChecklistInstanceDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "OnboardingChecklists"
+        ]
+      }
+    },
     "/api/v1/onboarding/checklists/me": {
       "get": {
         "responses": {

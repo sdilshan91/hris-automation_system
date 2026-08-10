@@ -302,6 +302,28 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         return Result<OnboardingChecklistInstanceDto>.Success(ToDto(instance, 0));
     }
 
+    /// <inheritdoc />
+    public async Task<Result<OnboardingChecklistInstanceDto?>> GetActiveByEmployeeAsync(
+        Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<OnboardingChecklistInstanceDto?>.Failure("Tenant context is not resolved.", 400);
+
+        // Tenant scoping is the global query filter (OnboardingChecklistInstance is BaseEntity-derived and
+        // filtered in AppDbContext), so an employee id from another tenant simply finds nothing.
+        var instance = await _dbContext.OnboardingChecklistInstances
+            .AsNoTracking()
+            .Include(c => c.Tasks)
+            .Where(c => c.EmployeeId == employeeId && c.Status == OnboardingChecklistStatus.Active)
+            .OrderByDescending(c => c.CreatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // GAP-013: "no active checklist" is the ORDINARY case for a first assignment, so it is a successful
+        // null rather than a 404 — the AC-3 prompt only appears when one already exists.
+        return Result<OnboardingChecklistInstanceDto?>.Success(
+            instance is null ? null : ToDto(instance, 0));
+    }
+
     // ── AC-4 / FR-5 / FR-6: modify ──────────────────────────────────────
 
     public async Task<Result<OnboardingChecklistInstanceDto>> ModifyAsync(

@@ -18,7 +18,7 @@ describe('OffboardingInitiateComponent', () => {
   let navigateSpy: jasmine.Spy;
 
   const created: IOffboardingInstance = {
-    offboardingId: 'off-9',
+    id: 'off-9',
     employeeId: 'emp-1',
     employeeName: 'Jane Doe',
     lastWorkingDay: '2026-12-31',

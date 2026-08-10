@@ -32,8 +32,8 @@ describe('ExitInterviewService', () => {
   });
 
   const interview = (): IExitInterview => ({
-    exitInterviewId: 'ei-1',
-    offboardingId: 'off-1',
+    id: 'ei-1',
+    offboardingInstanceId: 'off-1',
     interviewMode: 'hr_conducted',
     interviewDate: '2026-06-17',
     responses: [{ questionId: 'q1', selectedOption: 'Pay' }],
@@ -94,7 +94,7 @@ describe('ExitInterviewService', () => {
     expect(req.request.withCredentials).toBeTrue();
     req.flush(interview());
 
-    expect(result!.exitInterviewId).toBe('ei-1');
+    expect(result!.id).toBe('ei-1');
   });
 
   it('getByOffboarding surfaces a 404 (no interview yet) to the subscriber', () => {
@@ -130,7 +130,7 @@ describe('ExitInterviewService', () => {
     expect(req.request.body).toEqual(request);
     req.flush(interview());
 
-    expect(result!.offboardingId).toBe('off-1');
+    expect(result!.offboardingInstanceId).toBe('off-1');
   });
 
   it('record surfaces a BR-1 duplicate 409 to the subscriber', () => {

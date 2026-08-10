@@ -18,7 +18,7 @@ describe('OffboardingService', () => {
   const base = `${environment.apiBaseUrl}/offboarding`;
 
   const instance = (over: Partial<IOffboardingInstance> = {}): IOffboardingInstance => ({
-    offboardingId: 'off-1',
+    id: 'off-1',
     employeeId: 'emp-1',
     employeeName: 'Jane Doe',
     lastWorkingDay: '2026-07-31',
@@ -32,7 +32,7 @@ describe('OffboardingService', () => {
         clearanceStatus: 'pending',
         tasks: [
           {
-            taskId: 't-1',
+            id: 't-1',
             title: 'Return laptop',
             responsibleRole: 'IT',
             dueDate: '2026-07-30',
@@ -85,7 +85,7 @@ describe('OffboardingService', () => {
     expect(req.request.body).toEqual(request);
     req.flush(instance());
 
-    expect(result!.offboardingId).toBe('off-1');
+    expect(result!.id).toBe('off-1');
   });
 
   it('initiate surfaces a BR-1 invalid-status 4xx to the subscriber', () => {

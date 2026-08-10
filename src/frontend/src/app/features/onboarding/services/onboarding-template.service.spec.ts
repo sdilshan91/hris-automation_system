@@ -30,8 +30,8 @@ describe('OnboardingTemplateService', () => {
     description: null,
     isActive: true,
     taskCount: 3,
-    applicableDepartmentIds: [],
-    applicableJobTitleIds: [],
+    applicableDepartments: [],
+    applicableJobTitles: [],
     ...over,
   });
 
@@ -39,8 +39,8 @@ describe('OnboardingTemplateService', () => {
     id: 'tpl-1',
     templateName: 'Engineering New Hire',
     description: 'Welcome aboard',
-    applicableDepartmentIds: ['dept-1'],
-    applicableJobTitleIds: [],
+    applicableDepartments: ['dept-1'],
+    applicableJobTitles: [],
     isActive: true,
     tasks: [
       {
@@ -150,8 +150,8 @@ describe('OnboardingTemplateService', () => {
     const request: ICreateOnboardingTemplateRequest = {
       templateName: 'New Hire',
       description: null,
-      applicableDepartmentIds: [],
-      applicableJobTitleIds: [],
+      applicableDepartments: [],
+      applicableJobTitles: [],
       isActive: true,
       tasks: [
         {
@@ -181,8 +181,8 @@ describe('OnboardingTemplateService', () => {
       .create({
         templateName: 'Dup',
         description: null,
-        applicableDepartmentIds: [],
-        applicableJobTitleIds: [],
+        applicableDepartments: [],
+        applicableJobTitles: [],
         isActive: true,
         tasks: [
           { title: 'X', dueOffsetDays: 0, isMandatory: false, sortOrder: 0 },

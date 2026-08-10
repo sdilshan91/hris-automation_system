@@ -30,7 +30,9 @@ import {
  * ApiResponse<T> envelope, so this service never touches `.data` (matches
  * OnboardingTemplateService and every other FE feature service in this repo).
  *
- * CONTRACT (assumed — reconcile with backend; mapping kept in ONE place here):
+ * CONTRACT — RECONCILED 2026-08-10 against contracts/openapi/hrm-v1.json (GAP-013). This block
+ * previously said "(assumed — reconcile with backend)" and was never reconciled; that comment is
+ * what made the drift look deliberate. Verified route list:
  *   GET    /onboarding/checklists/applicable?employeeId=:id  -> IApplicableTemplate[]
  *   GET    /onboarding/checklists/preview?employeeId=:e&templateId=:t -> IChecklistPreview
  *   GET    /onboarding/checklists/employee/:employeeId       -> IAssignedChecklist | null
@@ -49,7 +51,7 @@ export class OnboardingChecklistService {
    * job title + universal templates, active only (AC-1 / FR-1 / BR-1).
    */
   getApplicableTemplates(employeeId: string): Observable<IApplicableTemplate[]> {
-    return this.http.get<IApplicableTemplate[]>(`${this.base}/applicable`, {
+    return this.http.get<IApplicableTemplate[]>(`${this.base}/applicable-templates`, {
       params: { employeeId },
       withCredentials: true,
     });
@@ -102,7 +104,8 @@ export class OnboardingChecklistService {
     instanceId: string,
     request: IModifyChecklistRequest,
   ): Observable<IAssignedChecklist> {
-    return this.http.patch<IAssignedChecklist>(
+    // GAP-013: the route is PUT /checklists/{id}; PATCH returned 405 for every modify.
+    return this.http.put<IAssignedChecklist>(
       `${this.base}/${instanceId}`,
       request,
       { withCredentials: true },

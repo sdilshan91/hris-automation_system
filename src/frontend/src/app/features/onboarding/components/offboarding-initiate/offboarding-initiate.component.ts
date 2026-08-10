@@ -284,7 +284,7 @@ export class OffboardingInitiateComponent implements OnInit, OnDestroy {
           this.liveMessage.set(msg);
           this.toastr.success(msg);
           // Jump straight to the clearance dashboard for the new instance (AC-3).
-          this.router.navigate(['/offboarding', instance.offboardingId]);
+          this.router.navigate(['/offboarding', instance.id]);
         },
         error: (err: HttpErrorResponse) => {
           this.submitting.set(false);

@@ -44,8 +44,8 @@ export interface IOnboardingTemplate {
   id: string;
   templateName: string;
   description?: string | null;
-  applicableDepartmentIds: string[];
-  applicableJobTitleIds: string[];
+  applicableDepartments: string[];
+  applicableJobTitles: string[];
   isActive: boolean;
   tasks: IOnboardingTask[];
   taskCount?: number;
@@ -60,8 +60,8 @@ export interface IOnboardingTemplateSummary {
   description?: string | null;
   isActive: boolean;
   taskCount: number;
-  applicableDepartmentIds: string[];
-  applicableJobTitleIds: string[];
+  applicableDepartments: string[];
+  applicableJobTitles: string[];
   updatedAt?: string;
 }
 
@@ -69,8 +69,8 @@ export interface IOnboardingTemplateSummary {
 export interface ICreateOnboardingTemplateRequest {
   templateName: string;
   description?: string | null;
-  applicableDepartmentIds: string[];
-  applicableJobTitleIds: string[];
+  applicableDepartments: string[];
+  applicableJobTitles: string[];
   isActive: boolean;
   tasks: IOnboardingTaskRequest[];
 }

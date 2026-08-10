@@ -963,7 +963,7 @@ export class ChecklistAssignmentComponent {
       templateId,
       overrideStartDate: this.preview()?.startDate ?? null,
       mode: this.chosenMode(),
-      tasks,
+      additionalTasks: tasks,
     };
   }
 

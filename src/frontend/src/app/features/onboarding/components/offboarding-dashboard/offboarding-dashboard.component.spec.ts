@@ -19,7 +19,7 @@ describe('OffboardingDashboardComponent', () => {
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const itTask = (over: Partial<IOffboardingTask> = {}): IOffboardingTask => ({
-    taskId: 't-it',
+    id: 't-it',
     title: 'Return laptop',
     responsibleRole: 'IT',
     dueDate: '2026-07-30',
@@ -32,7 +32,7 @@ describe('OffboardingDashboardComponent', () => {
   });
 
   const finTask = (over: Partial<IOffboardingTask> = {}): IOffboardingTask => ({
-    taskId: 't-fin',
+    id: 't-fin',
     title: 'Clear advances',
     responsibleRole: 'Finance',
     dueDate: '2026-07-29',
@@ -45,7 +45,7 @@ describe('OffboardingDashboardComponent', () => {
   });
 
   const instance = (over: Partial<IOffboardingInstance> = {}): IOffboardingInstance => ({
-    offboardingId: 'off-1',
+    id: 'off-1',
     employeeId: 'emp-1',
     employeeName: 'Jane Doe',
     lastWorkingDay: '2026-07-31',
@@ -114,7 +114,7 @@ describe('OffboardingDashboardComponent', () => {
     await setup();
     expect(serviceSpy.getById).toHaveBeenCalledWith('off-1');
     expect(component.loading()).toBeFalse();
-    expect(component.instance()?.offboardingId).toBe('off-1');
+    expect(component.instance()?.id).toBe('off-1');
   });
 
   it('surfaces a load error', async () => {

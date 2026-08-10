@@ -30,8 +30,8 @@ describe('TemplateBuilderComponent', () => {
     id: 'tpl-copy',
     templateName: 'Engineering New Hire (Copy)',
     description: 'Welcome',
-    applicableDepartmentIds: ['d1'],
-    applicableJobTitleIds: [],
+    applicableDepartments: ['d1'],
+    applicableJobTitles: [],
     isActive: true,
     tasks: [
       {
@@ -260,7 +260,7 @@ describe('TemplateBuilderComponent', () => {
   it('saves a valid template and posts a tenant-free, dense-sortOrder payload', async () => {
     await setup();
     component.form.controls.templateName.setValue('Engineering New Hire');
-    component.form.controls.applicableDepartmentIds.setValue(['d1']);
+    component.form.controls.applicableDepartments.setValue(['d1']);
     const t0 = component.tasks.at(0).controls;
     t0.title.setValue('Sign contract');
     t0.category.setValue('Documentation');
@@ -277,7 +277,7 @@ describe('TemplateBuilderComponent', () => {
     expect(serviceSpy.create).toHaveBeenCalledTimes(1);
     const payload = serviceSpy.create.calls.mostRecent().args[0];
     expect(payload.templateName).toBe('Engineering New Hire');
-    expect(payload.applicableDepartmentIds).toEqual(['d1']);
+    expect(payload.applicableDepartments).toEqual(['d1']);
     expect(payload.tasks.length).toBe(2);
     // sort_order is derived from on-screen order (FR-3).
     expect(payload.tasks.map((t) => t.sortOrder)).toEqual([0, 1]);

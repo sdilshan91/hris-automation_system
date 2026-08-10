@@ -109,8 +109,11 @@ export interface IAssignChecklistRequest {
   overrideStartDate?: string | null;
   /** Required only when the employee already has an active checklist (AC-3). */
   mode?: AssignMode | null;
-  /** Final (possibly inline-edited) task set the HR officer confirmed. */
-  tasks: IChecklistTaskRequest[];
+  /**
+   * GAP-013: the wire field is `additionalTasks`, not `tasks` — the API bound nothing, so the HR officer's
+   * inline-edited task set was silently discarded on every assignment (AC-2).
+   */
+  additionalTasks: IChecklistTaskRequest[];
 }
 
 /** Modify request for an existing checklist instance (AC-4 / FR-5 / FR-6). */

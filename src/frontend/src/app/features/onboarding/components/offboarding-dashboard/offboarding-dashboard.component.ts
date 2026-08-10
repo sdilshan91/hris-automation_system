@@ -146,7 +146,7 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
                   <span class="ml-auto text-xs text-neutral-400">{{ dept.tasks.length }}</span>
                 </header>
                 <div class="space-y-3 mt-3">
-                  @for (task of dept.tasks; track task.taskId) {
+                  @for (task of dept.tasks; track task.id) {
                     <ng-container [ngTemplateOutlet]="taskCard" [ngTemplateOutletContext]="{ $implicit: task }" />
                   }
                 </div>
@@ -171,7 +171,7 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
                 </button>
                 @if (isExpanded(dept.department)) {
                   <div class="space-y-3 mt-3" @fadeIn>
-                    @for (task of dept.tasks; track task.taskId) {
+                    @for (task of dept.tasks; track task.id) {
                       <ng-container [ngTemplateOutlet]="taskCard" [ngTemplateOutletContext]="{ $implicit: task }" />
                     }
                   </div>
@@ -325,11 +325,11 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
         }
 
         @if (task.clearanceStatus !== 'cleared') {
-          @if (editingTask() === task.taskId) {
+          @if (editingTask() === task.id) {
             <div class="mt-3 space-y-2" @fadeIn>
-              <label class="sr-only" [attr.for]="'remarks-' + task.taskId">Remarks</label>
+              <label class="sr-only" [attr.for]="'remarks-' + task.id">Remarks</label>
               <textarea
-                [id]="'remarks-' + task.taskId"
+                [id]="'remarks-' + task.id"
                 class="input-notion text-xs"
                 rows="2"
                 [maxlength]="maxRemarks"
@@ -338,9 +338,9 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
                 placeholder="Remarks (optional)…"
               ></textarea>
               <div class="flex items-center gap-2">
-                <button type="button" class="btn-approve" [disabled]="busyTask() === task.taskId"
+                <button type="button" class="btn-approve" [disabled]="busyTask() === task.id"
                   (click)="recordClearance(task, 'approved')">Approve</button>
-                <button type="button" class="btn-issues" [disabled]="busyTask() === task.taskId"
+                <button type="button" class="btn-issues" [disabled]="busyTask() === task.id"
                   (click)="recordClearance(task, 'pending_issues')">Pending Issues</button>
                 <button type="button" class="btn-link ml-auto" (click)="cancelEdit()">Cancel</button>
               </div>
@@ -530,7 +530,7 @@ export class OffboardingDashboardComponent implements OnInit, OnDestroy {
 
   // ─── Per-task clearance (AC-3) ──────────────────────────────
   startEdit(task: IOffboardingTask): void {
-    this.editingTask.set(task.taskId);
+    this.editingTask.set(task.id);
     this.remarksDraft.set(task.remarks ?? '');
   }
   cancelEdit(): void {
@@ -540,9 +540,9 @@ export class OffboardingDashboardComponent implements OnInit, OnDestroy {
 
   recordClearance(task: IOffboardingTask, status: ClearanceDecision): void {
     const remarks = this.remarksDraft().trim() || null;
-    this.busyTask.set(task.taskId);
+    this.busyTask.set(task.id);
     this.offboardingService
-      .recordClearance(task.taskId, { status, remarks })
+      .recordClearance(task.id, { status, remarks })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (inst) => {
@@ -613,7 +613,7 @@ export class OffboardingDashboardComponent implements OnInit, OnDestroy {
     this.finishing.set(true);
     this.completeError.set(null);
     this.offboardingService
-      .complete(inst.offboardingId)
+      .complete(inst.id)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (updated) => {
