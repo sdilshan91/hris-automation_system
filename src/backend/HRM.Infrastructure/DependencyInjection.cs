@@ -854,6 +854,27 @@ public static class DependencyInjection
         // log-only seam, so the app starts and tests run with no SMTP server (safe to merge without live SMTP).
         if (string.IsNullOrWhiteSpace(configuration["Smtp:Host"]))
         {
+            // GAP-015: a blank Smtp:Host silently selects a sender that DELIVERS NOTHING. That is the right
+            // default for dev/CI, and unacceptable in Production: BR-1 designates password-reset and
+            // account-lockout mail non-suppressible, so "quietly sent no email" is a security-relevant
+            // failure, not a degraded feature. Fail fast at startup instead of discovering it when a locked-out
+            // user cannot get back in.
+            //
+            // Read from IConfiguration rather than IHostEnvironment so the guard lives with the registration
+            // it protects — AddInfrastructure has no host environment, and pushing environment awareness down
+            // a layer for one check is worse than reading the variable the host already publishes here.
+            var environmentName = configuration["ASPNETCORE_ENVIRONMENT"]
+                                  ?? configuration["DOTNET_ENVIRONMENT"];
+            if (string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "Smtp:Host is not configured, so the log-only email sender would be selected — the "
+                    + "application would accept password-reset and account-lockout requests and send NOTHING "
+                    + "(US-NTF-006 FR-8, BR-1). Configure Smtp:Host (plus Smtp:Username/Password via "
+                    + "user-secrets or the environment) before starting in Production. See the go-live "
+                    + "checklist, docs/DEV/PRODUCTION-CHECKLIST.md.");
+            }
+
             services.AddScoped<IEmailSender, LogOnlyEmailSender>();
         }
         else

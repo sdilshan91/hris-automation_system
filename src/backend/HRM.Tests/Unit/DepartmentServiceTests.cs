@@ -8,6 +8,7 @@
 
 using FluentAssertions;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Features.Departments.DTOs;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
@@ -52,7 +53,8 @@ public sealed class DepartmentServiceTests : IDisposable
     }
 
     private async Task<Guid> SeedDepartment(
-        string name, string code, Guid? parentId = null, bool isActive = true, Guid? tenantId = null)
+        string name, string code, Guid? parentId = null, bool isActive = true, Guid? tenantId = null,
+        Guid? managerId = null)
     {
         using var db = CreateDbContext();
         var dept = new Department
@@ -61,6 +63,7 @@ public sealed class DepartmentServiceTests : IDisposable
             TenantId = tenantId ?? _tenantId,
             Name = name,
             Code = code,
+            ManagerId = managerId,
             ParentDepartmentId = parentId,
             IsActive = isActive,
             IsDeleted = false,
@@ -75,7 +78,9 @@ public sealed class DepartmentServiceTests : IDisposable
     /// exercised against a real, same-tenant employee (BUG-014 fix requires the manager
     /// to be an existing same-tenant employee). EmploymentType/Status use entity defaults.
     /// </summary>
-    private async Task<Guid> SeedEmployee(string firstName, string lastName, Guid? tenantId = null)
+    private async Task<Guid> SeedEmployee(
+        string firstName, string lastName, Guid? tenantId = null,
+        Guid? departmentId = null, bool isActive = true)
     {
         using var db = CreateDbContext();
         var emp = new Employee
@@ -86,10 +91,10 @@ public sealed class DepartmentServiceTests : IDisposable
             FirstName = firstName,
             LastName = lastName,
             Email = $"{firstName}.{lastName}@test.com".ToLowerInvariant(),
-            DepartmentId = BaseEntity.NewUuidV7(),
+            DepartmentId = departmentId ?? BaseEntity.NewUuidV7(),
             JobTitleId = BaseEntity.NewUuidV7(),
             DateOfJoining = DateTime.UtcNow.AddYears(-1),
-            IsActive = true,
+            IsActive = isActive,
             IsDeleted = false,
         };
         db.Employees.Add(emp);
@@ -663,6 +668,56 @@ public sealed class DepartmentServiceTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Value!.Should().HaveCount(2);
+    }
+
+    // ── ISSUE-364: EmployeeCount + ManagerName ──────────────────────────────────────────────────────
+    // DepartmentDto returned neither, while the FE model invented both — so the list rendered "undefined
+    // employees", the manager line was permanently blank, and the deactivate dialog's active-employee
+    // warning could never fire (`undefined > 0` is false). Both sibling DTOs (JobTitle, Location) already
+    // returned a count, which is what made departments the inconsistent one.
+
+    [Fact]
+    public async Task GetAll_returns_the_ACTIVE_employee_count_per_department_issue364()
+    {
+        var deptId = await SeedDepartment("Engineering", "ENG");
+        await SeedEmployee("Ann", "One", departmentId: deptId);
+        await SeedEmployee("Bob", "Two", departmentId: deptId);
+        await SeedEmployee("Ex", "Employee", departmentId: deptId, isActive: false);   // must NOT count
+        await SeedEmployee("Other", "Dept");                                            // different department
+
+        var result = await service_GetAll();
+
+        var eng = result.Single(d => d.Code == "ENG");
+        eng.EmployeeCount.Should().Be(2, "only ACTIVE employees of THIS department count");
+    }
+
+    [Fact]
+    public async Task GetAll_returns_the_manager_display_name_issue364()
+    {
+        var managerId = await SeedEmployee("Jane", "Smith");
+        await SeedDepartment("Managed", "MGD", managerId: managerId);
+
+        var result = await service_GetAll();
+
+        result.Single(d => d.Code == "MGD").ManagerName.Should().Be("Jane Smith");
+    }
+
+    [Fact]
+    public async Task GetAll_leaves_manager_name_null_when_no_manager_is_set_issue364()
+    {
+        await SeedDepartment("Unmanaged", "UNM");
+
+        var result = await service_GetAll();
+
+        result.Single(d => d.Code == "UNM").ManagerName.Should().BeNull();
+        result.Single(d => d.Code == "UNM").EmployeeCount.Should().Be(0);
+    }
+
+    private async Task<IReadOnlyList<DepartmentDto>> service_GetAll()
+    {
+        var result = await CreateService().GetAllAsync();
+        result.IsSuccess.Should().BeTrue(result.Error);
+        return result.Value!;
     }
 
     // ── Tenant context not resolved ──────────────────────────────────

@@ -269,7 +269,17 @@ public sealed class DepartmentService : IDepartmentService
         if (department is null)
             return Result<DepartmentDto>.Failure("Department not found.", 404);
 
-        return Result<DepartmentDto>.Success(ToDto(department));
+        // ISSUE-364: single-department read, so a count + a name lookup are two scalars, not an N+1.
+        var count = await _dbContext.Employees
+            .CountAsync(e => e.DepartmentId == departmentId && e.IsActive, cancellationToken);
+        var managerName = department.ManagerId is { } mid
+            ? await _dbContext.Employees.AsNoTracking()
+                .Where(e => e.Id == mid)
+                .Select(e => e.FirstName + " " + e.LastName)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
+        return Result<DepartmentDto>.Success(ToDto(department, count, managerName));
     }
 
     public async Task<Result<IReadOnlyList<DepartmentDto>>> GetAllAsync(
@@ -290,7 +300,27 @@ public sealed class DepartmentService : IDepartmentService
             .OrderBy(d => d.Name)
             .ToListAsync(cancellationToken);
 
-        var dtos = departments.Select(ToDto).ToList();
+        // ISSUE-364: batch-load the active-employee counts and manager names in ONE query each, mirroring
+        // JobTitleService.GetAllAsync. Doing either per row would turn a department list into an N+1.
+        var departmentIds = departments.Select(d => d.Id).ToList();
+        var employeeCounts = await _dbContext.Employees
+            .Where(e => departmentIds.Contains(e.DepartmentId) && e.IsActive)
+            .GroupBy(e => e.DepartmentId)
+            .Select(g => new { DepartmentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.DepartmentId, g => g.Count, cancellationToken);
+
+        var managerIds = departments.Where(d => d.ManagerId.HasValue).Select(d => d.ManagerId!.Value).Distinct().ToList();
+        var managerNames = managerIds.Count == 0
+            ? new Dictionary<Guid, string>()
+            : await _dbContext.Employees.AsNoTracking()
+                .Where(e => managerIds.Contains(e.Id))
+                .Select(e => new { e.Id, Name = e.FirstName + " " + e.LastName })
+                .ToDictionaryAsync(e => e.Id, e => e.Name, cancellationToken);
+
+        var dtos = departments.Select(d => ToDto(
+            d,
+            employeeCounts.GetValueOrDefault(d.Id, 0),
+            d.ManagerId.HasValue ? managerNames.GetValueOrDefault(d.ManagerId.Value) : null)).ToList();
         return Result<IReadOnlyList<DepartmentDto>>.Success(dtos);
     }
 
@@ -384,8 +414,10 @@ public sealed class DepartmentService : IDepartmentService
         return ToDto(department);
     }
 
-    private static DepartmentDto ToDto(Department d) => new()
+    private static DepartmentDto ToDto(Department d, int employeeCount = 0, string? managerName = null) => new()
     {
+        EmployeeCount = employeeCount,
+        ManagerName = managerName,
         Id = d.Id,
         Name = d.Name,
         Code = d.Code,
