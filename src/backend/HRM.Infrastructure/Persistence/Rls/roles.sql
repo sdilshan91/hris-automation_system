@@ -47,3 +47,30 @@ ALTER DEFAULT PRIVILEGES FOR ROLE hrm_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hrm_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE hrm_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO hrm_app;
+
+-- ── Audit immutability (GAP-005) ────────────────────────────────────────────
+-- The audit trail is append-only. Until now that was a CODE CONVENTION only —
+-- AuditLogController says as much ("append-only by code convention … REVOKE DEFERRED") — while the
+-- runtime role held UPDATE and DELETE on every table, audit included. Anything holding the app's
+-- credentials (a SQL-injection foothold, a stray ExecuteDelete, a compromised connection string)
+-- could silently rewrite the one record class the rest of the compliance story rests on.
+--
+-- hrm_app keeps SELECT + INSERT (the app must still write audit rows on every request) and loses
+-- UPDATE + DELETE. This must come AFTER the grants above, which are deliberately broad.
+--
+-- Verified safe before revoking — every legitimate mutation path already runs PRIVILEGED:
+--   * AuditLogPurgeService is the ONLY code that deletes audit rows (RemoveRange), and its caller
+--     AuditLogPurgeJob calls SetSystemContext() first, which routes to hrm_owner.
+--   * TenantDataDeletionService only ADDS audit rows (AC-4 retains them) and likewise runs in system
+--     context.
+--   * No FK into audit_logs cascades a delete (users has no such reference), so ordinary row deletes
+--     elsewhere cannot reach these tables.
+-- If a future path needs to mutate audit rows, route it through the privileged connection rather than
+-- widening this grant back.
+REVOKE UPDATE, DELETE ON audit_logs FROM hrm_app;
+REVOKE UPDATE, DELETE ON employee_field_audit_logs FROM hrm_app;
+
+-- NEW-AUDIT-TABLE RULE: ALTER DEFAULT PRIVILEGES above grants UPDATE/DELETE on FUTURE tables to
+-- hrm_app, so a newly-added audit table starts out mutable. Add its REVOKE here when you add it —
+-- the same standing obligation as the NEW-TENANT-TABLE RLS RULE. Re-running roles.sql is idempotent
+-- and re-applies every revoke above.

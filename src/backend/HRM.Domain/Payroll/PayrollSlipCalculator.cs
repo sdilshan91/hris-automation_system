@@ -118,14 +118,17 @@ public static class PayrollSlipCalculator
 
         var lines = new List<PayrollSlipLine>(ordered.Count + 1);
 
-        // Pro-rated BASIC monthly amount, used as the LOP daily-rate basis (BR-2).
-        decimal proRatedBasic = 0m;
+        // FULL monthly BASIC — the LOP daily-rate basis (BR-2: daily_rate = monthly_basic / working_days).
+        // GAP-003: this was previously the PRO-RATED basic, which applied the pro-ration a SECOND time
+        // (the daily rate is already a per-day figure, so scaling it by paid/working days under-deducts
+        // every mid-month joiner and leaver). See the LOP block below for the worked numbers.
+        decimal monthlyBasic = 0m;
 
         foreach (var c in ordered)
         {
             var proRated = Round(c.MonthlyAmount * proRataFactor);
             if (string.Equals(c.Code, BasicCode, StringComparison.OrdinalIgnoreCase))
-                proRatedBasic = proRated;
+                monthlyBasic = c.MonthlyAmount;
 
             var basis = proRataFactor == 1m
                 ? $"{c.MonthlyAmount:0.##}/month"
@@ -135,11 +138,22 @@ public static class PayrollSlipCalculator
         }
 
         // BR-2: LOP deduction line. daily_rate = monthly_basic / working_days; amount = daily_rate * lop_days.
+        //
+        // GAP-003 (MONEY): the divisor pair here must stay CONSISTENT — full monthly basic over full working
+        // days. Using the pro-rated basic over full working days (what this did) lands the pro-ration twice
+        // and under-deducts every mid-month joiner/leaver, silently and only when BOTH pro-ration and LOP
+        // apply — the one combination no test covered.
+        //   22 working days, BASIC 22,000, joins mid-month (11 paid days), 2 LOP days
+        //     before: (22,000 x 11/22) / 22 = 500/day  ->  1,000 deducted   (half the true rate)
+        //     after:   22,000 / 22        = 1,000/day  ->  2,000 deducted
+        // The employee earns 11,000 for 11 paid days, i.e. 1,000/day, so two unpaid days must remove 2,000.
+        // Equivalent to `proRatedBasic / paidDaysBeforeLop`, which is algebraically identical but divides by
+        // zero for a 0-paid-day joiner — a case Compute_JoinerAfterPeriod_ZeroPaidDays_YieldsZeroPay covers.
         var lopDays = input.LopDays < 0m ? 0m : input.LopDays;
         decimal lopAmount = 0m;
         if (lopDays > 0m && workingDays > 0m)
         {
-            var dailyRate = proRatedBasic / workingDays;
+            var dailyRate = monthlyBasic / workingDays;
             lopAmount = Round(dailyRate * lopDays);
             if (lopAmount > 0m)
             {

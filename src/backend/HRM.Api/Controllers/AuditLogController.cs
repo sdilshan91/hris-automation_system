@@ -12,12 +12,16 @@ namespace HRM.Api.Controllers;
 /// <summary>
 /// US-ADM-008: Tenant-scoped AUDIT LOG viewing + export for a Tenant Admin / Tenant Owner / Auditor (BR-1). All
 /// operations target ONLY the current tenant — the service filters EXPLICITLY by ITenantContext.TenantId
-/// (audit_logs has no EF global query filter; AC-1/FR-1). There is no tenant id in any route or body.
+/// (AC-1/FR-1), with the GAP-006 global query filter as a second layer beneath it. There is no tenant id in
+/// any route or body.
 ///
 /// <para>Reads (list + detail) require <c>Audit.View</c> (Tenant Owner, Tenant Admin, AND the read-only
 /// Auditor). Export requires <c>Audit.Export</c> (Tenant Owner + Tenant Admin ONLY — the Auditor is read-only
-/// and CANNOT export, FR-7). The table is append-only by code convention (AC-5/NFR-3): there is intentionally NO
-/// update/delete endpoint. PostgreSQL RLS + DB-role UPDATE/DELETE revocation are DEFERRED platform infra.</para>
+/// and CANNOT export, FR-7). The table is append-only (AC-5/NFR-3): there is intentionally NO update/delete
+/// endpoint, and as of GAP-005 that is ENFORCED rather than merely conventional — <c>Rls/roles.sql</c> revokes
+/// UPDATE and DELETE on <c>audit_logs</c> and <c>employee_field_audit_logs</c> from the runtime
+/// <c>hrm_app</c> role. The retention purge is the one legitimate deleter and runs on the privileged
+/// connection. A <c>tenant_isolation</c> RLS policy also exists on the table.</para>
 /// </summary>
 [ApiController]
 [Route("api/v1/tenant/audit-logs")]

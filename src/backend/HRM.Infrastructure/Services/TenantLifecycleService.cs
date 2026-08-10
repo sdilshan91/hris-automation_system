@@ -322,6 +322,9 @@ public sealed class TenantLifecycleService : ITenantLifecycleService
         tenant.PlanId = plan.Code;
         tenant.EnabledModules = toModules;
         tenant.MaxEmployees = plan.MaxEmployees; // keep the denormalized snapshot honest (matches provisioning)
+        // GAP-004: same snapshot rule for the audit-retention window. Without this an upgrade to a longer
+        // retention tier changes the price and not the behaviour — the purge job reads this column.
+        tenant.AuditLogRetentionDays = plan.AuditLogRetentionDays;
         tenant.UpdatedAt = now;
 
         var detail = JsonSerializer.Serialize(new

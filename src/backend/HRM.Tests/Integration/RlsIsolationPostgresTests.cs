@@ -116,11 +116,25 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
         }
 
         // Grants for the app + owner roles (owner has BYPASSRLS but still needs table privileges).
+        //
+        // ⚠ This block MIRRORS Rls/roles.sql by hand — roles.sql cannot be executed here because it uses
+        // psql-only constructs (\gexec and :'var' interpolation) that Npgsql will not parse. Any privilege
+        // change made there must be made here too, or this suite validates a permission set production
+        // does not have. (The same hand-maintained-mirror hazard as finding S-2; the audit-immutability
+        // arm below is what keeps THIS half of the mirror honest.)
         await ExecAsync(superCs,
             $"""
              GRANT USAGE ON SCHEMA public TO {AppRole}, {OwnerRole};
              GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {AppRole}, {OwnerRole};
              GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {AppRole}, {OwnerRole};
+             """);
+
+        // GAP-005: audit immutability. roles.sql revokes UPDATE/DELETE on the audit tables from the runtime
+        // role AFTER the broad grant above; mirrored here in the same order for the same reason.
+        await ExecAsync(superCs,
+            $"""
+             REVOKE UPDATE, DELETE ON audit_logs FROM {AppRole};
+             REVOKE UPDATE, DELETE ON employee_field_audit_logs FROM {AppRole};
              """);
 
         // (3) Simulate the increment-3 reconciler: ENABLE + FORCE RLS on every tenant_id table (excl. users).
@@ -272,6 +286,51 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
         {
             ((long)(await cmd.ExecuteScalarAsync())!).Should().Be(0);
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 6b. AUDIT IMMUTABILITY (GAP-005) — the runtime role may APPEND to the audit trail but never rewrite or
+    //     erase it. Before this, "append-only" was a code convention (no update/delete endpoint) while
+    //     hrm_app held UPDATE and DELETE on every table, so a SQL-injection foothold or a stray
+    //     ExecuteDelete could silently rewrite audit history. Deletion is still needed by the retention
+    //     purge, which runs on the PRIVILEGED connection — asserted here too, because a revoke that also
+    //     broke the purge would be a different bug rather than a fix.
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task AuditTables_AreAppendOnly_ForTheRuntimeRole_ButPurgeableByOwner_GAP005()
+    {
+        foreach (var table in new[] { "audit_logs", "employee_field_audit_logs" })
+        {
+            // SELECT and INSERT must survive — the app writes an audit row on essentially every request,
+            // so an over-broad revoke would take the product down rather than harden it.
+            var canSelect = await ScalarBoolAsync(_appConnString,
+                $"SELECT has_table_privilege('{AppRole}', '{table}', 'SELECT')");
+            var canInsert = await ScalarBoolAsync(_appConnString,
+                $"SELECT has_table_privilege('{AppRole}', '{table}', 'INSERT')");
+            canSelect.Should().BeTrue($"{table} must stay readable by the runtime role");
+            canInsert.Should().BeTrue($"{table} must stay writable (append) by the runtime role");
+
+            var canUpdate = await ScalarBoolAsync(_appConnString,
+                $"SELECT has_table_privilege('{AppRole}', '{table}', 'UPDATE')");
+            var canDelete = await ScalarBoolAsync(_appConnString,
+                $"SELECT has_table_privilege('{AppRole}', '{table}', 'DELETE')");
+            canUpdate.Should().BeFalse($"{table} is append-only: the runtime role must not be able to rewrite audit history");
+            canDelete.Should().BeFalse($"{table} is append-only: the runtime role must not be able to erase audit history");
+
+            // The privileged role keeps DELETE so AuditLogPurgeService (US-ADM-008 FR-6) still works.
+            var ownerCanDelete = await ScalarBoolAsync(_ownerConnString,
+                $"SELECT has_table_privilege('{OwnerRole}', '{table}', 'DELETE')");
+            ownerCanDelete.Should().BeTrue($"the retention purge deletes {table} rows on the privileged connection");
+        }
+
+        // Belt and braces: the privilege bits above are what Postgres CONSULTS, but assert the real
+        // statement is actually refused, so a future GRANT cannot make the bits lie.
+        await using var conn = new NpgsqlConnection(_appConnString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand("UPDATE audit_logs SET event_type = 'tampered'", conn);
+        var act = async () => await cmd.ExecuteNonQueryAsync();
+        await act.Should().ThrowAsync<PostgresException>()
+            .Where(e => e.SqlState == "42501", "insufficient_privilege");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -528,6 +587,14 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
 
     private static string WithRole(string baseConnString, string user, string password) =>
         new NpgsqlConnectionStringBuilder(baseConnString) { Username = user, Password = password }.ToString();
+
+    private static async Task<bool> ScalarBoolAsync(string connString, string sql)
+    {
+        await using var conn = new NpgsqlConnection(connString);
+        await conn.OpenAsync();
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        return (bool)(await cmd.ExecuteScalarAsync())!;
+    }
 
     private static async Task ExecAsync(string connString, string sql)
     {
