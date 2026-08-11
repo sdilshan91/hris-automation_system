@@ -1,8 +1,16 @@
 name: semgrep
 
-# SAST — ADVISORY (does not fail the build yet). Runs our custom tenant-isolation
-# rules (the BUG-003 class) plus the official C# + TypeScript registry packs.
-# Flip to blocking (drop continue-on-error / `|| true`) once the codebase is clean.
+# SAST. Two deliberately different gates:
+#
+#   1. BLOCKING — our own tenant-isolation rules at ERROR severity (.semgrep/). Currently that is
+#      hrm-raw-sql-no-tenant-predicate alone, and the tree is at zero. Flipped to blocking by GAP-007
+#      (2026-08-11) after the triage established which rules a linter can actually prove; see the header of
+#      .semgrep/tenant-isolation.yml for why the 265 IgnoreQueryFilters findings are WARNING rather than
+#      ERROR (RLS backstops them) and what guards the bug class semgrep cannot see.
+#
+#   2. ADVISORY — everything else, including the third-party registry packs. Making p/csharp and
+#      p/typescript blocking is a separate decision with its own triage; nothing here pretends it has
+#      been made.
 on:
   push:
   pull_request:
@@ -21,7 +29,19 @@ jobs:
       - name: Validate custom rules
         run: semgrep --validate --config .semgrep/
 
-      - name: Semgrep scan (advisory)
+      # BLOCKING. --error makes findings a non-zero exit; --severity ERROR keeps the gate to the rules we
+      # have proven are worth failing a build over. No continue-on-error, no `|| true` — the two things
+      # that made the previous version unable to stop anything.
+      - name: Tenant-isolation gate (blocking)
+        run: |
+          semgrep scan \
+            --config .semgrep/ \
+            --severity ERROR \
+            --error \
+            --metrics off \
+            src/
+
+      - name: Semgrep scan — full, advisory (registry packs + our WARNING/INFO rules)
         continue-on-error: true
         run: |
           semgrep scan \

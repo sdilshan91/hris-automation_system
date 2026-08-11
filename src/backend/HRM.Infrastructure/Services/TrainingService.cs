@@ -543,6 +543,7 @@ public sealed class TrainingService : ITrainingService
     {
         if (!_db.Database.IsRelational())
             return;
+        // nosemgrep: hrm-raw-sql-no-tenant-predicate -- `SELECT 1 ... FOR UPDATE` by primary key: a row LOCK returning no columns. The id came from a tenant-filtered EF query, and RLS caps the lock to the current tenant regardless.
         await _db.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT 1 FROM training_courses WHERE id = {courseId} FOR UPDATE", cancellationToken);
     }

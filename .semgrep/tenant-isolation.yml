@@ -1,31 +1,42 @@
 # Custom Semgrep rules encoding this platform's #1 invariant — tenant isolation
-# (the BUG-003 cross-tenant-leak class). Runs ADVISORY in CI first (see
-# .github/workflows/semgrep.yml); tighten to blocking once the codebase is clean.
+# (the BUG-003 cross-tenant-leak class).
+#
+# BLOCKING as of GAP-007 (2026-08-11): .github/workflows/semgrep.yml fails the build on any ERROR from
+# THIS file. The registry packs (p/csharp, p/typescript) stay advisory — making third-party packs
+# blocking is a separate decision with its own triage.
+#
+# Severities are set by what each rule can actually prove, which the GAP-007 triage changed:
+#
+#   * The codebase now runs under PostgreSQL RLS, and GAP-001 (#497) made an unresolved context land on
+#     the NOBYPASSRLS role instead of the BYPASSRLS one. Every tenant-scoped table has an RLS policy
+#     (guarded by EveryTenantScopedEntity_HasRlsPolicy_CoverageGuard), so stripping the EF query filter no
+#     longer reaches another tenant's rows — IgnoreQueryFilters_OnAppRole_IsStillTenantIsolatedByRls
+#     proves it against real Postgres. That is why hrm-ignore-query-filters is WARNING and not ERROR: 265
+#     findings that the database already backstops are not 265 blocking defects, and annotating all of
+#     them would be the hand-maintained-list pattern the audit itself flagged as systemic finding S-2.
+#
+#   * What the triage DID find was a different bug class the linter never looked at: a cross-tenant WRITE
+#     from a context with no ambient tenant. ApiCallCounterFlushService was failing with
+#     `42501: new row violates row-level security policy` on every 10s tick — 886 warnings on the running
+#     stack while the full test suite stayed green. Semgrep is the wrong tool for that (it needs to know
+#     the runtime ambient), so it is guarded by HostedServiceTenantScopeTests and two real-Postgres arms
+#     instead. Rule severity should reflect what a linter can prove, not what we wish it could.
+#
 # Justified exceptions: add `// nosemgrep: <rule-id>` with a one-line reason.
 rules:
-  - id: hrm-ignore-query-filters
+  # ── BLOCKING ──────────────────────────────────────────────────────────────
+  - id: hrm-raw-sql-no-tenant-predicate
     languages: [csharp]
     severity: ERROR
     message: |
-      IgnoreQueryFilters() disables the global tenant query filter and is a
-      cross-tenant data-leak risk (BUG-003 class). It is legitimate ONLY in
-      tenant-resolution / system-context lookups. If this use is justified, add
-      `// nosemgrep: hrm-ignore-query-filters` with a one-line reason; otherwise
-      remove it and rely on the global filter.
-    pattern: $X.IgnoreQueryFilters()
-    paths:
-      exclude:
-        - "**/TenantResolution*.cs"
-        - "**/*Tests*.cs"
-        - "**/*Test.cs"
+      Raw SQL bypasses BOTH the EF Core global query filter and (on the privileged connection) RLS.
+      This statement carries no tenant_id predicate. Add one, or if it is genuinely tenant-agnostic
+      (a row lock by primary key, a system table, the GUC setter), add
+      `// nosemgrep: hrm-raw-sql-no-tenant-predicate` with the reason.
 
-  - id: hrm-raw-sql-no-tenant-predicate
-    languages: [csharp]
-    severity: WARNING
-    message: |
-      Raw SQL bypasses EF Core global query filters. Confirm this statement carries
-      an explicit tenant_id predicate (or is genuinely tenant-agnostic system SQL).
-      Without it, raw SQL can read or write across tenants.
+      ERROR because this is the one thing here a linter can actually prove: unlike IgnoreQueryFilters,
+      raw SQL is not backstopped by the EF model, and the whole file's surface is five statements — it is
+      cheap to keep at zero.
     patterns:
       - pattern-either:
           - pattern: $DB.ExecuteSqlRaw(...)
@@ -40,17 +51,46 @@ rules:
         - "**/*Tests*.cs"
         - "**/Migrations/**"
 
+  # ── ADVISORY ──────────────────────────────────────────────────────────────
+  - id: hrm-ignore-query-filters
+    languages: [csharp]
+    severity: WARNING
+    message: |
+      IgnoreQueryFilters() disables the global tenant query filter. Under RLS this is BACKSTOPPED — the
+      database still caps the result to the current tenant (see IgnoreQueryFilters_OnAppRole_IsStill
+      TenantIsolatedByRls) — so this is a readability/intent signal, not a proven leak.
+
+      Two cases where it still deserves a second look:
+        1. On the PRIVILEGED connection (system context / CrossTenantScope), RLS is bypassed, so this
+           really does span tenants. That is usually the point — confirm it is.
+        2. On an entity with NO tenant filter at all (User, Tenant, PlanLimitOverride,
+           TenantLifecycleEvent, TenantScheduledJob), the call strips only the soft-delete filter and is a
+           no-op for tenant scoping. Consider whether you meant to include deleted rows.
+
+      Deliberately WARNING, not ERROR: see the header for why 265 RLS-backstopped findings are not 265
+      blocking defects.
+    pattern: $X.IgnoreQueryFilters()
+    paths:
+      exclude:
+        - "**/TenantResolution*.cs"
+        - "**/*Tests*.cs"
+        - "**/*Test.cs"
+
   - id: hrm-new-entity-missing-base
     languages: [csharp]
     severity: INFO
     message: |
-      Heads-up: a new tenant-scoped entity must derive from BaseEntity AND get a
-      global query filter (TenantId == _tenantContext.TenantId) in
-      AppDbContext.OnModelCreating — otherwise it is not tenant-isolated. Verify
-      this entity is covered (or is deliberately a global/system table).
-    pattern-regex: 'public\s+class\s+\w+\s*:\s*(?!BaseEntity|AuditableEntity)'
+      Heads-up: a new tenant-scoped entity must derive from BaseEntity AND get a global query filter
+      (TenantId == _tenantContext.TenantId) in AppDbContext.OnModelCreating — otherwise it is not
+      tenant-isolated. Verify this entity is covered (or is deliberately a global/system table).
+
+      Both halves are also enforced mechanically: TenantQueryFilterCoverageTests (EF filter) and
+      EveryTenantScopedEntity_HasRlsPolicy_CoverageGuard (RLS policy).
+    pattern-either:
+      - pattern: |
+          public class $E : BaseEntity { ... }
+      - pattern: |
+          public sealed class $E : BaseEntity { ... }
     paths:
       include:
-        - "**/Domain/Entities/**"
-      exclude:
-        - "**/*Tests*.cs"
+        - "**/HRM.Domain/**"

@@ -57,6 +57,7 @@ public sealed class TenantJobRunner : ITenantJobRunner
 
             // set_config(..., is_local => true) == SET LOCAL but accepts a bind parameter, so the tenant id is
             // passed safely as a parameter (not string-interpolated into SQL).
+            // nosemgrep: hrm-raw-sql-no-tenant-predicate -- this statement IS the tenant mechanism: it sets the app.current_tenant GUC that every RLS policy reads. It cannot itself be tenant-predicated.
             await _db.Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT set_config('app.current_tenant', {tenantId.ToString()}, true)",
                 cancellationToken);

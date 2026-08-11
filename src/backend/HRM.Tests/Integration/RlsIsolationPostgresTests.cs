@@ -262,6 +262,76 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
     //  they assert is only meaningful alongside the GUC interceptor that the runtime always pairs it with.)
 
     // ─────────────────────────────────────────────────────────────────────────
+    // 2c. GAP-007 — a CROSS-TENANT WRITER running with no ambient tenant.
+    //
+    //     Found by reading the running stack's log, not by a failing test: after GAP-001 landed,
+    //     ApiCallCounterFlushService logged 886 consecutive "usage flush failed" warnings while the entire
+    //     5385-test suite stayed green. Postgres was returning `42501: new row violates row-level security
+    //     policy for table "tenant_api_usage"` on every tick, the service's catch re-buffered and logged at
+    //     WARNING, and tenant usage metering silently stopped.
+    //
+    //     Nothing caught it because every RLS write arm until now exercised a SINGLE tenant's write. A flush
+    //     writes rows for EVERY tenant that saw traffic, from a BackgroundService with no ambient to inherit —
+    //     a shape the suite had no coverage for at all. Both directions are pinned so the fix cannot be
+    //     "wrap everything in CrossTenantScope" without the first arm noticing.
+    // ─────────────────────────────────────────────────────────────────────────
+    /// <summary>Fixed period so these arms never depend on the wall clock.</summary>
+    private const int UsageYearMonth = 202608;
+
+    [Fact]
+    public async Task AMultiTenantWrite_WithoutAScope_IsRejectedByRls_GAP007()
+    {
+        AmbientTenant.Clear(); // a BackgroundService tick: no request, no job, no tenant
+
+        try
+        {
+            await using var db = RoutedDb(new MutableTenantContext());
+
+            var write = async () => await TenantApiCallUsage.UpsertAsync(
+                db,
+                [new ApiCallCountDelta(_tenantA, UsageYearMonth, 5L), new ApiCallCountDelta(_tenantB, UsageYearMonth, 7L)],
+                DateTime.UtcNow);
+
+            (await write.Should().ThrowAsync<PostgresException>(
+                    "an unscoped writer must be REFUSED rather than quietly writing across tenants"))
+                .Which.SqlState.Should().Be("42501", "RLS WITH CHECK is what refuses it");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    [Fact]
+    public async Task AMultiTenantWrite_InsideACrossTenantScope_Succeeds_GAP007()
+    {
+        // The fix, and the arm that would have caught the regression: the flush declares its cross-tenant
+        // intent, reaches the privileged role, and both tenants' rows land.
+        try
+        {
+            using (CrossTenantScope.Enter())
+            {
+                await using var db = RoutedDb(new MutableTenantContext());
+
+                await TenantApiCallUsage.UpsertAsync(
+                    db,
+                    [new ApiCallCountDelta(_tenantA, UsageYearMonth, 5L), new ApiCallCountDelta(_tenantB, UsageYearMonth, 7L)],
+                    DateTime.UtcNow);
+
+                var written = await db.Set<TenantApiUsage>().IgnoreQueryFilters()
+                    .Where(u => u.TenantId == _tenantA || u.TenantId == _tenantB)
+                    .CountAsync();
+
+                written.Should().Be(2, "one usage row per tenant that saw traffic");
+            }
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // 3. HEADLINE BACKSTOP — a misused IgnoreQueryFilters() cannot cross tenants: EF's filter is removed,
     //    yet RLS still caps the result to the GUC tenant.
     // ─────────────────────────────────────────────────────────────────────────
