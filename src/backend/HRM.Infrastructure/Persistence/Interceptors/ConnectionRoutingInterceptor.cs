@@ -11,15 +11,17 @@ namespace HRM.Infrastructure.Persistence.Interceptors;
 ///
 /// <para><b>Two-connection model:</b> under RLS the runtime path connects as <c>hrm_app</c> (LOGIN,
 /// NOBYPASSRLS) so the <c>app.current_tenant</c> GUC actually constrains it; privileged paths — startup /
-/// migrations / seeding, the system-admin (cross-tenant) context, and any unresolved/no-context flow (e.g. a
-/// no-context background job) — connect as <c>hrm_owner</c> (BYPASSRLS) so they can span tenants and own DDL.
-/// <c>DefaultConnection</c> ⇒ hrm_app; <c>PrivilegedConnection</c> ⇒ hrm_owner.</para>
+/// migrations / seeding and the system-admin (cross-tenant) context — connect as <c>hrm_owner</c> (BYPASSRLS)
+/// so they can span tenants and own DDL. <c>DefaultConnection</c> ⇒ hrm_app; <c>PrivilegedConnection</c> ⇒
+/// hrm_owner.</para>
 ///
-/// <para><b>Selector:</b> <c>usePrivileged = !(ambient is { IsResolved: true, IsSystemContext: false })</c> —
-/// i.e. ONLY a resolved, non-system tenant uses the normal (hrm_app) connection; everything else (unresolved,
-/// null, or system) uses the privileged (hrm_owner) connection. The ambient is used deliberately (not the
-/// scoped tenant context): it flows down the async context and is therefore resolvable at connection-open time
-/// uniformly for HTTP requests, Hangfire jobs, and startup — where no scope may exist.</para>
+/// <para><b>Selector (GAP-001):</b> <c>usePrivileged = ambient is { IsSystemContext: true }</c> — privilege is
+/// granted ONLY to an explicitly-declared system context. Unresolved and null get the normal hrm_app connection.
+/// This is the inverse of the original rule, which handed the BYPASSRLS role to anything that had not resolved a
+/// tenant; see <c>SelectPrivileged</c> for why that made forgetting-to-scope the most dangerous default in the
+/// system. The ambient is used deliberately (not the scoped tenant context): it flows down the async context and
+/// is therefore resolvable at connection-open time uniformly for HTTP requests, Hangfire jobs, and startup —
+/// where no scope may exist.</para>
 ///
 /// <para><b>Non-breaking today (increment 2b):</b> when <c>PrivilegedConnection</c> is null/blank (the committed
 /// default), this ALWAYS uses <c>DefaultConnection</c> and never mutates the connection string — so behaviour is
@@ -86,9 +88,26 @@ public sealed class ConnectionRoutingInterceptor : DbConnectionInterceptor
     }
 
     /// <summary>
-    /// Privileged (hrm_owner) unless the ambient is a resolved, NON-system tenant. Resolved-non-system ⇒ normal
-    /// (hrm_app); unresolved / null / system ⇒ privileged.
+    /// GAP-001 — privileged (hrm_owner) <b>only</b> when the ambient is an explicitly-declared SYSTEM context.
+    /// Everything else, including unresolved and null, gets the normal NOBYPASSRLS <c>hrm_app</c> connection.
+    ///
+    /// <para><b>This used to be inverted</b> (<c>is not { IsResolved: true, IsSystemContext: false }</c>), so an
+    /// unresolved context selected the BYPASSRLS role. That was the fourth and deepest link of GAP-001: an
+    /// unresolved request simultaneously passed tenant resolution, turned the EF global query filters into
+    /// tautologies (they read <c>!IsResolved || …</c>), skipped the BUG-003 access guard, AND landed on a
+    /// connection that ignores RLS. Four independent isolation layers, one shared off-switch.</para>
+    ///
+    /// <para><b>Absence is not authority.</b> "Nothing resolved" and "this is deliberately cross-tenant" were
+    /// indistinguishable, and the more dangerous reading was the default — so forgetting to scope something
+    /// granted it the most powerful role in the system. Now privilege must be asked for
+    /// (<see cref="CrossTenantScope"/> / <c>SetSystemContext()</c>), and the failure mode of forgetting is a
+    /// query that returns nothing rather than one that returns everyone's data.</para>
+    ///
+    /// <para>Callers that legitimately run without a tenant and DO need privilege are explicit about it: startup
+    /// migrations and seeding (<c>hrm_app</c> has DML but no DDL) enter a <see cref="CrossTenantScope"/>, and the
+    /// cross-tenant Hangfire jobs declare <c>SetSystemContext()</c> — which GAP-024 made mechanically enforced
+    /// rather than remembered.</para>
     /// </summary>
     private static bool SelectPrivileged() =>
-        AmbientTenant.Current is not { IsResolved: true, IsSystemContext: false };
+        AmbientTenant.Current is { IsSystemContext: true };
 }

@@ -726,7 +726,15 @@ try
     // return wrong data, so the app refuses to start and surfaces the error.
     try
     {
-        await DbInitializer.RunAsync(app.Services);
+        // GAP-001: startup runs with NO tenant on the async flow, and it needs the privileged (hrm_owner) role —
+        // hrm_app has DML but no DDL, so migrations cannot run as it. Until now that worked only as a side
+        // effect of "unresolved => privileged", the very default GAP-001 inverts. Declaring it explicitly is what
+        // makes the inversion safe: after it, unresolved means RESTRICTED, and a path that genuinely needs
+        // privilege has to say so.
+        using (HRM.Infrastructure.Multitenancy.CrossTenantScope.Enter())
+        {
+            await DbInitializer.RunAsync(app.Services);
+        }
     }
     catch (Exception ex) when (app.Environment.IsDevelopment())
     {
