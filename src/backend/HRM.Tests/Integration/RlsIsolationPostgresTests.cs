@@ -201,6 +201,67 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // 2b. GAP-001 — an UNRESOLVED context, routed by the REAL interceptor, sees nothing.
+    //
+    //     The two halves of this were each already proved (routing picks a role; hrm_app with no GUC returns
+    //     zero rows) but never COMPOSED, and the composition is the actual claim. Before the fix an unresolved
+    //     ambient selected hrm_owner (BYPASSRLS) and the EF filter degenerated to `!IsResolved || …` — a
+    //     tautology — so this same query returned EVERY tenant's employees. Both of those layers failed open
+    //     off the SAME condition, which is why one missing hand-written guard was enough to leak.
+    //
+    //     Goes through ConnectionRoutingInterceptor rather than a hand-picked connection string, because "which
+    //     role does an unresolved request actually land on" is precisely what regressed.
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public async Task UnresolvedContext_RoutedByTheInterceptor_SeesNoRows_GAP001()
+    {
+        var totalAcrossTenants = EmployeesA + EmployeesB;
+        AmbientTenant.Clear(); // an unresolved request: no tenant established anywhere
+
+        try
+        {
+            await using var db = RoutedDb(new MutableTenantContext()); // EF context unresolved too
+            var visible = await db.Employees.CountAsync();
+
+            visible.Should().Be(0,
+                "an unresolved context must reach the NOBYPASSRLS role, where RLS caps it to nothing — before "
+                + "GAP-001 it was routed to hrm_owner and this returned all "
+                + $"{totalAcrossTenants} employees across both tenants");
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    [Fact]
+    public async Task DeclaredSystemContext_RoutedByTheInterceptor_StillSpansTenants_GAP001()
+    {
+        // The other direction, and the reason the fix is an INVERSION rather than a removal: privilege must
+        // still be reachable — it just has to be asked for. Without this arm, "unresolved sees nothing" could
+        // be satisfied by breaking cross-tenant administration entirely.
+        try
+        {
+            using (CrossTenantScope.Enter())
+            {
+                await using var db = RoutedDb(new MutableTenantContext());
+                var visible = await db.Employees.IgnoreQueryFilters().CountAsync();
+
+                visible.Should().Be(EmployeesA + EmployeesB,
+                    "a DECLARED system context must still reach the BYPASSRLS role");
+            }
+        }
+        finally
+        {
+            AmbientTenant.Clear();
+        }
+    }
+
+    // (RoutedDb — the production-shaped context wiring BOTH interceptors — is defined with the
+    //  CrossTenantScope arms further down; these two arms reuse it deliberately, since the routing decision
+    //  they assert is only meaningful alongside the GUC interceptor that the runtime always pairs it with.)
+
+    // ─────────────────────────────────────────────────────────────────────────
     // 3. HEADLINE BACKSTOP — a misused IgnoreQueryFilters() cannot cross tenants: EF's filter is removed,
     //    yet RLS still caps the result to the GUC tenant.
     // ─────────────────────────────────────────────────────────────────────────

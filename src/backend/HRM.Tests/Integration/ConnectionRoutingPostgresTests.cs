@@ -78,14 +78,22 @@ public sealed class ConnectionRoutingPostgresTests : IAsyncLifetime
         finally { AmbientTenant.Clear(); }
     }
 
-    // ── R4 proof: unresolved / no ambient (startup / no-context job) ⇒ PRIVILEGED connection. ──
+    // ── GAP-001 proof, against a REAL Postgres: unresolved / no ambient ⇒ the NON-privileged connection. ──
+    //
+    //    This assertion is deliberately the INVERSE of what it was (it read OwnerAppName, and was correct about
+    //    the code at the time). Unresolved used to select the BYPASSRLS hrm_owner role, which is what made the
+    //    same "nothing resolved" state disengage all four isolation layers at once. Privilege is now something a
+    //    caller has to ask for, so forgetting to scope work fails closed instead of being handed hrm_owner.
+    //
+    //    Proved at the connection level rather than by reading the selector, because the claim that matters is
+    //    which ROLE the database sees — a unit test of the decision cannot tell you the string was applied.
     [Fact]
-    public async Task UnresolvedAmbient_OpensPrivilegedConnection()
+    public async Task UnresolvedAmbient_OpensTheNonPrivilegedConnection()
     {
         AmbientTenant.Clear();
         await using var db = BuildDb(config: Config(_defaultCs, _privilegedCs));
-        (await AppNameAsync(db)).Should().Be(OwnerAppName,
-            "an unresolved / no-context path must route to PrivilegedConnection (hrm_owner)");
+        (await AppNameAsync(db)).Should().Be(AppAppName,
+            "an unresolved path must NOT reach the BYPASSRLS role — absence of a tenant is not authority");
     }
 
     // ── CONTROL: blank PrivilegedConnection ⇒ ALWAYS the default, even under a privileged (system) context.

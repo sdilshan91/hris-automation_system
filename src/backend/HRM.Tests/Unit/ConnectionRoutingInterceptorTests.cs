@@ -2,8 +2,12 @@
 // RLS increment 2b — unit tests for ConnectionRoutingInterceptor's role selector.
 //
 // Proves the pure routing decision (which connection string is applied at ConnectionOpening) for each ambient
-// tenant state, WITHOUT a database: resolved-non-system ⇒ DefaultConnection (hrm_app); system / unresolved /
-// null ⇒ PrivilegedConnection (hrm_owner); and blank-privileged ⇒ ALWAYS default (the non-breaking guarantee).
+// tenant state, WITHOUT a database.
+//
+// GAP-001 inverted this selector. It now reads: SYSTEM context ⇒ PrivilegedConnection (hrm_owner); everything
+// else — resolved tenant, unresolved, null — ⇒ DefaultConnection (hrm_app). Blank-privileged ⇒ ALWAYS default
+// (the non-breaking guarantee). Previously "unresolved" also meant privileged, which made forgetting to scope
+// something the most dangerous thing you could do in this codebase.
 // ============================================================================
 
 using FluentAssertions;
@@ -65,12 +69,43 @@ public sealed class ConnectionRoutingInterceptorTests : IDisposable
     }
 
     [Fact]
-    public void UnresolvedAmbient_Null_RoutesToPrivileged_HrmOwner()
+    public void UnresolvedAmbient_Null_RoutesToDefault_HrmApp()
+    {
+        // GAP-001 — THIS ASSERTION IS DELIBERATELY THE INVERSE of what it was. It previously read
+        // `Should().Be(PrivilegedHost)` and was correct about the code: an unresolved ambient really did select
+        // the BYPASSRLS hrm_owner role. That was the fourth and deepest link of GAP-001, where the same
+        // "nothing resolved" state also turned the EF query filters into tautologies and skipped the BUG-003
+        // guard — four isolation layers sharing one off-switch.
+        //
+        // The specification changed, not the assertion's strictness: privilege must now be ASKED for
+        // (CrossTenantScope / SetSystemContext), so "I forgot to scope this" fails closed instead of being
+        // handed the most powerful role in the system.
+        var interceptor = Build(DefaultCs, PrivilegedCs);
+        AmbientTenant.Clear(); // no ambient established (a request that resolved no tenant)
+
+        RoutedHost(interceptor, DefaultCs).Should().Be(DefaultHost,
+            "absence of a tenant is not authority — unresolved must get the NOBYPASSRLS role");
+    }
+
+    [Fact]
+    public void UnresolvedAmbient_StartingFromPrivileged_IsDowngradedToDefault()
+    {
+        // The direction that actually matters for pooling: connections are reused, so a connection LAST used by
+        // a privileged path must be actively swapped back, not merely left alone. Starting from the privileged
+        // string proves the interceptor downgrades rather than only ever upgrading.
+        var interceptor = Build(DefaultCs, PrivilegedCs);
+        AmbientTenant.Clear();
+
+        RoutedHost(interceptor, PrivilegedCs).Should().Be(DefaultHost);
+    }
+
+    [Fact]
+    public void AResolvedTenantIsNeverPrivileged_EvenStartingFromThePrivilegedString()
     {
         var interceptor = Build(DefaultCs, PrivilegedCs);
-        AmbientTenant.Clear(); // no ambient established (startup / no-context path)
+        AmbientTenant.SetTenant(Guid.NewGuid());
 
-        RoutedHost(interceptor, DefaultCs).Should().Be(PrivilegedHost);
+        RoutedHost(interceptor, PrivilegedCs).Should().Be(DefaultHost);
     }
 
     [Fact]
