@@ -1,3 +1,5 @@
+import { AbstractControl, ValidationErrors } from '@angular/forms';
+
 /**
  * US-CHR-001: Employee models matching the backend API contract.
  *
@@ -52,6 +54,53 @@ export const GENDER_OPTIONS: { value: EmployeeGender; label: string }[] = [
   { value: 'PreferNotToSay', label: 'Prefer Not To Say' },
 ];
 
+/**
+ * GAP-023 — how an employee works, which drives the geo-fence exemption on attendance.
+ * Mirrors the backend `WorkArrangement` enum exactly (OnSite | Hybrid | Remote); a Remote employee is
+ * exempt from location geo-fencing, so this is not cosmetic.
+ */
+export type WorkArrangement = 'OnSite' | 'Hybrid' | 'Remote';
+
+export const WORK_ARRANGEMENT_OPTIONS: { value: WorkArrangement; label: string }[] = [
+  { value: 'OnSite', label: 'On-Site' },
+  { value: 'Hybrid', label: 'Hybrid' },
+  { value: 'Remote', label: 'Remote' },
+];
+
+/**
+ * GAP-023 — FTE validator mirroring the backend `EmployeeFteRules.ValidFte()` EXACTLY: greater than 0,
+ * at most 1.00, and no more than 2 decimal places.
+ *
+ * The scale rule is the one worth having client-side. Without it a user typing 0.333 passes every visible
+ * check and is then rejected by the server, which surfaces as an opaque validation error on submit rather
+ * than beside the field they are editing. Kept in one place so the wizard and the profile cannot disagree
+ * about what a legal FTE is.
+ */
+export function fteValidator(control: AbstractControl): ValidationErrors | null {
+  const raw = control.value;
+  if (raw === null || raw === undefined || raw === '') {
+    return null; // absence is handled by Validators.required, not here
+  }
+
+  const value = Number(raw);
+  if (Number.isNaN(value)) {
+    return { fteInvalid: true };
+  }
+  if (value <= 0 || value > 1) {
+    return { fteRange: true };
+  }
+  // Decimal places, without floating-point rounding games: compare the string form.
+  const decimals = String(raw).split('.')[1]?.length ?? 0;
+  if (decimals > 2) {
+    return { fteScale: true };
+  }
+  return null;
+}
+
+export function workArrangementLabel(value: WorkArrangement | string): string {
+  return WORK_ARRANGEMENT_OPTIONS.find((o) => o.value === value)?.label ?? String(value);
+}
+
 export const EMPLOYMENT_TYPE_OPTIONS: { value: EmploymentType; label: string }[] = [
   { value: 'FullTime', label: 'Full-Time' },
   { value: 'PartTime', label: 'Part-Time' },
@@ -100,6 +149,9 @@ export interface IEmployee {
   locationName: string | null;
   employmentType: EmploymentType;
   status: EmployeeStatus;
+  /** GAP-023: 1.00 = full-time. Drives leave proration and (when enabled) the overtime base. */
+  fte: number;
+  workArrangement: WorkArrangement;
   profilePhotoUrl: string | null;
   /**
    * ISSUE-293: National ID — encrypted PII on the backend. Normal GET/list/profile
@@ -130,6 +182,9 @@ export interface ICreateEmployeeRequest {
   locationId?: string | null;
   employmentType: EmploymentType;
   status?: EmployeeStatus;
+  /** GAP-023. Optional: CreateEmployeeCommand takes `decimal? Fte = null` and defaults to 1.00. */
+  fte?: number | null;
+  workArrangement?: WorkArrangement | null;
   /** ISSUE-293: optional National ID (PII). Sent as free-text; encrypted server-side. */
   nationalId?: string | null;
   customFields?: Record<string, unknown> | null;
@@ -351,6 +406,13 @@ export interface IEmploymentInfoUpdate {
   jobTitleId?: string;
   locationId?: string | null;
   employmentType?: EmploymentType | string;
+  /**
+   * GAP-023. Both mirror the backend `EmploymentInfoUpdate`, where null/absent means LEAVE UNCHANGED —
+   * `EmployeeService` only assigns when the value is present AND differs from the stored one. So omit these
+   * rather than sending 0 or '' from an untouched control.
+   */
+  fte?: number;
+  workArrangement?: WorkArrangement | string;
 }
 
 /** One emergency contact (BE EmergencyContactInput — note the `contactName` key). */
