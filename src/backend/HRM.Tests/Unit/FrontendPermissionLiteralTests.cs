@@ -27,24 +27,23 @@ namespace HRM.Tests.Unit;
 public sealed class FrontendPermissionLiteralTests
 {
     /// <summary>
-    /// Keys present in the FE catalog with no backend counterpart AS OF 2026-08-08 (17 keys), recorded so the drift is
-    /// counted rather than hidden, and so it cannot GROW — a new mismatch fails this test immediately.
+    /// EMPTY, and it must stay that way — ISSUE-363 is closed (2026-08-11).
     ///
-    /// <para>They are NOT fixed here on purpose. Each one needs an authorization decision (is
-    /// <c>Admin.View</c> meant to be a real permission, a UI-only grouping, or a rename of something that
-    /// exists?), and guessing a mapping for a permission string is exactly the kind of change that silently
-    /// grants or removes access. Filed as ISSUE-363; this list must only ever shrink.</para>
+    /// <para>This held 17 keys the Angular catalog offered that the backend had never heard of. The original
+    /// plan was to add all 17 to <c>PermissionCatalog</c>. Comparing them against the 116 that already existed
+    /// showed that would have been wrong: <b>15 were the FE spelling a permission that already exists</b>
+    /// (<c>Employee.View.Self</c> vs <c>Employee.View.Own</c>, <c>Leave.Configure</c> vs
+    /// <c>Leave.ConfigurePolicy</c>, the whole <c>Admin.*</c> group vs <c>Tenant.*</c>/<c>Audit.View</c>), and
+    /// the FE was already using the correct name elsewhere in some cases. Adding them would have produced two
+    /// overlapping authorization vocabularies — roles granting one spelling while guards check the other, which
+    /// fails SILENTLY. The remaining 2 (<c>Recruitment.Interview</c>, <c>Reports.Create</c>) were removed: the
+    /// first is covered by <c>Recruitment.Manage</c>, which already guards every InterviewsController endpoint,
+    /// and the second names a capability the backend does not have.</para>
+    ///
+    /// <para>Leave this empty. A new entry means the frontend has invented a permission again, and the fix is
+    /// almost always to correct the frontend string, not to add a backend one.</para>
     /// </summary>
-    private static readonly HashSet<string> KnownDriftIssue363 =
-    [
-        "Admin.Audit.View", "Admin.Tenant.Configure", "Admin.Users.Manage", "Admin.View",
-        "Attendance.Configure", "Attendance.View",
-        "Employee.Edit.All", "Employee.Edit.Self", "Employee.View.Self",
-        "Leave.Configure", "Leave.View",
-        "Performance.Configure", "Performance.Review", "Performance.View",
-        "Recruitment.Interview", "Recruitment.Offer",
-        "Reports.Create",
-    ];
+    private static readonly HashSet<string> KnownDriftIssue363 = [];
 
     [Fact]
     public void EveryPermissionLiteralUsedByTheAngularApp_ExistsInPermissionCatalog()

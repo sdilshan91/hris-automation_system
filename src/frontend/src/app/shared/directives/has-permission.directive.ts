@@ -14,7 +14,7 @@ import { AuthService } from '../../core/auth/auth.service';
  *
  * Usage:
  *   <button *appHasPermission="'Roles.Manage'">Edit Role</button>
- *   <div *appHasPermission="['Leave.View', 'Leave.Apply']">...</div>
+ *   <div *appHasPermission="['Leave.View.All', 'Leave.Apply']">...</div>
  *
  * When an array is passed, the user needs ANY of the listed permissions.
  */
