@@ -43,6 +43,13 @@ try
             .ReadFrom.Services(services)
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", "HRM.Api")
+            // GAP-035 / §6.11-a: user_id and trace_id were absent from EVERY log record (measured: of 1258
+            // request-scoped property bags, RequestId was in all, these in none). Enrichers rather than a
+            // middleware, because an enricher runs per EVENT and so also covers pre-auth lines, EF Core SQL,
+            // and background jobs — none of which a post-auth middleware can reach.
+            .Enrich.With(new HRM.Api.Observability.TraceContextEnricher())
+            .Enrich.With(new HRM.Api.Observability.CurrentUserEnricher(
+                services.GetRequiredService<IHttpContextAccessor>()))
             // US-PLT-006 (AC-4/AC-5): GlitchTip Serilog sink ADDED ALONGSIDE the console+file sinks above
             // (read from configuration). Error-level only; SendDefaultPii=false; inert when GlitchTip:Dsn is
             // blank (the shipped default). The file sink stays the authoritative QA/RequestId root-cause log.
@@ -73,6 +80,13 @@ try
     // OpenTelemetry:Enabled=false is a hard kill-switch. Traces are ParentBased/ratio sampled (OpenTelemetry:SamplingRatio,
     // default 1.0). See HRM.Api/Observability/ObservabilityExtensions.cs + docs/Architecture/observability-otel-grafana-plan.md.
     builder.Services.AddObservability(builder.Configuration, builder.Environment);
+
+    // GAP-035: with OTel dormant (the shipped default) NOTHING listens for activities, so ASP.NET Core never
+    // creates one and trace_id would be absent from every line — the enricher above would be a control that
+    // emits nothing. This registers a PropagationData-only listener so the W3C trace id exists (and continues an
+    // inbound traceparent) without recording spans. No-ops when OTel is enabled: it brings its own listener and
+    // sampler, and a second always-sample listener would override its sampling decisions.
+    TraceContextActivation.EnableTraceIdsWhenOtelIsDormant(builder.Configuration);
 
     // ===== Error tracking (US-PLT-006: self-hosted GlitchTip, Sentry-API-compatible) =====
     // Captures unhandled exceptions to a SELF-HOSTED GlitchTip instance with stack + release, tagged per tenant,
