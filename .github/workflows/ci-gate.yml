@@ -229,6 +229,13 @@ jobs:
       # The Hangfire SERVER (polling worker loop) only adds noise and races here; storage/client stay
       # registered so anything that enqueues still works. Same flag the integration host uses.
       Hangfire__DisableServer: 'true'
+      # The suite authenticates ~30 times (once per test) against one origin, which trips the auth-login
+      # policy of 10/min per IP. The FIRST CI run proved it: 28 logins returned 200 and 4 returned 429, and
+      # those 429s — not the application — are what failed the run. Disabling here is not weakening a control:
+      # the limiter is exercised directly and exhaustively by GlobalRateLimitPartitionTests (13 arms,
+      # mutation-verified), and the same flag is what the HTTP integration host uses for the same reason. What
+      # this job exists to test is the application behind the limiter.
+      RateLimiting__Disabled: 'true'
       E2E_BASE_URL: http://localhost:4200
     steps:
       - uses: actions/checkout@v4
@@ -307,7 +314,10 @@ jobs:
 
       - name: Run E2E
         working-directory: src/frontend
-        run: npx playwright test --project=chromium
+        # github reporter for inline PR annotations, html so the uploaded artifact actually exists — the
+        # first CI run uploaded nothing because 'github' alone writes no report directory, which is exactly
+        # when you most want one.
+        run: npx playwright test --project=chromium --reporter=github,html
 
       - name: Upload Playwright report
         if: always()
