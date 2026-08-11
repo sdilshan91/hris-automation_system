@@ -82,7 +82,7 @@ A multi-tenant SaaS Human Resource Management platform delivering employee-lifec
 | 1 | Employee self-service adoption (per tenant) | ≥ 90% of active employees use the portal monthly |
 | 2 | Leave processing time | ≤ 24 hours from request to decision (average) |
 | 3 | Payroll run time | Full payroll for 5,000 employees in < 10 minutes |
-| 4 | Platform availability | ≥ 99.5% monthly, measured per tenant |
+| 4 | Platform availability | ≥ 99.5% monthly **platform** uptime (ADR-2026-08-11: not per tenant — the probe is platform-wide and a per-tenant figure would be fabricated) |
 | 5 | Page-load P95 (authenticated pages) | ≤ 2.5 seconds |
 | 6 | Bug-escape rate to production | < 5 critical bugs per release |
 | 7 | Cross-tenant data leak incidents | 0 (zero tolerance) |
@@ -339,7 +339,7 @@ OrangeHRM (orangehrm.com) for module layout, terminology, and self-service patte
 - Architecture must accommodate database-per-tenant for enterprise tier later without rewrite.
 
 ### 6.4 Availability
-- Target ≥ 99.5% monthly uptime per tenant.
+- Target ≥ 99.5% monthly **platform** uptime. **Amended 2026-08-11 (ADR-2026-08-11-uptime-is-platform-not-per-tenant):** this previously read "per tenant", which the system cannot measure — `HealthProbeRecorderJob` records one platform-wide readiness probe into `health_probe`, a table with no `tenant_id`. Reporting a platform number under a per-tenant label would fabricate the metric, which TC-ADM-002-17 explicitly forbids. A platform-level metric can read "up" while one tenant is degraded; that limitation is accepted and stated rather than hidden.
 - Graceful degradation: tenant in `past_due` or `suspended` state surfaces an appropriate banner instead of breaking.
 
 ### 6.5 Security
@@ -847,7 +847,7 @@ hrm-frontend/
 
 ### 11.9 Performance
 - Goal/KPI cycle setup.
-- Goal cascading from org → department → individual.
+- Individual goals with optional manager alignment. **Amended 2026-08-11 (ADR-2026-08-11-goal-ownership-stays-individual):** this previously promised cascading from org → department → individual. `Goal.EmployeeId` is non-nullable, so a department- or company-owned objective cannot be represented, and no story or customer commitment requires one. The tier is **withdrawn, not deferred** — a deferral implies a schedule and there is none. Revisit as a migration on live goal data if department-level OKRs are ever committed.
 - Self-rating, manager rating, optional 360°.
 - Calibration meetings.
 - Final rating publish.
