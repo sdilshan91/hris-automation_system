@@ -12,6 +12,22 @@ import { defineConfig, devices } from '@playwright/test';
  *      login is seeded) and `ng serve` on :4200.
  * Multi-tenant in dev is selected via the `?tenant=e2e` query param (see auth fixture).
  *
+ * DO NOT ADD A SHARED `storageState` (GAP-034, checked 2026-08-11 — it looks obvious and it is wrong here).
+ * The plan proposed saving one logged-in state so the suite authenticates once instead of thirty times. This
+ * app's auth design makes that unsafe:
+ *   - the ACCESS token is deliberately in-memory only (auth.service.ts:41, XSS protection), so a saved state
+ *     contains no usable session — only the `refreshToken` cookie;
+ *   - the SPA does silently restore from that cookie at bootstrap (auth.service.ts:205, APP_INITIALIZER), so
+ *     at first glance the cookie looks sufficient;
+ *   - but refresh tokens are SINGLE-USE with rotation AND reuse-detection. Verified against the running
+ *     backend: replaying one refresh cookie returns 200 the first time and 401 the second, and a detected
+ *     reuse revokes the whole descendant token family (AuthService.cs:480-483).
+ * So thirty browser contexts restoring from one saved state would give one pass and twenty-nine 401s — worse
+ * than logging in each time, and failing in a way that looks like an application bug. If the per-test login
+ * cost genuinely needs removing, the shape that works is a worker-scoped shared browser CONTEXT (one login,
+ * one silent restore, access token alive in memory for the run) — at the cost of order-dependence between
+ * tests, which is its own flakiness class. Not done here; measure first.
+ *
  * CROSS-BROWSER: run a single browser with `npx playwright test --project=firefox` (or `webkit`,
  * `chromium`). Omit `--project` to run all three. The firefox/webkit engines ship with Playwright and
  * are already installed alongside chromium — no extra MCP server or download is needed for cross-browser

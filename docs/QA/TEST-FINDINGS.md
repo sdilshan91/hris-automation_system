@@ -8287,3 +8287,18 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Regression-bound by three arms:** `AMultiTenantWrite_WithoutAScope_IsRejectedByRls_GAP007` (real Postgres — reproduces the exact 42501), `AMultiTenantWrite_InsideACrossTenantScope_Succeeds_GAP007`, and `HostedServiceTenantScopeTests` (population guard over every hosted service, mirroring GAP-024's job guard). Mutation-verified: removing the scope turns the guard red.
 - **Lesson worth keeping:** a caught-and-logged failure is invisible to a test suite that only asserts on outcomes it already expects. The isolation flip was proven correct in both directions by tests and by a live probe, and **still** broke something — because the broken thing failed *quietly*. Reading the log of the running system after a change is a distinct check from running the suite, and it is the one that caught this.
 - **Confidence:** 100% — reproduced in a test, root cause is the Postgres error code itself, fix verified live.
+
+### ISSUE-376 — a client-cancelled request surfaces as an unhandled 500 (pollutes error tracking)
+- **ID:** ISSUE-376
+- **Type:** ISSUE (error handling / observability noise)
+- **Severity:** **LOW** — no data or availability impact; the cost is a false 500 in the log and in GlitchTip, which inflates the error rate and buries real faults.
+- **Status:** `OPEN`
+- **Layer:** BE
+- **Module / US / TC:** Platform / — / — — found 2026-08-11 on the FIRST CI run of the new E2E job (GAP-034)
+- **Title:** `GET /api/v1/tenant/employees` returned **500** with `System.Threading.Tasks.TaskCanceledException` when the browser abandoned the request mid-flight.
+- **Stack (abridged):** `AsyncKeyedLock.AsyncNonKeyedLocker.LockOrNullAsync` → `EFCoreSecondLevelCacheInterceptor.ReaderExecutingAsync` → `EF ToListAsync` → `EmployeeService.GetAllAsync:231` → `ExceptionHandlingMiddleware` logs **"Unhandled exception"** and returns 500.
+- **Why it happens:** Playwright navigates away while a list query is in flight. ASP.NET Core cancels `HttpContext.RequestAborted`, EF (through the second-level cache interceptor's lock) throws `TaskCanceledException`, and `ExceptionHandlingMiddleware` has no case for it — so a normal client disconnect is recorded as a server fault.
+- **Recommended:** in `ExceptionHandlingMiddleware`, treat `OperationCanceledException`/`TaskCanceledException` **when `HttpContext.RequestAborted.IsCancellationRequested`** as a client-closed request — log at Debug/Information and return 499 (or simply stop writing a response, since nobody is listening). Keep returning 500 when the token was NOT the client's, because that is a genuine timeout worth seeing. **Do not blanket-swallow `TaskCanceledException`** — that would hide real cancellation bugs, including the AsyncKeyedLock timeout this same stack could represent under load.
+- **Worth noting:** this is the kind of defect only a real-browser test finds — no unit or API test abandons a request mid-flight. It appeared on the very first CI run of the E2E job, which is some evidence for the register's claim that this suite has a high coverage-to-effort ratio.
+- **Out of lane for GAP-034** (which is about *running* the suite, not fixing what it finds), so it is filed rather than fixed.
+- **Confidence:** 95% on the mechanism (stack + the request-abort context are unambiguous); 100% that the 500 occurred.
