@@ -30,8 +30,11 @@ import {
   IWizardStep,
   GENDER_OPTIONS,
   EMPLOYMENT_TYPE_OPTIONS,
+  WORK_ARRANGEMENT_OPTIONS,
+  fteValidator,
   EmployeeGender,
   EmploymentType,
+  WorkArrangement,
 } from '../../models/employee.models';
 import { DepartmentService } from '../../../departments/services/department.service';
 import { IDepartment } from '../../../departments/models/department.models';
@@ -583,6 +586,51 @@ import {
                     @if (showError('employmentType')) {
                       <p class="field-error" role="alert">
                         Employment type is required.
+                      </p>
+                    }
+                  </div>
+
+                  <!-- Work Arrangement (GAP-023) -->
+                  <div class="form-section">
+                    <label class="label-notion" for="workArrangement">
+                      Work Arrangement <span class="text-red-500" aria-hidden="true">*</span>
+                    </label>
+                    <select
+                      id="workArrangement"
+                      formControlName="workArrangement"
+                      class="input-notion select-input"
+                      aria-describedby="workArrangementHelp"
+                    >
+                      @for (wa of workArrangementOptions; track wa.value) {
+                        <option [ngValue]="wa.value">{{ wa.label }}</option>
+                      }
+                    </select>
+                    <p id="workArrangementHelp" class="text-xs text-gray-500 mt-1">
+                      Remote employees are exempt from work-location geo-fencing on attendance check-in.
+                    </p>
+                  </div>
+
+                  <!-- FTE (GAP-023) -->
+                  <div class="form-section">
+                    <label class="label-notion" for="fte">
+                      FTE <span class="text-red-500" aria-hidden="true">*</span>
+                    </label>
+                    <input
+                      id="fte"
+                      type="number"
+                      formControlName="fte"
+                      class="input-notion"
+                      min="0.01"
+                      max="1"
+                      step="0.01"
+                      aria-describedby="fteHelp"
+                    />
+                    <p id="fteHelp" class="text-xs text-gray-500 mt-1">
+                      1.00 = full-time. A part-time figure prorates leave entitlement.
+                    </p>
+                    @if (showError('fte')) {
+                      <p class="field-error" role="alert">
+                        FTE must be greater than 0, at most 1.00, and no more than 2 decimal places.
                       </p>
                     }
                   </div>
@@ -1186,6 +1234,7 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
   readonly wizardSteps: IWizardStep[] = WIZARD_STEPS;
   readonly genderOptions = GENDER_OPTIONS;
   readonly employmentTypeOptions = EMPLOYMENT_TYPE_OPTIONS;
+  readonly workArrangementOptions = WORK_ARRANGEMENT_OPTIONS;
 
   // ─── Signals ──────────────────────────────────────────────
 
@@ -1270,6 +1319,11 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       locationId: [''],
       employmentType: ['' as EmploymentType | '', [Validators.required]],
       status: ['Active'],
+      // GAP-023: both carry backend defaults (Fte 1.00, WorkArrangement OnSite), so neither is required —
+      // an HR officer who ignores them gets today's behaviour. FTE is bounded because leave proration
+      // DIVIDES by it: 0 would be a divide-by-zero and >1 would over-accrue.
+      fte: [1, [Validators.required, fteValidator]],
+      workArrangement: ['OnSite' as WorkArrangement, [Validators.required]],
 
       // Step 4: Education (optional repeater)
       education: this.fb.array([]),
@@ -1606,6 +1660,11 @@ export class EmployeeWizardComponent implements OnInit, OnDestroy {
       locationId: formValue.locationId || null,
       employmentType: formValue.employmentType,
       status: formValue.status || 'Active',
+      // GAP-023: the two fields HR could previously only set by bulk import or SQL. Sent as numbers/enums,
+      // not trimmed strings — `fte` is bound to a number input, so Number() guards against the empty-string
+      // an untouched numeric control can yield, which would otherwise reach the API as 0 and break proration.
+      fte: Number(formValue.fte) || 1,
+      workArrangement: formValue.workArrangement || 'OnSite',
       address: formValue.address?.trim() || null,
       city: formValue.city?.trim() || null,
       state: formValue.state?.trim() || null,

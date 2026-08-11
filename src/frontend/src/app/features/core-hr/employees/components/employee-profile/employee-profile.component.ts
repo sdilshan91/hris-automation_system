@@ -42,6 +42,9 @@ import {
   getInitialsFromName,
   genderLabel,
   employmentTypeLabel,
+  WORK_ARRANGEMENT_OPTIONS,
+  workArrangementLabel,
+  fteValidator,
 } from '../../models/employee.models';
 import { FormsModule } from '@angular/forms';
 import { EmployeeDocumentsComponent } from '../employee-documents/employee-documents.component';
@@ -648,6 +651,42 @@ import {
                         }
                       </select>
                     </div>
+                    <!-- GAP-023: Work Arrangement + FTE. Blank leaves the stored value unchanged. -->
+                    <div class="form-field">
+                      <label class="label-notion" for="emp-workArrangement">Work Arrangement</label>
+                      <select id="emp-workArrangement" formControlName="workArrangement" class="input-notion select-input">
+                        <option [ngValue]="''">Leave unchanged</option>
+                        @for (wa of workArrangementOptions; track wa.value) {
+                          <option [ngValue]="wa.value">{{ wa.label }}</option>
+                        }
+                      </select>
+                      <p class="text-xs text-gray-500 mt-1">
+                        Remote exempts this employee from work-location geo-fencing on check-in.
+                      </p>
+                    </div>
+
+                    <div class="form-field">
+                      <label class="label-notion" for="emp-fte">FTE</label>
+                      <input
+                        id="emp-fte"
+                        type="number"
+                        formControlName="fte"
+                        class="input-notion"
+                        min="0.01"
+                        max="1"
+                        step="0.01"
+                        placeholder="Leave blank to keep current"
+                      />
+                      <p class="text-xs text-gray-500 mt-1">
+                        1.00 = full-time. Changing this changes FUTURE leave accrual, not past entitlement.
+                      </p>
+                      @if (employmentForm.get('fte')?.invalid && employmentForm.get('fte')?.touched) {
+                        <p class="field-error" role="alert">
+                          FTE must be greater than 0, at most 1.00, and no more than 2 decimal places.
+                        </p>
+                      }
+                    </div>
+
                     <!-- DF-38: Employment Type enum-select (exact enum member names) -->
                     <div class="form-field">
                       <label class="label-notion" for="emp-type">Employment Type</label>
@@ -692,6 +731,16 @@ import {
                   <div class="data-field">
                     <dt class="data-label">Employment Type</dt>
                     <dd class="data-value">{{ employmentTypeLabel(profile()!.employmentType) }}</dd>
+                  </div>
+                  <div class="data-row">
+                    <dt class="data-label">Work Arrangement</dt>
+                    <dd class="data-value">{{ workArrangementLabel(profile()!.workArrangement) }}</dd>
+                  </div>
+                  <div class="data-row">
+                    <dt class="data-label">FTE</dt>
+                    <!-- GAP-023: shown even at 1.00. A blank would read as "not set" for a field that is
+                         always set and that silently changes leave accrual. -->
+                    <dd class="data-value">{{ profile()!.fte }}</dd>
                   </div>
                   <div class="data-field">
                     <dt class="data-label">Status</dt>
@@ -1919,6 +1968,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   // DF-38: id-select option sources for the employment section
   readonly departments = signal<IDepartment[]>([]);
   readonly jobTitles = signal<IJobTitle[]>([]);
+  readonly workArrangementOptions = WORK_ARRANGEMENT_OPTIONS;
   readonly employmentTypes = signal<IEmploymentTypeOption[]>([]);
 
   /** Computed reporting chain from profile data */
@@ -2029,6 +2079,10 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
   }
 
   /** Pretty display label for an employment type wire value (template helper). */
+  workArrangementLabel(value: string | null | undefined): string {
+    return value ? workArrangementLabel(value) : '—';
+  }
+
   employmentTypeLabel(value: string | null | undefined): string {
     return employmentTypeLabel(value);
   }
@@ -2607,6 +2661,11 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
             jobTitleId: v.jobTitleId,
             locationId,
             employmentType: v.employmentType,
+            // GAP-023: omit rather than send a falsy value. The backend reads null as "leave unchanged"
+            // (EmployeeService only assigns when HasValue and the value differs), so sending 0 or '' would
+            // either fail ValidFte or silently reset a stored arrangement.
+            fte: v.fte === '' || v.fte === null ? undefined : Number(v.fte),
+            workArrangement: v.workArrangement === '' ? undefined : v.workArrangement,
           },
         };
       }
@@ -2814,6 +2873,12 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       // BUG-113: optional structured work location FK (Guid)
       locationId: [''],
       employmentType: [''],
+      // GAP-023: HR can now CHANGE these, not only set them at hire — the full-time-to-part-time case is
+      // the one that actually matters, and it was previously reachable only by bulk import or SQL.
+      // Both are optional on the backend (EmploymentInfoUpdate: `decimal? Fte`, `WorkArrangement?`), where
+      // null means "leave unchanged", so a blank control cannot clobber a stored value.
+      fte: ['', [fteValidator]],
+      workArrangement: [''],
     });
 
     this.educationForm = this.fb.group({
@@ -2884,6 +2949,8 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
           jobTitleId: p.jobTitleId ?? '',
           locationId: p.locationId ?? '',
           employmentType: p.employmentType,
+          fte: p.fte ?? '',
+          workArrangement: p.workArrangement ?? '',
         });
         break;
 

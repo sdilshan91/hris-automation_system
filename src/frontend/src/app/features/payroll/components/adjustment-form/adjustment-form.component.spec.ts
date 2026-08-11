@@ -16,6 +16,9 @@ function makeEmployee(over: Partial<IEmployee> = {}): IEmployee {
     employeeId: 'e-1',
     tenantId: 't-1',
     employeeNo: 'EMP001',
+    // GAP-023: required on IEmployee since the FTE / work-arrangement UI shipped.
+    fte: 1,
+    workArrangement: 'OnSite',
     firstName: 'Alex',
     lastName: 'HR',
     email: 'alex@acme.test',

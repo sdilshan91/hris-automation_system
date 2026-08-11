@@ -35,7 +35,8 @@ acceptance_criteria_count: 5
 - FR-1: The system shall allow managers to create, edit, and delete goals for their direct reports during the goal-setting window of an active appraisal cycle.
 - FR-2: Each goal shall have: title (max 200 chars), description (max 2000 chars), category (KPI, Competency, or Project), weight (1-100%), target value, measurement unit, and due date.
 - FR-3: The system shall enforce that goal weights for a single employee within a cycle sum to exactly 100%.
-- FR-4: The system shall support goal cascading: a manager can link an employee goal to a higher-level departmental or organizational objective.
+- FR-4: The system shall support goal **alignment**: a manager can link an employee goal to another employee goal (typically the manager's own) as its parent, via `parentGoalId`.
+  > **Amended 2026-08-11 — ADR-2026-08-11-goal-ownership-stays-individual.** This previously read *"link an employee goal to a higher-level departmental or organizational objective"*. `Goal.EmployeeId` is non-nullable, so a departmental or organizational objective cannot be represented at all — the parent of a goal is always another employee's goal. The tier is **withdrawn, not deferred**. The cascade tree in the UI notes below therefore visualises employee→employee alignment, not an org hierarchy.
 - FR-5: The system shall allow managers to clone goals from a previous cycle or from a goal template library.
 - FR-6: The system shall log all goal create/update/delete operations in the tenant audit trail.
 - FR-7: The system shall notify the employee (in-app + email) when goals are assigned or modified.

@@ -100,6 +100,9 @@ describe('EmployeeProfileComponent', () => {
     locationId: null,
     locationName: null,
     employmentType: 'FullTime',
+    // GAP-023: required on IEmployee since the FTE / work-arrangement UI shipped.
+    fte: 1,
+    workArrangement: 'OnSite',
     status: 'Active',
     profilePhotoUrl: null,
     customFields: null,
