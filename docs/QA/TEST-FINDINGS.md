@@ -8207,7 +8207,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-373
 - **Type:** ISSUE (FE↔BE contract, S-1 class) — **partly a methodology note**
 - **Severity:** **MED–HIGH, unconfirmed per item.** Where the FE reads a field the API never sends, the value is `undefined`; the register reports US-PRF-002/009/010 hard-crashing rather than degrading. Not re-confirmed at runtime here.
-- **Status:** `OPEN`
+- **Status:** `OPEN` — **triage COMPLETE 2026-08-12; the 17 are now classified and mapped (see below). No code changed yet.**
 - **Layer:** FE
 - **Module / US / TC:** Performance / US-PRF-002/003/006/009/010 / — — found 2026-08-10 while fixing GAP-012's request half
 - **Title:** A mechanical diff of the 96 performance FE interfaces against the generated contract flags **17 response DTOs** with FE-only fields. **Each needs checking against its service before being called a defect.**
@@ -8238,6 +8238,23 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Confidence:** 100% that these 17 have FE-only fields on the name-matched schema. **~50% that any given row is a real defect** rather than an adapter — which is precisely why they are listed for triage instead of being "fixed" in bulk.
 
 ---
+
+- **★ TRIAGE RESULT 2026-08-12 — measured against the committed contract, not the diff tool.** The "17 response DTOs" split cleanly by *what the user sees*, which the original enumeration did not distinguish:
+  - **6 interfaces are missing a COLLECTION field → the list/table renders NOTHING.** These are the user-visible breaks, and they are the whole of the severity.
+  - **11 are scalar-only → degraded display** (a field renders blank/`undefined`). Real, but cosmetic by comparison.
+- **Every missing field has a plausible contract counterpart — this is one systematic vocabulary mismatch (S-1), not 17 independent bugs.** Verified for `ISelfAssessment`: the service does `http.get<ISelfAssessment>(...)`, **a direct cast with no adapter**, so the FE reads names the API never sends and gets `undefined`. `goals` → the API sends **`items`**, which is why US-PRF-002 renders empty or throws rather than degrading.
+- **The mapping (FE name → contract name; `—` = genuinely absent, needs a decision, not an adapter):**
+  | interface | rename → contract | genuinely absent |
+  |---|---|---|
+  | `ISelfAssessment` | `goals`→**`items`** · `submittedOn`→`submittedAt` · `weightedScore`→`weightedSelfScore` · `windowOpen`→`isSelfAssessmentOpen` | `cycleName`, `windowClosesOn` |
+  | `IManagerReview` | `goals`→**`items`** · `submittedOn`→`submittedAt` · `windowOpen`→`isReviewWindowOpen` · `selfScore`→`weightedSelfScore` · `managerScore`→`weightedManagerScore` | `cycleName`, `jobTitle` |
+  | `IFeedback360Results` | `competencies`→**`competencyAverages`** · `comments`→**`entries`** · `anonymous`→`isAnonymousFeedback` · `employeeId`→`revieweeEmployeeId` · `employeeName`→`revieweeName` | `cycleName`, `jobTitle`, `exportAvailable`, `released` |
+  | `IPipObjective` | `objectiveId`→`id` | **`checkpoints`** — the contract has no checkpoint collection on the objective at all, so this one is NOT a rename |
+  | `IRecommendationSummary` | `byDepartment`→**`incrementByDepartment`** · `comparison`→**`previousCycle`** · `totalIncrements`→`totalIncrementAllocated` · `bonusPoolAllocated`→`totalBonusPoolAllocated` | `currency`, `totalBonuses` (check against `totalRecommendations`) |
+  | `IRecommendationWorkspace` | — | `availableExportFormats`, `compensationVisible`. **And note the reverse direction: the contract sends `rows`/`totalCount`/`pageSize`/`ratingScaleMax` that the FE interface does not declare at all**, so this one needs reading as a whole rather than field-patched. |
+- **Recommended approach, unchanged from the register but now with evidence: a `map()` adapter per service, not an interface rename.** It isolates the change from templates (the FE keeps its own vocabulary), and it is the only option that can also *compute* the genuinely-absent fields where they are derivable. For fields that are neither mappable nor derivable, the decision is per field: add to the backend DTO, or remove from the UI — **do not invent a value**.
+- **Do the 6 collection cases first.** A blank table is a broken feature; a blank scalar is a blemish. Within those, US-PRF-002 (self-assessment) then US-PRF-003 (manager review), as the register recommends.
+- **The methodology warning above still stands and now has a second edge:** the diff cannot see adapters, so a name difference may be correct design — but the `IRecommendationWorkspace` row shows the diff also misses fields the FE fails to declare, which no FE-only listing surfaces. Check both directions.
 
 ### ISSUE-374 — three more onboarding routes the FE calls that do not exist, plus the modify request shape
 - **ID:** ISSUE-374
