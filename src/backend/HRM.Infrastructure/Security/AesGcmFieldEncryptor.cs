@@ -65,7 +65,7 @@ public sealed class AesGcmFieldEncryptor : IFieldEncryptor
         if (string.IsNullOrWhiteSpace(options.ActiveKeyId) || !ring.ContainsKey(options.ActiveKeyId))
             throw new InvalidOperationException(
                 "Field encryption is not configured: set Encryption:ActiveKeyId and a matching base64 32-byte "
-                + "Encryption:Keys:{ActiveKeyId} (dev: appsettings.Development.json; prod: env/secret store). "
+                + "Encryption:Keys:{ActiveKeyId} (dev: docker.env or `dotnet user-secrets`, see docker.env.example; prod: env/secret store). "
                 + "The application fail-fasts rather than store sensitive fields as plaintext.");
 
         _activeKeyId = options.ActiveKeyId;

@@ -113,6 +113,7 @@ jobs:
       # skips PEM parsing when it is empty; a non-empty invalid value would throw at
       # host build and break the design-time DbContext creation.
       ConnectionStrings__DefaultConnection: 'Host=localhost;Port=5432;Database=hrm_ci;Username=hrm;Password=hrm'
+      Encryption__ActiveKeyId: hrm-field-key-1
     steps:
       - uses: actions/checkout@v4
 
@@ -128,11 +129,20 @@ jobs:
         run: dotnet restore src/backend/HRM.sln
 
       - name: Apply migrations to PostgreSQL
+        # GAP-036: `dotnet ef` builds the REAL host, and AppDbContext's value converters resolve
+        # IFieldEncryptor — which FAIL-FASTS with no key. This step used to work only because a live key was
+        # committed in appsettings.Development.json (EF tools default to the Development environment).
+        # Verified by removing it: "Unable to create a 'DbContext' … Field encryption is not configured".
+        #
+        # Passed inline via `env` rather than exported: the key id contains hyphens, which bash's `export`
+        # rejects as an identifier. `env` accepts it and .NET reads it from the process environment — both
+        # halves verified locally before this was written.
         run: |
           export PATH="$PATH:$HOME/.dotnet/tools"
-          dotnet ef database update \
-            --project src/backend/HRM.Infrastructure \
-            --startup-project src/backend/HRM.Api
+          env "Encryption__Keys__hrm-field-key-1=$(openssl rand -base64 32)" \
+            dotnet ef database update \
+              --project src/backend/HRM.Infrastructure \
+              --startup-project src/backend/HRM.Api
 
       - name: Assert expected schema exists
         run: |
@@ -236,6 +246,11 @@ jobs:
       # mutation-verified), and the same flag is what the HTTP integration host uses for the same reason. What
       # this job exists to test is the application behind the limiter.
       RateLimiting__Disabled: 'true'
+      # GAP-036: the dev field-encryption key no longer ships in appsettings.Development.json, and
+      # AesGcmFieldEncryptor FAIL-FASTS when no usable key is configured — so without this the app would not
+      # boot here at all. Generated per run: CI encrypts nothing anyone will ever decrypt again, so a
+      # throwaway key is strictly better than a shared one, and there is no secret to store or rotate.
+      Encryption__ActiveKeyId: hrm-field-key-1
       E2E_BASE_URL: http://localhost:4200
     steps:
       - uses: actions/checkout@v4
@@ -269,7 +284,8 @@ jobs:
         # Migrations + the dev seed run on startup (DbInitializer), so this also proves the migration chain
         # applies to a clean database and the seed produces a usable tenant.
         run: |
-          nohup dotnet run --project src/backend/HRM.Api --configuration Release --no-build \
+          nohup env "Encryption__Keys__hrm-field-key-1=$(openssl rand -base64 32)" \
+            dotnet run --project src/backend/HRM.Api --configuration Release --no-build \
             > "$RUNNER_TEMP/backend.log" 2>&1 &
           echo "waiting for the API to become ready..."
           for i in $(seq 1 90); do

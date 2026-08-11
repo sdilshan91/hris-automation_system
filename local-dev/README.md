@@ -50,10 +50,22 @@ Chrome & Edge use the Windows store. **Firefox** has its own — import `local-d
 `Settings → Privacy & Security → Certificates → View Certificates → Authorities → Import` (tick "trust for websites").
 
 ### B3. 🗝️ Backend secrets (only if missing / on a fresh clone)
-These live in **.NET user-secrets** (never in committed files). From `src/backend/HRM.Api`, make sure these three keys are set (use `dotnet user-secrets set "<key>" "<value>"`):
+These live in **.NET user-secrets** (never in committed files). From `src/backend/HRM.Api`, make sure these keys are set (use `dotnet user-secrets set "<key>" "<value>"`):
 - **`ConnectionStrings:DefaultConnection`** — your local PostgreSQL connection. The format is in the committed `appsettings.json` template (`Host=localhost;Port=5432;Database=hris_dev_db;Username=developer;…`) — fill in your `developer` role's password.
 - **`Jwt:PrivateKey`** — the JWT signing key.
 - **`Platform:BaseDomain`** — set to `myhrm.org` (this is what makes subdomain resolution work).
+- **`Encryption:Keys:hrm-field-key-1`** — the field-at-rest encryption key (**GAP-036**, added 2026-08-11). Generate one with `openssl rand -base64 32`.
+
+  > **This one will stop you before anything else does.** `AesGcmFieldEncryptor` **fail-fasts** when no usable
+  > key is configured, so without it even `dotnet ef migrations add` fails with *"Unable to create a
+  > 'DbContext' … Field encryption is not configured"* — the app refuses to start rather than silently write
+  > sensitive fields as plaintext. It used to be committed in `appsettings.Development.json`, labelled "safe
+  > to commit"; it was not, because `EncryptedFieldRegistry` covers `employees.national_id`, so any dev stack
+  > holding real data was encrypting it under a key published in the repo.
+  >
+  > **Running via Docker instead?** Put it in gitignored `docker.env` (see `docker.env.example`) — the
+  > compose stack reads it from there and you do not need user-secrets as well. If you already have local
+  > encrypted data, reuse the SAME key value or that data becomes unreadable.
 
 Check what's already set: `dotnet user-secrets list`.
 
