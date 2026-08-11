@@ -15,10 +15,10 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     permissions: [
       { key: 'Employee.View.All', label: 'View all employees', description: 'View employee profiles across all departments' },
       { key: 'Employee.View.Team', label: 'View team employees', description: 'View employee profiles within own team' },
-      { key: 'Employee.View.Self', label: 'View own profile', description: 'View own employee profile' },
+      { key: 'Employee.View.Own', label: 'View own profile', description: 'View own employee profile' },
       { key: 'Employee.Create', label: 'Create employee', description: 'Create new employee records' },
-      { key: 'Employee.Edit.All', label: 'Edit all employees', description: 'Edit any employee record' },
-      { key: 'Employee.Edit.Self', label: 'Edit own profile', description: 'Edit own employee profile' },
+      { key: 'Employee.Edit', label: 'Edit all employees', description: 'Edit any employee record' },
+      { key: 'Employee.Edit.Own', label: 'Edit own profile', description: 'Edit own employee profile' },
       { key: 'Employee.Delete', label: 'Delete employee', description: 'Delete employee records' },
       { key: 'Employee.Import', label: 'Bulk import', description: 'Import employees from file' },
       { key: 'Employee.Export', label: 'Export data', description: 'Export employee data' },
@@ -29,12 +29,12 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     label: 'Leave Management',
     icon: 'calendar',
     permissions: [
-      { key: 'Leave.View', label: 'View leave requests', description: 'View leave requests and balances' },
+      { key: 'Leave.View.All', label: 'View all leave requests', description: 'View leave requests and balances across the organisation' },
       { key: 'Leave.View.Team', label: 'View team leaves', description: 'View leave requests of team members' },
       { key: 'Leave.Apply', label: 'Apply for leave', description: 'Submit own leave requests' },
       { key: 'Leave.Approve.Team', label: 'Approve team leaves', description: 'Approve or reject leave requests of direct reports' },
       { key: 'Leave.Approve.All', label: 'Approve all leaves', description: 'Approve or reject any leave request' },
-      { key: 'Leave.Configure', label: 'Configure leave policies', description: 'Manage leave types, policies, and entitlements' },
+      { key: 'Leave.ConfigurePolicy', label: 'Configure leave policies', description: 'Manage leave types, policies, and entitlements' },
     ],
   },
   {
@@ -42,11 +42,11 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     label: 'Attendance',
     icon: 'clock',
     permissions: [
-      { key: 'Attendance.View', label: 'View attendance', description: 'View attendance records' },
+      { key: 'Attendance.View.All', label: 'View all attendance', description: 'View attendance records across the organisation' },
       { key: 'Attendance.View.Team', label: 'View team attendance', description: 'View attendance of team members' },
       { key: 'Attendance.CheckIn', label: 'Check in/out', description: 'Record own attendance check-in and check-out' },
       { key: 'Attendance.Edit', label: 'Edit attendance', description: 'Modify attendance records' },
-      { key: 'Attendance.Configure', label: 'Configure attendance', description: 'Manage attendance policies and schedules' },
+      { key: 'Attendance.ConfigurePolicy', label: 'Configure attendance', description: 'Manage attendance policies and schedules' },
     ],
   },
   {
@@ -69,8 +69,7 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     permissions: [
       { key: 'Recruitment.View', label: 'View recruitment', description: 'View job postings and applications' },
       { key: 'Recruitment.Manage', label: 'Manage recruitment', description: 'Create and manage job postings, candidates, and pipeline' },
-      { key: 'Recruitment.Interview', label: 'Conduct interviews', description: 'Schedule and record interview feedback' },
-      { key: 'Recruitment.Offer', label: 'Manage offers', description: 'Create and send offer letters' },
+      { key: 'Recruitment.ApproveOffer', label: 'Approve offers', description: 'Approve offer letters before they are sent' },
     ],
   },
   {
@@ -78,10 +77,10 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     label: 'Performance',
     icon: 'star',
     permissions: [
-      { key: 'Performance.View', label: 'View performance', description: 'View performance reviews and goals' },
+      { key: 'Performance.View.All', label: 'View all performance', description: 'View performance reviews and goals across the organisation' },
       { key: 'Performance.View.Team', label: 'View team performance', description: 'View performance of team members' },
-      { key: 'Performance.Review', label: 'Conduct reviews', description: 'Create and submit performance reviews' },
-      { key: 'Performance.Configure', label: 'Configure performance', description: 'Manage review cycles, templates, and rating scales' },
+      { key: 'Performance.Review.All', label: 'Conduct any review', description: 'Create and submit performance reviews for any employee' },
+      { key: 'Performance.Manage', label: 'Configure performance', description: 'Manage review cycles, templates, and rating scales' },
     ],
   },
   {
@@ -92,7 +91,6 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
       { key: 'Reports.View', label: 'View reports', description: 'Access standard reports and dashboards' },
       { key: 'Reports.View.All', label: 'View all report rows', description: 'View report rows across all departments' },
       { key: 'Reports.View.Team', label: 'View team report rows', description: 'View report rows within own team' },
-      { key: 'Reports.Create', label: 'Create reports', description: 'Create custom reports and queries' },
       { key: 'Reports.Export', label: 'Export reports', description: 'Export reports to file formats' },
     ],
   },
@@ -101,11 +99,11 @@ export const PERMISSION_CATALOG: IPermissionGroup[] = [
     label: 'Administration',
     icon: 'settings',
     permissions: [
-      { key: 'Admin.View', label: 'View admin settings', description: 'Access tenant administration settings' },
+      { key: 'Tenant.ViewSettings', label: 'View admin settings', description: 'Access tenant administration settings' },
       { key: 'Roles.Manage', label: 'Manage roles', description: 'Create, edit, and delete custom roles and assign roles to users' },
-      { key: 'Admin.Users.Manage', label: 'Manage users', description: 'Invite, deactivate, and manage user accounts' },
-      { key: 'Admin.Tenant.Configure', label: 'Configure tenant', description: 'Manage tenant settings, branding, and subscription' },
-      { key: 'Admin.Audit.View', label: 'View audit log', description: 'Access the tenant audit trail' },
+      { key: 'Tenant.ManageUsers', label: 'Manage users', description: 'Invite, deactivate, and manage user accounts' },
+      { key: 'Tenant.ManageSettings', label: 'Configure tenant', description: 'Manage tenant settings, branding, and subscription' },
+      { key: 'Audit.View', label: 'View audit log', description: 'Access the tenant audit trail' },
     ],
   },
 ];
