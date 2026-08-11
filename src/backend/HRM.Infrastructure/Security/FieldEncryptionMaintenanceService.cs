@@ -297,6 +297,7 @@ public sealed class FieldEncryptionMaintenanceService : IFieldEncryptionMaintena
                             var updateSql =
                                 "UPDATE " + field.Table + " SET " + field.Column
                                 + " = {0} WHERE id = {1} AND tenant_id = {2}";
+                            // nosemgrep: hrm-raw-sql-no-tenant-predicate -- the UPDATE above DOES carry `AND tenant_id = {2}`; it is built by string concat so the predicate sits on the previous line, outside the rule's match window.
                             await db.Database.ExecuteSqlRawAsync(
                                 updateSql, new object[] { updated!, row.Id, tenantId }, ct);
                             reencrypted++;

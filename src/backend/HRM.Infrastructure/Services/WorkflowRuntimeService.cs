@@ -210,6 +210,7 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
         // row lock over the group first so a concurrent decision / SLA job blocks and re-reads committed state.
         if (rowLock)
         {
+            // nosemgrep: hrm-raw-sql-no-tenant-predicate -- `SELECT 1 ... FOR UPDATE` by workflow-instance id: a row LOCK returning no columns; the instance was already loaded through the tenant-filtered context.
             await _db.Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT 1 FROM workflow_step_instances WHERE workflow_instance_id = {instance.Id} AND step_order = {instance.CurrentStepOrder} FOR UPDATE",
                 cancellationToken);

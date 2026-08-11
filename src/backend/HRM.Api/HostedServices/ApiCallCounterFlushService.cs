@@ -1,4 +1,5 @@
 using HRM.Application.Common.Interfaces;
+using HRM.Infrastructure.Multitenancy;
 using HRM.Infrastructure.Persistence;
 
 namespace HRM.Api.HostedServices;
@@ -77,6 +78,15 @@ public sealed class ApiCallCounterFlushService : BackgroundService
 
         try
         {
+            // GAP-007: this flush is genuinely CROSS-TENANT — one tick writes usage rows for every tenant that
+            // saw traffic — and it runs from a BackgroundService, so there is no ambient tenant to inherit.
+            // GAP-001 made "no ambient" mean the NOBYPASSRLS role, under which the RLS WITH CHECK policy rejects
+            // a write carrying someone else's tenant_id. Without this scope the upsert throws every tick, the
+            // catch below re-buffers and logs a warning, and tenant usage metering stops silently — which is
+            // exactly what happened: 839 consecutive warnings on the running stack, while the whole test suite
+            // stayed green because nothing exercised this service under RLS.
+            using var crossTenantFlush = CrossTenantScope.Enter();
+
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             await TenantApiCallUsage.UpsertAsync(db, deltas, DateTime.UtcNow, cancellationToken);

@@ -3351,6 +3351,7 @@ public sealed class AuthService : IAuthService
 
             // Pessimistic row lock: concurrent failed-attempt handlers for this user block here until this
             // unit commits, so each one reads a committed (not stale) counter before incrementing.
+            // nosemgrep: hrm-raw-sql-no-tenant-predicate -- `SELECT 1 ... FOR UPDATE` by primary key: a row LOCK, not a read. It returns no columns, and `users` is a global (deliberately un-tenant-scoped) entity.
             await _dbContext.Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT 1 FROM users WHERE id = {user.Id} FOR UPDATE", cancellationToken);
 
