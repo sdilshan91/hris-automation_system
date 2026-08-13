@@ -33,7 +33,7 @@ import {
  * CONTRACT — RECONCILED 2026-08-10 against contracts/openapi/hrm-v1.json (GAP-013). This block
  * previously said "(assumed — reconcile with backend)" and was never reconciled; that comment is
  * what made the drift look deliberate. Verified route list:
- *   GET    /onboarding/checklists/applicable?employeeId=:id  -> IApplicableTemplate[]
+ *   GET    /onboarding/checklists/applicable-templates?employeeId=:id  -> IApplicableTemplate[]
  *   GET    /onboarding/checklists/preview?employeeId=:e&templateId=:t -> IChecklistPreview
  *   GET    /onboarding/checklists/employee/:employeeId       -> IAssignedChecklist | null
  *   POST   /onboarding/checklists                            body IAssign... -> IAssignedChecklist

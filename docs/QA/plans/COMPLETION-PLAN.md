@@ -16,7 +16,59 @@
 > CI exercise **two** of the three documented isolation layers, never three — which is what makes the six
 > unfiltered entities (GAP-006) matter. The **prod ops flip** remains outstanding (Wave 5 / P4).
 
-> ### 📍 Session close 2026-08-11 — Phases 0-5b done; 5c is the only queue item left
+> #> ### 🔒 Conflict-resolution programme — step 1 (ledger truth) 2026-08-12
+>
+> **Decision recorded: resolve the doc↔code conflicts BEFORE further gap-filling, choosing the best option
+> rather than the cheapest.** Four choices were taken on that basis, two of them reversing advice I had given
+> on cost grounds. The programme and its **hard sequencing constraint**:
+>
+> 1. **Ledger truth** (this entry) — audit the contradictions + build a mechanical guard.
+> 2. **Model changes** — goal owner tier · `PipCheckpoint.ObjectiveId` · 360 release state · a real compensation
+>    permission. *(All four change the OpenAPI contract.)*
+> 3. **Regenerate the contract ONCE**, then **migrate the FE off hand-written interfaces onto the generated
+>    types** — performance first (a bridgehead already exists: 5 files consume `core/api` today, including
+>    `performance/models/manager-review.models.ts`).
+> 4. **Per-tenant uptime**, superseding the platform-uptime ADR.
+>
+> **★ The sequencing is not cosmetic.** Migrating 633 FE interfaces to generated types *before* the model
+> changes would mean migrating them twice. Model → contract → FE, in that order.
+>
+> **★★ The contradiction count did not survive measurement, again.** The register headlines **36**; a grep of
+> the pass files returns **51**; classifying those 51 gives **23 summary lines** (not rows at all), **22
+> doc-vs-code contradictions**, and **6 rows where the LEDGER claims an open bug that is actually fixed**. So
+> **28 actionable**, not 36 and not 51.
+>
+> **And the gap analysis is now itself a stale ledger** — a 2026-08-08 snapshot with 24 PRs merged since.
+> Verified: **all 4 authentication contradictions are stale.** AUTH-013 AC-1/AC-2, US-AUTH-012 and US-AUTH-014
+> all rested on `EntraSsoService` reading `TenantAllowList` from appsettings; `SsoIsolationGuard.Evaluate(settings,
+> tid, email, emailVerified)` has been wired at `EntraSsoService.cs:396` since #483, taking per-tenant settings
+> **and** the verified-email flag — exactly what those ACs required. The remaining 18 doc-vs-code rows all cite
+> code that still exists, so each needs substantive re-verification against current `src/`; that is the
+> outstanding half of step 1a.
+>
+> **✅ The guard is shipped: `LedgerTraceabilityTests` (4 arms, mutation-verified).** This is finding **S-2**
+> applied to the ledgers themselves — the one approach that has consistently held in this repo. Every check was
+> measured against the real files *before* being written, and two hold at **zero** today so they are asserted
+> strictly:
+>
+> | check | today | catches |
+> |---|---|---|
+> | every finding id on a story row exists in `TEST-FINDINGS.md` | **0** violations → strict | a story blamed on a finding nobody can read |
+> | no story stays `[!]` when all its findings are `RESOLVED` | **0** violations → strict | **the two ledgers contradicting each other** — the pessimistic direction the audit found costs most |
+> | every `[x]` story has a `TEST-STATUS.md` row | **60 of 123** → shrink-only baseline | "done" with no record that anyone tested it — how `STATUS.md:61` claimed a shipped UI that did not exist |
+>
+> **Mutation-verified:** a dangling finding id, a `[x]` story with no test row, and a `[!]` row whose findings
+> are all resolved each turn exactly one arm red.
+>
+> **Scope detail that nearly baked in 7 false positives:** finding ids are only meaningful inside a row's
+> structured `findings:` segment. Scanning the whole file also catches prose — `BUG-7 baseline FIXED` is
+> shorthand for an old QA numbering, not a reference to `BUG-007`. Measured, caught, and the scan is anchored.
+>
+> **Why a guard and not a sweep:** the drift is structural, not clerical. Every fix that lands without closing
+> its row adds one, and **I added two myself in a single session** — a GAP row left reading "NOT DONE" after I
+> shipped it (#502 fixed that), and a memory note calling a resolved bug "the only item accruing cost".
+
+## 📍 Session close 2026-08-11 — Phases 0-5b done; 5c is the only queue item left
 >
 > **PRs #481-#501 merged to `test/local-subdomains`. Every P0 in the register is closed.** Landed: G5 ledger ·
 > G1 structural (generated TS models + EF-filter coverage guard) · 8 G2 module fixes · GAP-018 rate limiter ·
