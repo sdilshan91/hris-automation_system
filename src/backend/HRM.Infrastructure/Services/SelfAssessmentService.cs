@@ -461,6 +461,9 @@ public sealed class SelfAssessmentService : ISelfAssessmentService
         {
             Id = assessment?.Id ?? Guid.Empty,
             CycleId = cycle.Id,
+            // GAP-012 / ISSUE-373: both were read by the UI and never sent.
+            CycleName = cycle.Name,
+            WindowClosesOn = cycle.SelfAssessmentEnd,
             EmployeeId = employeeId,
             Status = assessment?.Status ?? SelfAssessmentStatus.Draft,
             StatusName = (assessment?.Status ?? SelfAssessmentStatus.Draft).ToString(),

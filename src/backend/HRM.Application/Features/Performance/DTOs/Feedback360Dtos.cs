@@ -248,8 +248,21 @@ public sealed record CategoryCompletionDto
 public sealed record Feedback360ResultsDto
 {
     public Guid CycleId { get; init; }
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the cycle's display name (<c>AppraisalCycle.Name</c>), read by the results header
+    /// and previously never sent.
+    /// </summary>
+    public string CycleName { get; init; } = string.Empty;
+
     public Guid RevieweeEmployeeId { get; init; }
     public string RevieweeName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the reviewee's job title, shown beside the name. Requires the loading query to
+    /// Include the JobTitle nav, or this ships as an empty string.
+    /// </summary>
+    public string JobTitle { get; init; } = string.Empty;
     public bool IsAnonymousFeedback { get; init; }
     public int RatingScaleMax { get; init; }
 

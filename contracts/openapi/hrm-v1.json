@@ -24695,6 +24695,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "cycleName": {
+            "nullable": true,
+            "type": "string"
+          },
           "entries": {
             "items": {
               "$ref": "#/components/schemas/PerformanceFeedback360ResultEntryDto"
@@ -24704,6 +24708,10 @@
           },
           "isAnonymousFeedback": {
             "type": "boolean"
+          },
+          "jobTitle": {
+            "nullable": true,
+            "type": "string"
           },
           "minPeerReviewers": {
             "format": "int32",
@@ -25097,6 +25105,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "cycleName": {
+            "nullable": true,
+            "type": "string"
+          },
           "employeeId": {
             "format": "uuid",
             "type": "string"
@@ -25137,6 +25149,10 @@
             },
             "nullable": true,
             "type": "array"
+          },
+          "jobTitle": {
+            "nullable": true,
+            "type": "string"
           },
           "managerWeightPercent": {
             "format": "int32",
@@ -26333,6 +26349,10 @@
             "nullable": true,
             "type": "array"
           },
+          "currency": {
+            "nullable": true,
+            "type": "string"
+          },
           "cycleId": {
             "format": "uuid",
             "type": "string"
@@ -26377,6 +26397,13 @@
       "PerformanceRecommendationWorkspaceDto": {
         "additionalProperties": false,
         "properties": {
+          "availableExportFormats": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "budget": {
             "$ref": "#/components/schemas/PerformanceRecommendationBudgetDto"
           },
@@ -27075,6 +27102,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "cycleName": {
+            "nullable": true,
+            "type": "string"
+          },
           "employeeId": {
             "format": "uuid",
             "type": "string"
@@ -27120,6 +27151,10 @@
             "format": "double",
             "nullable": true,
             "type": "number"
+          },
+          "windowClosesOn": {
+            "format": "date-time",
+            "type": "string"
           }
         },
         "type": "object"

@@ -11,6 +11,19 @@ public sealed record ManagerReviewDto
 {
     public Guid Id { get; init; }
     public Guid CycleId { get; init; }
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the cycle's display name (<c>AppraisalCycle.Name</c>). The reviewer's header reads
+    /// it; the API never sent it, so it rendered blank.
+    /// </summary>
+    public string CycleName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the reviewee's job title. Shown beside the name so a manager reviewing several
+    /// reports can tell them apart. Requires the loading query to Include(e => e.JobTitle) — without it this
+    /// would silently be empty, which is how it would have shipped as a "fix" that changed nothing.
+    /// </summary>
+    public string JobTitle { get; init; } = string.Empty;
     public Guid EmployeeId { get; init; }
     public string EmployeeName { get; init; } = string.Empty;
     public string EmployeeNo { get; init; } = string.Empty;

@@ -10,6 +10,19 @@ public sealed record SelfAssessmentDto
 {
     public Guid Id { get; init; }
     public Guid CycleId { get; init; }
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the cycle's display name. The UI headers the page with it and previously read a
+    /// field the API never sent, so it rendered blank. Sourced from <c>AppraisalCycle.Name</c>.
+    /// </summary>
+    public string CycleName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: when the self-assessment window closes (<c>AppraisalCycle.SelfAssessmentEnd</c>).
+    /// <see cref="IsSelfAssessmentOpen"/> already says WHETHER it is open; the UI also shows the employee the
+    /// deadline, which is not derivable client-side because the cycle's phase dates are not otherwise sent.
+    /// </summary>
+    public DateTime WindowClosesOn { get; init; }
     public Guid EmployeeId { get; init; }
     public SelfAssessmentStatus Status { get; init; }
     public string StatusName { get; init; } = string.Empty;

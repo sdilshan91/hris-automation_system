@@ -37,6 +37,13 @@ public sealed class RecommendationService : IRecommendationService
 
     // BUG-083: the compensation fields GetAsync decrypts + returns (P3-4 AES-at-rest columns). NAMES ONLY —
     // recorded in the sensitive-reveal audit's After payload so no monetary values reach the audit trail.
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the export formats the workspace advertises. Kept beside the validator's accepted
+    /// set on purpose — the validator takes csv/xlsx/pdf, but PDF rendering is deferred, so this is the subset
+    /// that actually works today. Widen it when PDF ships.
+    /// </summary>
+    private static readonly string[] SupportedExportFormats = ["csv", "xlsx"];
+
     private static readonly string[] CompensationRevealFields =
         ["currentCompensation", "incrementAmount", "incrementPercent", "bonusAmount", "bonusPercent"];
 
@@ -140,6 +147,9 @@ public sealed class RecommendationService : IRecommendationService
         {
             CycleId = cycle.Id,
             CycleName = cycle.Name,
+            // GAP-012 / ISSUE-373: PDF is validated but its rendering is deferred, so it is deliberately NOT
+            // advertised — offering a button that 500s is worse than not offering it.
+            AvailableExportFormats = SupportedExportFormats,
             RatingScaleMax = cycle.RatingScaleMax,
             Page = page,
             PageSize = pageSize,
@@ -653,6 +663,16 @@ public sealed class RecommendationService : IRecommendationService
 
     private async Task<RecommendationSummaryDto> BuildSummaryAsync(AppraisalCycle cycle, CancellationToken ct)
     {
+        // GAP-012 / ISSUE-373: the tenant's display currency for the money figures below. IgnoreQueryFilters is
+        // not needed — the tenant row is reachable under the resolved context, and Tenant carries no tenant_id
+        // filter of its own. Falls back to empty rather than guessing a currency: a WRONG unit beside a salary
+        // figure is worse than none.
+        var tenantCurrency = await _dbContext.Tenants
+            .AsNoTracking()
+            .Where(t => t.Id == _tenantContext.TenantId)
+            .Select(t => t.Currency)
+            .FirstOrDefaultAsync(ct) ?? string.Empty;
+
         var recs = await _dbContext.Recommendations.AsNoTracking()
             .Where(r => r.CycleId == cycle.Id)
             .ToListAsync(ct);
@@ -727,6 +747,8 @@ public sealed class RecommendationService : IRecommendationService
         {
             CycleId = cycle.Id,
             CycleName = cycle.Name,
+            // GAP-012 / ISSUE-373: the UI prints this beside every money figure and never received it.
+            Currency = tenantCurrency,
             TotalRecommendations = recs.Count,
             TotalPromotions = totalPromotions,
             TotalBonusPoolAllocated = bonusPool,
