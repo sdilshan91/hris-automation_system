@@ -1,5 +1,37 @@
 # HRM — Gap Register (implemented vs documented)
 
+> ## ⚠ RE-VERIFICATION 2026-08-12 — this register is a 2026-08-08 snapshot; 24 PRs have merged since
+>
+> **The contradiction count in this document does not survive measurement.** It headlines **36**; a grep of the
+> pass files returns **51**; classifying those 51 gives **23 summary lines** (not rows), **22 doc-vs-code
+> contradictions**, and **6 rows where the ledger claims an open bug that is actually fixed** — so **28
+> actionable**.
+>
+> **Verified STALE (the code has since changed; treat these rows as closed):**
+> - **AUTH-013 AC-1, AUTH-013 AC-2, US-AUTH-012, US-AUTH-014** — all four rested on `EntraSsoService` reading
+>   `TenantAllowList` from appsettings. `SsoIsolationGuard.Evaluate(settings, tid, email, emailVerified)` has
+>   been wired at `EntraSsoService.cs:396` since **#483**, taking per-tenant settings **and** the verified-email
+>   flag — precisely what those ACs demanded.
+> - **ONB-002 AC-1** — the FE now calls `applicable-templates` (`onboarding-checklist.service.ts:54`), fixed in
+>   **#491**. Its own docstring still documented the dead `/applicable` route until 2026-08-12; corrected.
+>
+> **Verified STILL LIVE:**
+> - **ATT-011 AC-5** (GAP-022) — `PayrollOvertimeCalculator` contains no `.Fte` reference and
+>   `PayrollRunProcessor.cs:518` still calls `ComputeOvertime` with **4 args**. The dead-wiring claim holds.
+> - **US-PRF-011** (GAP-021) — neither `CyclePhase.CompletedOn` nor a `Performance.Calibrate` permission exists.
+>
+> **Still to re-verify: ~11 doc-vs-code rows.** All cite code that still exists, so each needs reading against
+> current `src/` — none can be dismissed on a moved-file basis.
+>
+> **Also still live, and the target of step 3 of the conflict-resolution programme:** the
+> `CONTRACT (assumed — reconcile with backend)` comment this register called out as never reconciled is still
+> present at `onboarding-template.service.ts:22`. Migrating the FE onto the generated contract types removes the
+> ability to write that comment at all.
+>
+> **New guard:** `LedgerTraceabilityTests` now fails CI when the ledgers drift — see the COMPLETION-PLAN entry
+> for 2026-08-12.
+
+
 > **Run:** 2026-08-08 · **Tree:** `test/local-subdomains` · **Mode:** REPORT-ONLY
 > **Method:** every requirement traced to `src/` with `file:line` evidence. A ledger line was never
 > allowed to promote a verdict. **AC-level for Must Have, story-level for Should/Could.**
