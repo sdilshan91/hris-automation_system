@@ -38771,8 +38771,10 @@ export interface components {
             compositeScore?: number;
             /** Format: uuid */
             cycleId?: string;
+            cycleName?: string | null;
             entries?: components["schemas"]["PerformanceFeedback360ResultEntryDto"][] | null;
             isAnonymousFeedback?: boolean;
+            jobTitle?: string | null;
             /** Format: int32 */
             minPeerReviewers?: number;
             minPeerThresholdMet?: boolean;
@@ -38914,6 +38916,7 @@ export interface components {
         PerformanceManagerReviewDto: {
             /** Format: uuid */
             cycleId?: string;
+            cycleName?: string | null;
             /** Format: uuid */
             employeeId?: string;
             employeeName?: string | null;
@@ -38927,6 +38930,7 @@ export interface components {
             isLocked?: boolean;
             isReviewWindowOpen?: boolean;
             items?: components["schemas"]["PerformanceManagerReviewItemDto"][] | null;
+            jobTitle?: string | null;
             /** Format: int32 */
             managerWeightPercent?: number;
             /** Format: int32 */
@@ -39336,6 +39340,7 @@ export interface components {
         PerformanceRecommendationSummaryDto: {
             budget?: components["schemas"]["PerformanceRecommendationBudgetDto"];
             byStatus?: components["schemas"]["PerformanceRecommendationCountByStatusDto"][] | null;
+            currency?: string | null;
             /** Format: uuid */
             cycleId?: string;
             cycleName?: string | null;
@@ -39353,6 +39358,7 @@ export interface components {
             totalTrainingNominations?: number;
         };
         PerformanceRecommendationWorkspaceDto: {
+            availableExportFormats?: string[] | null;
             budget?: components["schemas"]["PerformanceRecommendationBudgetDto"];
             /** Format: uuid */
             cycleId?: string;
@@ -39588,6 +39594,7 @@ export interface components {
         PerformanceSelfAssessmentDto: {
             /** Format: uuid */
             cycleId?: string;
+            cycleName?: string | null;
             /** Format: uuid */
             employeeId?: string;
             /** Format: uuid */
@@ -39605,6 +39612,8 @@ export interface components {
             submittedAt?: string | null;
             /** Format: double */
             weightedSelfScore?: number | null;
+            /** Format: date-time */
+            windowClosesOn?: string;
         };
         PerformanceSelfAssessmentItemDto: {
             /** Format: int32 */

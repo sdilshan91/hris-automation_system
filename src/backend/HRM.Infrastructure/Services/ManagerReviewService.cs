@@ -74,7 +74,8 @@ public sealed class ManagerReviewService : IManagerReviewService
         var review = await LoadReviewWithItemsAsync(employeeId, cycleId, tracking: false, cancellationToken);
 
         return Result<ManagerReviewDto>.Success(
-            BuildDto(cycle, employee, review, goals, selfAssessment));
+            BuildDto(cycle, employee, await ResolveJobTitleAsync(employee.JobTitleId, cancellationToken),
+                review, goals, selfAssessment));
     }
 
     // ── Save / Submit (AC-2/AC-3) ────────────────────────────────────
@@ -604,6 +605,27 @@ public sealed class ManagerReviewService : IManagerReviewService
             r => r.EmployeeId == employeeId && r.CycleId == cycleId, cancellationToken);
     }
 
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: resolves an employee's job-title label with its OWN query.
+    ///
+    /// <para><b>Deliberately not <c>Include(e =&gt; e.JobTitle)</c>.</b> <c>Employee.JobTitleId</c> is
+    /// non-nullable, so the navigation is REQUIRED, and <c>JobTitle</c> carries a global query filter
+    /// (<c>!IsDeleted &amp;&amp; tenant</c>). EF emits an INNER JOIN for a required navigation, so an employee
+    /// whose job title is soft-deleted would VANISH from the query entirely — callers would see "no such
+    /// employee" rather than a missing label. That is a disappearing-employee bug, strictly worse than the
+    /// blank field it was meant to fix; it surfaced as 33 failing tests.</para>
+    ///
+    /// <para>A separate query degrades correctly: a filtered-out title yields an empty label and the employee
+    /// still loads. The tenant filter still applies, so this cannot read another tenant's title.</para>
+    /// </summary>
+    private async Task<string> ResolveJobTitleAsync(Guid jobTitleId, CancellationToken ct)
+        => await _dbContext.JobTitles
+            .AsNoTracking()
+            .Where(j => j.Id == jobTitleId)
+            .Select(j => j.TitleName)
+            .FirstOrDefaultAsync(ct) ?? string.Empty;
+
     private async Task<Result<ManagerReviewDto>> BuildDtoResultAsync(
         AppraisalCycle cycle, Employee employee, Guid reviewId, CancellationToken cancellationToken)
     {
@@ -613,11 +635,12 @@ public sealed class ManagerReviewService : IManagerReviewService
             .AsNoTracking()
             .Include(r => r.Items)
             .FirstOrDefaultAsync(r => r.Id == reviewId, cancellationToken);
-        return Result<ManagerReviewDto>.Success(BuildDto(cycle, employee, review, goals, selfAssessment));
+        var jobTitle = await ResolveJobTitleAsync(employee.JobTitleId, cancellationToken);
+        return Result<ManagerReviewDto>.Success(BuildDto(cycle, employee, jobTitle, review, goals, selfAssessment));
     }
 
     private static ManagerReviewDto BuildDto(
-        AppraisalCycle cycle, Employee employee, ManagerReview? review,
+        AppraisalCycle cycle, Employee employee, string jobTitle, ManagerReview? review,
         IReadOnlyList<Goal> goals, SelfAssessment? selfAssessment)
     {
         var managerByGoal = review?.Items.Where(i => !i.IsDeleted).ToDictionary(i => i.GoalId)
@@ -656,6 +679,9 @@ public sealed class ManagerReviewService : IManagerReviewService
         {
             Id = review?.Id ?? Guid.Empty,
             CycleId = cycle.Id,
+            // GAP-012 / ISSUE-373: both read by the UI, neither previously sent.
+            CycleName = cycle.Name,
+            JobTitle = jobTitle,
             EmployeeId = employee.Id,
             EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
             EmployeeNo = employee.EmployeeNo,

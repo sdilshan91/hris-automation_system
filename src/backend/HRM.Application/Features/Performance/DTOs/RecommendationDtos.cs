@@ -135,6 +135,14 @@ public sealed record RecommendationWorkspaceDto
 {
     public Guid CycleId { get; init; }
     public string CycleName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: which export formats this endpoint will actually accept, so the UI renders a button
+    /// per SUPPORTED format instead of a hardcoded list. The validator accepts csv/xlsx/pdf, but PDF rendering
+    /// is deferred (see the export-rendering section of RecommendationService), so advertising it would offer a
+    /// button that fails. Server-owned precisely so the UI cannot drift from what the server can do.
+    /// </summary>
+    public IReadOnlyList<string> AvailableExportFormats { get; init; } = [];
     public int RatingScaleMax { get; init; }
     public int Page { get; init; }
     public int PageSize { get; init; }
@@ -174,6 +182,13 @@ public sealed record RecommendationSummaryDto
 {
     public Guid CycleId { get; init; }
     public string CycleName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the tenant's display currency (<c>Tenant.Currency</c>). The summary renders it
+    /// beside every money figure and previously read a field the API never sent, so the amounts showed with no
+    /// unit at all — which on a compensation screen is worse than showing nothing.
+    /// </summary>
+    public string Currency { get; init; } = string.Empty;
     public int TotalRecommendations { get; init; }
     public int TotalPromotions { get; init; }
     public decimal TotalBonusPoolAllocated { get; init; }

@@ -39,6 +39,7 @@ public sealed class Feedback360ServiceTests
     private readonly ITenantContext _tenantContext;
 
     private readonly Guid _revieweeEmpId = Guid.NewGuid();
+    private readonly Guid _jobTitleId = Guid.NewGuid();
     private readonly Guid _managerEmpId = Guid.NewGuid();
     private readonly Guid _peer1EmpId = Guid.NewGuid();
     private readonly Guid _peer2EmpId = Guid.NewGuid();
@@ -446,6 +447,62 @@ public sealed class Feedback360ServiceTests
 
         results.Value!.MinPeerThresholdMet.Should().BeTrue();
         results.Value!.ReleaseWarning.Should().BeNull();
+    }
+
+    // ── GAP-012 / ISSUE-373: the job-title label, and the trap behind it ────
+
+    [Fact]
+    public async Task Results_CarryTheRevieweeJobTitle()
+    {
+        Seed();
+        using (var db = CreateDbContext())
+        {
+            db.JobTitles.Add(new JobTitle
+            {
+                Id = _jobTitleId, TenantId = _tenantId, TitleName = "Staff Engineer",
+                IsActive = true, IsDeleted = false,
+            });
+            var reviewee = await db.Employees.FirstAsync(e => e.Id == _revieweeEmpId);
+            reviewee.JobTitleId = _jobTitleId;
+            await db.SaveChangesAsync();
+        }
+
+        var results = await CreateService(HrUser()).GetResultsAsync(_revieweeEmpId, _cycleId);
+
+        results.Value!.JobTitle.Should().Be("Staff Engineer");
+    }
+
+    [Fact]
+    public async Task ASoftDeletedJobTitle_LeavesTheLabelBlank_ButTheRevieweeStillLoads()
+    {
+        Seed();
+        // THE REGRESSION THIS PINS. The obvious way to populate JobTitle is Include(e => e.JobTitle) — and it
+        // is actively dangerous here. Employee.JobTitleId is non-nullable so the navigation is REQUIRED, and
+        // JobTitle carries a global query filter (!IsDeleted && tenant). EF emits an INNER JOIN for a required
+        // navigation, so an employee whose job title is filtered out DISAPPEARS from the query and the caller
+        // gets "no such reviewee" instead of a missing label — a disappearing-employee bug, strictly worse than
+        // the blank field it was meant to fix. It broke 33 tests when tried.
+        //
+        // Resolving the title with its own query degrades correctly, and this arm is what stops the Include
+        // from being reintroduced: with it, results.Value is null and the first assertion fails.
+        using (var db = CreateDbContext())
+        {
+            db.JobTitles.Add(new JobTitle
+            {
+                Id = _jobTitleId, TenantId = _tenantId, TitleName = "Retired Title",
+                IsActive = false, IsDeleted = true,
+            });
+            var reviewee = await db.Employees.FirstAsync(e => e.Id == _revieweeEmpId);
+            reviewee.JobTitleId = _jobTitleId;
+            await db.SaveChangesAsync();
+        }
+
+        var results = await CreateService(HrUser()).GetResultsAsync(_revieweeEmpId, _cycleId);
+
+        results.Value.Should().NotBeNull(
+            "a soft-deleted job title must not erase the employee from the query");
+        results.Value!.JobTitle.Should().BeEmpty("the label is absent, but the reviewee is not");
+        results.Value!.RevieweeName.Should().NotBeNullOrEmpty("the rest of the record is unaffected");
     }
 
     // ── permission gate: results require Review.All ─────────────────────

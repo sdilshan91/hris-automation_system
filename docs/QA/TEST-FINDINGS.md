@@ -8207,7 +8207,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **ID:** ISSUE-373
 - **Type:** ISSUE (FE↔BE contract, S-1 class) — **partly a methodology note**
 - **Severity:** **MED–HIGH, unconfirmed per item.** Where the FE reads a field the API never sends, the value is `undefined`; the register reports US-PRF-002/009/010 hard-crashing rather than degrading. Not re-confirmed at runtime here.
-- **Status:** `OPEN`
+- **Status:** `OPEN` — **triage COMPLETE 2026-08-12; the 17 are now classified and mapped (see below). No code changed yet.**
 - **Layer:** FE
 - **Module / US / TC:** Performance / US-PRF-002/003/006/009/010 / — — found 2026-08-10 while fixing GAP-012's request half
 - **Title:** A mechanical diff of the 96 performance FE interfaces against the generated contract flags **17 response DTOs** with FE-only fields. **Each needs checking against its service before being called a defect.**
@@ -8238,6 +8238,45 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Confidence:** 100% that these 17 have FE-only fields on the name-matched schema. **~50% that any given row is a real defect** rather than an adapter — which is precisely why they are listed for triage instead of being "fixed" in bulk.
 
 ---
+
+- **★ TRIAGE RESULT 2026-08-12 — measured against the committed contract, not the diff tool.** The "17 response DTOs" split cleanly by *what the user sees*, which the original enumeration did not distinguish:
+  - **6 interfaces are missing a COLLECTION field → the list/table renders NOTHING.** These are the user-visible breaks, and they are the whole of the severity.
+  - **11 are scalar-only → degraded display** (a field renders blank/`undefined`). Real, but cosmetic by comparison.
+- **Every missing field has a plausible contract counterpart — this is one systematic vocabulary mismatch (S-1), not 17 independent bugs.** Verified for `ISelfAssessment`: the service does `http.get<ISelfAssessment>(...)`, **a direct cast with no adapter**, so the FE reads names the API never sends and gets `undefined`. `goals` → the API sends **`items`**, which is why US-PRF-002 renders empty or throws rather than degrading.
+- **The mapping (FE name → contract name; `—` = genuinely absent, needs a decision, not an adapter):**
+  | interface | rename → contract | genuinely absent |
+  |---|---|---|
+  | `ISelfAssessment` | `goals`→**`items`** · `submittedOn`→`submittedAt` · `weightedScore`→`weightedSelfScore` · `windowOpen`→`isSelfAssessmentOpen` | `cycleName`, `windowClosesOn` |
+  | `IManagerReview` | `goals`→**`items`** · `submittedOn`→`submittedAt` · `windowOpen`→`isReviewWindowOpen` · `selfScore`→`weightedSelfScore` · `managerScore`→`weightedManagerScore` | `cycleName`, `jobTitle` |
+  | `IFeedback360Results` | `competencies`→**`competencyAverages`** · `comments`→**`entries`** · `anonymous`→`isAnonymousFeedback` · `employeeId`→`revieweeEmployeeId` · `employeeName`→`revieweeName` | `cycleName`, `jobTitle`, `exportAvailable`, `released` |
+  | `IPipObjective` | `objectiveId`→`id` | **`checkpoints`** — the contract has no checkpoint collection on the objective at all, so this one is NOT a rename |
+  | `IRecommendationSummary` | `byDepartment`→**`incrementByDepartment`** · `comparison`→**`previousCycle`** · `totalIncrements`→`totalIncrementAllocated` · `bonusPoolAllocated`→`totalBonusPoolAllocated` | `currency`, `totalBonuses` (check against `totalRecommendations`) |
+  | `IRecommendationWorkspace` | — | `availableExportFormats`, `compensationVisible`. **And note the reverse direction: the contract sends `rows`/`totalCount`/`pageSize`/`ratingScaleMax` that the FE interface does not declare at all**, so this one needs reading as a whole rather than field-patched. |
+- **Recommended approach, unchanged from the register but now with evidence: a `map()` adapter per service, not an interface rename.** It isolates the change from templates (the FE keeps its own vocabulary), and it is the only option that can also *compute* the genuinely-absent fields where they are derivable. For fields that are neither mappable nor derivable, the decision is per field: add to the backend DTO, or remove from the UI — **do not invent a value**.
+- **Do the 6 collection cases first.** A blank table is a broken feature; a blank scalar is a blemish. Within those, US-PRF-002 (self-assessment) then US-PRF-003 (manager review), as the register recommends.
+- **The methodology warning above still stands and now has a second edge:** the diff cannot see adapters, so a name difference may be correct design — but the `IRecommendationWorkspace` row shows the diff also misses fields the FE fails to declare, which no FE-only listing surfaces. Check both directions.
+
+- **★ BACKEND HALF DONE 2026-08-12 — 5 fields added, 4 deliberately NOT added.** The decision was "add absent fields to the backend DTOs", and that was applied where the backend has a truthful answer. **Added + populated:** `SelfAssessmentDto.CycleName/WindowClosesOn` (from `AppraisalCycle.Name`/`SelfAssessmentEnd`) · `ManagerReviewDto.CycleName/JobTitle` · `Feedback360ResultsDto.CycleName/JobTitle` · `RecommendationSummaryDto.Currency` (from `Tenant.Currency`) · `RecommendationWorkspaceDto.AvailableExportFormats`.
+  - **`JobTitle` needed three `Include(e => e.JobTitle)` calls, not just a DTO property.** `employee.JobTitle?.TitleName` compiles and returns `""` forever without them — the same "control that looks applied and isn't" shape as GAP-024 and GAP-035. Worth remembering as the default failure mode when adding a nav-derived field.
+  - **`AvailableExportFormats` advertises `csv`/`xlsx` only.** The validator accepts `csv/xlsx/pdf`, but PDF rendering is deferred — advertising it would render a button that fails.
+- **The 4 NOT added, each with the reason it has no backend truth to send:**
+  | field | why not |
+  |---|---|
+  | `IFeedback360Results.released` | **No release state exists in the domain at all.** Adding the property means inventing state, not exposing it. Needs a product decision: model release, or have the UI stop claiming it. |
+  | `IFeedback360Results.exportAvailable` | Reads as a client-side capability check, not server state. No backend concept backs it. |
+  | `IRecommendationWorkspace.compensationVisible` | **No compensation permission exists in `PermissionCatalog`**, and `GetWorkspaceAsync` *deliberately* nulls `CurrentCompensation` and never decrypts. So the honest value is a constant `false`, which makes the flag pointless. Either model the permission or drop the flag. |
+  | `IRecommendationSummary.totalBonuses` | **Dead FE surface — no template renders it.** Adding a backend field would be building for nothing. Remove it from the interface instead. |
+- **`IPipObjective.checkpoints` is a MODEL mismatch, not a missing field, and was not touched.** `PipCheckpoint` carries `PipId` — checkpoints belong to the **PIP**, not to an objective — while the FE renders them as a per-objective accordion body. **Neither US-PRF-010 nor the tech doc documents either design**, so the FE structure is an invention and the model is the shipped truth. Closing this means a migration re-parenting checkpoints (product decision) **or** moving the FE accordion to PIP level (cheaper, and matches what the data actually is). **Recommended: change the FE.**
+- **Still to do (the behavioural half): the 6 `map()` adapters.** The backend additions above are purely ADDITIVE — they add fields nothing reads yet, so they cannot break anything, which is why they are landing separately. The adapters are what actually fixes the blank tables, and a half-applied adapter migration is the genuinely risky state.
+
+- **★★ THE INCLUDE TRAP — worth reading before adding any nav-derived DTO field, anywhere in this codebase.** Populating `JobTitle` looked like a one-liner: `Include(e => e.JobTitle)` then `employee.JobTitle?.TitleName`. **It broke 33 tests, and in production it would have been far worse than the blank field it was fixing.**
+  - `Employee.JobTitleId` is **non-nullable**, so the navigation is **REQUIRED** (`EmployeeConfiguration.cs:161-164`).
+  - `JobTitle` carries a **global query filter** — `!IsDeleted && (!IsResolved || tenant match)` (`AppDbContext.cs:289-290`).
+  - EF Core emits an **INNER JOIN** for a required navigation. So an employee whose job title is **soft-deleted** (or absent, as in every test fixture) **vanishes from the query entirely** — the caller gets *"no such employee"* rather than a missing label. **A disappearing-employee bug.**
+  - This is the same class EF already warns about at build time for `Role`: *"has a global query filter defined and is the required end of a relationship."* The warning was already in the build log and easy to scroll past.
+- **The fix: resolve the label with its OWN query** (`ResolveJobTitleAsync` in `ManagerReviewService`, an inline equivalent in `Feedback360Service`). A filtered-out title then yields an empty label and the employee still loads. The tenant filter still applies, so it cannot read another tenant's title.
+- **Guarded, not just fixed:** `ASoftDeletedJobTitle_LeavesTheLabelBlank_ButTheRevieweeStillLoads` pins both directions. **Mutation-verified — reintroducing the `Include` turns 7 arms red, that one by name.** It exists specifically because the `Include` is the *obvious* thing to reach for and will be reached for again.
+- **Process note, because this is the third instance in one session of the obvious mechanism being wrong:** the §9.4-3 `IServerFilter` could not see the job's DI scope, `Serilog.Enrichers.Span` emitted nothing with OTel dormant, and this `Include` deletes rows. All three compiled and would have passed review. **Only running them caught it** — see [[read-the-running-log]].
 
 ### ISSUE-374 — three more onboarding routes the FE calls that do not exist, plus the modify request shape
 - **ID:** ISSUE-374

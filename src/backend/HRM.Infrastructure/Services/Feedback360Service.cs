@@ -360,14 +360,31 @@ public sealed class Feedback360Service : IFeedback360Service
         var nonAnonReviewerIds = feedbacks.Where(f => !f.IsAnonymous).Select(f => f.ReviewerEmployeeId).ToHashSet();
         var reviewerNames = await LoadNameLookupAsync(nonAnonReviewerIds, cancellationToken);
 
-        var dto = Aggregate(cycle, reviewee, feedbacks, assignments, labels, reviewerNames);
+        // GAP-012 / ISSUE-373: the reviewee's job title, resolved with its OWN query.
+        //
+        // NOT Include(e => e.JobTitle), which is what I tried first and which is actively dangerous here:
+        // Employee.JobTitleId is non-nullable so the navigation is REQUIRED, and JobTitle carries a global
+        // query filter (!IsDeleted && tenant). EF emits an INNER JOIN for a required navigation, so an employee
+        // whose job title is soft-deleted would VANISH from the query altogether — the caller would see "no
+        // such reviewee" instead of a missing label. It broke 33 tests, and in production it would have been a
+        // disappearing-employee bug rather than a blank field.
+        //
+        // A separate query degrades the right way: a filtered-out title yields an empty label and the reviewee
+        // still loads. The tenant filter still applies, so this cannot read another tenant's title.
+        var jobTitle = await _dbContext.JobTitles
+            .AsNoTracking()
+            .Where(j => j.Id == reviewee.JobTitleId)
+            .Select(j => j.TitleName)
+            .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+
+        var dto = Aggregate(cycle, reviewee, jobTitle, feedbacks, assignments, labels, reviewerNames);
         return Result<Feedback360ResultsDto>.Success(dto);
     }
 
     // ── Aggregation (pure given the loaded rows) ─────────────────────
 
     private static Feedback360ResultsDto Aggregate(
-        AppraisalCycle cycle, Employee reviewee,
+        AppraisalCycle cycle, Employee reviewee, string jobTitle,
         IReadOnlyList<Feedback360> feedbacks, IReadOnlyList<ReviewerAssignment> assignments,
         IReadOnlyDictionary<string, string> labels, IReadOnlyDictionary<Guid, string> reviewerNames)
     {
@@ -459,6 +476,9 @@ public sealed class Feedback360Service : IFeedback360Service
         return new Feedback360ResultsDto
         {
             CycleId = cycle.Id,
+            // GAP-012 / ISSUE-373: both read by the UI, neither previously sent.
+            CycleName = cycle.Name,
+            JobTitle = jobTitle,
             RevieweeEmployeeId = reviewee.Id,
             RevieweeName = FullName(reviewee),
             IsAnonymousFeedback = cycle.IsAnonymousFeedback,
