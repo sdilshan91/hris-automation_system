@@ -143,6 +143,18 @@ public sealed record RecommendationWorkspaceDto
     /// button that fails. Server-owned precisely so the UI cannot drift from what the server can do.
     /// </summary>
     public IReadOnlyList<string> AvailableExportFormats { get; init; } = [];
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: whether THIS caller may see compensation figures — a real
+    /// <c>Payroll.ViewCompensation</c> check, not a constant.
+    ///
+    /// <para>This field was refused on the first pass precisely because it had nothing truthful behind it: the
+    /// Angular workspace read it and its comment claimed results "may omit compensation when the caller lacks
+    /// visibility", while no compensation permission existed anywhere and the workspace nulled the figures
+    /// unconditionally. Shipping a hardcoded <c>false</c> would have been field-stuffing. The permission now
+    /// exists, so the flag can mean what the UI always claimed it meant.</para>
+    /// </summary>
+    public bool CompensationVisible { get; init; }
     public int RatingScaleMax { get; init; }
     public int Page { get; init; }
     public int PageSize { get; init; }

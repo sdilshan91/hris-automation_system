@@ -125,7 +125,7 @@ public sealed class RecommendationIntegrationTests
 
         // Tenant B HR cannot read the Tenant A recommendation by id.
         var bHrUserId = Guid.NewGuid();
-        var crossRead = await Service(_tenantB, bHrUserId, noop, PermissionCatalog.Performance.PublishAll)
+        var crossRead = await Service(_tenantB, bHrUserId, noop, PermissionCatalog.Performance.PublishAll, PermissionCatalog.Payroll.ViewCompensation)
             .GetAsync(created.Value!.Id);
         crossRead.IsFailure.Should().BeTrue();
         crossRead.StatusCode.Should().Be(404);
@@ -148,7 +148,10 @@ public sealed class RecommendationIntegrationTests
             .SaveAsync(BonusInput(a.EmployeeEmpId, a.CycleId, 5000m))).Value!;
 
         // Read back in a fresh scoped context.
-        var reread = await Service(_tenantA, a.HrUserId, noop, PermissionCatalog.Performance.PublishAll).GetAsync(rec.Id);
+        // GAP-012 / ISSUE-373: GetAsync is the compensation-reveal path and now requires
+        // Payroll.ViewCompensation on top of view-authorization.
+        var reread = await Service(_tenantA, a.HrUserId, noop,
+            PermissionCatalog.Performance.PublishAll, PermissionCatalog.Payroll.ViewCompensation).GetAsync(rec.Id);
         reread.IsSuccess.Should().BeTrue();
         reread.Value!.BonusAmount.Should().Be(5000m);
         reread.Value.Events.Should().Contain(e => e.EventType == RecommendationEventType.Created);
