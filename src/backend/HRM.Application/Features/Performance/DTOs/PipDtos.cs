@@ -14,12 +14,29 @@ public sealed record PipObjectiveDto
     public DateOnly DueDate { get; init; }
     public int SortOrder { get; init; }
     public bool AddedAtExtension { get; init; }
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the checkpoints recorded against THIS objective — the body of the per-objective
+    /// accordion the UI has always rendered (<c>IPipObjective.checkpoints</c>).
+    ///
+    /// <para>Checkpoints attributed to the PIP as a whole (<c>ObjectiveId == null</c>, which is every row
+    /// predating this change) do NOT appear here; they remain in the PIP-level <c>Checkpoints</c> list, which
+    /// stays the complete set. So the two are not duplicates of each other and the flat list is still the one
+    /// to count.</para>
+    /// </summary>
+    public IReadOnlyList<PipCheckpointDto> Checkpoints { get; init; } = [];
 }
 
 /// <summary>One recorded checkpoint assessment — append-only history (US-PRF-008 AC-3/FR-4/FR-5).</summary>
 public sealed record PipCheckpointDto
 {
     public Guid Id { get; init; }
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the objective this checkpoint measures, or null when it was recorded against the
+    /// PIP as a whole. Null is not a defect — it is what every checkpoint predating the relationship is.
+    /// </summary>
+    public Guid? ObjectiveId { get; init; }
     public DateOnly CheckpointDate { get; init; }
     public PipCheckpointStatus ProgressStatus { get; init; }
     public string ProgressStatusName { get; init; } = string.Empty;
@@ -211,6 +228,11 @@ public sealed record CreatePipInput(
 
 public sealed record RecordCheckpointInput(
     Guid PipId,
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the objective this checkpoint measures. OPTIONAL and defaulted to null so every
+    /// existing caller keeps compiling and keeps its current behaviour — a checkpoint recorded against the PIP
+    /// as a whole. Placed last in the parameter list for the same reason.
+    /// </summary>
     DateOnly CheckpointDate,
     PipCheckpointStatus ProgressStatus,
     string EvidenceNotes,
@@ -218,7 +240,8 @@ public sealed record RecordCheckpointInput(
     string? AttachmentStorageKey,
     string? AttachmentContentType,
     long? AttachmentSizeBytes,
-    string? ClientIpAddress);
+    string? ClientIpAddress,
+    Guid? ObjectiveId = null);
 
 public sealed record SetPipOutcomeInput(
     Guid PipId,

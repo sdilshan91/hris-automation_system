@@ -363,6 +363,17 @@ public sealed class PipService : IPipService
         if (string.IsNullOrWhiteSpace(input.EvidenceNotes))
             return Result<PipDto>.Failure("Evidence notes are required.", 422, "evidence_required");
 
+        // GAP-012 / ISSUE-373: if the caller attributes this checkpoint to an objective, that objective must
+        // belong to THIS pip. Without the check a caller could attach progress to another PIP's objective —
+        // same-tenant, so the query filter would not stop it — and the per-objective accordion would then show
+        // a checkpoint from someone else's plan.
+        if (input.ObjectiveId is { } objectiveId
+            && !pip.Objectives.Any(o => o.Id == objectiveId && !o.IsDeleted))
+        {
+            return Result<PipDto>.Failure(
+                "The objective does not belong to this PIP.", 422, "objective_not_in_pip");
+        }
+
         var actor = await GetCurrentEmployeeAsync(cancellationToken);
         var now = DateTime.UtcNow;
 
@@ -371,6 +382,8 @@ public sealed class PipService : IPipService
             Id = BaseEntity.NewUuidV7(),
             TenantId = _tenantContext.TenantId,
             PipId = pip.Id,
+            // Null means "recorded against the PIP as a whole" — the pre-existing behaviour, unchanged.
+            ObjectiveId = input.ObjectiveId,
             CheckpointDate = input.CheckpointDate,
             ProgressStatus = input.ProgressStatus,
             EvidenceNotes = input.EvidenceNotes.Trim(),
@@ -714,21 +727,20 @@ public sealed class PipService : IPipService
                     DueDate = o.DueDate,
                     SortOrder = o.SortOrder,
                     AddedAtExtension = o.AddedAtExtension,
+                    // GAP-012 / ISSUE-373: the per-objective accordion body the UI has always rendered.
+                    // Checkpoints attributed to the PIP as a whole (ObjectiveId == null) stay OUT of here and
+                    // remain in the flat list below, which is still the complete set — so the two are not
+                    // duplicates and nothing is double-counted.
+                    Checkpoints = pip.Checkpoints
+                        .Where(c => !c.IsDeleted && c.ObjectiveId == o.Id)
+                        .OrderBy(c => c.RecordedAt)
+                        .Select(MapCheckpoint)
+                        .ToList(),
                 }).ToList(),
+            // The COMPLETE set, including checkpoints attributed to the PIP as a whole. The per-objective
+            // lists above group a SUBSET of these; they do not replace this one.
             Checkpoints = pip.Checkpoints.Where(c => !c.IsDeleted).OrderBy(c => c.RecordedAt)
-                .Select(c => new PipCheckpointDto
-                {
-                    Id = c.Id,
-                    CheckpointDate = c.CheckpointDate,
-                    ProgressStatus = c.ProgressStatus,
-                    ProgressStatusName = c.ProgressStatus.ToString(),
-                    EvidenceNotes = c.EvidenceNotes,
-                    ReviewerEmployeeId = c.ReviewerEmployeeId,
-                    ReviewerName = c.ReviewerName,
-                    RecordedAt = c.RecordedAt,
-                    AttachmentFileName = c.AttachmentFileName,
-                    AttachmentSizeBytes = c.AttachmentSizeBytes,
-                }).ToList(),
+                .Select(MapCheckpoint).ToList(),
             Events = pip.Events.Where(e => !e.IsDeleted).OrderBy(e => e.OccurredAt)
                 .Select(e => new PipEventDto
                 {
@@ -748,4 +760,24 @@ public sealed class PipService : IPipService
 
     private static string FullName(Employee e) => $"{e.FirstName} {e.LastName}".Trim();
     private static string? SignerDisplayName(Employee? e) => e is null ? null : FullName(e);
+
+    /// <summary>
+    /// GAP-012 / ISSUE-373: ONE checkpoint projection, shared by the flat PIP-level list and the new
+    /// per-objective grouping. Deliberately not duplicated — two copies of the same mapping is how a field gets
+    /// added to one and forgotten in the other, which is the drift class this programme exists to remove.
+    /// </summary>
+    private static PipCheckpointDto MapCheckpoint(PipCheckpoint c) => new()
+    {
+        Id = c.Id,
+        ObjectiveId = c.ObjectiveId,
+        CheckpointDate = c.CheckpointDate,
+        ProgressStatus = c.ProgressStatus,
+        ProgressStatusName = c.ProgressStatus.ToString(),
+        EvidenceNotes = c.EvidenceNotes,
+        ReviewerEmployeeId = c.ReviewerEmployeeId,
+        ReviewerName = c.ReviewerName,
+        RecordedAt = c.RecordedAt,
+        AttachmentFileName = c.AttachmentFileName,
+        AttachmentSizeBytes = c.AttachmentSizeBytes,
+    };
 }

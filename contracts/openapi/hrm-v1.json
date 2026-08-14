@@ -25584,6 +25584,11 @@
             "format": "uuid",
             "type": "string"
           },
+          "objectiveId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
           "progressStatus": {
             "$ref": "#/components/schemas/PipCheckpointStatus"
           },
@@ -25808,6 +25813,13 @@
         "properties": {
           "addedAtExtension": {
             "type": "boolean"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/PerformancePipCheckpointDto"
+            },
+            "nullable": true,
+            "type": "array"
           },
           "description": {
             "nullable": true,
