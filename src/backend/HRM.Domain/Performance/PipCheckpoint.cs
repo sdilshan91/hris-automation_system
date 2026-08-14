@@ -17,6 +17,26 @@ public sealed class PipCheckpoint : BaseEntity
     /// <summary>The parent PIP (FK, required).</summary>
     public Guid PipId { get; set; }
 
+    /// <summary>
+    /// GAP-012 / ISSUE-373: the objective this checkpoint measures progress against. NULLABLE — a checkpoint
+    /// may still be recorded against the PIP as a whole.
+    ///
+    /// <para><b>Why this was added.</b> The Angular UI has always rendered checkpoints as the body of a
+    /// per-objective accordion (<c>IPipObjective.checkpoints</c>), while the model attached them only to the
+    /// PIP. Neither US-PRF-010 nor the tech doc documents either design, so there was no authority to appeal
+    /// to — the UI was expressing something the schema could not represent. A checkpoint that measures
+    /// progress is more useful attached to the objective it measures, so the model gains the relationship
+    /// rather than the UI losing the grouping.</para>
+    ///
+    /// <para><b>Why nullable rather than required.</b> Existing checkpoints have no objective to attribute
+    /// them to, and guessing one would fabricate history — a PIP may have several objectives, so there is no
+    /// unambiguous backfill. Null therefore means "recorded against the PIP as a whole", which is exactly what
+    /// every pre-existing row genuinely is. It also keeps the FK optional, avoiding the required-navigation
+    /// INNER JOIN trap that made employees vanish when their job title was soft-deleted (see
+    /// <c>ManagerReviewService.ResolveJobTitleAsync</c>).</para>
+    /// </summary>
+    public Guid? ObjectiveId { get; set; }
+
     /// <summary>The scheduled/actual checkpoint date (AC-3).</summary>
     public DateOnly CheckpointDate { get; set; }
 
@@ -51,4 +71,7 @@ public sealed class PipCheckpoint : BaseEntity
 
     // ── Navigation ─────────────────────────────────────────────────────
     public Pip? Pip { get; set; }
+
+    /// <summary>The objective this checkpoint measures, when it is attributed to one. See <see cref="ObjectiveId"/>.</summary>
+    public PipObjective? Objective { get; set; }
 }

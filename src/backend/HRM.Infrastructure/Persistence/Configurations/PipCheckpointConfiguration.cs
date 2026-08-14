@@ -40,5 +40,25 @@ public sealed class PipCheckpointConfiguration : IEntityTypeConfiguration<PipChe
         builder.Property(c => c.IsDeleted).HasDefaultValue(false).IsRequired();
 
         builder.HasIndex(c => new { c.TenantId, c.PipId, c.RecordedAt });
+
+        // GAP-012 / ISSUE-373: the objective a checkpoint measures. OPTIONAL by design — null means "recorded
+        // against the PIP as a whole", which is what every pre-existing row genuinely is.
+        //
+        // IsRequired(false) matters beyond nullability. A REQUIRED navigation whose principal carries a global
+        // query filter makes EF emit an INNER JOIN, so an Include would silently drop the dependent row when the
+        // principal is filtered out — that is exactly how adding Include(e => e.JobTitle) made employees vanish
+        // when their job title was soft-deleted, and it broke 33 tests before it was caught. Optional keeps the
+        // join a LEFT JOIN, so a soft-deleted objective costs the grouping, never the checkpoint.
+        //
+        // Restrict, not Cascade: a checkpoint is append-only progress history (NFR-2). Deleting an objective
+        // must not silently erase the record that someone was measured against it.
+        builder.HasOne(c => c.Objective)
+            .WithMany()
+            .HasForeignKey(c => c.ObjectiveId)
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Serves the per-objective grouping the UI renders.
+        builder.HasIndex(c => new { c.TenantId, c.ObjectiveId });
     }
 }

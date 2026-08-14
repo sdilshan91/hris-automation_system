@@ -88,11 +88,15 @@ public sealed class PipServiceTests
         await db.SaveChangesAsync();
     }
 
-    private CreatePipInput CreateInput(int durationDays = 60, Guid? mentor = null)
+    /// <param name="subject">
+    /// GAP-012 / ISSUE-373: lets a test create a SECOND pip for a different employee, so cross-pip objective
+    /// attribution can be exercised with a real foreign objective rather than a made-up Guid.
+    /// </param>
+    private CreatePipInput CreateInput(int durationDays = 60, Guid? mentor = null, Guid? subject = null)
     {
         var start = new DateOnly(2026, 7, 1);
         return new CreatePipInput(
-            _employeeEmpId, "Underperformance on delivery", start, start.AddDays(durationDays),
+            subject ?? _employeeEmpId, "Underperformance on delivery", start, start.AddDays(durationDays),
             mentor ?? _mentorEmpId, null, PipEscalationAction.TerminationRecommendation,
             new[] { new PipObjectiveInput("Improve velocity", "desc", "Ship 5 tickets/sprint", start.AddDays(30)) },
             new[] { start.AddDays(15), start.AddDays(30) }, "127.0.0.1");
@@ -192,6 +196,65 @@ public sealed class PipServiceTests
     }
 
     // ── AC-3/FR-4/FR-5: append-only checkpoints ─────────────────────────
+
+    [Fact]
+    public async Task ACheckpointAttributedToAnObjective_AppearsUnderThatObjective_AndNotUnderTheOthers()
+    {
+        // GAP-012 / ISSUE-373. The UI has always rendered checkpoints as a per-objective accordion body while
+        // the model attached them only to the PIP, so IPipObjective.checkpoints read undefined. The model now
+        // carries the relationship.
+        await SeedEmployeesAsync();
+        var pip = (await Service(HrUser()).CreateAsync(CreateInput())).Value!;
+        var first = pip.Objectives[0];
+
+        var result = await Service(ManagerUser()).RecordCheckpointAsync(new RecordCheckpointInput(
+            pip.Id, new DateOnly(2026, 7, 15), PipCheckpointStatus.OnTrack, "Objective-specific progress",
+            null, null, null, null, null, ObjectiveId: first.Id));
+
+        result.IsSuccess.Should().BeTrue();
+        var objectives = result.Value!.Objectives;
+        objectives.Single(o => o.Id == first.Id).Checkpoints
+            .Should().ContainSingle().Which.EvidenceNotes.Should().Be("Objective-specific progress");
+        objectives.Where(o => o.Id != first.Id)
+            .Should().OnlyContain(o => o.Checkpoints.Count == 0, "the grouping must not smear across objectives");
+    }
+
+    [Fact]
+    public async Task APipLevelCheckpoint_StaysOutOfEveryObjective_ButRemainsInTheCompleteList()
+    {
+        // Null ObjectiveId is not a defect — it is what every checkpoint predating this change is, and what an
+        // unattributed one still is. It must not vanish, and it must not be arbitrarily assigned to objective
+        // one, which is what a backfill would have done.
+        await SeedEmployeesAsync();
+        var pip = (await Service(HrUser()).CreateAsync(CreateInput())).Value!;
+
+        var result = await Service(ManagerUser()).RecordCheckpointAsync(new RecordCheckpointInput(
+            pip.Id, new DateOnly(2026, 7, 15), PipCheckpointStatus.OnTrack, "Whole-plan progress",
+            null, null, null, null, null));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Checkpoints.Should().ContainSingle("the flat list is the complete set");
+        result.Value.Checkpoints[0].ObjectiveId.Should().BeNull();
+        result.Value.Objectives.Should().OnlyContain(o => o.Checkpoints.Count == 0);
+    }
+
+    [Fact]
+    public async Task AnObjectiveFromAnotherPip_IsRefused()
+    {
+        // Same tenant, so the global query filter does NOT stop this — the check has to be explicit. Without
+        // it, progress could be attached to another employee's plan and would then render in their accordion.
+        await SeedEmployeesAsync();
+        var mine = (await Service(HrUser()).CreateAsync(CreateInput())).Value!;
+        var other = (await Service(HrUser()).CreateAsync(CreateInput(subject: _managerEmpId))).Value!;
+
+        var result = await Service(ManagerUser()).RecordCheckpointAsync(new RecordCheckpointInput(
+            mine.Id, new DateOnly(2026, 7, 15), PipCheckpointStatus.OnTrack, "Wrong plan",
+            null, null, null, null, null, ObjectiveId: other.Objectives[0].Id));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("objective_not_in_pip");
+    }
 
     [Fact]
     public async Task Manager_records_checkpoint_appends_immutable_history()

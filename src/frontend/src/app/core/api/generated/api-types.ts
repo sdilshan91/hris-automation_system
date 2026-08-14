@@ -39078,6 +39078,8 @@ export interface components {
             evidenceNotes?: string | null;
             /** Format: uuid */
             id?: string;
+            /** Format: uuid */
+            objectiveId?: string | null;
             progressStatus?: components["schemas"]["PipCheckpointStatus"];
             progressStatusName?: string | null;
             /** Format: date-time */
@@ -39149,6 +39151,7 @@ export interface components {
         };
         PerformancePipObjectiveDto: {
             addedAtExtension?: boolean;
+            checkpoints?: components["schemas"]["PerformancePipCheckpointDto"][] | null;
             description?: string | null;
             /** Format: date */
             dueDate?: string;
