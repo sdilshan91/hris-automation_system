@@ -16,7 +16,49 @@
 > CI exercise **two** of the three documented isolation layers, never three — which is what makes the six
 > unfiltered entities (GAP-006) matter. The **prod ops flip** remains outstanding (Wave 5 / P4).
 
-> #> ### 🔒 Conflict-resolution programme — step 1 (ledger truth) 2026-08-12
+> ### 📍 Session close 2026-08-14 — programme half done; everything remaining is SPECIFIED, not undecided
+>
+> **PRs #481–#507 merged.** Every P0 closed. Three gates now exist that did not: semgrep **blocking**, the E2E
+> suite **running against a real stack**, and `LedgerTraceabilityTests` failing CI when the ledgers drift.
+>
+> **Step 1 (ledger truth) — DONE.** Contradictions classified: the register headlines 36, a grep returns 51,
+> classifying gives **28 actionable** (23 of the 51 are summary lines). 5 verified stale — all 4 authentication
+> rows plus ONB-002 AC-1, closed by this session's own #483/#491. 2 verified still live (ATT-011 AC-5,
+> US-PRF-011). **~11 remain to re-verify**; all cite code that still exists.
+>
+> **Step 2 — 2 of 4 model changes merged.**
+> - **#506 `Payroll.ViewCompensation`** + enforcement at both the reveal path and the workspace flag. HR
+>   Officers lose the reveal — intended, and a real permission removal for an existing role.
+> - **#507 `PipCheckpoint.ObjectiveId`** (nullable, `Restrict`, migration, no backfill) so checkpoints attach
+>   to the objective they measure.
+>
+> **Specified and ready, NOT built:** the 360 release (**a new `Feedback360Release` entity** — there is no
+> per-reviewee aggregate, and BR-4's peer threshold forces per-reviewee granularity; **plus a reviewee-facing
+> read that does not exist**, since `GetResultsAsync` requires `Performance.ReviewAll` at `:331`) · the goal
+> owner tier · the 633-interface FE migration onto generated types · per-tenant uptime.
+>
+> **★ Three rules this session paid for, in order of what they cost:**
+> 1. **Every model-change PR must regenerate the contract AND the TS types ITSELF.** The GAP-S1 gate is
+>    **per-commit**, so "regenerate once at the end" fails CI. The local suite was **5398/5398 green** when this
+>    was caught — the contract check is a CI step, not a test, which is exactly why it is a gate.
+> 2. **Never `Include` a required navigation whose principal has a query filter.** EF emits an INNER JOIN, so a
+>    soft-deleted `JobTitle` makes the **employee vanish from the query**. 33 tests red; in production a
+>    disappearing-employee bug, strictly worse than the blank label it was meant to fix. Resolve such labels
+>    with their own query.
+> 3. **A PR can look fine with only `scan: pass`.** CI Gate silently never fired on #507; close/reopen
+>    re-triggered it. Nothing asserts a PR has all five checks before merge — a branch-protection setting, not
+>    code, and **still outstanding**.
+>
+> **★ The operating rule, earned four times over: read the register as QUESTIONS, not instructions.** Five of
+> eight prescriptions executed were wrong as written, and four separate counts did not survive measurement.
+> Every one of the four model changes was larger or differently shaped than its description. **Scope against
+> `src/` before building.**
+>
+> **Two contributions to the drift were mine** — a GAP row left reading "NOT DONE" after I shipped it, and a
+> memory note calling a resolved bug "the only item accruing cost". That is why step 1 produced a guard rather
+> than another sweep.
+
+> ### 🔒 Conflict-resolution programme — step 1 (ledger truth) 2026-08-12
 >
 > **Decision recorded: resolve the doc↔code conflicts BEFORE further gap-filling, choosing the best option
 > rather than the cheapest.** Four choices were taken on that basis, two of them reversing advice I had given
