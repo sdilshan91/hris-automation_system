@@ -26407,6 +26407,9 @@
           "budget": {
             "$ref": "#/components/schemas/PerformanceRecommendationBudgetDto"
           },
+          "compensationVisible": {
+            "type": "boolean"
+          },
           "cycleId": {
             "format": "uuid",
             "type": "string"

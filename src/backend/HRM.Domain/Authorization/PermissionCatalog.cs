@@ -205,6 +205,26 @@ public static class PermissionCatalog
         /// this up.
         /// </summary>
         public const string ViewSensitive = "Payroll.ViewSensitive";
+
+        /// <summary>
+        /// GAP-012 / ISSUE-373: read an individual's COMPENSATION figures — current salary, increment and
+        /// bonus amounts — outside the payroll module, specifically on the performance recommendation
+        /// workspace (US-PRF-010).
+        ///
+        /// <para><b>Why this had to exist before the UI flag could be honest.</b> The Angular workspace reads a
+        /// <c>compensationVisible</c> flag and its own comment says results "may omit compensation when the
+        /// caller lacks visibility" — but there was NO compensation permission anywhere in this catalog, and
+        /// <c>GetWorkspaceAsync</c> unconditionally nulls the figures. So the only truthful value the API could
+        /// have sent was a constant <c>false</c>, which makes the flag decorative. Rather than ship a
+        /// meaningless field or invent a mapping, the missing concept is added here.</para>
+        ///
+        /// <para>Deliberately a SEPARATE permission from <see cref="View"/>: running payroll and reading one
+        /// named person's salary inside a performance review are different jobs. Scoped like
+        /// <see cref="ViewSensitive"/> — Tenant Owner / Tenant Admin / HR Manager, <b>not</b> HR Officer — for
+        /// the same reason: an officer who compiles recommendations is not thereby trusted with the figures.
+        /// The reveal is already audited (BUG-083, fields named and no values stored); this gates it.</para>
+        /// </summary>
+        public const string ViewCompensation = "Payroll.ViewCompensation";
     }
 
     // ── Recruitment Module ───────────────────────────────────────────
@@ -530,7 +550,7 @@ public static class PermissionCatalog
         Attendance.CheckIn, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.RegularizeSelf, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
 
         // Payroll
-        Payroll.View, Payroll.ViewOwn, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive,
+        Payroll.View, Payroll.ViewOwn, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive, Payroll.ViewCompensation,
 
         // Recruitment
         Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
@@ -659,7 +679,7 @@ public static class PermissionCatalog
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Delete, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
-            Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive,
+            Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive, Payroll.ViewCompensation,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
             Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
             // DEC-1: holds Employee/Leave/Attendance.View.All → org-wide report scope preserved via Reports.View.All.
@@ -686,7 +706,7 @@ public static class PermissionCatalog
             Employee.ViewAll, Employee.Create, Employee.Edit, Employee.Export, Employee.ChangeStatus, Employee.Import, Employee.AssignManager,
             Leave.ViewAll, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop, Leave.Reports,
             Attendance.ViewAll, Attendance.Edit, Attendance.ConfigurePolicy, Attendance.ApproveTeam, Attendance.ManageShift, Attendance.ManageLock,
-            Payroll.View, Payroll.Run, Payroll.ViewSensitive,
+            Payroll.View, Payroll.Run, Payroll.ViewSensitive, Payroll.ViewCompensation,
             Recruitment.View, Recruitment.Manage,
             Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
             // DEC-1: holds Employee/Leave/Attendance.View.All → org-wide report scope preserved via Reports.View.All.

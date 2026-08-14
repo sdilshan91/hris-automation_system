@@ -89,8 +89,18 @@ public sealed class RecommendationServiceTests
         return u;
     }
 
-    private ICurrentUser HrUser() => User(_hrUserId, PermissionCatalog.Performance.PublishAll);
-    private ICurrentUser ManagerUser() => User(_managerUserId, PermissionCatalog.Performance.ReviewTeam);
+    // GAP-012 / ISSUE-373: the reveal path (GetAsync) now requires Payroll.ViewCompensation on top of
+    // view-authorization — "may you see this recommendation" and "may you see their salary" are different
+    // questions. HR here represents an HR MANAGER, who holds it in the built-in bundle. A caller without it is
+    // covered by TheRevealPath_RefusesACallerWithoutTheCompensationPermission below.
+    private ICurrentUser HrUser() =>
+        User(_hrUserId, PermissionCatalog.Performance.PublishAll, PermissionCatalog.Payroll.ViewCompensation);
+    private ICurrentUser ManagerUser() =>
+        User(_managerUserId, PermissionCatalog.Performance.ReviewTeam, PermissionCatalog.Payroll.ViewCompensation);
+
+    /// <summary>A caller authorized to VIEW the recommendation but not to see compensation figures.</summary>
+    private ICurrentUser ManagerWithoutCompensation() =>
+        User(_managerUserId, PermissionCatalog.Performance.ReviewTeam);
     private ICurrentUser OtherUser() => User(_otherUserId, PermissionCatalog.Performance.ReadSelf);
     private ICurrentUser ApproverUser() => User(_approverUserId, PermissionCatalog.Performance.ReviewTeam);
 
@@ -470,6 +480,61 @@ public sealed class RecommendationServiceTests
 
     // ── BUG-083: GetAsync (which decrypts + returns compensation) emits a
     //    Recommendation.ViewSensitive read-audit naming the comp fields, NO values ──
+    [Fact]
+    public async Task TheWorkspaceFlag_ReflectsTheCompensationPermission_BothWays()
+    {
+        // GAP-012 / ISSUE-373. This arm exists because mutation testing caught its absence: hardcoding
+        // CompensationVisible = true broke NOTHING, which is the same "field with no test binding it" pattern
+        // that let the frontend read this flag for months while no permission existed behind it. A flag that is
+        // not asserted in BOTH directions is indistinguishable from a constant.
+        await SeedAsync();
+
+        var permitted = await Service(HrUser()).GetWorkspaceAsync(new RecommendationWorkspaceQueryInput(_cycleId, 1, 100));
+        permitted.Value!.CompensationVisible.Should().BeTrue(
+            "HR Manager holds Payroll.ViewCompensation in the built-in bundle");
+
+        var denied = await Service(ManagerWithoutCompensation()).GetWorkspaceAsync(new RecommendationWorkspaceQueryInput(_cycleId, 1, 100));
+        denied.Value!.CompensationVisible.Should().BeFalse(
+            "a caller without the permission must be told so, or the UI offers a reveal that will 403");
+    }
+
+    [Fact]
+    public async Task TheRevealPath_RefusesACallerWithoutTheCompensationPermission()
+    {
+        // GAP-012 / ISSUE-373. GetAsync DECRYPTS compensation, so it needs its own gate: AuthorizeViewAsync
+        // answers "may you see this recommendation" — a manager may, for their own report — which is a
+        // different question from "may you see their salary". This caller passes the first and must fail the
+        // second.
+        await SeedAsync();
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 4321m), null, null))).Value!;
+
+        var result = await Service(ManagerWithoutCompensation()).GetAsync(rec.Id);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+        result.ErrorCode.Should().Be("compensation_not_permitted");
+    }
+
+    [Fact]
+    public async Task TheRevealPath_LogsNoAuditRow_WhenCompensationIsRefused()
+    {
+        // The refusal happens BEFORE the read and before the audit write, so a rejected attempt cannot leave a
+        // "compensation was viewed" row behind. An audit trail that records reveals that never happened is
+        // worse than none — it would make a real incident unreadable.
+        await SeedAsync();
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 4321m), null, null))).Value!;
+
+        await Service(ManagerWithoutCompensation()).GetAsync(rec.Id);
+
+        using var db = Db();
+        var audits = await db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.Action == PayrollAuditAction.RecommendationViewSensitive)
+            .ToListAsync();
+        audits.Should().BeEmpty("a refused reveal must not be audited as a reveal");
+    }
+
     [Fact]
     public async Task BUG083_GetAsync_emits_ViewSensitive_read_audit_without_compensation_values()
     {

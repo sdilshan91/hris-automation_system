@@ -39360,6 +39360,7 @@ export interface components {
         PerformanceRecommendationWorkspaceDto: {
             availableExportFormats?: string[] | null;
             budget?: components["schemas"]["PerformanceRecommendationBudgetDto"];
+            compensationVisible?: boolean;
             /** Format: uuid */
             cycleId?: string;
             cycleName?: string | null;

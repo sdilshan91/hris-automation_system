@@ -66,6 +66,14 @@ public sealed class RecommendationService : IRecommendationService
     private bool IsHr => _currentUser.Permissions.Contains(PermissionCatalog.Performance.PublishAll);
     private bool IsManager => _currentUser.Permissions.Contains(PermissionCatalog.Performance.ReviewTeam);
 
+    /// <summary>
+    /// GAP-012 / ISSUE-373: may this caller see compensation figures? Scoped like <c>Payroll.ViewSensitive</c>
+    /// — Owner / Admin / HR Manager, never HR Officer — because compiling recommendations and reading a named
+    /// person's salary are different jobs.
+    /// </summary>
+    private bool CanSeeCompensation =>
+        _currentUser.Permissions.Contains(PermissionCatalog.Payroll.ViewCompensation);
+
     // ════════════════════════════════════════════════════════════════
     //  Workspace (AC-1, NFR-4) + scope (AC-5/NFR-5)
     // ════════════════════════════════════════════════════════════════
@@ -150,6 +158,10 @@ public sealed class RecommendationService : IRecommendationService
             // GAP-012 / ISSUE-373: PDF is validated but its rendering is deferred, so it is deliberately NOT
             // advertised — offering a button that 500s is worse than not offering it.
             AvailableExportFormats = SupportedExportFormats,
+            // GAP-012 / ISSUE-373: a real permission check. The rows themselves still null CurrentCompensation
+            // here (that reveal lives on the audited GetAsync path), so this tells the UI whether to offer the
+            // reveal at all rather than rendering a control that will 403.
+            CompensationVisible = CanSeeCompensation,
             RatingScaleMax = cycle.RatingScaleMax,
             Page = page,
             PageSize = pageSize,
@@ -172,6 +184,17 @@ public sealed class RecommendationService : IRecommendationService
         var authz = await AuthorizeViewAsync(rec, cancellationToken);
         if (authz.IsFailure)
             return Result<RecommendationDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+
+        // GAP-012 / ISSUE-373: this path DECRYPTS compensation, so it needs its own gate on top of the
+        // view-authorization above. AuthorizeViewAsync answers "may you see this recommendation" — a manager
+        // may, for their own report — which is a different question from "may you see their salary".
+        // Refused BEFORE the read and before the audit row, so an unauthorized attempt cannot log a reveal
+        // that never happened.
+        if (!CanSeeCompensation)
+        {
+            return Result<RecommendationDto>.Failure(
+                "You do not have permission to view compensation figures.", 403, "compensation_not_permitted");
+        }
 
         var dto = await BuildDtoWithLookupsAsync(rec, cancellationToken);
 
