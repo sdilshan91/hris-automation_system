@@ -67,9 +67,19 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ### Tier A — cheap, high-leverage, unblocks others
 
-- [ ] **A1 · `/verify-fix BUG-068`** — ledger-only, no code. Six of nine live pessimistic contradictions are one
-  frozen file (`TEST-STATUS.md:193-203`); **nine TCs sit BLOCKED behind a fix from six weeks earlier**. The
-  regression test already exists. *Highest value per effort in the whole refresh.*
+- [x] **A1 · `/verify-fix BUG-068`** ✅ **DONE 2026-08-17 (PR pending)** — 39/39 green on a real Postgres
+  Testcontainer; fix confirmed at `ApplicantConversionService.cs:168`. **The 9 TCs are UNBLOCKED, deliberately
+  NOT flipped to pass** — flipping without running is how ISSUE-371 and ISSUE-377 happened. The five sibling
+  findings on the same frozen block are marked *contradicted*, not fixed. Spawned **A1b** and **A1c**.
+- [x] **A1b · `/verify-fix` the five siblings** ✅ **DONE 2026-08-17 — 5 of 5 genuinely RESOLVED.** Each has the fix
+  at a cited `file:line` + a **discriminating** regression test that passed. BUG-003 (CRIT) additionally
+  **live-probed**: cross-tenant header spoof → **403 `cross_tenant_denied`**, plus real-Postgres RLS `42501`.
+  **ISSUE-140 was understated** — recorded PARTIAL (FR-5 only), actually FR-5 **and** FR-8 **and** FR-9, all
+  DI-wired and test-bound. *Fourth confirmed pessimistic-direction ledger error.*
+  Folded into the A1 PR rather than its own branch: it edits the same lines A1's banner created, so a second
+  branch would have guaranteed the conflict the one-item rule exists to prevent.
+- [ ] **A1c · `/test-us US-REC-010`** — execute the 9 TCs A1 unblocked. They have never been run; they are not
+  passing, they are merely no longer blocked.
 - [ ] **A2 · Production startup config** — `appsettings.json:21` ships `Rls:Enabled=true` with a blank
   `PrivilegedConnection`, and `DependencyInjection.cs:63-70` **throws on exactly that**. Only
   `appsettings.Development.json:9` saves dev. Add `PrivilegedConnection` to `PRODUCTION-CHECKLIST.md` beside the
@@ -80,6 +90,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
   sole source of the plan's P3 *"notification delivery rewire (biggest surface)"* epic. Also
   `TenantProvisioningService.cs:31-34` (which has kept the US-ADM-011 engine dormant for 5 weeks) and ~10 job
   headers. **Comment-only, and it retires an epic for work already done.**
+
 
 ### Tier B — confirmed live defects, each fixed via generated types
 
