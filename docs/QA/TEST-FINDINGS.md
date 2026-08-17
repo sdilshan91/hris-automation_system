@@ -3325,13 +3325,31 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 
 ### ISSUE-140 — FR-5/BR-7 auto-create user account, FR-9 welcome email (Hangfire async/NFR-5), and FR-8 onboarding trigger are all Phase-1 log-only/deferred stubs
 - **ℹ GAP-L8:** this id was shared with an unrelated defect until 2026-08-10. The twin — the performance 100%-progress override defect — is now **ISSUE-370**. `ISSUE-140` refers ONLY to the recruitment REC-010 gap described here.
-- **Type:** ISSUE · **Severity:** MED · **Status:** PARTIALLY RESOLVED (FR-5 provisioning — PR #355, 2026-07-18; FR-9 email + FR-8 onboarding deferred → US-NTF-006 / Onboarding module) · **Layer:** BE · **US/TC:** US-REC-010 / TC-REC-010-03, TC-REC-010-04, TC-REC-010-08 (notify arms), TC-REC-010-13 (NFR-5)
+- **Type:** ISSUE · **Severity:** MED · **Status:** ✅ **RESOLVED — FULLY, re-verified 2026-08-17** (was recorded PARTIAL; that understated it — see the re-verification note at the end of this entry) · **Layer:** BE · **US/TC:** US-REC-010 / TC-REC-010-03, TC-REC-010-04, TC-REC-010-08 (notify arms), TC-REC-010-13 (NFR-5)
 - **Title:** Three story-mandated post-conversion behaviors are not implemented: (FR-5/BR-7) there is NO "auto-create user accounts on hire" tenant setting and NO `User`/`UserTenant`/`user_tenant_role` creation — `ConversionResultDto.UserAccountCreated` is hardcoded `false`; (FR-9/NFR-5) the welcome email is a Serilog log-only seam with no Hangfire enqueue/outbox row; (FR-8) the onboarding-workflow trigger is a log-only seam (no Onboarding module). The recruiter-notify-on-auto-close (FR-7/BR-5) is also log-only.
 - **Root cause (confidence 97%):** `ApplicantConversionService` xmldoc + `PostConversionNotificationsSafeAsync` (`ApplicantConversionService.cs:255` and :296-317) explicitly defer FR-5/FR-8/FR-9 to a later phase: `UserAccountCreated = false // FR-5 deferred — no tenant auto-create setting yet`, and the seam only writes `_logger.LogInformation("… FR-9 welcome email DEFERRED …; FR-8 onboarding trigger DEFERRED …; recruiter notify on auto-close DEFERRED.")`.
 - **Reproduction:** N/A end-to-end (the conversion itself 500s — see BUG-068). Confirmed by source: no auto-create setting on the Tenant entity; `UserAccountCreated` constant false; notification method is log-only. TC-010-04 (account DISABLED) would pass vacuously since accounts are never created; TC-010-03 (account ENABLED) is unsatisfiable (no enable switch exists).
 - **Evidence:** `ConversionResultDto.UserAccountCreated` literal `false`; `PostConversionNotificationsSafeAsync` log-only with the DEFERRED message; no Hangfire `IBackgroundJobClient.Enqueue`/outbox write in the conversion path.
 - **Severity rationale:** MED — FR-5/FR-9/FR-8 are documented increment deferrals (the TCs flag email/onboarding as CONDITIONAL on S25/S28/Onboarding-module wiring), and the in-module link/vacancy/audit logic is designed; but the account-provisioning + welcome-email half of the story is entirely absent, so a Must-Have story's AC-3 is unmet. Not CRIT because it's a known deferral, not a silent failure.
 - **PARTIALLY RESOLVED (FR-5, PR #355, 2026-07-18):** hire now auto-provisions a login account when the new `Tenant.AutoCreateUserOnHire` toggle is on (default OFF; settable+audited via `PUT /api/v1/tenant/settings/hiring`). `ApplicantConversionService` find-or-creates a passwordless global User by email + Active UserTenant + built-in Employee role + links `Employee.UserId`, atomically with the conversion (existing accounts reused; retry-safe). `UserAccountCreated` now reflects reality. Regression: provisioning ON/OFF/existing-email-reuse + a cross-tenant isolation arm; auditors PASS (isolation + wiring verified). **STILL DEFERRED:** FR-9 welcome-email/credential delivery + NFR-5 async (→ US-NTF-006, DF-13/14 family) and FR-8 onboarding trigger (no Onboarding module). Credential delivery is why the account is passwordless — the person sets a password via the existing flow / SSO until delivery lands. Testcontainers retry-detach arm = DF-15.
+
+- **★ RE-VERIFICATION 2026-08-17 (queue item A1b) — FULLY RESOLVED, and this ledger line was wrong in the PESSIMISTIC direction.**
+  This entry said FR-9 (welcome email) and FR-8 (onboarding trigger) remained deferred. **Both have since shipped
+  and are test-bound:**
+  - **FR-5** — `TryProvisionUserAccountAsync` (`ApplicantConversionService.cs:398`) creates `User` + `UserTenant` +
+    `UserTenantRole`, gated on `Tenant.AutoCreateUserOnHire`.
+  - **FR-8** — `TriggerOnboardingSafeAsync` calls the **real** `IOnboardingChecklistService.AssignAsync(...)`.
+  - **FR-9** — `SendWelcomeEmailSafeAsync` calls the **real** `INotificationDispatcher.SendEmailAsync(...)`.
+  - **Both dependencies are DI-registered** (`DependencyInjection.cs:379`, `Program.cs:381`) and injected into the
+    scoped `ApplicantConversionService` — so they are live in production, **not null seams**. This was checked
+    specifically, because "the method exists" and "the dependency is wired" are different claims and this repo has
+    been caught by that difference before.
+  - Tests: FR-5 ×4, FR-8 ×6, FR-9 ×6 all PASS, plus `HireProvisioningRetryPostgresTests` on **real Postgres**
+    (`…ProvisionsUserAccount_InSameCommittedTransaction`, `…FailsTransientlyThenRetries_…ExactlyOnce`).
+- **Why this matters more than one stale line:** it is the **fourth** confirmed pessimistic-direction error in this
+  ledger set. The gap analysis measured that direction as the costliest, because an over-pessimistic ledger makes
+  people re-open finished work and skip real gaps. A PARTIAL that is actually COMPLETE keeps a story looking
+  half-built forever.
 
 ### ISSUE-232 — Converted-applicant "Converted" badge + employee deep-link (AC-4/FR-6) are not surfaced on the applicant detail/list read path — only the conversion-prefill endpoint exposes the linkage
 - **Type:** ISSUE · **Severity:** MED · **Status:** RESOLVED (PR #299, 2026-07-14) · **Layer:** BE · **US/TC:** US-REC-010 / TC-REC-010-05 (steps 1-2, AC-4/FR-6)
