@@ -90,7 +90,7 @@ acceptance_criteria_count: 5
 - Test concurrent editing: two browser sessions editing the same employee's goals simultaneously.
 - Verify notification delivery: check in-app notification and email are sent on goal assignment.
 - Test mobile responsiveness at 360px, 768px, and 1920px breakpoints.
-- Test goal cascading: link employee goal to a department goal and verify the hierarchy displays correctly.
+- Test goal **alignment**: link an employee goal to another employee goal (typically the manager's own) via `parentGoalId` and verify the alignment tree displays correctly. *Amended 2026-08-17 per [[ADR-2026-08-11-goal-ownership-stays-individual]] — this previously read "link employee goal to a **department goal**", which contradicted the amended FR-4 above in the same file. There is no department goal to link to: `Goal.EmployeeId` is non-nullable.*
 
 ---
 ## Follow-up ACs (deferred — reconciliation 2026-07-06, COMPLETION-PLAN Theme K)

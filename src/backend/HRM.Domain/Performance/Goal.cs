@@ -42,8 +42,15 @@ public sealed class Goal : BaseEntity, IAuditExempt
     public DateOnly DueDate { get; set; }
 
     /// <summary>
-    /// Optional parent goal for cascading (FR-4): links this employee goal to a higher-level
-    /// departmental/organizational objective. Stored as a nullable self-FK (same tenant via global filter).
+    /// Optional parent goal for <b>alignment</b> (FR-4): links this employee goal to
+    /// <b>another employee's goal</b>, typically the manager's own. Stored as a nullable self-FK
+    /// (same tenant via global filter).
+    /// <para>
+    /// This is NOT an org/department cascade. <see cref="EmployeeId"/> is non-nullable, so a
+    /// department- or company-owned objective cannot be represented and the parent of a goal is
+    /// always another employee's goal. The org→department→individual tier is <b>withdrawn</b>
+    /// (ADR-2026-08-11-goal-ownership-stays-individual), not deferred.
+    /// </para>
     /// </summary>
     public Guid? ParentGoalId { get; set; }
 
