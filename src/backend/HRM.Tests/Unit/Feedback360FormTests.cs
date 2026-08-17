@@ -61,6 +61,7 @@ public sealed class Feedback360FormTests
         CreateDbContext(),
         _tenantContext,
         user,
+        Substitute.For<IPerformanceNotificationService>(),
         Substitute.For<ILogger<Feedback360Service>>());
 
     private ICurrentUser ReviewerUser(Guid userId)

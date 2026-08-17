@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, ActivatedRoute } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { of } from 'rxjs';
-import { HttpResponse } from '@angular/common/http';
+import { of, throwError } from 'rxjs';
+import { HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { ToastrService } from 'ngx-toastr';
 
 import { Feedback360ResultsComponent } from './feedback-360-results.component';
@@ -50,6 +50,11 @@ function makeResults(
       },
     ],
     exportAvailable: true,
+    releasedAt: '2026-06-11T09:00:00Z',
+    minPeerReviewers: 3,
+    peerResponseCount: 3,
+    minPeerThresholdMet: true,
+    releaseWarning: null,
     ...overrides,
   };
 }
@@ -65,7 +70,7 @@ describe('Feedback360ResultsComponent', () => {
   ): Promise<void> {
     serviceSpy = jasmine.createSpyObj<Feedback360Service>(
       'Feedback360Service',
-      ['getResults', 'exportResultsPdf'],
+      ['getResults', 'exportResultsPdf', 'releaseResults'],
     );
     toastrSpy = jasmine.createSpyObj<ToastrService>('ToastrService', [
       'success',
@@ -181,12 +186,43 @@ describe('Feedback360ResultsComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Leaked Name');
   });
 
-  it('shows a not-released warning when the threshold is unmet (BR-4)', async () => {
-    await setup(makeResults({ released: false }));
+  it('shows a not-released warning when the threshold is unmet, with the real peer counts (BR-4)', async () => {
+    await setup(
+      makeResults({
+        released: false,
+        minPeerThresholdMet: false,
+        minPeerReviewers: 3,
+        peerResponseCount: 1,
+      }),
+    );
     const warn = fixture.nativeElement.querySelector(
       '[data-testid="not-released"]',
     );
     expect(warn).toBeTruthy();
+    // real counts, not the old hardcoded sentence: 2 more needed (1 of 3)
+    expect(warn.textContent).toContain('2 more');
+    expect(warn.textContent).toContain('1 of 3');
+  });
+
+  it('shows a ready-to-release banner when the threshold IS met but not yet released (BR-4)', async () => {
+    await setup(
+      makeResults({ released: false, minPeerThresholdMet: true }),
+    );
+    const warn = fixture.nativeElement.querySelector(
+      '[data-testid="not-released"]',
+    );
+    expect(warn).toBeTruthy();
+    expect(warn.textContent).toContain('ready to release');
+  });
+
+  it('HIDES the not-released banner when results are released (mutation guard for S-1)', async () => {
+    // This arm fails against the un-adapted service: `released` was undefined there,
+    // so `@if (!r.released)` was always true and the banner showed unconditionally.
+    await setup(makeResults({ released: true }));
+    const warn = fixture.nativeElement.querySelector(
+      '[data-testid="not-released"]',
+    );
+    expect(warn).toBeNull();
   });
 
   it('hides the export button when exportAvailable is false (FR-7)', async () => {
@@ -220,5 +256,90 @@ describe('Feedback360ResultsComponent', () => {
     expect(serviceSpy.exportResultsPdf).toHaveBeenCalledWith('e-1');
     expect(clickSpy).toHaveBeenCalled();
     expect(component.exporting()).toBeFalse();
+  });
+
+  it('shows the Release button only when unreleased AND the threshold is met (BR-4/FR-3)', async () => {
+    await setup(makeResults({ released: false, minPeerThresholdMet: true }));
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="release-results"]'),
+    ).toBeTruthy();
+  });
+
+  it('HIDES the Release button when the threshold is not met', async () => {
+    await setup(makeResults({ released: false, minPeerThresholdMet: false }));
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="release-results"]'),
+    ).toBeNull();
+  });
+
+  it('HIDES the Release button once results are released', async () => {
+    await setup(makeResults({ released: true }));
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="release-results"]'),
+    ).toBeNull();
+  });
+
+  it('release() calls the service, toasts success and refreshes the results', async () => {
+    await setup(makeResults({ released: false, minPeerThresholdMet: true }));
+    serviceSpy.releaseResults.and.returnValue(
+      of({
+        cycleId: 'cyc-1',
+        revieweeEmployeeId: 'e-1',
+        releasedAt: '2026-06-11T09:00:00Z',
+        releasedByEmployeeId: 'mgr-1',
+      }),
+    );
+    // getResults is re-called by load() on success
+    serviceSpy.getResults.and.returnValue(of(makeResults({ released: true })));
+
+    component.release();
+
+    expect(serviceSpy.releaseResults).toHaveBeenCalledWith('e-1');
+    expect(toastrSpy.success).toHaveBeenCalled();
+    expect(serviceSpy.getResults).toHaveBeenCalledTimes(2); // initial + refresh
+    expect(component.releasing()).toBeFalse();
+  });
+
+  it('release() surfaces the server 422 threshold message (BR-4)', async () => {
+    await setup(makeResults({ released: false, minPeerThresholdMet: true }));
+    serviceSpy.releaseResults.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 422,
+            error: {
+              code: 'min_peer_threshold_not_met',
+              message: 'Only 1 of 3 peers have submitted.',
+            },
+          }),
+      ),
+    );
+
+    component.release();
+
+    expect(toastrSpy.error).toHaveBeenCalledWith(
+      'Only 1 of 3 peers have submitted.',
+    );
+    expect(component.releasing()).toBeFalse();
+  });
+
+  it('release() surfaces a permission message on 403 (not the team manager)', async () => {
+    await setup(makeResults({ released: false, minPeerThresholdMet: true }));
+    serviceSpy.releaseResults.and.returnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 403,
+            error: { code: 'not_team_manager' },
+          }),
+      ),
+    );
+
+    component.release();
+
+    expect(toastrSpy.error).toHaveBeenCalledWith(
+      'You are not authorized to release these results.',
+    );
+    expect(component.releasing()).toBeFalse();
   });
 });

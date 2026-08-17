@@ -508,55 +508,13 @@ public sealed class ReviewerAssignmentService : IReviewerAssignmentService
     private bool HasReviewAll() => _currentUser.Permissions.Contains(PermissionCatalog.Performance.ReviewAll);
 
     /// <summary>
-    /// BUG-244 authorization for the 360 reviewer-CONFIG surface (get/save/add/remove/tracker). Four outcomes:
-    ///  1. Caller holds <c>Performance.Review.All</c> (HR) → allowed, unrestricted.
-    ///  2. Tenant toggle on AND caller holds <c>Performance.Review.Team</c> AND caller is the DIRECT manager of
-    ///     the target employee → allowed.
-    ///  3. Tenant toggle on AND caller holds <c>Performance.Review.Team</c> but is NOT the target's manager →
-    ///     403 <c>not_team_manager</c>.
-    ///  4. Otherwise (no Review.All, and either the toggle is off or the caller lacks Review.Team) →
-    ///     403 <c>forbidden</c>.
-    /// The manager check is exact (caller's employee == target's <c>ReportsToEmployeeId</c>) and tenant-scoped
-    /// via the global query filter.
+    /// BUG-244 authorization for the 360 reviewer-CONFIG surface (get/save/add/remove/tracker). Delegates to the
+    /// shared <see cref="Performance360Authorization"/> four-outcome gate (HR unrestricted / team-manager of the
+    /// target / not_team_manager / forbidden) so the CONFIG and RELEASE surfaces enforce one identical rule.
     /// </summary>
-    private async Task<Result> AuthorizeConfigureAsync(Guid targetEmployeeId, CancellationToken cancellationToken)
-    {
-        if (HasReviewAll())
-            return Result.Success();
-
-        var managersAllowed = await IsManagerReviewerConfigAllowedAsync(cancellationToken);
-        var isTeamReviewer = _currentUser.Permissions.Contains(PermissionCatalog.Performance.ReviewTeam);
-
-        if (managersAllowed && isTeamReviewer)
-        {
-            var caller = await GetCurrentEmployeeAsync(cancellationToken);
-            var target = await _dbContext.Employees.AsNoTracking()
-                .FirstOrDefaultAsync(e => e.Id == targetEmployeeId, cancellationToken);
-            if (caller is not null && target is not null && target.ReportsToEmployeeId == caller.Id)
-                return Result.Success();
-
-            return Result.Failure(
-                "You can only configure 360 reviewers for your own direct reports.", 403, "not_team_manager");
-        }
-
-        return Result.Failure("You do not have permission to configure 360 reviewers.", 403, "forbidden");
-    }
-
-    /// <summary>BUG-244: reads the tenant toggle (default true) that lets Team managers configure reviewers.</summary>
-    private async Task<bool> IsManagerReviewerConfigAllowedAsync(CancellationToken cancellationToken)
-    {
-        // The Tenant row is scoped by Id (it IS the tenant); the only filter is !IsDeleted.
-        var allowed = await _dbContext.Tenants.AsNoTracking()
-            .Where(t => t.Id == _tenantContext.TenantId)
-            .Select(t => (bool?)t.AllowManagerReviewerConfig)
-            .FirstOrDefaultAsync(cancellationToken);
-        return allowed ?? true;
-    }
-
-    /// <summary>Resolves the caller's own employee record (portal user → employee via UserId), or null.</summary>
-    private Task<Employee?> GetCurrentEmployeeAsync(CancellationToken cancellationToken)
-        => _dbContext.Employees.AsNoTracking()
-            .FirstOrDefaultAsync(e => e.UserId == _currentUser.UserId, cancellationToken);
+    private Task<Result> AuthorizeConfigureAsync(Guid targetEmployeeId, CancellationToken cancellationToken)
+        => Performance360Authorization.AuthorizeReviewerManagementAsync(
+            _dbContext, _tenantContext, _currentUser, targetEmployeeId, cancellationToken);
 
     /// <summary>
     /// Resolves the single Active, 360-enabled appraisal cycle for BUG-244 #1/#3, mirroring

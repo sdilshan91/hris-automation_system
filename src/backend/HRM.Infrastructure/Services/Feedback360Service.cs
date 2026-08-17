@@ -29,17 +29,20 @@ public sealed class Feedback360Service : IFeedback360Service
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IPerformanceNotificationService _notifications;
     private readonly ILogger<Feedback360Service> _logger;
 
     public Feedback360Service(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IPerformanceNotificationService notifications,
         ILogger<Feedback360Service> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _notifications = notifications;
         _logger = logger;
     }
 
@@ -298,11 +301,134 @@ public sealed class Feedback360Service : IFeedback360Service
 
     public Task<Result<Feedback360ResultsDto>> GetResultsAsync(
         Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken = default)
-        => BuildResultsAsync(revieweeEmployeeId, cycleId, cancellationToken);
+        => BuildResultsAsync(revieweeEmployeeId, cycleId, forRevieweeSelf: false, cancellationToken);
 
     public Task<Result<Feedback360ResultsDto>> GetReportDataAsync(
         Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken = default)
-        => BuildResultsAsync(revieweeEmployeeId, cycleId, cancellationToken);
+        => BuildResultsAsync(revieweeEmployeeId, cycleId, forRevieweeSelf: false, cancellationToken);
+
+    // ── Release results to the reviewee (BR-4/FR-3) ──────────────────
+
+    public async Task<Result<Feedback360ReleaseDto>> ReleaseResultsAsync(
+        Guid cycleId, Guid revieweeEmployeeId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<Feedback360ReleaseDto>.Failure("Tenant context is not resolved.", 400);
+
+        // HR (Review.All) unrestricted, or the reviewee's own reporting manager (Review.Team) when the tenant
+        // allows it — the SAME shared four-outcome gate the reviewer-config surface uses (not a second copy).
+        var authz = await Performance360Authorization.AuthorizeReviewerManagementAsync(
+            _dbContext, _tenantContext, _currentUser, revieweeEmployeeId, cancellationToken);
+        if (authz.IsFailure)
+            return Result<Feedback360ReleaseDto>.Failure(authz.Error!, authz.StatusCode ?? 403, authz.ErrorCode);
+
+        var cycle = await _dbContext.AppraisalCycles.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == cycleId, cancellationToken);
+        if (cycle is null)
+            return Result<Feedback360ReleaseDto>.Failure("Appraisal cycle not found.", 404, "cycle_not_found");
+
+        if (!cycle.Is360Enabled)
+            return Result<Feedback360ReleaseDto>.Failure(
+                "360-degree feedback is not enabled for this cycle.", 409, "not_360_enabled");
+
+        var reviewee = await _dbContext.Employees.AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == revieweeEmployeeId, cancellationToken);
+        if (reviewee is null)
+            return Result<Feedback360ReleaseDto>.Failure("Employee not found.", 404, "employee_not_found");
+
+        // Idempotency (BR-4): a re-release resolves to the existing row — 200, no second row. The unique index
+        // is the durable guard; a retried click must not error.
+        var existing = await _dbContext.Feedback360Releases.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.CycleId == cycleId && r.RevieweeEmployeeId == revieweeEmployeeId, cancellationToken);
+        if (existing is not null)
+            return Result<Feedback360ReleaseDto>.Success(MapRelease(existing));
+
+        // BR-4 HARD gate: the minimum number of PEER responses must be met before releasing to the reviewee.
+        // Same peer-count computation as the pre-release warning path (CountPeerResponses) — one rule, two callers.
+        var feedbacks = await _dbContext.Feedback360s.AsNoTracking()
+            .Where(f => f.CycleId == cycleId && f.RevieweeEmployeeId == revieweeEmployeeId)
+            .ToListAsync(cancellationToken);
+        var peerResponses = CountPeerResponses(feedbacks);
+        if (peerResponses < cycle.Min360PeerReviewers)
+            return Result<Feedback360ReleaseDto>.Failure(
+                $"At least {cycle.Min360PeerReviewers} peer reviewer(s) must submit feedback before results can be "
+                + $"released. Currently {peerResponses}.", 422, "min_peer_threshold_not_met");
+
+        var releasedBy = await GetCurrentEmployeeAsync(cancellationToken);
+        var release = new Feedback360Release
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            CycleId = cycleId,
+            RevieweeEmployeeId = revieweeEmployeeId,
+            ReleasedAt = DateTime.UtcNow,
+            ReleasedByEmployeeId = releasedBy?.Id ?? Guid.Empty,
+            IsDeleted = false,
+        };
+        _dbContext.Feedback360Releases.Add(release);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // CONCURRENT double-release: the check above is read-then-insert, so two simultaneous callers both
+            // see no row and both insert. The filtered unique index (TenantId, CycleId, RevieweeEmployeeId) is
+            // the real guard and rejects the loser. Idempotency must hold for the CONCURRENT case too, not just
+            // the sequential one — a double-clicked Release button is exactly how this happens — so resolve to
+            // the winner's row and return 200 rather than surfacing a 500.
+            _dbContext.Entry(release).State = EntityState.Detached;
+            var winner = await _dbContext.Feedback360Releases.AsNoTracking()
+                .FirstOrDefaultAsync(
+                    r => r.CycleId == cycleId && r.RevieweeEmployeeId == revieweeEmployeeId, cancellationToken);
+            if (winner is null)
+                throw; // not the uniqueness collision — a genuine write failure, do not swallow it
+            return Result<Feedback360ReleaseDto>.Success(MapRelease(winner));
+        }
+
+        _logger.LogInformation(
+            "360 results released. CycleId={CycleId}, RevieweeId={RevieweeId}, ReleasedById={ReleasedById}, " +
+            "PeerResponses={PeerResponses}, TenantId={TenantId}",
+            cycleId, revieweeEmployeeId, release.ReleasedByEmployeeId, peerResponses, _tenantContext.TenantId);
+
+        // Notify the reviewee (and their reporting manager) that results are available — reuse the existing
+        // performance notification seam (fire-and-forget; the service never throws into this path).
+        await _notifications.NotifyCycleEventAsync(
+            "results-released", cycleId, revieweeEmployeeId,
+            "Your 360-degree feedback results are now available.", cancellationToken);
+        if (reviewee.ReportsToEmployeeId is { } managerId)
+            await _notifications.NotifyCycleEventAsync(
+                "results-released", cycleId, managerId,
+                "360-degree feedback results for your direct report are now available.", cancellationToken);
+
+        return Result<Feedback360ReleaseDto>.Success(MapRelease(release));
+    }
+
+    // ── Reviewee-facing read of own results (FR-3/FR-5) ──────────────
+
+    public async Task<Result<Feedback360ResultsDto>> GetMyResultsAsync(
+        Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<Feedback360ResultsDto>.Failure("Tenant context is not resolved.", 400);
+
+        var caller = await GetCurrentEmployeeAsync(cancellationToken);
+        if (caller is null)
+            return Result<Feedback360ResultsDto>.Failure(
+                "The current user is not linked to an employee record.", 403, "no_employee_record");
+
+        // FR-3: results are only visible to the reviewee once RELEASED. 404 (not 403) so we never disclose
+        // whether unreleased results exist.
+        var released = await _dbContext.Feedback360Releases.AsNoTracking()
+            .AnyAsync(r => r.CycleId == cycleId && r.RevieweeEmployeeId == caller.Id, cancellationToken);
+        if (!released)
+            return Result<Feedback360ResultsDto>.Failure(
+                "Your 360-degree feedback results have not been released yet.", 404, "not_released");
+
+        // Reuse the SAME aggregation as HR (no parallel projection); forRevieweeSelf strips every reviewer
+        // identity (FR-5, unconditional) and marks the PDF export unavailable.
+        return await BuildResultsAsync(caller.Id, cycleId, forRevieweeSelf: true, cancellationToken);
+    }
 
     public async Task<Result<PerformanceExportFile>> ExportReportAsync(
         Guid revieweeEmployeeId, Guid cycleId, string? format, CancellationToken cancellationToken = default)
@@ -312,7 +438,7 @@ public sealed class Feedback360Service : IFeedback360Service
             return Result<PerformanceExportFile>.Failure("Export format must be pdf.", 400, "invalid_format");
 
         // Reuse the authorized, tenant-filtered read path (HR-only + anonymity enforced in the projection).
-        var data = await BuildResultsAsync(revieweeEmployeeId, cycleId, cancellationToken);
+        var data = await BuildResultsAsync(revieweeEmployeeId, cycleId, forRevieweeSelf: false, cancellationToken);
         if (data.IsFailure)
             return Result<PerformanceExportFile>.Failure(data.Error!, data.StatusCode ?? 400, data.ErrorCode);
 
@@ -321,14 +447,21 @@ public sealed class Feedback360Service : IFeedback360Service
         return Result<PerformanceExportFile>.Success(new PerformanceExportFile(bytes, fileName, "application/pdf"));
     }
 
+    /// <param name="forRevieweeSelf">
+    /// When true the caller is the reviewee reading their OWN released results: the HR permission check is
+    /// skipped (the caller self-scoped + release-gated before getting here), every reviewer identity is stripped
+    /// unconditionally (FR-5), and the PDF export is marked unavailable. When false this is the HR/manager path
+    /// (Review.All required, existing anonymity rules, export available).
+    /// </param>
     private async Task<Result<Feedback360ResultsDto>> BuildResultsAsync(
-        Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken)
+        Guid revieweeEmployeeId, Guid cycleId, bool forRevieweeSelf, CancellationToken cancellationToken)
     {
         if (!_tenantContext.IsResolved)
             return Result<Feedback360ResultsDto>.Failure("Tenant context is not resolved.", 400);
 
-        // HR/manager only (Performance.Review.All for results, NFR-3/FR-5).
-        if (!_currentUser.Permissions.Contains(PermissionCatalog.Performance.ReviewAll))
+        // HR/manager only (Performance.Review.All for results, NFR-3/FR-5) — NOT enforced on the reviewee's own
+        // self path, which is already release-gated and self-scoped by GetMyResultsAsync.
+        if (!forRevieweeSelf && !_currentUser.Permissions.Contains(PermissionCatalog.Performance.ReviewAll))
             return Result<Feedback360ResultsDto>.Failure(
                 "You do not have permission to view 360 results.", 403, "forbidden");
 
@@ -356,9 +489,12 @@ public sealed class Feedback360Service : IFeedback360Service
         var labels = await BuildLabelMapAsync(revieweeEmployeeId, cycleId, cancellationToken);
 
         // Reviewer-name lookup ONLY for the non-anonymous feedbacks (NFR-3 — we never even load names we
-        // would not be allowed to surface).
-        var nonAnonReviewerIds = feedbacks.Where(f => !f.IsAnonymous).Select(f => f.ReviewerEmployeeId).ToHashSet();
-        var reviewerNames = await LoadNameLookupAsync(nonAnonReviewerIds, cancellationToken);
+        // would not be allowed to surface). On the reviewee's own path we surface NO reviewer identity at all
+        // (FR-5, unconditional), so we do not even load the names.
+        var reviewerNames = forRevieweeSelf
+            ? new Dictionary<Guid, string>()
+            : await LoadNameLookupAsync(
+                feedbacks.Where(f => !f.IsAnonymous).Select(f => f.ReviewerEmployeeId).ToHashSet(), cancellationToken);
 
         // GAP-012 / ISSUE-373: the reviewee's job title, resolved with its OWN query.
         //
@@ -377,7 +513,14 @@ public sealed class Feedback360Service : IFeedback360Service
             .Select(j => j.TitleName)
             .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
 
-        var dto = Aggregate(cycle, reviewee, jobTitle, feedbacks, assignments, labels, reviewerNames);
+        // Release state (BR-4/FR-3): both read paths report whether the reviewee's results have been released.
+        var release = await _dbContext.Feedback360Releases.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.CycleId == cycleId && r.RevieweeEmployeeId == revieweeEmployeeId, cancellationToken);
+
+        var dto = Aggregate(
+            cycle, reviewee, jobTitle, feedbacks, assignments, labels, reviewerNames,
+            released: release is not null, releasedAt: release?.ReleasedAt,
+            exportAvailable: !forRevieweeSelf, suppressReviewerIdentity: forRevieweeSelf);
         return Result<Feedback360ResultsDto>.Success(dto);
     }
 
@@ -386,7 +529,8 @@ public sealed class Feedback360Service : IFeedback360Service
     private static Feedback360ResultsDto Aggregate(
         AppraisalCycle cycle, Employee reviewee, string jobTitle,
         IReadOnlyList<Feedback360> feedbacks, IReadOnlyList<ReviewerAssignment> assignments,
-        IReadOnlyDictionary<string, string> labels, IReadOnlyDictionary<Guid, string> reviewerNames)
+        IReadOnlyDictionary<string, string> labels, IReadOnlyDictionary<Guid, string> reviewerNames,
+        bool released, DateTime? releasedAt, bool exportAvailable, bool suppressReviewerIdentity)
     {
         var allItems = feedbacks.SelectMany(f => f.Items.Where(i => !i.IsDeleted)).ToList();
 
@@ -453,20 +597,21 @@ public sealed class Feedback360Service : IFeedback360Service
             Completed = c.Completed,
         }).ToList();
 
-        // Individual entries — reviewer identity OMITTED when the feedback is anonymous (NFR-3/FR-5).
+        // Individual entries — reviewer identity OMITTED when the feedback is anonymous (NFR-3/FR-5) OR when this
+        // is the reviewee's own view (suppressReviewerIdentity, FR-5 unconditional).
         var entries = feedbacks
             .OrderBy(f => f.Category).ThenBy(f => f.SubmittedAt)
             .Select(f =>
             {
                 string? name = null;
-                if (!f.IsAnonymous && reviewerNames.TryGetValue(f.ReviewerEmployeeId, out var n))
+                if (!suppressReviewerIdentity && !f.IsAnonymous && reviewerNames.TryGetValue(f.ReviewerEmployeeId, out var n))
                     name = n;
-                return ProjectEntry(f, name, labels);
+                return ProjectEntry(f, name, labels, suppressReviewerIdentity);
             })
             .ToList();
 
-        // BR-4: minimum-peer release gate.
-        var peerResponses = CategoryResponses(ReviewerCategory.Peer);
+        // BR-4: minimum-peer release gate — same peer-count rule the release gate uses (CountPeerResponses).
+        var peerResponses = CountPeerResponses(feedbacks);
         var thresholdMet = peerResponses >= cycle.Min360PeerReviewers;
         var warning = thresholdMet
             ? null
@@ -492,22 +637,35 @@ public sealed class Feedback360Service : IFeedback360Service
             PeerResponseCount = peerResponses,
             MinPeerThresholdMet = thresholdMet,
             ReleaseWarning = warning,
+            Released = released,
+            ReleasedAt = releasedAt,
+            ExportAvailable = exportAvailable,
         };
     }
+
+    /// <summary>
+    /// BR-4 peer-response count for a reviewee+cycle: the number of submitted PEER feedbacks. The ONE definition
+    /// of the threshold input, shared by the pre-release warning (<see cref="Aggregate"/>) and the hard release
+    /// gate (<see cref="ReleaseResultsAsync"/>) so the two can never drift.
+    /// </summary>
+    private static int CountPeerResponses(IReadOnlyList<Feedback360> feedbacks)
+        => feedbacks.Count(f => f.Category == ReviewerCategory.Peer);
 
     // ── Projection (anonymity rule lives here, NFR-3/FR-5) ───────────
 
     private static Feedback360ResultEntryDto ProjectEntry(
-        Feedback360 f, string? reviewerName, IReadOnlyDictionary<string, string> labels)
+        Feedback360 f, string? reviewerName, IReadOnlyDictionary<string, string> labels,
+        bool suppressReviewerIdentity = false)
         => new()
         {
             FeedbackId = f.Id,
             Category = f.Category,
             CategoryName = f.Category.ToString(),
             IsAnonymous = f.IsAnonymous,
-            // NFR-3/FR-5: when anonymous, neither the id nor the name is ever populated.
-            ReviewerEmployeeId = f.IsAnonymous ? null : f.ReviewerEmployeeId,
-            ReviewerName = f.IsAnonymous ? null : reviewerName,
+            // NFR-3/FR-5: when anonymous — or when this is the reviewee's own view — neither the id nor the name
+            // is ever populated. suppressReviewerIdentity is the reviewee-facing hard override (FR-5 unconditional).
+            ReviewerEmployeeId = (f.IsAnonymous || suppressReviewerIdentity) ? null : f.ReviewerEmployeeId,
+            ReviewerName = (f.IsAnonymous || suppressReviewerIdentity) ? null : reviewerName,
             OverallComment = f.OverallComment,
             SubmittedAt = f.SubmittedAt,
             Items = f.Items.Where(i => !i.IsDeleted).Select(i => new Feedback360ResultItemDto
@@ -559,4 +717,12 @@ public sealed class Feedback360Service : IFeedback360Service
     }
 
     private static string FullName(Employee e) => $"{e.FirstName} {e.LastName}".Trim();
+
+    private static Feedback360ReleaseDto MapRelease(Feedback360Release r) => new()
+    {
+        CycleId = r.CycleId,
+        RevieweeEmployeeId = r.RevieweeEmployeeId,
+        ReleasedAt = r.ReleasedAt,
+        ReleasedByEmployeeId = r.ReleasedByEmployeeId,
+    };
 }

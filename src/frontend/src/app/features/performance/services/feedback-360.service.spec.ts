@@ -11,6 +11,8 @@ import {
   IReviewerConfig,
   IFeedbackForm,
   IFeedback360Results,
+  IFeedback360ResultsRaw,
+  IFeedback360ReleaseResult,
   ICompletionTracker,
   ISaveReviewersRequest,
   ISubmitFeedbackRequest,
@@ -67,18 +69,71 @@ describe('Feedback360Service', () => {
     ],
   };
 
-  const mockResults: IFeedback360Results = {
+  // The REAL backend Feedback360ResultsDto wire shape — the adapter under test maps this
+  // into the FE IFeedback360Results. Deliberately exercises every drifted field name
+  // (revieweeName, competencyAverages, categoryAverages[].averageRating, entries) plus
+  // the anonymity null-out, so a regression in mapFeedback360Results fails here.
+  const mockRawResults: IFeedback360ResultsRaw = {
     cycleId: 'cyc-1',
     cycleName: '2026 Annual',
-    employeeId: 'e-1',
-    employeeName: 'Alex Doe',
+    revieweeEmployeeId: 'e-1',
+    revieweeName: 'Alex Doe',
+    jobTitle: 'Engineer',
+    isAnonymousFeedback: true,
     ratingScaleMax: 5,
-    anonymous: true,
-    released: true,
     compositeScore: 82,
-    competencies: [],
-    categoryAverages: [],
-    comments: [],
+    competencyAverages: [
+      {
+        goalId: null,
+        competencyKey: 'communication',
+        label: 'Communication',
+        averageRating: 4.2,
+        responseCount: 5,
+      },
+    ],
+    categoryAverages: [
+      {
+        category: 'Peer',
+        categoryName: 'Peers',
+        averageRating: 4.1,
+        responseCount: 3,
+        weight: 40,
+      },
+    ],
+    entries: [
+      {
+        feedbackId: 'f-1',
+        category: 'Peer',
+        categoryName: 'Peers',
+        isAnonymous: true,
+        reviewerEmployeeId: null,
+        reviewerName: null,
+        overallComment: 'Strong communicator overall.',
+        submittedAt: '2026-06-10T10:00:00Z',
+        items: [
+          {
+            goalId: null,
+            competencyKey: 'communication',
+            label: 'Communication',
+            rating: 4,
+            comment: 'Clear in standups.',
+          },
+          {
+            goalId: null,
+            competencyKey: 'delivery',
+            label: 'Delivery',
+            rating: 5,
+            comment: null,
+          },
+        ],
+      },
+    ],
+    minPeerReviewers: 3,
+    peerResponseCount: 3,
+    minPeerThresholdMet: true,
+    releaseWarning: null,
+    released: true,
+    releasedAt: '2026-06-11T09:00:00Z',
     exportAvailable: true,
   };
 
@@ -183,9 +238,83 @@ describe('Feedback360Service', () => {
     );
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockResults);
+    req.flush(mockRawResults);
 
     expect(result?.compositeScore).toBe(82);
+  });
+
+  it('getResults() ADAPTS the raw backend payload into the FE vocabulary (S-1)', () => {
+    let result: IFeedback360Results | undefined;
+    service.getResults('e-1').subscribe((r) => (result = r));
+
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    httpMock
+      .expectOne(`${perfBase}/360/cycles/cyc-1/employees/e-1/results`)
+      .flush(mockRawResults);
+
+    // renamed identity fields
+    expect(result?.employeeId).toBe('e-1'); // ← revieweeEmployeeId
+    expect(result?.employeeName).toBe('Alex Doe'); // ← revieweeName
+    expect(result?.anonymous).toBeTrue(); // ← isAnonymousFeedback
+    expect(result?.jobTitle).toBe('Engineer');
+    // competencyAverages → competencies (flat, byCategory always [])
+    expect(result?.competencies.length).toBe(1);
+    expect(result?.competencies[0].title).toBe('Communication');
+    expect(result?.competencies[0].overallAverage).toBe(4.2);
+    expect(result?.competencies[0].kind).toBe('Competency');
+    expect(result?.competencies[0].byCategory).toEqual([]);
+    // categoryAverages[].averageRating → .average
+    expect(result?.categoryAverages[0].category).toBe('Peer');
+    expect(result?.categoryAverages[0].average).toBe(4.1);
+    // release-gate + export fields carried straight through
+    expect(result?.released).toBeTrue();
+    expect(result?.releasedAt).toBe('2026-06-11T09:00:00Z');
+    expect(result?.exportAvailable).toBeTrue();
+    expect(result?.minPeerReviewers).toBe(3);
+    expect(result?.peerResponseCount).toBe(3);
+    expect(result?.minPeerThresholdMet).toBeTrue();
+  });
+
+  it('getResults() flattens entries into comments and NEVER reconstructs an anonymized identity (FR-5/NFR-3)', () => {
+    let result: IFeedback360Results | undefined;
+    service.getResults('e-1').subscribe((r) => (result = r));
+
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    httpMock
+      .expectOne(`${perfBase}/360/cycles/cyc-1/employees/e-1/results`)
+      .flush(mockRawResults);
+
+    // overall comment + the one item that HAS a comment (the null-comment item drops)
+    expect(result?.comments.length).toBe(2);
+    const overall = result?.comments.find((c) => c.questionTitle === '');
+    expect(overall?.comment).toBe('Strong communicator overall.');
+    const item = result?.comments.find(
+      (c) => c.questionTitle === 'Communication',
+    );
+    expect(item?.comment).toBe('Clear in standups.');
+    // reviewerName was NULL on the wire (anonymity) → stays undefined, never invented
+    expect(result?.comments.every((c) => c.reviewerName == null)).toBeTrue();
+  });
+
+  it('releaseResults() resolves the cycle then POSTs the release route with credentials', () => {
+    const release: IFeedback360ReleaseResult = {
+      cycleId: 'cyc-1',
+      revieweeEmployeeId: 'e-1',
+      releasedAt: '2026-06-11T09:00:00Z',
+      releasedByEmployeeId: 'mgr-1',
+    };
+    let result: IFeedback360ReleaseResult | undefined;
+    service.releaseResults('e-1').subscribe((r) => (result = r));
+
+    httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
+    const req = httpMock.expectOne(
+      `${perfBase}/360/cycles/cyc-1/employees/e-1/release`,
+    );
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
+    req.flush(release);
+
+    expect(result?.releasedByEmployeeId).toBe('mgr-1');
   });
 
   it('exportResultsPdf() resolves the cycle then GETs the report blob', () => {

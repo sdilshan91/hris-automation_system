@@ -70,6 +70,19 @@ public sealed class GetFeedback360ResultsQueryHandler
         => _service.GetResultsAsync(request.RevieweeEmployeeId, request.CycleId, cancellationToken);
 }
 
+/// <summary>Gets the CALLER's OWN released 360 results for a cycle (US-PRF-005 FR-3/FR-5). Self-scoped.</summary>
+public sealed record GetMyFeedback360ResultsQuery(Guid CycleId) : IRequest<Result<Feedback360ResultsDto>>;
+
+public sealed class GetMyFeedback360ResultsQueryHandler
+    : IRequestHandler<GetMyFeedback360ResultsQuery, Result<Feedback360ResultsDto>>
+{
+    private readonly IFeedback360Service _service;
+    public GetMyFeedback360ResultsQueryHandler(IFeedback360Service service) => _service = service;
+
+    public Task<Result<Feedback360ResultsDto>> Handle(GetMyFeedback360ResultsQuery request, CancellationToken cancellationToken)
+        => _service.GetMyResultsAsync(request.CycleId, cancellationToken);
+}
+
 /// <summary>Gets the 360 summary report data for a reviewee + cycle, suitable for PDF export (US-PRF-005 FR-7).</summary>
 public sealed record GetFeedback360ReportQuery(Guid CycleId, Guid RevieweeEmployeeId)
     : IRequest<Result<Feedback360ResultsDto>>;

@@ -281,4 +281,29 @@ public sealed record Feedback360ResultsDto
     public bool MinPeerThresholdMet { get; init; }
     /// <summary>Non-null warning string when the peer threshold is not met (BR-4 — HR is warned, not blocked).</summary>
     public string? ReleaseWarning { get; init; }
+
+    // BR-4/FR-3: RELEASE state (the reviewee-facing gate).
+    /// <summary>True when the results have been released to the reviewee (a <c>Feedback360Release</c> row exists).</summary>
+    public bool Released { get; init; }
+    /// <summary>When the results were released to the reviewee; null while unreleased.</summary>
+    public DateTime? ReleasedAt { get; init; }
+    /// <summary>
+    /// True when the CALLER may render the PDF export button (the HR/manager <c>Review.All</c>-gated report route
+    /// backs it). Always false on the reviewee's own <c>my-results</c> view — the FE gates its PDF button on this.
+    /// </summary>
+    public bool ExportAvailable { get; init; }
+}
+
+// ── Release state (BR-4/FR-3) ──────────────────────────────────────────────
+
+/// <summary>
+/// Result of releasing a reviewee's aggregated 360 results for a cycle (US-PRF-005 BR-4/FR-3). Returned by the
+/// release endpoint — on a re-release it carries the existing (idempotent) release row unchanged.
+/// </summary>
+public sealed record Feedback360ReleaseDto
+{
+    public Guid CycleId { get; init; }
+    public Guid RevieweeEmployeeId { get; init; }
+    public DateTime ReleasedAt { get; init; }
+    public Guid ReleasedByEmployeeId { get; init; }
 }

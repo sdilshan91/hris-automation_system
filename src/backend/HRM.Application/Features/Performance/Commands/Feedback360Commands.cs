@@ -89,6 +89,25 @@ public sealed class SubmitFeedback360CommandHandler
             cancellationToken);
 }
 
+// ── Release results to the reviewee (BR-4/FR-3) ────────────────────────────
+
+/// <summary>
+/// Releases a reviewee's aggregated 360 results to them for a cycle (US-PRF-005 BR-4/FR-3). HR or the reviewee's
+/// own reporting manager; hard-blocked below the cycle's minimum peer threshold; idempotent.
+/// </summary>
+public sealed record ReleaseFeedback360Command(Guid CycleId, Guid RevieweeEmployeeId)
+    : IRequest<Result<Feedback360ReleaseDto>>;
+
+public sealed class ReleaseFeedback360CommandHandler
+    : IRequestHandler<ReleaseFeedback360Command, Result<Feedback360ReleaseDto>>
+{
+    private readonly IFeedback360Service _service;
+    public ReleaseFeedback360CommandHandler(IFeedback360Service service) => _service = service;
+
+    public Task<Result<Feedback360ReleaseDto>> Handle(ReleaseFeedback360Command request, CancellationToken cancellationToken)
+        => _service.ReleaseResultsAsync(request.CycleId, request.RevieweeEmployeeId, cancellationToken);
+}
+
 // ── Submit feedback by assignment (BUG-244, reviewer form submit) ──────────
 
 /// <summary>

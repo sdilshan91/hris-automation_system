@@ -297,32 +297,210 @@ export interface IFeedbackComment {
 }
 
 /**
- * The aggregated 360 results for one employee (AC-4). Drives the results dashboard in a
- * single call (NFR-4 ≤2s for ≤20 reviewers).
+ * The aggregated 360 results for one employee (AC-4) in the FE's own vocabulary. Drives
+ * the results dashboard in a single call (NFR-4 ≤2s for ≤20 reviewers). This is NOT the
+ * wire shape — `Feedback360Service.getResults()` runs `mapFeedback360Results()` to
+ * translate the backend `Feedback360ResultsDto` (see `IFeedback360ResultsRaw`) into this,
+ * so the templates stay decoupled from the API's field names (ISSUE-373 / GAP-012 S-1).
  */
 export interface IFeedback360Results {
   cycleId: string;
   cycleName: string;
+  /** Reviewee id (backend `revieweeEmployeeId`). */
   employeeId: string;
+  /** Reviewee name (backend `revieweeName`). */
   employeeName: string;
   jobTitle?: string | null;
   /** Tenant rating scale max for the visuals (AC-4). */
   ratingScaleMax: number;
-  /** Whether anonymity is on for this cycle (FR-5) — drives the comments rendering. */
+  /** Whether anonymity is on for this cycle (FR-5, backend `isAnonymousFeedback`). */
   anonymous: boolean;
-  /** True once the minimum-peer threshold is met (BR-4); false → HR warning banner. */
+  /** True once the results have been released to the reviewee (BR-4/FR-3). */
   released: boolean;
-  /** FR-6 composite score the SERVER computes (weighted across categories); null until
-   *  released. Display-only — the FE NEVER computes this. */
+  /** ISO instant the results were released; null while unreleased (BR-4/FR-3). */
+  releasedAt: string | null;
+  /** FR-6 composite score the SERVER computes (weighted across categories). Display-only
+   *  — the FE NEVER computes this. */
   compositeScore: number | null;
-  /** Per-competency aggregation (AC-4 bars + radar). */
+  /** Per-competency aggregation (AC-4 bars). NOTE: the backend `competencyAverages` is
+   *  flat (no per-category split), so `ICompetencyResult.byCategory` is always []. */
   competencies: ICompetencyResult[];
   /** Per-category overall averages (the radar/comparison rings, AC-4). */
   categoryAverages: ICategoryAverage[];
-  /** Anonymized (or attributed) individual comments (AC-4). */
+  /** Anonymized (or attributed) individual comments (AC-4), flattened from the backend
+   *  per-reviewer `entries`. */
   comments: IFeedbackComment[];
-  /** True when the backend PDF export endpoint is available (FR-7). */
+  /** True when the backend PDF export endpoint is available for this caller (FR-7). */
   exportAvailable: boolean;
+  /** BR-4 peer-threshold gate: the cycle's minimum peer reviewers... */
+  minPeerReviewers: number;
+  /** ...and how many peers have actually submitted. */
+  peerResponseCount: number;
+  /** True once `peerResponseCount >= minPeerReviewers` (BR-4). SERVER-computed — the FE
+   *  reflects this flag, it does not derive it. Gates the "Release results" action. */
+  minPeerThresholdMet: boolean;
+  /** Server warning string when the peer threshold is not met; null otherwise (BR-4). */
+  releaseWarning: string | null;
+}
+
+// ─── Raw backend wire shapes (Feedback360ResultsDto) ──────────
+// These mirror the ASP.NET DTOs exactly (camelCased by the serializer). The adapter
+// below maps them into the FE vocabulary above; the templates never see these.
+
+/** One competency/goal average as the backend emits it (`CompetencyAverageDto`). */
+export interface ICompetencyAverageRaw {
+  goalId: string | null;
+  competencyKey: string | null;
+  label: string;
+  averageRating: number;
+  responseCount: number;
+}
+
+/** One per-category average as the backend emits it (`CategoryAverageDto`). */
+export interface ICategoryAverageRaw {
+  category: ReviewerCategory;
+  categoryName: string;
+  averageRating: number | null;
+  responseCount: number;
+  weight: number;
+}
+
+/** One competency/goal rating inside a result entry (`Feedback360ResultItemDto`). */
+export interface IFeedback360ResultItemRaw {
+  goalId: string | null;
+  competencyKey: string | null;
+  label: string;
+  rating: number;
+  comment: string | null;
+}
+
+/**
+ * One submitted feedback entry as the backend emits it (`Feedback360ResultEntryDto`).
+ * When anonymity is on the backend NULLS `reviewerEmployeeId`/`reviewerName` in the
+ * projection (NFR-3/FR-5) — the adapter simply carries that through, never reconstructs.
+ */
+export interface IFeedback360ResultEntryRaw {
+  feedbackId: string;
+  category: ReviewerCategory;
+  categoryName: string;
+  isAnonymous: boolean;
+  reviewerEmployeeId: string | null;
+  reviewerName: string | null;
+  overallComment: string | null;
+  submittedAt: string;
+  items: IFeedback360ResultItemRaw[];
+}
+
+/** The full aggregated-results wire payload (`Feedback360ResultsDto`). */
+export interface IFeedback360ResultsRaw {
+  cycleId: string;
+  cycleName: string;
+  revieweeEmployeeId: string;
+  revieweeName: string;
+  jobTitle: string;
+  isAnonymousFeedback: boolean;
+  ratingScaleMax: number;
+  compositeScore: number;
+  competencyAverages: ICompetencyAverageRaw[];
+  categoryAverages: ICategoryAverageRaw[];
+  entries: IFeedback360ResultEntryRaw[];
+  minPeerReviewers: number;
+  peerResponseCount: number;
+  minPeerThresholdMet: boolean;
+  releaseWarning: string | null;
+  released: boolean;
+  releasedAt: string | null;
+  exportAvailable: boolean;
+}
+
+/** Result of the release action (`Feedback360ReleaseDto`, BR-4/FR-3). */
+export interface IFeedback360ReleaseResult {
+  cycleId: string;
+  revieweeEmployeeId: string;
+  releasedAt: string;
+  releasedByEmployeeId: string;
+}
+
+/**
+ * ISSUE-373 / GAP-012 (S-1): translate the backend `Feedback360ResultsDto` into the FE
+ * `IFeedback360Results`. This is the ONE place the wire↔UI field-name drift is
+ * reconciled, so the templates stay stable. Rules:
+ *  - straight renames per the drift table (revieweeName→employeeName, etc.);
+ *  - `categoryAverages[].averageRating` → `.average`;
+ *  - `competencyAverages` (flat) → `competencies` with `byCategory: []` — the backend
+ *    sends NO per-competency category split, so that field has no source (reported);
+ *  - `entries` (per-reviewer, nested items) → `comments` (flat rows): the reviewer's
+ *    overall comment plus each item comment become individual rows, carrying the
+ *    (already-nulled-under-anonymity) reviewer name UNCHANGED — never reconstructed.
+ */
+export function mapFeedback360Results(
+  raw: IFeedback360ResultsRaw,
+): IFeedback360Results {
+  return {
+    cycleId: raw.cycleId,
+    cycleName: raw.cycleName,
+    employeeId: raw.revieweeEmployeeId,
+    employeeName: raw.revieweeName,
+    jobTitle: raw.jobTitle || null,
+    ratingScaleMax: raw.ratingScaleMax,
+    anonymous: raw.isAnonymousFeedback,
+    released: raw.released,
+    releasedAt: raw.releasedAt,
+    compositeScore: raw.compositeScore ?? null,
+    competencies: (raw.competencyAverages ?? []).map((c) => ({
+      questionId: c.goalId ?? c.competencyKey ?? c.label,
+      title: c.label,
+      kind: c.goalId != null ? ('Goal' as const) : ('Competency' as const),
+      overallAverage: c.averageRating,
+      // No per-competency category split exists on the wire (GAP — see S-1 report).
+      byCategory: [] as ICategoryAverage[],
+    })),
+    categoryAverages: (raw.categoryAverages ?? []).map((c) => ({
+      category: c.category,
+      average: c.averageRating,
+      responseCount: c.responseCount,
+    })),
+    comments: flattenResultEntries(raw.entries ?? []),
+    exportAvailable: raw.exportAvailable,
+    minPeerReviewers: raw.minPeerReviewers,
+    peerResponseCount: raw.peerResponseCount,
+    minPeerThresholdMet: raw.minPeerThresholdMet,
+    releaseWarning: raw.releaseWarning,
+  };
+}
+
+/**
+ * Flatten the backend per-reviewer `entries` into the flat comment rows the results view
+ * renders. Each entry contributes its overall comment (if any) and one row per rated item
+ * that carries a comment. `reviewerName` is passed through verbatim — the backend NULLS
+ * it under anonymity (NFR-3/FR-5); this NEVER invents or reconstructs an identity.
+ */
+function flattenResultEntries(
+  entries: IFeedback360ResultEntryRaw[],
+): IFeedbackComment[] {
+  const rows: IFeedbackComment[] = [];
+  for (const e of entries) {
+    const reviewerName = e.reviewerName ?? undefined;
+    if (e.overallComment && e.overallComment.trim().length > 0) {
+      rows.push({
+        questionTitle: '',
+        category: e.category,
+        comment: e.overallComment,
+        reviewerName,
+      });
+    }
+    for (const item of e.items ?? []) {
+      if (item.comment && item.comment.trim().length > 0) {
+        rows.push({
+          questionTitle: item.label,
+          category: e.category,
+          comment: item.comment,
+          reviewerName,
+        });
+      }
+    }
+  }
+  return rows;
 }
 
 // ─── Pure helpers (testable without a component) ──────────────

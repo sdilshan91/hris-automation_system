@@ -7,6 +7,7 @@ import {
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { trigger, transition, style, animate } from '@angular/animations';
 import { ToastrService } from 'ngx-toastr';
@@ -84,22 +85,42 @@ import {
             </p>
           }
         </div>
-        @if (results()?.exportAvailable) {
-          <button
-            type="button"
-            class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
-            [disabled]="exporting()"
-            (click)="exportPdf()"
-            data-testid="export-pdf"
-          >
-            @if (exporting()) {
-              <span
-                class="h-4 w-4 animate-spin rounded-full border-2 border-neutral-400 border-t-transparent"
-              ></span>
+        <div class="flex shrink-0 items-center gap-2">
+          @if (results(); as r) {
+            @if (!r.released && r.minPeerThresholdMet) {
+              <button
+                type="button"
+                class="inline-flex shrink-0 items-center gap-2 rounded-lg bg-neutral-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:opacity-50"
+                [disabled]="releasing()"
+                (click)="release()"
+                data-testid="release-results"
+              >
+                @if (releasing()) {
+                  <span
+                    class="h-4 w-4 animate-spin rounded-full border-2 border-white/60 border-t-transparent"
+                  ></span>
+                }
+                Release results
+              </button>
             }
-            Export PDF
-          </button>
-        }
+          }
+          @if (results()?.exportAvailable) {
+            <button
+              type="button"
+              class="inline-flex shrink-0 items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50"
+              [disabled]="exporting()"
+              (click)="exportPdf()"
+              data-testid="export-pdf"
+            >
+              @if (exporting()) {
+                <span
+                  class="h-4 w-4 animate-spin rounded-full border-2 border-neutral-400 border-t-transparent"
+                ></span>
+              }
+              Export PDF
+            </button>
+          }
+        </div>
       </div>
 
       @if (loading()) {
@@ -120,15 +141,24 @@ import {
         </div>
       } @else if (results(); as r) {
         <div @fadeIn class="space-y-6">
-          <!-- Not-released warning (BR-4) -->
+          <!-- Not-released banner (BR-4): distinguish "threshold unmet" from
+               "ready to release" using the real server counts. -->
           @if (!r.released) {
             <div
               class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
               role="status"
               data-testid="not-released"
             >
-              Results are not yet released — the minimum number of reviewers has
-              not submitted feedback.
+              @if (r.minPeerThresholdMet) {
+                Results are ready to release — the minimum number of peer
+                reviewers ({{ r.minPeerReviewers }}) has submitted feedback.
+              } @else {
+                Results are not yet released — {{ peerReviewsNeeded(r) }} more
+                peer
+                {{ peerReviewsNeeded(r) === 1 ? 'review is' : 'reviews are' }}
+                needed ({{ r.peerResponseCount }} of
+                {{ r.minPeerReviewers }} submitted).
+              }
             </div>
           }
 
@@ -304,9 +334,11 @@ import {
                           >Anonymous</span
                         >
                       }
-                      <span class="text-xs text-neutral-400"
-                        >· {{ cm.questionTitle }}</span
-                      >
+                      @if (cm.questionTitle) {
+                        <span class="text-xs text-neutral-400"
+                          >· {{ cm.questionTitle }}</span
+                        >
+                      }
                     </div>
                     <p class="text-sm text-neutral-700">{{ cm.comment }}</p>
                   </li>
@@ -328,6 +360,7 @@ export class Feedback360ResultsComponent implements OnInit {
   readonly error = signal<string | null>(null);
   readonly results = signal<IFeedback360Results | null>(null);
   readonly exporting = signal(false);
+  readonly releasing = signal(false);
 
   employeeId = '';
 
@@ -377,6 +410,69 @@ export class Feedback360ResultsComponent implements OnInit {
           responseCount: 0,
         },
     ).filter((c) => c.average != null);
+  }
+
+  /** BR-4 banner hint: how many more peer reviews are needed before the threshold. */
+  peerReviewsNeeded(r: IFeedback360Results): number {
+    return Math.max(0, r.minPeerReviewers - r.peerResponseCount);
+  }
+
+  /**
+   * BR-4/FR-3: release the results to the reviewee. Only reachable when the peer
+   * threshold is met (the button is gated on `minPeerThresholdMet`). The backend is the
+   * authority — on 422 `min_peer_threshold_not_met` we surface its message; on 403 we
+   * show a permission message. On success we reload so the released state renders.
+   */
+  release(): void {
+    if (this.releasing()) {
+      return;
+    }
+    this.releasing.set(true);
+    this.service.releaseResults(this.employeeId).subscribe({
+      next: () => {
+        this.releasing.set(false);
+        this.toastr.success('Results released to the employee.');
+        this.load();
+      },
+      error: (err: unknown) => {
+        this.releasing.set(false);
+        if (this.isThresholdError(err)) {
+          this.toastr.error(this.thresholdMessage(err));
+        } else if (this.isForbiddenError(err)) {
+          this.toastr.error(
+            'You are not authorized to release these results.',
+          );
+        } else {
+          this.toastr.error('Could not release the results. Please try again.');
+        }
+      },
+    });
+  }
+
+  /** 422 carrying the backend `min_peer_threshold_not_met` code (BR-4). */
+  private isThresholdError(err: unknown): boolean {
+    return (
+      err instanceof HttpErrorResponse &&
+      err.status === 422 &&
+      (err.error as { code?: string } | null)?.code ===
+        'min_peer_threshold_not_met'
+    );
+  }
+
+  /** Prefer the server's threshold message; fall back to a generic one. */
+  private thresholdMessage(err: unknown): string {
+    const msg =
+      err instanceof HttpErrorResponse
+        ? (err.error as { message?: string } | null)?.message
+        : null;
+    return msg && msg.trim().length > 0
+      ? msg
+      : 'Not enough peer reviewers have submitted to release results yet.';
+  }
+
+  /** 403 forbidden — the caller is not the reviewee's manager / HR (server-enforced). */
+  private isForbiddenError(err: unknown): boolean {
+    return err instanceof HttpErrorResponse && err.status === 403;
   }
 
   /** FR-7: download the backend-generated PDF (only when exportAvailable). */

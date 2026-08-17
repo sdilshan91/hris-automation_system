@@ -22294,6 +22294,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    cycleId: string;
+                    employeeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfPerformanceFeedback360ReleaseDto"];
+                        "text/json": components["schemas"]["ApiResponseOfPerformanceFeedback360ReleaseDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfPerformanceFeedback360ReleaseDto"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Unprocessable Content */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/report": {
         parameters: {
             query?: never;
@@ -22535,6 +22619,67 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/performance/360/cycles/{cycleId}/my-results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    cycleId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfPerformanceFeedback360ResultsDto"];
+                        "text/json": components["schemas"]["ApiResponseOfPerformanceFeedback360ResultsDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfPerformanceFeedback360ResultsDto"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -33090,6 +33235,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfPerformanceFeedback360ReleaseDto: {
+            code?: string | null;
+            data?: components["schemas"]["PerformanceFeedback360ReleaseDto"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfPerformanceFeedback360ResultEntryDto: {
             code?: string | null;
             data?: components["schemas"]["PerformanceFeedback360ResultEntryDto"];
@@ -38740,6 +38894,16 @@ export interface components {
             /** Format: int32 */
             rating?: number;
         };
+        PerformanceFeedback360ReleaseDto: {
+            /** Format: uuid */
+            cycleId?: string;
+            /** Format: date-time */
+            releasedAt?: string;
+            /** Format: uuid */
+            releasedByEmployeeId?: string;
+            /** Format: uuid */
+            revieweeEmployeeId?: string;
+        };
         PerformanceFeedback360ResultEntryDto: {
             category?: components["schemas"]["ReviewerCategory"];
             categoryName?: string | null;
@@ -38773,6 +38937,7 @@ export interface components {
             cycleId?: string;
             cycleName?: string | null;
             entries?: components["schemas"]["PerformanceFeedback360ResultEntryDto"][] | null;
+            exportAvailable?: boolean;
             isAnonymousFeedback?: boolean;
             jobTitle?: string | null;
             /** Format: int32 */
@@ -38783,6 +38948,9 @@ export interface components {
             /** Format: int32 */
             ratingScaleMax?: number;
             releaseWarning?: string | null;
+            released?: boolean;
+            /** Format: date-time */
+            releasedAt?: string | null;
             /** Format: uuid */
             revieweeEmployeeId?: string;
             revieweeName?: string | null;

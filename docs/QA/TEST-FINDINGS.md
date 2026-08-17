@@ -8348,3 +8348,48 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Worth noting:** this is the kind of defect only a real-browser test finds — no unit or API test abandons a request mid-flight. It appeared on the very first CI run of the E2E job, which is some evidence for the register's claim that this suite has a high coverage-to-effort ratio.
 - **Out of lane for GAP-034** (which is about *running* the suite, not fixing what it finds), so it is filed rather than fixed.
 - **Confidence:** 95% on the mechanism (stack + the request-abort context are unambiguous); 100% that the 500 occurred.
+
+---
+
+### ISSUE-377 — three 360 test cases were marked `pass` against a release endpoint that has never existed
+- **ID:** ISSUE-377
+- **Type:** ISSUE (test integrity — fabricated assertion)
+- **Severity:** **MED** — no product defect *caused* by this, but three `pass` verdicts were not evidence of anything, and they concealed the fact that BR-4's headline clause was unimplemented for the entire life of the module.
+- **Status:** `OPEN` (routes corrected + statuses demoted; the verdicts must be re-earned by a real run)
+- **Layer:** QA
+- **Module / US / TC:** Performance / US-PRF-005 / TC-PRF-005-04, TC-PRF-005-05, TC-PRF-005-14 — found 2026-08-17 while scoping the 360 release model change
+- **Title:** Each has an executable step asserting a **release** action, and until this session there was **no release endpoint, no release state, and nothing to release** — yet all three read `pass`.
+- **Evidence:** repo-wide grep for `Feedback360Release|FeedbackRelease|360Release|ReleaseStatus|release_status` across `.cs`/`.ts` returned **zero** code hits before this change. `Feedback360Controller` had 12 routes, none of them a release. The only release-flavoured artifacts were a *computed* advisory warning (`Feedback360Service.cs:468-474` → `MinPeerThresholdMet`, `ReleaseWarning`) that blocked nothing.
+- **Classified mechanically, the same way ISSUE-371 was** — a release assertion inside a `|`-delimited executable step, versus a mention in prose or a Data-Requirements table:
+  | TC | release assertion in an executable step | status was | verdict |
+  |---|---|---|---|
+  | **TC-PRF-005-04** | **yes** — step 2 names a literal route, `POST .../performance/360/{liamId}/release` | **`pass`** | **real instance** |
+  | **TC-PRF-005-05** | **yes** — steps 2 and 3 assert 403/401 from "the release endpoints" | **`pass`** | **real instance** |
+  | **TC-PRF-005-14** | **yes** — steps 1-2 assert release permitted at exactly the minimum and blocked one below | **`pass`** | **real instance** |
+  | TC-PRF-005-13 | no — "results released" appears only in the **Test Data table** | `pass` | **NOT an instance** |
+- **★ TC-PRF-005-05 is the sharpest case, because its assertion was not merely unverified but unsatisfiable.** Steps 2/3 expect **403** and **401** from the release endpoints. An unrouted path returns **404**. So the expected result could not have been observed under any run, against any build.
+- **★ The count did not survive measurement — again, and in the same direction as ISSUE-371.** I first reported **four** instances on a grep of `status: pass` + "releas". Classifying by step type gives **three**. TC-PRF-005-13 is the false positive, and it is the *same category* ISSUE-371 wrongly demoted (`TC-ADM-010-13`, prose-only). **Two audits in a row have over-counted this pattern by treating any mention as an instance.** The classification must be by step type, every time.
+- **Done in this change:** TC-PRF-005-04's phantom route corrected to the real cycle-keyed route; all three demoted to `draft`.
+- **Still to do:** re-run the three via `/test-us US-PRF-005` to earn the verdicts back. **Do not flip the status by editing the file.**
+- **★ What this instance adds over ISSUE-371:** those six TCs asserted against a table that did not exist but whose *intent* was always satisfiable another way. These three asserted against a **capability that was genuinely absent** — so the `pass` verdicts were actively load-bearing misinformation. `BR-4` reads *"the minimum number of peer reviewers must be met before the 360 results are released"*, and **three green test cases said that rule was verified while nothing in the product could release anything.** That is the most expensive shape this pattern takes: a passing test standing in for a missing feature.
+- **Pattern count is now 10** — six in ISSUE-371, `TC-ATT-152` (GAP-022), and these three.
+- **Confidence:** 100% — route absence verified by grep across the whole backend before the change; step classification verified by reading each file.
+
+---
+
+### ISSUE-378 — the reviewee-facing 360 read has no UI, and two 360 fields still have no backend truth
+- **ID:** ISSUE-378
+- **Type:** ISSUE (deferred FE surface + one backend DTO gap)
+- **Severity:** **MED** — an employee still cannot see their own 360 results in the product; the release action HR now performs has no employee-visible consequence yet.
+- **Status:** `OPEN`
+- **Layer:** FE (the page) + BE (one DTO field)
+- **Module / US / TC:** Performance / US-PRF-005 AC-3/AC-4/FR-5 / TC-PRF-005-04, -13 — filed 2026-08-17 alongside the 360 release change
+- **Title:** `GET .../360/cycles/{cycleId}/my-results` ships **reachable by API but not by UI** — deliberately scoped out, filed so it is not discovered later as orphaned code.
+- **What exists:** the endpoint is fully built and tested — self-scoping, 404 `not_released` until released, and reviewer identity stripped **unconditionally** (FR-5) rather than only under the cycle anonymity flag. Guarded by `RevieweeResults_NeverLeak_ReviewerIdentity_EvenWhenAnonymityIsOff`.
+- **What is missing:** a route in the employee area (`my-review.routes.ts` has `''`, `sign-off`, `my-goals`, `pip/:pipId` — no 360) and a component to render it. The three existing 360 routes all sit under the manager/HR-gated `/performance` parent.
+- **Why it was scoped out, stated plainly:** the release PR was already large (new entity + migration + 2 endpoints + an authz extraction + a 7-field FE adapter). The employee page needs its own a11y pass and a decision about where it lives in the employee nav. **This is a scope reduction, not an oversight** — recorded here because the alternative is an `integration-enforcer` run "discovering" it as orphaned in a month.
+- **Second item, from the FE adapter work — `ICompetencyResult.byCategory` has no backend source.** The FE renders self/manager/peer/report chips *under each competency bar*, but `CompetencyAverageDto` is flat; the only per-category data is the top-level `categoryAverages`. The adapter sets `byCategory: []` rather than inventing values, so those chips silently never render.
+  - **Assessment: probably FE over-reach, not a backend gap.** AC-4 asks for *"a radar chart comparing self/manager/peer/report perspectives"*, which the top-level `categoryAverages` already satisfies. A per-competency × per-category breakdown is a strictly richer thing that no AC requests.
+  - **Recommended: delete `byCategory` from the FE interface** (cheaper, and matches what the data is) rather than growing `CompetencyAverageDto`. Same disposition, and same reasoning, as `IRecommendationSummary.totalBonuses` in [[ISSUE-373]].
+- **A third item checked and DISMISSED, recorded so nobody re-raises it:** the composite score renders while the banner says "not yet released". That is **correct** — HR is deliberately allowed to view pre-release (the "warned, not blocked" half of BR-4), and on HR's screen the banner means *"you have not released this to the employee yet"*, not *"you cannot see this"*. The reviewee's path only renders post-release at all. No action.
+- **Confidence:** 100% on the missing route (grepped `my-review.routes.ts`); 100% on `byCategory` (the backend DTO is flat); 85% that deleting `byCategory` is the right call rather than building it — that one is a product judgement.
