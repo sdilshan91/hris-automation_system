@@ -246,6 +246,45 @@ public sealed class Feedback360Controller : ControllerBase
     }
 
     /// <summary>
+    /// POST /api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/release
+    /// Releases the employee's aggregated 360 results to them (BR-4/FR-3). HR (Review.All) OR the reviewee's own
+    /// reporting manager (Review.Team) — the service enforces the manager check. Hard-blocked below the cycle's
+    /// minimum peer threshold (422 <c>min_peer_threshold_not_met</c>); idempotent on a re-release (200).
+    /// </summary>
+    [HttpPost("360/cycles/{cycleId:guid}/employees/{employeeId:guid}/release")]
+    [RequirePermission("Performance.Review.All", "Performance.Review.Team")]
+    [ProducesResponseType(typeof(ApiResponse<Feedback360ReleaseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> ReleaseResults(Guid cycleId, Guid employeeId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ReleaseFeedback360Command(cycleId, employeeId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<Feedback360ReleaseDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// GET /api/v1/tenant/performance/360/cycles/{cycleId}/my-results
+    /// The CALLING employee's OWN released 360 results (FR-3/FR-5). Controller-level [Authorize] only — the
+    /// service self-scopes and release-gates (404 <c>not_released</c> until released). Reviewer identities are
+    /// stripped unconditionally (FR-5) and the PDF export is unavailable on this path.
+    /// </summary>
+    [HttpGet("360/cycles/{cycleId:guid}/my-results")]
+    [ProducesResponseType(typeof(ApiResponse<Feedback360ResultsDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMyResults(Guid cycleId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetMyFeedback360ResultsQuery(cycleId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<Feedback360ResultsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/report[?format=pdf]
     /// 360 summary report (FR-7). Default returns the JSON payload (same as /results); <c>?format=pdf</c> renders
     /// the branded PDF download (QuestPDF). HR-only — the PDF carries the SAME permission as the JSON it renders.

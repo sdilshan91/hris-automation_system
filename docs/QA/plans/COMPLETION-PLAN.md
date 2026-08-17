@@ -26,16 +26,80 @@
 > rows plus ONB-002 AC-1, closed by this session's own #483/#491. 2 verified still live (ATT-011 AC-5,
 > US-PRF-011). **~11 remain to re-verify**; all cite code that still exists.
 >
-> **Step 2 — 2 of 4 model changes merged.**
+> **Step 2 — ✅ COMPLETE 2026-08-17. All model changes are in; step 3 is unblocked.**
 > - **#506 `Payroll.ViewCompensation`** + enforcement at both the reveal path and the workspace flag. HR
 >   Officers lose the reveal — intended, and a real permission removal for an existing role.
 > - **#507 `PipCheckpoint.ObjectiveId`** (nullable, `Restrict`, migration, no backfill) so checkpoints attach
 >   to the objective they measure.
+> - **#509 goal owner tier — doc-only, and it was NOT the model change the queue implied.** The 2026-08-11 ADR
+>   had already decided AMEND-not-build, so nothing shipped in code; what remained was propagation, and
+>   **nine sites still contradicted the decision** six days later — including two that called the tier
+>   "DEFERRED", which the ADR explicitly overrode. See the corrected G6 row below.
+> - **#510 360 release — `Feedback360Release`** (per-reviewee per-cycle, filtered unique index, `Restrict`,
+>   dormant RLS policy) + a **hard** BR-4 gate + the reviewee-facing read + the 7-field FE adapter.
 >
-> **Specified and ready, NOT built:** the 360 release (**a new `Feedback360Release` entity** — there is no
-> per-reviewee aggregate, and BR-4's peer threshold forces per-reviewee granularity; **plus a reviewee-facing
-> read that does not exist**, since `GetResultsAsync` requires `Performance.ReviewAll` at `:331`) · the goal
-> owner tier · the 633-interface FE migration onto generated types · per-tenant uptime.
+> **★ BR-4 looked self-contradictory and is not.** The rule says the peer minimum "must be met before results
+> are released; **otherwise HR is warned**", while `AppraisalCycle.cs:119` said "warned (**not hard-blocked**)".
+> Those describe **two different actions**: HR *viewing* the aggregate pre-release stays warned-but-allowed;
+> *releasing to the employee* is hard-blocked below threshold (422). Both clauses kept; the doc-comment was
+> stating only half of its own rule.
+>
+> **Still NOT built (step 3 and beyond):** the 633-interface FE migration onto generated types · per-tenant
+> uptime · the employee-facing 360 page ([[ISSUE-378]] — the `my-results` endpoint ships reachable by API but
+> not by UI, a deliberate scope reduction, filed so it is not later "discovered" as orphaned).
+>
+> ### 📍 Session 2026-08-17 — step 2 closed; two lessons, both about measuring instead of asserting
+>
+> **Shipped:** #509 (goal-ownership propagation) · #510 (360 release). Step 2 of the conflict-resolution
+> programme is **complete**, so step 3 — regenerate the contract once, then migrate the 633 hand-written FE
+> interfaces onto the generated types — is now unblocked with no model changes left to invalidate it.
+>
+> **★ 1. A test that claims to prove concurrency proved nothing, and only mutation caught it.** The
+> concurrent-double-release arm was first written as two `Task.WhenAll`'d calls. It was green. Deleting the
+> entire `DbUpdateException` recovery it existed to guard left it **still green** — the first call finished
+> its INSERT before the second read, so both returned via the early-exit branch and the recovery was never
+> entered. Rewritten to force the interleaving with an uncommitted transaction (A inserts uncommitted → B
+> blocks on the unique index → A commits → B takes the violation and recovers), it now goes **red** under
+> that mutation. **Mutation-verification is not a formality here; it is the only thing that distinguished a
+> real concurrency test from a decorative one.**
+>
+> **★ 2. Counting by grep over-reported a test-integrity finding for the second audit running.** I reported
+> **four** 360 TCs marked `pass` against a release endpoint that never existed. Classifying by *step type*
+> gives **three** — `TC-PRF-005-13`'s only "released" is in its Test Data table. That is the same false
+> positive class ISSUE-371 made in the other direction (`TC-ADM-010-13`, prose-only). **Two consecutive audits
+> have mis-counted this pattern by treating any mention as an instance.** Filed as [[ISSUE-377]] with the
+> classification method written down, because the fix is procedural, not clerical.
+>
+> **★ 3. Both auditors earned their keep, and one of them corrected my own test.** `integration-enforcer`
+> returned CONNECTED (no orphaned code) but found that **deleting either new controller route or either new
+> MediatR handler would not have turned a single test red** — every arm constructed the service directly.
+> `test-authenticator` returned AUTHENTIC (0 fake tests) and found three live branches with no coverage: the
+> `not_360_enabled` 409, the **notification seam BR-4 explicitly requires** (the whole notify block was
+> deletable with the suite staying green), and `ReleasedByEmployeeId`. **All four holes were closed by ADDING
+> arms**, each mutation-verified.
+>
+> **And it caught a soundness hole in my own concurrency test:** the interleaving was forced by a fixed
+> `Task.Delay(1s)`, so on a cold box B's five preceding queries could outlast the delay, A would commit
+> first, B would take the early-exit path, and the arm would pass while exercising nothing — meaning my
+> mutation-verification of it was *itself* timing-dependent. Replaced with a `pg_blocking_pids()` barrier
+> that waits until Postgres reports a real lock-wait and **throws rather than proceeding** on timeout. Re-run
+> under mutation: still red. **A test whose failure mode is "silently passes for the wrong reason" is the
+> exact thing a fixed sleep buys you.**
+>
+> **The auditors disagreed with each other on a fact, and checking settled it:** `integration-enforcer` called
+> `Feedback360IntegrationTests.cs` Testcontainers-Postgres; it is **InMemory** (`:61`). Only the new
+> concurrency file is real Postgres. Worth remembering that an auditor's incidental claims are not evidence
+> either — the same rule this plan applies to the ledgers.
+>
+> **The sharpest single fact:** `TC-PRF-005-05` expected **403/401** from the release endpoints. An unrouted
+> path returns **404**. Its assertions were not merely unverified — they were **unsatisfiable against any
+> build that has ever existed**, while BR-4's headline clause sat unimplemented for the life of the module.
+>
+> **A real bug the InMemory suite could not have found:** the release path is read-then-insert, so two
+> concurrent callers both insert and the loser hits the unique index — a **500 on a double-clicked button**.
+> InMemory does not enforce unique indexes at all, so the existing suite would have gone green over it
+> forever. Fixed (catch → detach → re-resolve → 200) and guarded by a real-Postgres arm. **Third entry in
+> this plan for the InMemory-masks-Postgres class.**
 >
 > **★ Three rules this session paid for, in order of what they cost:**
 > 1. **Every model-change PR must regenerate the contract AND the TS types ITSELF.** The GAP-S1 gate is

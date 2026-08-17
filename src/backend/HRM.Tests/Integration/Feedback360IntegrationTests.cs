@@ -76,7 +76,27 @@ public sealed class Feedback360IntegrationTests
         user.UserId.Returns(userId);
         user.IsAuthenticated.Returns(true);
         user.Permissions.Returns(permissions);
-        return new Feedback360Service(db, ctx, user, NullLogger<Feedback360Service>.Instance);
+        return new Feedback360Service(
+            db, ctx, user, Substitute.For<IPerformanceNotificationService>(),
+            NullLogger<Feedback360Service>.Instance);
+    }
+
+    /// <summary>
+    /// Same as <see cref="Feedback"/> but returns the <see cref="IPerformanceNotificationService"/> mock so a
+    /// test can assert on the release notification seam (<c>.Received</c> / <c>.DidNotReceive</c>). The inline
+    /// <see cref="Feedback"/> factory throws its mock away, so it cannot verify BR-4/TC-PRF-005-04's notify step.
+    /// </summary>
+    private (Feedback360Service Service, IPerformanceNotificationService Notifications) FeedbackWithNotifications(
+        Guid tenantId, Guid userId, params string[] permissions)
+    {
+        var (db, ctx) = Scoped(tenantId);
+        var user = Substitute.For<ICurrentUser>();
+        user.UserId.Returns(userId);
+        user.IsAuthenticated.Returns(true);
+        user.Permissions.Returns(permissions);
+        var notifications = Substitute.For<IPerformanceNotificationService>();
+        return (new Feedback360Service(db, ctx, user, notifications,
+            NullLogger<Feedback360Service>.Instance), notifications);
     }
 
     private ReviewerAssignmentService Assignments(Guid tenantId, Guid userId, params string[] permissions)
@@ -460,5 +480,317 @@ public sealed class Feedback360IntegrationTests
 
         forbidden.IsFailure.Should().BeTrue();
         forbidden.StatusCode.Should().Be(403);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  US-PRF-005 BR-4/FR-3: RELEASE state + reviewee-facing read
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// <summary>Submits a peer's feedback (helper for the release-threshold arms).</summary>
+    private async Task SubmitPeer(Guid tenantId, Guid cycleId, Guid revieweeEmpId, Guid peerUserId, int rating)
+        => (await Feedback(tenantId, peerUserId, PermissionCatalog.Performance.ViewOwn)
+            .SubmitFeedbackAsync(Fb(cycleId, revieweeEmpId, rating))).IsSuccess.Should().BeTrue();
+
+    // ── BR-4: below the minimum peer threshold is hard-blocked (422), no row ──
+    [Fact]
+    public async Task Release_BelowPeerThreshold_Returns422_AndWritesNoRow()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 2);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4); // only 1 of 2 required peers
+
+        var rel = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsFailure.Should().BeTrue();
+        rel.StatusCode.Should().Be(422);
+        rel.ErrorCode.Should().Be("min_peer_threshold_not_met");
+
+        using var db = Db(_tenantA);
+        (await db.Feedback360Releases.AsNoTracking().CountAsync()).Should().Be(0,
+            "a blocked release must not persist a release row");
+    }
+
+    // ── BR-4 boundary (TC-PRF-005-14): EXACTLY the minimum must SUCCEED (>=) ──
+    // This is the arm the >= / > mutation flips: at 2 peers with a minimum of 2, `>=` releases and `>` blocks.
+    [Fact]
+    public async Task Release_ExactlyAtMinimumPeers_Succeeds()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 2);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer2UserId, 5); // exactly 2 == the minimum
+
+        var rel = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsSuccess.Should().BeTrue(rel.Error);
+        rel.Value!.CycleId.Should().Be(s.CycleId);
+        rel.Value!.RevieweeEmployeeId.Should().Be(s.RevieweeEmpId);
+
+        using var db = Db(_tenantA);
+        (await db.Feedback360Releases.AsNoTracking().CountAsync()).Should().Be(1);
+    }
+
+    // ── BR-4: above the minimum succeeds ──
+    [Fact]
+    public async Task Release_AbovePeerThreshold_Succeeds()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer2UserId, 5); // 2 > minimum of 1
+
+        var rel = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsSuccess.Should().BeTrue(rel.Error);
+    }
+
+    // ── BR-4: re-releasing is idempotent — 200, the existing row, no second insert ──
+    [Fact]
+    public async Task Release_Twice_IsIdempotent_OneRow()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        var r1 = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+        var r2 = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        r1.IsSuccess.Should().BeTrue(r1.Error);
+        r2.IsSuccess.Should().BeTrue(r2.Error);
+        r2.Value!.ReleasedAt.Should().Be(r1.Value!.ReleasedAt, "the re-release returns the SAME existing row");
+
+        using var db = Db(_tenantA);
+        (await db.Feedback360Releases.AsNoTracking().CountAsync()).Should().Be(1,
+            "a retried release must not create a second row");
+    }
+
+    // ── Authorization: HR (Review.All), the reviewee's own manager (Review.Team), else denied ──
+    [Fact]
+    public async Task Release_ByHr_ReviewAll_Allowed()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        var rel = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsSuccess.Should().BeTrue(rel.Error);
+    }
+
+    [Fact]
+    public async Task Release_ByRevieweesOwnManager_ReviewTeam_Allowed()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        // The reviewee reports directly to the manager persona → the Review.Team gate allows the release.
+        var rel = await Feedback(_tenantA, s.ManagerUserId, PermissionCatalog.Performance.ReviewTeam)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsSuccess.Should().BeTrue(rel.Error);
+        // Hole 3: the releaser is stamped with the ACTING manager's employee id — a mutation that stamps an
+        // empty/wrong releaser (e.g. Guid.Empty) survives without this assertion.
+        rel.Value!.ReleasedByEmployeeId.Should().Be(s.ManagerEmpId,
+            "the release must record the employee id of the manager who performed it");
+    }
+
+    [Fact]
+    public async Task Release_ByNonManagingManager_ReviewTeam_Denied_NotTeamManager()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        // Peer1 holds Review.Team but is NOT the reviewee's reporting manager → 403 not_team_manager.
+        var rel = await Feedback(_tenantA, s.Peer1UserId, PermissionCatalog.Performance.ReviewTeam)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsFailure.Should().BeTrue();
+        rel.StatusCode.Should().Be(403);
+        rel.ErrorCode.Should().Be("not_team_manager");
+
+        using var db = Db(_tenantA);
+        (await db.Feedback360Releases.AsNoTracking().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Release_ByCaller_WithNeitherPermission_Denied()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        var rel = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ViewOwn)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsFailure.Should().BeTrue();
+        rel.StatusCode.Should().Be(403);
+        rel.ErrorCode.Should().Be("forbidden");
+    }
+
+    // ── Reviewee-facing read: 404 not_released before release, 200 after ──
+    [Fact]
+    public async Task RevieweeReadsOwnResults_BeforeRelease_Returns404_NotReleased()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        // Not yet released — 404 (never 403), so we do not disclose whether unreleased results exist.
+        var mine = await Feedback(_tenantA, s.RevieweeUserId, PermissionCatalog.Performance.ReadSelf)
+            .GetMyResultsAsync(s.CycleId);
+
+        mine.IsFailure.Should().BeTrue();
+        mine.StatusCode.Should().Be(404);
+        mine.ErrorCode.Should().Be("not_released");
+    }
+
+    [Fact]
+    public async Task RevieweeReadsOwnResults_AfterRelease_Succeeds()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+        (await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId)).IsSuccess.Should().BeTrue();
+
+        var mine = await Feedback(_tenantA, s.RevieweeUserId, PermissionCatalog.Performance.ReadSelf)
+            .GetMyResultsAsync(s.CycleId);
+
+        mine.IsSuccess.Should().BeTrue(mine.Error);
+        mine.Value!.Released.Should().BeTrue();
+        mine.Value!.ReleasedAt.Should().NotBeNull();
+        mine.Value!.ExportAvailable.Should().BeFalse("the reviewee cannot call the HR-gated PDF report route");
+    }
+
+    // ── FR-5 (THE arm that matters): the reviewee's own view NEVER carries a reviewer
+    //    identity, even when the cycle's anonymity flag is OFF; HR's view on the same data DOES. ──
+    [Fact]
+    public async Task RevieweeResults_NeverLeak_ReviewerIdentity_EvenWhenAnonymityIsOff()
+    {
+        var s = await SeedAsync(_tenantA, isAnonymous: false, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+        (await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId)).IsSuccess.Should().BeTrue();
+
+        // The reviewee's own payload: NO reviewer id or name on any entry (FR-5, unconditional).
+        var mine = await Feedback(_tenantA, s.RevieweeUserId, PermissionCatalog.Performance.ReadSelf)
+            .GetMyResultsAsync(s.CycleId);
+        mine.IsSuccess.Should().BeTrue(mine.Error);
+        mine.Value!.Entries.Should().NotBeEmpty();
+        mine.Value!.Entries.Should().OnlyContain(e => e.ReviewerEmployeeId == null && e.ReviewerName == null);
+        mine.Value!.Entries.Select(e => e.ReviewerEmployeeId).Should().NotContain(s.Peer1EmpId);
+
+        // HR's payload on the SAME (non-anonymous) data DOES carry the reviewer identity — proving the
+        // reviewee-path suppression is a real, path-specific override rather than the data simply being anonymous.
+        var hr = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .GetResultsAsync(s.RevieweeEmpId, s.CycleId);
+        hr.IsSuccess.Should().BeTrue(hr.Error);
+        hr.Value!.Entries.Should().Contain(e => e.ReviewerEmployeeId == s.Peer1EmpId && e.ReviewerName != null);
+    }
+
+    // ── NFR-2: tenant isolation on release ──
+    [Fact]
+    public async Task TenantA_Hr_CannotRelease_TenantBReviewee()
+    {
+        var b = await SeedAsync(_tenantB, minPeers: 1);
+        await SubmitPeer(_tenantB, b.CycleId, b.RevieweeEmpId, b.Peer1UserId, 4);
+
+        // Tenant A's HR tries to release Tenant B's reviewee/cycle — the filter hides B's cycle & employee.
+        var rel = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(b.CycleId, b.RevieweeEmpId);
+
+        rel.IsFailure.Should().BeTrue();
+        rel.StatusCode.Should().BeOneOf(403, 404);
+
+        using var dbB = Db(_tenantB);
+        (await dbB.Feedback360Releases.AsNoTracking().CountAsync()).Should().Be(0,
+            "a cross-tenant release attempt must not write into Tenant B");
+    }
+
+    // ── HR path: Released / ReleasedAt / ExportAvailable populate correctly ──
+    [Fact]
+    public async Task HrResults_Populate_ReleaseFields_AndExportAvailable()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        var before = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .GetResultsAsync(s.RevieweeEmpId, s.CycleId);
+        before.IsSuccess.Should().BeTrue(before.Error);
+        before.Value!.Released.Should().BeFalse();
+        before.Value!.ReleasedAt.Should().BeNull();
+        before.Value!.ExportAvailable.Should().BeTrue("HR may always call the PDF report route");
+
+        (await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId)).IsSuccess.Should().BeTrue();
+
+        var after = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .GetResultsAsync(s.RevieweeEmpId, s.CycleId);
+        after.IsSuccess.Should().BeTrue(after.Error);
+        after.Value!.Released.Should().BeTrue();
+        after.Value!.ReleasedAt.Should().NotBeNull();
+        after.Value!.ExportAvailable.Should().BeTrue();
+    }
+
+    // ── BR-4 / TC-PRF-005-04: a SUCCESSFUL release notifies the reviewee AND their reporting manager ──
+    // Hole 1: the notification seam (Feedback360Service.cs:396-402) was asserted nowhere — the entire
+    // NotifyCycleEventAsync("results-released", …) block could be deleted with the suite still green.
+    [Fact]
+    public async Task Release_OnSuccess_Notifies_Reviewee_And_ReportingManager()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 1);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4);
+
+        var (service, notifications) = FeedbackWithNotifications(
+            _tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll);
+        var rel = await service.ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsSuccess.Should().BeTrue(rel.Error);
+
+        // The REVIEWEE is notified with the "results-released" event on their own cycle.
+        await notifications.Received(1).NotifyCycleEventAsync(
+            "results-released", s.CycleId, s.RevieweeEmpId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+
+        // The reviewee's REPORTING MANAGER (a SEPARATE if-branch) is also notified — the seeded reviewee
+        // reports to s.ManagerEmpId.
+        await notifications.Received(1).NotifyCycleEventAsync(
+            "results-released", s.CycleId, s.ManagerEmpId, Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── BR-4: a FAILED release (below the peer threshold) sends NO notification ──
+    // Guards the manager branch too: without a real success there is nothing to notify.
+    [Fact]
+    public async Task Release_BelowPeerThreshold_SendsNoNotification()
+    {
+        var s = await SeedAsync(_tenantA, minPeers: 2);
+        await SubmitPeer(_tenantA, s.CycleId, s.RevieweeEmpId, s.Peer1UserId, 4); // only 1 of 2 required peers
+
+        var (service, notifications) = FeedbackWithNotifications(
+            _tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll);
+        var rel = await service.ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsFailure.Should().BeTrue();
+        rel.StatusCode.Should().Be(422);
+
+        await notifications.DidNotReceive().NotifyCycleEventAsync(
+            "results-released", Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── BR-4: releasing on a cycle where 360 is DISABLED is a 409 not_360_enabled ──
+    // Hole 2: every other fixture seeds Is360Enabled=true, so the early-return branch (Feedback360Service.cs:330-332)
+    // was untested — deleting it changed nothing in the suite.
+    [Fact]
+    public async Task Release_On_Non360Cycle_Returns409()
+    {
+        var s = await SeedAsync(_tenantA, is360Enabled: false, minPeers: 1);
+
+        var rel = await Feedback(_tenantA, Guid.NewGuid(), PermissionCatalog.Performance.ReviewAll)
+            .ReleaseResultsAsync(s.CycleId, s.RevieweeEmpId);
+
+        rel.IsFailure.Should().BeTrue();
+        rel.StatusCode.Should().Be(409);
+        rel.ErrorCode.Should().Be("not_360_enabled");
+
+        using var db = Db(_tenantA);
+        (await db.Feedback360Releases.AsNoTracking().CountAsync()).Should().Be(0,
+            "a release blocked because 360 is disabled must not persist a release row");
     }
 }

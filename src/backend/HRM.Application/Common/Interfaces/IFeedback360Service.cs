@@ -57,6 +57,24 @@ public interface IFeedback360Service
         Guid revieweeEmployeeId, Guid cycleId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Releases a reviewee's aggregated 360 results to them for a cycle (BR-4/FR-3). HR (Review.All) or the
+    /// reviewee's own reporting manager (Review.Team). HARD-BLOCKS below the cycle's minimum peer threshold
+    /// (422 <c>min_peer_threshold_not_met</c>); at/above the minimum it succeeds. Idempotent — a re-release
+    /// returns the existing row (200) and never writes a second. Notifies the reviewee (and their manager).
+    /// </summary>
+    Task<Result<Feedback360ReleaseDto>> ReleaseResultsAsync(
+        Guid cycleId, Guid revieweeEmployeeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the CALLER's OWN aggregated 360 results for a cycle (FR-3/FR-5). Self-scoped (no permission gate):
+    /// resolves the caller's employee, 404 <c>not_released</c> until a release row exists, and returns the SAME
+    /// aggregation as HR but with every reviewer identity stripped unconditionally (FR-5) and the PDF export
+    /// marked unavailable.
+    /// </summary>
+    Task<Result<Feedback360ResultsDto>> GetMyResultsAsync(
+        Guid cycleId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Renders the 360 summary report as a branded PDF (FR-7). Reuses <see cref="GetReportDataAsync"/> for the
     /// data — so the SAME HR-only authorization + tenant query filter apply and anonymity (NFR-3/FR-5) is already
     /// enforced in the projection. Only <c>pdf</c> is supported (there is no CSV/XLSX for this report); any other

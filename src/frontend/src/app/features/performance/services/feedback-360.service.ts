@@ -5,11 +5,14 @@ import { map, switchMap } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   ICompletionTracker,
+  IFeedback360ReleaseResult,
   IFeedback360Results,
+  IFeedback360ResultsRaw,
   IFeedbackForm,
   IReviewerConfig,
   ISaveReviewersRequest,
   ISubmitFeedbackRequest,
+  mapFeedback360Results,
 } from '../models/feedback-360.models';
 
 /**
@@ -29,8 +32,9 @@ import {
  * PascalCase STRINGS (US-PLT-003) — see feedback-360.models.ts.
  *
  * CRITICAL (FR-5/NFR-3): anonymity is enforced server-side. When anonymity is on the
- * results payload omits reviewer identifiers entirely; this service does nothing to
- * reconstruct identity — it returns exactly what the API sends.
+ * results payload NULLS reviewer identifiers entirely; this service does nothing to
+ * reconstruct identity — `getResults()` maps the payload field-for-field and passes the
+ * (already-nulled) reviewer name through untouched.
  */
 @Injectable({ providedIn: 'root' })
 export class Feedback360Service {
@@ -119,15 +123,39 @@ export class Feedback360Service {
 
   /**
    * Aggregated 360 results for an employee (AC-4): per-competency averages,
-   * per-category comparison, composite score (FR-6), and individual comments. When
-   * anonymity is on (FR-5/NFR-3) the payload OMITS reviewer identifiers — the service
-   * returns exactly what the API sends.
+   * per-category comparison, composite score (FR-6), and individual comments. The raw
+   * backend `Feedback360ResultsDto` is translated into the FE vocabulary by
+   * `mapFeedback360Results()` (ISSUE-373 / GAP-012 S-1) — the wire field names
+   * (`revieweeName`, `competencyAverages`, `entries`, …) never leak into the templates.
+   * When anonymity is on (FR-5/NFR-3) the backend NULLS reviewer identifiers; the adapter
+   * carries that through and NEVER reconstructs identity.
    */
   getResults(employeeId: string): Observable<IFeedback360Results> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.get<IFeedback360Results>(
+        this.http.get<IFeedback360ResultsRaw>(
           `${this.perfBase}/360/cycles/${cycleId}/employees/${employeeId}/results`,
+          { withCredentials: true },
+        ),
+      ),
+      map(mapFeedback360Results),
+    );
+  }
+
+  /**
+   * BR-4/FR-3: release the reviewee's aggregated 360 results for the active cycle so the
+   * reviewee can see them. Resolves the active cycle then POSTs to the cycle-keyed release
+   * route (sibling style to `getResults`/`exportResultsPdf`). The backend is the security
+   * authority: it 422s `min_peer_threshold_not_met` when too few peers have submitted
+   * (BR-4) and 403s `not_team_manager` for a non-owning manager. Idempotent — a re-release
+   * returns 200 with the existing release row.
+   */
+  releaseResults(employeeId: string): Observable<IFeedback360ReleaseResult> {
+    return this.activeCycleId().pipe(
+      switchMap((cycleId) =>
+        this.http.post<IFeedback360ReleaseResult>(
+          `${this.perfBase}/360/cycles/${cycleId}/employees/${employeeId}/release`,
+          {},
           { withCredentials: true },
         ),
       ),

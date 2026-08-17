@@ -64,6 +64,7 @@ public sealed class Feedback360ServiceTests
         CreateDbContext(),
         _tenantContext,
         user,
+        Substitute.For<IPerformanceNotificationService>(),
         Substitute.For<ILogger<Feedback360Service>>());
 
     /// <summary>A reviewer caller resolved to a peer employee via UserId (the submit path).</summary>

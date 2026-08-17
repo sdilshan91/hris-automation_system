@@ -146,6 +146,8 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<ReviewerAssignment> ReviewerAssignments => Set<ReviewerAssignment>();
     public DbSet<Feedback360> Feedback360s => Set<Feedback360>();
     public DbSet<Feedback360Item> Feedback360Items => Set<Feedback360Item>();
+    // US-PRF-005 BR-4: 360 results-release markers (one per reviewee per cycle) (tenant-scoped).
+    public DbSet<Feedback360Release> Feedback360Releases => Set<Feedback360Release>();
     public DbSet<Pip> Pips => Set<Pip>();
     public DbSet<PipObjective> PipObjectives => Set<PipObjective>();
     public DbSet<PipCheckpoint> PipCheckpoints => Set<PipCheckpoint>();
@@ -611,6 +613,10 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
 
         // US-PRF-005: Feedback360Item tenant isolation + soft-delete filter (NFR-2).
         modelBuilder.Entity<Feedback360Item>()
+            .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
+
+        // US-PRF-005 BR-4: Feedback360Release tenant isolation + soft-delete filter (NFR-2).
+        modelBuilder.Entity<Feedback360Release>()
             .HasQueryFilter(x => !x.IsDeleted && (!_tenantContext.IsResolved || x.TenantId == _tenantContext.TenantId));
 
         // US-PRF-008: Pip tenant isolation + soft-delete filter (NFR-2 cross-tenant isolation).
