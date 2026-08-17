@@ -67,7 +67,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ### Tier A — cheap, high-leverage, unblocks others
 
-- [ ] **A1 · `/verify-fix BUG-068`** — ledger-only, no code. Six of nine live pessimistic contradictions are one
+- [x] **A1 · `/verify-fix BUG-068`** ✅ **DONE 2026-08-17** — 39/39 green on real Postgres; fix confirmed at `ApplicantConversionService.cs:168`. **The 9 TCs are UNBLOCKED, deliberately NOT flipped to pass** — `/test-us US-REC-010` still owes the verdicts. Five sibling findings on the same frozen block are marked *contradicted*, not fixed; each needs its own `/verify-fix` (added as A1b below). — ledger-only, no code. Six of nine live pessimistic contradictions are one
   frozen file (`TEST-STATUS.md:193-203`); **nine TCs sit BLOCKED behind a fix from six weeks earlier**. The
   regression test already exists. *Highest value per effort in the whole refresh.*
 - [ ] **A2 · Production startup config** — `appsettings.json:21` ships `Rls:Enabled=true` with a blank
@@ -80,6 +80,12 @@ instances**, so probes 3–5 could not be observed end-to-end.
   sole source of the plan's P3 *"notification delivery rewire (biggest surface)"* epic. Also
   `TenantProvisioningService.cs:31-34` (which has kept the US-ADM-011 engine dormant for 5 weeks) and ~10 job
   headers. **Comment-only, and it retires an epic for work already done.**
+
+- [ ] **A1b · `/verify-fix` the five siblings on the same frozen block** — BUG-055, BUG-058, BUG-003, ISSUE-122,
+  ISSUE-140. All five are narrated live by `TEST-STATUS.md:193-203` and RESOLVED/PARTIAL in `TEST-FINDINGS.md`.
+  **Ledger-vs-ledger is not evidence** — each needs a run against code before its row is flipped.
+- [ ] **A1c · `/test-us US-REC-010`** — execute the 9 TCs A1 unblocked. They have never been run; they are not
+  passing, they are merely no longer blocked.
 
 ### Tier B — confirmed live defects, each fixed via generated types
 
