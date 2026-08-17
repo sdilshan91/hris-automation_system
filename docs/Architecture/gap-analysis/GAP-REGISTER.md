@@ -187,7 +187,7 @@ Stated plainly, because a register that only lists faults misrepresents the code
 3. **Do the two structural fixes (S-1, S-2) before the ~40 individual items** — generated TS models, and the EF-filter coverage guard.
 4. **Run `/verify-fix` over the stale ledger lines** — recruitment (12), performance (3), attendance (8), reports (5), notifications (1). **The regression tests already exist, so the re-runs are cheap.**
 5. **Route the FE spec suites to `@test-authenticator`** — mocking-the-invented-shape is the mechanism behind most of §3.
-6. **Take three items to the decision gate, not the backlog:** goal cascading org/department tier (build vs amend §11.9), billing-ops epic (does Phase 1 stay in a spreadsheet?), and whether the D2-b attendance-provider deferral should be re-opened now that attendance has shipped.
+6. **Take three items to the decision gate, not the backlog:** ~~goal cascading org/department tier (build vs amend §11.9)~~ **✅ DECIDED 2026-08-11 — AMEND, do not build** ([[ADR-2026-08-11-goal-ownership-stays-individual]]; propagated through the doc tree 2026-08-17), ~~billing-ops epic (does Phase 1 stay in a spreadsheet?)~~ **✅ DECIDED 2026-08-11 — PARKED** until automated billing goes live, and whether the D2-b attendance-provider deferral should be re-opened now that attendance has shipped — **still open, the only one of the three left at the gate.**
 
 ---
 
