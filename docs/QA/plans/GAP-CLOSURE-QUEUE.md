@@ -80,11 +80,18 @@ instances**, so probes 3–5 could not be observed end-to-end.
   branch would have guaranteed the conflict the one-item rule exists to prevent.
 - [ ] **A1c · `/test-us US-REC-010`** — execute the 9 TCs A1 unblocked. They have never been run; they are not
   passing, they are merely no longer blocked.
-- [ ] **A2 · Production startup config** — `appsettings.json:21` ships `Rls:Enabled=true` with a blank
-  `PrivilegedConnection`, and `DependencyInjection.cs:63-70` **throws on exactly that**. Only
-  `appsettings.Development.json:9` saves dev. Add `PrivilegedConnection` to `PRODUCTION-CHECKLIST.md` beside the
-  existing `Smtp:Host` gate (which currently has **zero** TLS/DNS lines either), and correct
-  `BA/STATUS.md:200`'s stale "committed OFF".
+- [x] **A2 · Production startup config** ✅ **DONE 2026-08-18 — and the item was two-thirds wrong as written.**
+  **The startup throw is not a defect** — `appsettings.json:9-12` states RLS is *"Enabled by DEFAULT so a
+  deployment that forgets to configure it gets isolation ON"*, and the throw is the intended fail-closed posture.
+  **And `PrivilegedConnection` was already in `PRODUCTION-CHECKLIST.md` in four places** (`:109 :119 :125 :166`),
+  including `:125` spelling out the refuse-to-start behaviour verbatim. The prescription was written without
+  re-reading the target — **the exact failure the refresh's own §8 names** ("verify prescriptions, not just
+  findings"), committed in the report that named it.
+  **What was genuinely missing, and is now fixed:** a **TLS/DNS section** (the checklist matched *zero* of
+  TLS/HTTPS/certificate/DNS/reverse-proxy/load-balancer across 283 lines) covering wildcard DNS, DNS-01 wildcard
+  issuance, SNI verified on a real tenant subdomain, TLS 1.2 floor, the `admin.*` dead-entry-point warning
+  (GAP-038) and where the six missing security headers must live (GAP-033a); plus `BA/STATUS.md:200`'s stale
+  **"committed OFF"**, corrected — the operational consequence is the *inverse* of what it implied.
 - [ ] **A3 · Stale-comment sweep** — `RealNotificationDispatcher.cs:32` ("the 12 `LogOnly*` seams are NOT rewired")
   is **false**: one live log-only registration, and it is performance's documented deferral. That sentence is the
   sole source of the plan's P3 *"notification delivery rewire (biggest surface)"* epic. Also
