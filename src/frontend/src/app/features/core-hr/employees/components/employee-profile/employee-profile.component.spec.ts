@@ -109,7 +109,12 @@ describe('EmployeeProfileComponent', () => {
     isActive: true,
     createdAt: '2026-06-01T00:00:00Z',
     updatedAt: '2026-06-01T00:00:00Z',
-    xmin: '12345',
+    // rowVersion is what the API actually emits: a numeric uint, NOT a string, and NOT named xmin.
+    // This fixture previously read `xmin: '12345'` — a field the payload has never contained. The
+    // production code did Number(p.xmin), which on a real response is Number(undefined) = NaN → null →
+    // HTTP 400. The mock supplied the missing field, so Number('12345') succeeded and this suite stayed
+    // green over a save path that failed for every real user. The shape is now the wire shape.
+    rowVersion: 12345,
     personalEmail: 'john.personal@example.com',
     address: '123 Main St',
     city: 'Colombo',
@@ -456,12 +461,12 @@ describe('EmployeeProfileComponent', () => {
       expect(patchReq.request.body.contactInfo.phone).toBe('+94779999999');
       expect(patchReq.request.body.rowVersion).toBe(12345);
 
-      const updatedProfile = { ...mockProfile, phone: '+94779999999', xmin: '12346' };
+      const updatedProfile = { ...mockProfile, phone: '+94779999999', rowVersion: 12346 };
       patchReq.flush(updatedProfile);
       tick();
 
       expect(toastrSpy.success).toHaveBeenCalledWith('Changes saved successfully.');
-      expect(component.profile()!.xmin).toBe('12346');
+      expect(component.profile()!.rowVersion).toBe(12346);
       expect(component.editingSection()).toBeNull();
     }));
 
@@ -476,9 +481,9 @@ describe('EmployeeProfileComponent', () => {
 
       const patchReq = httpMock.expectOne(profileUrl);
       expect(patchReq.request.method).toBe('PATCH');
-      // BE rowVersion is a uint; the FE xmin string is converted with Number(...).
+      // rowVersion travels through untouched — same type on the wire and in the model.
       expect(patchReq.request.body.rowVersion).toBe(12345);
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
     }));
 
     it('personal-info: omits nationalId when left blank (ISSUE-293)', fakeAsync(() => {
@@ -494,7 +499,7 @@ describe('EmployeeProfileComponent', () => {
       const patchReq = httpMock.expectOne(profileUrl);
       expect(patchReq.request.body.personalInfo.firstName).toBe('John');
       expect('nationalId' in patchReq.request.body.personalInfo).toBeFalse();
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
     }));
 
     it('emergency-contacts: maps the form `name` to the BE `contactName` key', fakeAsync(() => {
@@ -511,7 +516,7 @@ describe('EmployeeProfileComponent', () => {
       expect(patchReq.request.body.emergencyContacts.length).toBe(1);
       expect(patchReq.request.body.emergencyContacts[0].contactName).toBe('Jane Doe');
       expect(patchReq.request.body.emergencyContacts[0].phone).toBe('+94779876543');
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
     }));
   });
 
@@ -541,7 +546,7 @@ describe('EmployeeProfileComponent', () => {
       expect(patchReq.request.body.updateCustomFields).toBeTrue();
       expect(typeof patchReq.request.body.customFields).toBe('string');
       expect(JSON.parse(patchReq.request.body.customFields).tshirt_size).toBe('L');
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
     }));
 
     it('DF-39: marks education/work-history/dependents as persistable', fakeAsync(() => {
@@ -577,7 +582,7 @@ describe('EmployeeProfileComponent', () => {
         expect(patchReq.request.method).toBe('PATCH');
         expect(patchReq.request.body[c.flag]).toBeTrue();
         expect(Array.isArray(patchReq.request.body[c.list])).toBeTrue();
-        patchReq.flush({ ...mockProfile, xmin: '12346' });
+        patchReq.flush({ ...mockProfile, rowVersion: 12346 });
         tick();
       }
     }));
@@ -1237,7 +1242,7 @@ describe('EmployeeProfileComponent', () => {
       expect(patchReq.request.method).toBe('PATCH');
       expect(patchReq.request.body.employmentInfo.locationId).toBe('loc-1');
 
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1255,7 +1260,7 @@ describe('EmployeeProfileComponent', () => {
       const patchReq = httpMock.expectOne(profileUrl);
       expect(patchReq.request.body.employmentInfo.locationId).toBeNull();
 
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
   });
@@ -1344,7 +1349,7 @@ describe('EmployeeProfileComponent', () => {
       expect('status' in patchReq.request.body.employmentInfo).toBeFalse();
       // DF-38: dateOfJoining is read-only and never sent from the employment edit form.
       expect('dateOfJoining' in patchReq.request.body.employmentInfo).toBeFalse();
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1377,7 +1382,7 @@ describe('EmployeeProfileComponent', () => {
       const patchReq = httpMock.expectOne(profileUrl);
       // The BE binds the enum member NAME, so that is what must be sent.
       expect(patchReq.request.body.employmentInfo.employmentType).toBe('Contract');
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1401,7 +1406,7 @@ describe('EmployeeProfileComponent', () => {
       expect(patchReq.request.body.contactInfo.state).toBe('Central');
       expect(patchReq.request.body.contactInfo.postalCode).toBe('20000');
       expect(patchReq.request.body.contactInfo.country).toBe('Sri Lanka');
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1482,7 +1487,7 @@ describe('EmployeeProfileComponent', () => {
       expect(eduRow.id).toBe('edu-1');
       expect(eduRow.fieldOfStudy).toBe('Computer Science');
       expect(eduRow.startYear).toBe('2008');
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1506,7 +1511,7 @@ describe('EmployeeProfileComponent', () => {
       // the full-replace write nulls it).
       expect(whRow.id).toBe('wh-1');
       expect(whRow.description).toBe('Led backend systems');
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1528,7 +1533,7 @@ describe('EmployeeProfileComponent', () => {
       expect(depRow.dateOfBirth).toBe('2022-05-20');
       // GAP-B: existing row must carry its id so the BE updates in place.
       expect(depRow.id).toBe('dep-1');
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1550,7 +1555,7 @@ describe('EmployeeProfileComponent', () => {
       expect(newRow.endYear).toBeNull();
       // GAP-B: a genuinely-new row must NOT carry an id (the BE mints one).
       expect('id' in newRow).toBeFalse();
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
 
@@ -1593,7 +1598,7 @@ describe('EmployeeProfileComponent', () => {
       expect(patchReq.request.body.workHistory[0].id).toBe('wh-1');
       expect(patchReq.request.body.workHistory[0].description).toBe('Updated summary');
       expect('id' in patchReq.request.body.workHistory[1]).toBeFalse();
-      patchReq.flush({ ...mockProfile, xmin: '12346' });
+      patchReq.flush({ ...mockProfile, rowVersion: 12346 });
       tick();
     }));
   });

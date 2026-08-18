@@ -38,7 +38,7 @@ import {
  *
  * US-CHR-002 additions:
  *   GET    /api/v1/employees/:id/profile - full profile with sub-entities
- *   PATCH  /api/v1/employees/:id/profile - update profile fields with xmin concurrency
+ *   PATCH  /api/v1/employees/:id/profile - update profile fields with `rowVersion` concurrency
  *     (DF-36/ISSUE-319: there is NO per-section `sections/:section` route)
  */
 @Injectable({ providedIn: 'root' })
@@ -182,7 +182,7 @@ export class EmployeeService {
 
   /**
    * Get full employee profile with all sub-entities (AC-1).
-   * Returns IEmployeeProfile including xmin concurrency token.
+   * Returns IEmployeeProfile including the `rowVersion` concurrency token (from the generated contract).
    *
    * Endpoint assumption: GET /api/v1/employees/:id/profile
    */
@@ -198,7 +198,7 @@ export class EmployeeService {
    *
    * Backend contract: PATCH /api/v1/tenant/employees/:id/profile with an
    * `UpdateEmployeeProfileRequest` body. Only the section(s) present in the
-   * request are applied. The `rowVersion` (numeric xmin) drives optimistic
+   * request are applied. The `rowVersion` (numeric, Postgres xmin under the hood) drives optimistic
    * concurrency — the backend returns 409 on a stale token (AC-3) and 403 when
    * an Employee-role user edits restricted fields (AC-5).
    *

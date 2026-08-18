@@ -71,7 +71,7 @@ import {
  * Displays the full employee profile in card-based collapsible sections (FR-1).
  * Supports inline per-section editing with Save/Cancel (FR-2).
  * Enforces field-level permissions by role (FR-3, AC-4, AC-5).
- * Uses xmin optimistic concurrency on save (AC-3, FR-4).
+ * Uses `rowVersion` optimistic concurrency on save (AC-3, FR-4), typed from the generated contract.
  * Employment history displayed as vertical timeline (FR-6, AC-6).
  */
 @Component({
@@ -2560,7 +2560,7 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     return !this.UNBACKED_SECTIONS.includes(section);
   }
 
-  /** Save the edited fields via PATCH /profile with xmin concurrency (AC-2, AC-3). */
+  /** Save the edited fields via PATCH /profile with `rowVersion` concurrency (AC-2, AC-3). */
   saveSection(section: ProfileSection): void {
     const p = this.profile();
     if (!p) return;
@@ -2610,8 +2610,24 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
     section: ProfileSection,
     p: IEmployeeProfile
   ): IUpdateEmployeeProfileRequest | null {
-    // The BE rowVersion is a numeric (uint) xmin; the FE carries it as a string.
-    const rowVersion = Number(p.xmin);
+    // Read the concurrency token straight off the wire shape. It arrives as a numeric `uint` (e.g. 948) and
+    // is sent back unchanged — no Number() coercion, because there is nothing to coerce.
+    //
+    // This line used to read `Number(p.xmin)`. `xmin` was never on the payload, so it evaluated to NaN, which
+    // JSON-serialises to `null`, and the PATCH came back 400 "The JSON value could not be converted to
+    // System.UInt32" — every save on this screen failed. The type now comes from the generated contract, so
+    // the same mistake is a compile error rather than a runtime 400.
+    // The generated contract types rowVersion as OPTIONAL, so TypeScript refuses to let this be assumed
+    // present — which is precisely the assumption that produced the original bug. Rather than silence it with
+    // a non-null assertion, refuse to build a save body without a token: sending a missing/garbage token is a
+    // guaranteed 400, and the whole point of this fix is to stop shipping one.
+    if (p.rowVersion === undefined || p.rowVersion === null) {
+      this.toastr.error(
+        'Cannot save: this profile was loaded without a concurrency token. Reload the page and try again.'
+      );
+      return null;
+    }
+    const rowVersion: number = p.rowVersion;
 
     switch (section) {
       case 'personal-info': {
