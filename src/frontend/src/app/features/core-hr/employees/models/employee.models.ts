@@ -1,4 +1,5 @@
 import { AbstractControl, ValidationErrors } from '@angular/forms';
+import type { Schema } from '@core/api';
 
 /**
  * US-CHR-001: Employee models matching the backend API contract.
@@ -316,12 +317,28 @@ export interface IEmploymentHistoryEntry {
 /**
  * Full employee profile returned by GET /employees/:id/profile (US-CHR-002 AC-1).
  *
- * Extends IEmployee with related sub-entities for all profile sections.
- * Includes `xmin` for optimistic concurrency (AC-3, FR-4).
+ * **The wire shape is the GENERATED contract type, not a hand-written guess.** `EmployeeProfileWire` is
+ * `Schema<'EmployeesEmployeeProfileDto'>`, so a renamed C# property becomes a TypeScript compile error here
+ * rather than a silent `undefined` at runtime.
+ *
+ * **Why this was migrated (2026-08-18, queue item B1).** This interface previously declared
+ * `xmin: string` — a field the API has **never** emitted. The API sends `rowVersion` (a non-nullable `uint`).
+ * `employee-profile.component.ts` did `Number(p.xmin)` → `NaN` → serialised as `null`, and the save PATCH came
+ * back **400** *"The JSON value could not be converted to System.UInt32"*. **Every profile save on the primary
+ * Core HR screen failed**, and `employee-profile.component.spec.ts` mocked `xmin: '12345'` so the suite stayed
+ * green over it. Reproduced against the live API before the fix: `{"rowVersion":null}` → 400, correct token → 200.
+ *
+ * A rename would have fixed today's symptom and left the next drift free to happen. Consuming the generated
+ * type removes the ability to write the bug.
  */
+export type EmployeeProfileWire = Schema<'EmployeesEmployeeProfileDto'>;
+
 export interface IEmployeeProfile extends IEmployee {
-  /** Optimistic concurrency token (PostgreSQL xmin) */
-  xmin: string;
+  /**
+   * Optimistic concurrency token. **Name and type are pinned to the contract** — `Pick` fails to compile if
+   * the backend renames or retypes `RowVersion`, which is the whole point of sourcing it from the schema.
+   */
+  rowVersion: EmployeeProfileWire['rowVersion'];
   /** Personal email (separate from work email) */
   personalEmail: string | null;
   /** Address fields */
@@ -366,8 +383,10 @@ export type ProfileSection =
 // Mirrors the backend `UpdateEmployeeProfileRequest` consumed by
 // PATCH /api/v1/tenant/employees/:id/profile. Only the section(s) being edited
 // are set; null/omitted sections are left untouched. `rowVersion` is the
-// numeric (uint xmin) optimistic-concurrency token — the FE profile carries it
-// as a string in `xmin`, so callers convert with `Number(profile.xmin)`.
+// numeric (uint) optimistic-concurrency token, sourced from the generated contract as
+// `EmployeeProfileWire['rowVersion']`. Pass `profile.rowVersion` straight through — no conversion.
+// (This comment used to describe a string `xmin` that the API never sent; see the note on
+// IEmployeeProfile above.)
 
 /** Personal-info fields (BE PersonalInfoUpdate). */
 export interface IPersonalInfoUpdate {

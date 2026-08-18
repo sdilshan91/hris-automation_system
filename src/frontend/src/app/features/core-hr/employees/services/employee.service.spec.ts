@@ -617,7 +617,9 @@ describe('EmployeeService', () => {
   describe('getEmployeeProfile (US-CHR-002)', () => {
     const mockProfile: IEmployeeProfile = {
       ...mockEmployee,
-      xmin: '12345',
+      // The real payload sends a numeric `rowVersion`, never a string `xmin` — see the note on
+      // IEmployeeProfile. Mocking the invented field is what hid the broken save path.
+      rowVersion: 12345,
       personalEmail: 'john@personal.com',
       address: '123 Main St',
       city: 'Colombo',
@@ -639,7 +641,7 @@ describe('EmployeeService', () => {
     it('should GET the full employee profile', () => {
       service.getEmployeeProfile('emp-1').subscribe((profile) => {
         expect(profile.employeeId).toBe('emp-1');
-        expect(profile.xmin).toBe('12345');
+        expect(profile.rowVersion).toBe(12345);
         expect(profile.emergencyContacts).toEqual([]);
       });
 
@@ -657,7 +659,7 @@ describe('EmployeeService', () => {
   describe('updateEmployeeProfile (US-CHR-002 / DF-36)', () => {
     const mockProfile: IEmployeeProfile = {
       ...mockEmployee,
-      xmin: '12346',
+      rowVersion: 12346,
       personalEmail: null,
       address: null,
       city: null,
@@ -695,7 +697,7 @@ describe('EmployeeService', () => {
       expect(req.request.withCredentials).toBeTrue();
       req.flush(mockProfile);
 
-      expect(received!.xmin).toBe('12346');
+      expect(received!.rowVersion).toBe(12346);
     });
 
     it('should call the {id}/profile URL (never sections/:section)', () => {
