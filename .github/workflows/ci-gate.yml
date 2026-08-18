@@ -31,7 +31,92 @@ permissions:
   contents: read
 
 jobs:
+  # ── Docs-only fast path ────────────────────────────────────────────────────────────────────────
+  # A PR that only touches docs/**.md cannot break the build, but it CAN break the four tests that
+  # READ markdown — LedgerTraceability (the ledger drift guard), AuthEmailLinkRoute and
+  # PasswordHashingWorkFactor (both read CLAUDE.md), and LopAuthorityPayroll (reads a vault decision
+  # note). So this is a NARROWED gate, never a skip.
+  #
+  # Deliberately implemented as job-level `if:` and NOT as `paths-ignore` on the workflow. A workflow
+  # that does not fire never reports its checks, so a required check stays pending and the PR blocks
+  # forever; a job skipped via `if:` still reports and satisfies branch protection. This is the same
+  # trap the trigger comment above already warns about: "CI that never fires is worse than no CI."
+  #
+  # gitleaks and semgrep live in their own workflows with no path filters, so secret scanning still
+  # runs on docs PRs — which matters, because a .md is a very plausible place to paste a connection
+  # string.
+  changes:
+    name: Detect docs-only change
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        name: Classify the diff
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "Not a pull_request event — running the full gate."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base='${{ github.event.pull_request.base.sha }}'
+          head='${{ github.event.pull_request.head.sha }}'
+          files=$(git diff --name-only "$base" "$head")
+          echo "Changed files:"; echo "$files" | sed 's/^/  /'
+          if [ -z "$files" ]; then
+            echo "Empty diff — running the full gate (fail safe)."
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Anything outside docs/**.md forces the full gate. Note CLAUDE.md is at the repo ROOT and is
+          # therefore NOT docs-only — correct, since two tests read it.
+          #
+          # Written as "capture the non-matching lines, test for non-empty" rather than the shorter
+          # `grep -qvE`. That shorter form is NOT portable: GNU grep (what runners use) exits 0 here,
+          # but ugrep — the grep on at least one dev machine in this project — exits 1 for the same
+          # input, which would silently invert this decision and skip the full gate on a code change.
+          # This form behaves identically on both and can be tested locally.
+          nondocs=$(printf '%s\n' "$files" | grep -vE '^docs/.+\.md$' || true)
+          if [ -n "$nondocs" ]; then
+            echo "Non-docs paths present — running the full gate:"
+            printf '%s\n' "$nondocs" | sed 's/^/  /'
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "docs/**.md only — running the narrowed docs gate."
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  docs-gate:
+    name: Docs gate (the tests that read markdown)
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test — every suite that reads a markdown file
+        # Keep this filter in sync with: grep -rln 'docs/\|\.md"' src/backend/HRM.Tests/
+        # LedgerTraceability is the load-bearing one: it parses STATUS.md, TEST-STATUS.md and
+        # TEST-FINDINGS.md, and it is the guard the whole gap-closure programme relies on. If a docs
+        # PR could skip it, the drift guard would stop running on exactly the commits that edit the
+        # ledgers.
+        run: |
+          dotnet test src/backend/HRM.sln --nologo \
+            --filter "FullyQualifiedName~LedgerTraceability|FullyQualifiedName~AuthEmailLinkRoute|FullyQualifiedName~PasswordHashingWorkFactor|FullyQualifiedName~LopAuthorityPayroll"
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     name: Backend (build + test)
     runs-on: ubuntu-latest
     steps:
@@ -86,6 +171,8 @@ jobs:
           if-no-files-found: ignore
 
   migrations:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     name: Migrations (real PostgreSQL apply)
     # Applies the EF Core migration chain to a real PostgreSQL service container
     # and asserts the expected schema exists. This catches non-discoverable /
@@ -163,6 +250,8 @@ jobs:
           exit $fail
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     name: Frontend (build + test)
     runs-on: ubuntu-latest
     defaults:
@@ -201,6 +290,8 @@ jobs:
         run: npx ng test --watch=false --browsers=ChromeHeadless --code-coverage
 
   e2e:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     name: E2E (Playwright — real browser → Angular → API → Postgres)
     # GAP-034. The suite existed but nothing ran it, and "just add a Playwright step" was wrong twice:
     #
