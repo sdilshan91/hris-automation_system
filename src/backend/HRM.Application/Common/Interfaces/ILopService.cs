@@ -32,6 +32,19 @@ public interface ILopService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Cross-employee LOP register for the HR management screen (FR-5). Returns one row per effective LOP
+    /// <c>leave_request</c> (any non-Cancelled/Rejected status) overlapping <paramref name="from"/>..<paramref name="to"/>,
+    /// each carrying the employee's identity (name + number). Optionally narrowed to <paramref name="employeeIds"/>.
+    /// Read-only; tenant-scoped via the EF global filter. Soft-deleted employees and requests are excluded, but
+    /// an employee whose OTHER filtered principals (e.g. job title) are soft-deleted still appears.
+    /// </summary>
+    Task<Result<IReadOnlyList<LopRegisterEntryDto>>> GetLopRegisterAsync(
+        DateOnly from,
+        DateOnly to,
+        IReadOnlyList<Guid>? employeeIds = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// D2 / BUG-293: the AUTHORITATIVE payroll LOP per employee for a pay period — the figure payroll deducts.
     /// The leave module owns this total: it takes attendance's raw absence FACTS
     /// (<paramref name="attendanceLopByEmployee"/> — unapproved absence + US-ATT-008 lateness) and ADDS the

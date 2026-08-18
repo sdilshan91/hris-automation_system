@@ -1,3 +1,4 @@
+import type { Schema } from '@core/api';
 /**
  * US-LV-011: Loss of Pay (LOP) / Compulsory Leave management models.
  *
@@ -36,6 +37,64 @@ export type LopSourceFilter = LopSource | 'all';
  * `date` is a date-only string (`YYYY-MM-DD`); the FE slices it for display (never
  * `new Date()`-parses) to avoid TZ off-by-one, consistent with US-LV-007/009.
  */
+/**
+ * The LOP register wire shape — **the generated contract type, not a hand-written guess.**
+ *
+ * Sourced from `Schema<'LeaveRequestsLopRegisterEntryDto'>`, so a renamed C# property becomes a TypeScript
+ * compile error here rather than a silent `undefined` at runtime.
+ *
+ * **Why this exists (2026-08-18, queue item B2).** The LOP screen is a cross-employee HR register — its table
+ * renders `employeeName`/`employeeNo` per row with a per-row Override action. It was calling
+ * `GET /leaves/lop-summary`, which is **per-employee, built for payroll (FR-5)**: it requires
+ * `employeeId`+`from`+`to`, **400s** without them, and its `LopEntryDto` carries no employee identity at all.
+ * So the screen 400'd on every load, and the documented "cast an object to an array" bug was never even
+ * reached — the request failed first. The fix was a new backend capability
+ * (`GET /leaves/lop-register`), not a field rename.
+ */
+/**
+ * The default register period: the current calendar month, as `YYYY-MM-DD` date-only strings.
+ *
+ * LOP is a payroll input and payroll runs monthly, so the month is the period an HR user is almost always
+ * looking at. Built from local date parts rather than `toISOString()`, which converts to UTC and would shift
+ * the boundary by a day for anyone east or west of Greenwich — a real off-by-one on the 1st and the last of
+ * the month.
+ */
+export function currentMonthRange(now: Date = new Date()): { from: string; to: string } {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const lastDay = new Date(y, m + 1, 0).getDate();
+  return {
+    from: `${y}-${pad(m + 1)}-01`,
+    to: `${y}-${pad(m + 1)}-${pad(lastDay)}`,
+  };
+}
+
+export type LopRegisterWire = Schema<'LeaveRequestsLopRegisterEntryDto'>;
+
+/**
+ * Maps a register row onto the view-model the template renders.
+ *
+ * The **input** is the generated type, so this mapper cannot silently drift from the contract. Two fields
+ * genuinely differ and are translated here rather than pretended away:
+ *  - `requestId` (wire) → `leaveRequestId` (the template's `@for … track` key)
+ *  - `source` arrives as a plain string; the UI needs the `LopSource` union to drive badge colour and
+ *    override gating, so it is narrowed once, here, instead of being asserted at each use site.
+ */
+export function mapLopRegisterEntry(w: LopRegisterWire): ILopEntry {
+  return {
+    leaveRequestId: w.requestId ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    employeeNo: w.employeeNo ?? null,
+    date: w.date ?? '',
+    days: w.days ?? 0,
+    source: (w.source ?? 'SystemGenerated') as LopSource,
+    status: w.status ?? '',
+    reason: w.reason ?? null,
+  };
+}
+
 export interface ILopEntry {
   /** The underlying leave_request id. */
   leaveRequestId: string;

@@ -3237,6 +3237,41 @@
         },
         "type": "object"
       },
+      "ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/LeaveRequestsLopRegisterEntryDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseOfIReadOnlyListOfLeaveRequestsUpcomingLeaveDto": {
         "additionalProperties": false,
         "properties": {
@@ -17142,6 +17177,48 @@
           },
           "startDate": {
             "format": "date",
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LeaveRequestsLopRegisterEntryDto": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "days": {
+            "format": "double",
+            "type": "number"
+          },
+          "employeeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "employeeName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "employeeNo": {
+            "nullable": true,
+            "type": "string"
+          },
+          "reason": {
+            "nullable": true,
+            "type": "string"
+          },
+          "requestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "source": {
+            "nullable": true,
             "type": "string"
           },
           "status": {
@@ -40171,6 +40248,84 @@
         },
         "tags": [
           "LeaveRequests"
+        ]
+      }
+    },
+    "/api/v1/leaves/lop-register": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "employeeIds",
+            "schema": {
+              "items": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          }
+        },
+        "tags": [
+          "LeaveLop"
         ]
       }
     },

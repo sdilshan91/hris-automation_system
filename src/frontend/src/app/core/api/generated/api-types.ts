@@ -5478,6 +5478,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/leaves/lop-register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    from?: string;
+                    to?: string;
+                    employeeIds?: string[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto"];
+                        "text/json": components["schemas"]["ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leaves/lop-summary": {
         parameters: {
             query?: never;
@@ -31974,6 +32026,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfIReadOnlyListOfLeaveRequestsLopRegisterEntryDto: {
+            code?: string | null;
+            data?: components["schemas"]["LeaveRequestsLopRegisterEntryDto"][] | null;
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfIReadOnlyListOfLeaveRequestsUpcomingLeaveDto: {
             code?: string | null;
             data?: components["schemas"]["LeaveRequestsUpcomingLeaveDto"][] | null;
@@ -36307,6 +36368,21 @@ export interface components {
             source?: string | null;
             /** Format: date */
             startDate?: string;
+            status?: string | null;
+        };
+        LeaveRequestsLopRegisterEntryDto: {
+            /** Format: date */
+            date?: string;
+            /** Format: double */
+            days?: number;
+            /** Format: uuid */
+            employeeId?: string;
+            employeeName?: string | null;
+            employeeNo?: string | null;
+            reason?: string | null;
+            /** Format: uuid */
+            requestId?: string;
+            source?: string | null;
             status?: string | null;
         };
         LeaveRequestsLopSummaryDto: {

@@ -203,6 +203,82 @@ public sealed class LopService : ILopService
         });
     }
 
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<LopRegisterEntryDto>>> GetLopRegisterAsync(
+        DateOnly from,
+        DateOnly to,
+        IReadOnlyList<Guid>? employeeIds = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<IReadOnlyList<LopRegisterEntryDto>>.Failure("Tenant context is not resolved.", 400);
+        if (to < from)
+            return Result<IReadOnlyList<LopRegisterEntryDto>>.Failure("'to' must be on or after 'from'.", 400);
+
+        var filterIds = employeeIds is { Count: > 0 } ? employeeIds.ToHashSet() : null;
+
+        // Effective LOP entries overlapping the period, across all employees. Cancelled/Rejected are excluded.
+        // The LeaveRequest global filter already scopes to tenant + not-deleted.
+        var lopRequests = await _dbContext.LeaveRequests
+            .AsNoTracking()
+            .Where(lr => lr.IsLop
+                         && lr.Status != LeaveRequestStatus.Cancelled
+                         && lr.Status != LeaveRequestStatus.Rejected
+                         && lr.StartDate <= to && lr.EndDate >= from
+                         && (filterIds == null || filterIds.Contains(lr.EmployeeId)))
+            .OrderBy(lr => lr.StartDate)
+            .Select(lr => new
+            {
+                lr.Id,
+                lr.EmployeeId,
+                lr.StartDate,
+                lr.TotalDays,
+                lr.LopSource,
+                lr.Status,
+                lr.Reason,
+            })
+            .ToListAsync(cancellationToken);
+
+        if (lopRequests.Count == 0)
+            return Result<IReadOnlyList<LopRegisterEntryDto>>.Success([]);
+
+        // Resolve employee identity via the employee's OWN query — NOT Include(lr => lr.Employee). Employee is a
+        // required navigation with a global (tenant + soft-delete) filter, so an Include would emit an INNER JOIN
+        // and silently drop rows whose employee is filtered out (THE INCLUDE TRAP — cost this repo 33 tests). This
+        // separate, filtered lookup instead means a soft-deleted employee is excluded (its rows are omitted, not
+        // dropped-with-siblings), while an employee whose OTHER principals (job title, etc.) are soft-deleted still
+        // resolves because we never touch those navigations.
+        var lookupIds = lopRequests.Select(r => r.EmployeeId).Distinct().ToList();
+        var employees = await _dbContext.Employees
+            .AsNoTracking()
+            .Where(e => lookupIds.Contains(e.Id))
+            .Select(e => new { e.Id, e.EmployeeNo, e.FirstName, e.LastName })
+            .ToDictionaryAsync(e => e.Id, cancellationToken);
+
+        var entries = new List<LopRegisterEntryDto>(lopRequests.Count);
+        foreach (var lr in lopRequests)
+        {
+            // Skip rows whose employee is not visible (soft-deleted / cross-tenant): identity can't be resolved.
+            if (!employees.TryGetValue(lr.EmployeeId, out var emp))
+                continue;
+
+            entries.Add(new LopRegisterEntryDto
+            {
+                EmployeeId = lr.EmployeeId,
+                EmployeeName = $"{emp.FirstName} {emp.LastName}".Trim(),
+                EmployeeNo = emp.EmployeeNo,
+                RequestId = lr.Id,
+                Date = lr.StartDate,
+                Days = lr.TotalDays,
+                Source = lr.LopSource?.ToString() ?? string.Empty,
+                Status = lr.Status.ToString(),
+                Reason = lr.Reason,
+            });
+        }
+
+        return Result<IReadOnlyList<LopRegisterEntryDto>>.Success(entries);
+    }
+
     // ══════════════════════════════════════════════════════════════
     //  D2 / BUG-293: authoritative payroll LOP (leave owns the total)
     // ══════════════════════════════════════════════════════════════

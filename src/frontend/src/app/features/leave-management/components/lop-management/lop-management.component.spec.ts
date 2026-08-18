@@ -100,12 +100,15 @@ describe('LopManagementComponent', () => {
 
   beforeEach(async () => {
     lopServiceSpy = jasmine.createSpyObj('LopService', [
-      'getLopSummary',
+      'getLopRegister',
       'assignLop',
       'assignCompulsoryLeave',
       'overrideLop',
     ]);
-    lopServiceSpy.getLopSummary.and.returnValue(of([sysEntry, hrEntry]));
+    // The screen loads the cross-employee REGISTER, not the per-employee payroll summary. This spy used to
+    // mock getLopSummary — a method that 400s in production because it requires employeeId+from+to — which is
+    // how a permanently-broken screen kept a green suite.
+    lopServiceSpy.getLopRegister.and.returnValue(of([sysEntry, hrEntry]));
     lopServiceSpy.assignLop.and.returnValue(of({ employeeId: 'emp-1', created: 1 }));
     lopServiceSpy.assignCompulsoryLeave.and.returnValue(of({ deducted: 1, lop: 1, total: 2 }));
     lopServiceSpy.overrideLop.and.returnValue(
@@ -140,6 +143,20 @@ describe('LopManagementComponent', () => {
 
   // ─── List + filters ───────────────────────────────────────
 
+  // ── the arm that would have caught B2 ─────────────────────────────────────
+  it('loads the register with a real date range (never a bare call)', () => {
+    // The original defect was not a bad field name — it was calling an endpoint that REQUIRES
+    // employeeId+from+to with no arguments at all, so every load 400'd before any parsing happened.
+    // Asserting the arguments is therefore the assertion that matters; asserting the rendered rows
+    // would pass against a mock no matter what the component sent.
+    fixture.detectChanges(); // triggers ngOnInit -> loadEntries()
+    expect(lopServiceSpy.getLopRegister).toHaveBeenCalled();
+    const [from, to] = lopServiceSpy.getLopRegister.calls.mostRecent().args as [string, string];
+    expect(from).withContext('from must be sent').toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(to).withContext('to must be sent').toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(from <= to).withContext('from must not be after to').toBeTrue();
+  });
+
   it('loads LOP entries + active leave types on init', () => {
     fixture.detectChanges();
     expect(component).toBeTruthy();
@@ -170,14 +187,14 @@ describe('LopManagementComponent', () => {
   });
 
   it('shows the empty state when no entries match the filter', () => {
-    lopServiceSpy.getLopSummary.and.returnValue(of([]));
+    lopServiceSpy.getLopRegister.and.returnValue(of([]));
     fixture.detectChanges();
     const empty = fixture.nativeElement.querySelector('[data-testid="lop-empty"]');
     expect(empty).toBeTruthy();
   });
 
   it('shows an error toast when loading fails', () => {
-    lopServiceSpy.getLopSummary.and.returnValue(throwError(() => new Error('boom')));
+    lopServiceSpy.getLopRegister.and.returnValue(throwError(() => new Error('boom')));
     fixture.detectChanges();
     expect(component.isLoading()).toBeFalse();
     expect(toastrSpy.error).toHaveBeenCalled();
