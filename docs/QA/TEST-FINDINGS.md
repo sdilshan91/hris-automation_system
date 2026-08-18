@@ -8429,3 +8429,21 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   - **Recommended: delete `byCategory` from the FE interface** (cheaper, and matches what the data is) rather than growing `CompetencyAverageDto`. Same disposition, and same reasoning, as `IRecommendationSummary.totalBonuses` in [[ISSUE-373]].
 - **A third item checked and DISMISSED, recorded so nobody re-raises it:** the composite score renders while the banner says "not yet released". That is **correct** — HR is deliberately allowed to view pre-release (the "warned, not blocked" half of BR-4), and on HR's screen the banner means *"you have not released this to the employee yet"*, not *"you cannot see this"*. The reviewee's path only renders post-release at all. No action.
 - **Confidence:** 100% on the missing route (grepped `my-review.routes.ts`); 100% on `byCategory` (the backend DTO is flat); 85% that deleting `byCategory` is the right call rather than building it — that one is a product judgement.
+
+---
+
+### BUG-305 — vacancy auto-close on conversion notifies nobody: BR-5's recruiter and remaining-pipeline notifications were never built
+- **ID:** BUG-305
+- **Type:** BUG (unimplemented business rule — not a delivery deferral)
+- **Severity:** **MED** — the durable state change (auto-close) works correctly; the missing legs are two explicit BR-5 notifications that are **wholly absent**, not merely stubbed.
+- **Status:** `OPEN`
+- **Layer:** BE
+- **Module / US / TC:** Recruitment / US-REC-010 BR-5, FR-7 / **TC-REC-010-08** — found 2026-08-18 executing queue item A1c
+- **Title:** When a conversion fills a vacancy's last seat the vacancy auto-closes correctly, but **no recruiter notification and no "vacancy filled" notification to the remaining pipeline is produced** — not sent, not enqueued, not stubbed.
+- **What DOES work (verified, so the fix is narrow):** last seat (1/1) → `vacancyClosed: true`, DB `Closed` + `closed_at` stamped; a non-final fill (2/3) correctly leaves the vacancy `Open`; a closed vacancy rejects new applications with `vacancy_not_open`. The state machine is sound.
+- **Root cause (confidence 95%):** `ApplicantConversionService.PostConversionNotificationsSafeAsync` calls only `_notifications.NotifyStageChangedAsync(...)`, which (`RealRecruitmentNotificationService.cs:138-161`) dispatches a single `application_stage_changed` email **to the applicant**. The `vacancyClosed` flag is passed into the method but is read **only inside a catch-log**. There is no recruiter auto-close notification and no remaining-pipeline notification anywhere on the path.
+- **★ The in-code comment actively misleads.** `ApplicantConversionService.cs:478` reads *"FR-7/BR-5 recruiter notification (vacancy auto-closed)"* next to code that produces no such notification. This is the **third** instance in this repo of a comment describing behaviour that does not exist — after `RealNotificationDispatcher.cs:32` (which seeded a whole phantom P3 epic) and `TenantProvisioningService.cs:31-34` (which kept the US-ADM-011 workflow engine dormant for five weeks). **The comment is the reason nobody noticed: it reads as done.**
+- **Reproduction:** as an HR user, convert an applicant that fills a vacancy's last seat → vacancy goes `Closed`. Then `SELECT event_key, notification_type FROM notification_delivery WHERE tenant_id = <tenant> ORDER BY created_at DESC` → only `application_stage_changed` (to the applicant) and the FR-9 welcome event. **No recruiter-close event, no pipeline-filled event.**
+- **Evidence:** TC-REC-010-08's own NOTE says to assert the *enqueue* if delivery is stubbed. There is no enqueue to assert — the code path does not exist.
+- **Severity rationale:** MED not HIGH because the money/state half is correct and durable; MED not LOW because BR-5 is an explicit business rule and both legs are entirely unbuilt, so no amount of wiring the notification layer would surface them.
+- **Confidence:** 95% on the root cause (read the whole dispatch path); 100% that the notifications do not occur (verified against `notification_delivery` after a real auto-close).
