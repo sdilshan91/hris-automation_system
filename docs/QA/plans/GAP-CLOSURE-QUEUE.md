@@ -78,8 +78,13 @@ instances**, so probes 3–5 could not be observed end-to-end.
   DI-wired and test-bound. *Fourth confirmed pessimistic-direction ledger error.*
   Folded into the A1 PR rather than its own branch: it edits the same lines A1's banner created, so a second
   branch would have guaranteed the conflict the one-item rule exists to prevent.
-- [ ] **A1c · `/test-us US-REC-010`** — execute the 9 TCs A1 unblocked. They have never been run; they are not
-  passing, they are merely no longer blocked.
+- [x] **A1c · `/test-us US-REC-010`** ✅ **DONE 2026-08-18 (#514) — 7 PASS · 1 FAIL · 1 BLOCKED.** BUG-068 confirmed
+  dead in the flesh (every convert 201, never a 500). **Found [[BUG-305]]** — vacancy auto-close works but BR-5's
+  recruiter + remaining-pipeline notifications were never built, next to a comment at
+  `ApplicantConversionService.cs:478` claiming they were. **Three TCs were STALE, not failing** (authored against
+  the pre-ISSUE-140 stub world) and were executed against real behaviour rather than forced to a verdict. `-13`
+  BLOCKED honestly: the P95-over-100-conversions arm is not executable. Residue: none.
+  - **Follow-on filed:** BUG-305 (Tier C candidate) · ISSUE-232 verified resolved by `-05`, ledger flip owed.
 - [x] **A2 · Production startup config** ✅ **DONE 2026-08-18 — and the item was two-thirds wrong as written.**
   **The startup throw is not a defect** — `appsettings.json:9-12` states RLS is *"Enabled by DEFAULT so a
   deployment that forgets to configure it gets isolation ON"*, and the throw is the intended fail-closed posture.
