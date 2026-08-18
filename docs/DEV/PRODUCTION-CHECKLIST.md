@@ -158,6 +158,40 @@ WHERE relnamespace = 'public'::regnamespace AND relrowsecurity;
 
 ---
 
+## 1.7 TLS, DNS and the terminating proxy — the step this checklist never had
+
+**Nothing in this repository terminates TLS in production, and that is by design** — §7.4 and §42.2 put it at a
+reverse proxy / load balancer outside the repo. The only TLS config here is `local-dev/nginx*.conf`, an opt-in
+dev overlay for `*.myhrm.org`; `ops/` contains no TLS or nginx config at all.
+
+That design is fine. What was missing is any checklist step for it, so the whole layer was invisible at go-live
+time — the audit that found this searched all 283 lines for *TLS · HTTPS · certificate · DNS · reverse proxy ·
+load balancer* and matched **zero**.
+
+- [ ] **Wildcard DNS** — `*.yourhrm.com` points at the load balancer. The platform is subdomain-routed
+      (`TenantResolutionMiddleware` reads the tenant from the host), so a per-host record is not a workable
+      substitute: every new tenant would need a DNS change before it could log in.
+- [ ] **Wildcard certificate issued and auto-renewing** — Let's Encrypt DNS-01 per §42.2. HTTP-01 cannot issue a
+      wildcard, so if you are reaching for it you are on the wrong challenge type.
+- [ ] **SNI verified against a real tenant subdomain**, not just the apex. `curl -vI https://<tenant>.yourhrm.com`
+      → the served cert must cover `*.yourhrm.com`. Testing only the apex is how a wildcard misconfiguration
+      reaches production looking healthy.
+- [ ] **TLS 1.2 minimum** at the terminating proxy (`ssl_protocols TLSv1.2 TLSv1.3`). Mirror
+      `local-dev/nginx.docker.conf:36`, which is the only place this is currently written down.
+- [ ] **`admin.*` is NOT a working entry point** — §9.2/§9.8 document it, but it resolves to `TenantId ==
+      Guid.Empty`, which no `user_tenants` row can match, so **nobody can authenticate there**
+      (`SystemEndpointHostGuardMiddleware.cs:27-33` explains why). Platform admins are users of the real
+      `platform` tenant. **Do not point production DNS or the admin console at `admin.*`** — see GAP-038.
+- [ ] **Security response headers are set at the terminating proxy** — CSP, HSTS, X-Frame-Options,
+      X-Content-Type-Options, Referrer-Policy, Permissions-Policy. §23.4 requires all six; **none exists
+      anywhere today**, and `src/frontend/nginx.conf` (the config baked into the served image by
+      `Dockerfile:21`) sets only `Cache-Control`. Tracked as GAP-033a. If TLS terminates upstream of that nginx,
+      set them there instead — **but set them somewhere.**
+
+> **Why this section exists at all.** The RLS flip above is documented to the line, because it bit someone. TLS
+> was never documented because it never bit anyone *here* — it lives in someone else's runbook. An out-of-repo
+> dependency with no checklist entry is indistinguishable from a forgotten one on the day you deploy.
+
 ## 2. Secrets and keys that must be set
 
 The app will not start without these — by design (blank in committed config).
