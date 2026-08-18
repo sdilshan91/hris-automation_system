@@ -28,8 +28,24 @@ namespace HRM.Api.Notifications;
 /// tenant's template override through the EF global query filter (never another tenant's).</para>
 ///
 /// <para><b>Safe with no SMTP.</b> The actual send goes through <see cref="IEmailSender"/>, which is the log-only
-/// stub unless <c>Smtp:Host</c> is configured — so this dispatcher can be the default with no SMTP server. Phase 1
-/// lands the infrastructure only; the 12 module <c>LogOnly*</c> seams are NOT rewired onto it yet (Phase 2+).</para>
+/// stub unless <c>Smtp:Host</c> is configured — so this dispatcher can be the default with no SMTP server.</para>
+///
+/// <para><b>The module seams ARE rewired — corrected 2026-08-18.</b> This block previously read "Phase 1 lands the
+/// infrastructure only; the 12 module <c>LogOnly*</c> seams are NOT rewired onto it yet (Phase 2+)." That has been
+/// false for some time. Measured against <c>DependencyInjection</c>: every module seam registers a <c>Real*</c>
+/// implementation (attendance <c>:297</c>, core-hr <c>:302</c>, leave <c>:357</c>, recruitment <c>:368</c>,
+/// payroll F&amp;F <c>:390</c>, payroll <c>:452</c>, payslip-email <c>:473</c>, performance <c>:597</c>,
+/// tenant-welcome <c>:720</c>, user-mgmt <c>:743</c>, data-export <c>:794</c>, impersonation <c>:823</c>,
+/// tenant-lifecycle <c>:838</c>). Exactly ONE unconditional log-only registration remains —
+/// <c>LogOnlyRecommendationIntegrationService</c> (<c>:701</c>) — and it belongs to <b>performance</b>
+/// (US-PRF-010 BR-6), a documented deferral, not to notifications. <c>LogOnlyEmailSender</c> (<c>:878</c>) is
+/// config-gated on a blank <c>Smtp:Host</c> and now fail-fasts in Production.</para>
+///
+/// <para><b>Why this sentence mattered.</b> It was the sole source of the completion plan's P3 item
+/// "notification delivery rewire (biggest surface)" — a large epic scoped against work that was already done.
+/// <c>pass-a-notifications.md:60</c> had recorded the true state correctly; the false claim survived here, in a
+/// source comment, and re-entered planning from it. <b>If you are about to describe another component's state in
+/// a comment, check it first — this file is the reason that rule exists.</b></para>
 /// </summary>
 public sealed class RealNotificationDispatcher : INotificationDispatcher
 {

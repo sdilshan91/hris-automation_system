@@ -28,10 +28,19 @@ namespace HRM.Infrastructure.Services;
 ///
 /// <para><b>Seeded master data (§7):</b> built-in roles (reusing <see cref="PermissionCatalog.BuiltInRoles"/>),
 /// the canonical FR-4 default leave-type set (via <see cref="LeaveTypeService.GetDefaultLeaveTypes"/>) and a
-/// default General Shift are seeded. The "1-step manager-approval
-/// leave workflow" has NO configurable-workflow entity in the codebase yet (only the per-request
-/// <c>LeaveApprovalHistory</c> audit), so it is intentionally skipped — manager approval is the built-in default
-/// of the leave-request flow. The holiday-calendar TEMPLATE is likewise not seeded (no template entity exists).</para>
+/// default General Shift are seeded.</para>
+///
+/// <para><b>⚠ NO default workflow is seeded, and the stated reason is FALSE — corrected 2026-08-18 (GAP-029).</b>
+/// This block said the "1-step manager-approval leave workflow" has "NO configurable-workflow entity in the
+/// codebase yet". <c>WorkflowDefinition</c>, <c>WorkflowStep</c>, <c>WorkflowStepApprover</c>,
+/// <c>WorkflowInstance</c> and <c>WorkflowStepInstance</c> all exist, with a full admin CRUD service and a
+/// runtime engine — US-ADM-011 shipped 2026-07-10. <b>The consequence is live:</b>
+/// <c>WorkflowRuntimeService</c> returns <c>WorkflowInstanceCreationResult.Legacy()</c> when no definition is
+/// found, so <b>every new tenant runs the AC-11 legacy fallback and the entire US-ADM-011 runtime engine —
+/// parallel steps, SLA escalation, delegation — stays dormant</b> until an admin hand-authors a workflow.
+/// The seeding is still absent (tracked as GAP-029, queue item C1); what is corrected here is the false
+/// justification, which is why nobody revisited it for five weeks. <b>A skip justified by a stale premise reads
+/// as a decision and stops being re-examined.</b></para> The holiday-calendar TEMPLATE is likewise not seeded (no template entity exists).</para>
 /// </summary>
 public sealed class TenantProvisioningService : ITenantProvisioningService
 {
