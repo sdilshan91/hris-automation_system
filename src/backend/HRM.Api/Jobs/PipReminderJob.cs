@@ -11,9 +11,10 @@ namespace HRM.Api.Jobs;
 /// tenant it sets the tenant context (so the EF global query filters apply) and delegates to
 /// <see cref="IPipReminderService.RunSweepAsync"/>, which dispatches checkpoint reminders (3 days before each
 /// scheduled checkpoint), PIP end-date reminders, overdue-checkpoint alerts (FR-3), and flags PIPs the employee
-/// did not acknowledge within 5 business days as Not Acknowledged (BR-4), all via the log-only performance
+/// did not acknowledge within 5 business days as Not Acknowledged (BR-4), all via the REAL performance
 /// notification seam (until US-NTF). Mirrors the tenant-iteration structure of
 /// <see cref="ReviewSignoffAutoCloseJob"/>: idempotent per day and tenant-safe.
+/// <para><b>Corrected 2026-08-18:</b> this header described the performance notification seam as "log-only" / "deferred to US-NTF". That is stale — <c>DependencyInjection.cs:597</c> registers <c>RealPerformanceNotificationService</c> (US-NTF-006 Phase 5b), so this job's notifications are really delivered. <c>LogOnly</c> survives only as a sibling that integration tests register. Verified before editing, not assumed.</para>
 /// </summary>
 public sealed class PipReminderJob
 {

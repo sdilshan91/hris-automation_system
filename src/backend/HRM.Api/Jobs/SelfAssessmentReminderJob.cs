@@ -11,10 +11,11 @@ namespace HRM.Api.Jobs;
 /// deadline approaches (US-PRF-002 FR-7/AC-5; default thresholds 7/3/1 days). For each active/trial tenant
 /// it sets the tenant context (so the EF global query filters apply) and delegates to
 /// <see cref="ISelfAssessmentReminderService.SendDueRemindersAsync"/>, which dispatches via the existing
-/// performance notification seam (US-PRF-001 IPerformanceNotificationService / log-only impl).
+/// performance notification seam (US-PRF-001 IPerformanceNotificationService / REAL impl).
 ///
 /// Mirrors the tenant-iteration structure of <see cref="ProcessAbsenteeismJob"/>: idempotent per day and
-/// tenant-safe. Real in-app/email delivery is deferred to US-NTF (the notification seam is log-only).
+/// tenant-safe. Real in-app/email delivery IS wired (US-NTF-006 Phase 5b).
+/// <para><b>Corrected 2026-08-18:</b> this header described the performance notification seam as "log-only" / "deferred to US-NTF". That is stale — <c>DependencyInjection.cs:597</c> registers <c>RealPerformanceNotificationService</c> (US-NTF-006 Phase 5b), so this job's notifications are really delivered. <c>LogOnly</c> survives only as a sibling that integration tests register. Verified before editing, not assumed.</para>
 /// </summary>
 public sealed class SelfAssessmentReminderJob
 {

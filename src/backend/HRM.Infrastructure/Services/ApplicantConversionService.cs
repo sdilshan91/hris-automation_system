@@ -475,9 +475,18 @@ public sealed class ApplicantConversionService : IApplicantConversionService
     }
 
     /// <summary>
-    /// Post-commit side effects: FR-7/BR-5 recruiter notification (vacancy auto-closed), FR-8 onboarding
-    /// checklist assignment, and the FR-9 welcome email. Runs AFTER the transaction commits and never throws —
+    /// Post-commit side effects: FR-8 onboarding checklist assignment and the FR-9 welcome email, plus the
+    /// applicant-facing stage-change notification. Runs AFTER the transaction commits and never throws —
     /// the employee record is already durable, so none of these may fail a committed conversion.
+    ///
+    /// <para><b>⚠ FR-7/BR-5 is NOT implemented here — corrected 2026-08-18 ([[BUG-305]]).</b> This summary
+    /// previously claimed an "FR-7/BR-5 recruiter notification (vacancy auto-closed)". No such notification is
+    /// produced: the only dispatch on this path is <c>NotifyStageChangedAsync</c>, which emails the
+    /// <b>applicant</b>. The <c>vacancyClosed</c> flag reaches this method and is read only inside a catch-log.
+    /// BR-5's recruiter notification and its "vacancy filled" notification to the remaining pipeline were never
+    /// built — not sent, not enqueued, not stubbed. The auto-close state change itself IS correct and durable.
+    /// <b>The comment is why this went unnoticed: it read as done.</b> Third instance of that pattern in this
+    /// repo, after <c>RealNotificationDispatcher</c> and <c>TenantProvisioningService</c>.</para>
     ///
     /// <para>Each leg has its OWN try/catch on purpose: a tenant with a broken onboarding template must still
     /// get its welcome email, and vice versa. One shared catch would let the first failure silently swallow the

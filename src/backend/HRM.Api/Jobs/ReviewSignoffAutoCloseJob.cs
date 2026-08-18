@@ -12,10 +12,11 @@ namespace HRM.Api.Jobs;
 /// tenant context (so the EF global query filters apply) and delegates to
 /// <see cref="IReviewSignoffAutoCloseService.AutoCloseOverdueAsync"/>, which flips overdue reviews to
 /// NoResponse, appends an immutable AutoClosedNoResponse sign-off and notifies HR via the performance
-/// notification seam (log-only until US-NTF).
+/// notification seam (real delivery, US-NTF-006 Phase 5b).
 ///
 /// Mirrors the tenant-iteration structure of <see cref="SelfAssessmentReminderJob"/>: idempotent per day and
 /// tenant-safe.
+/// <para><b>Corrected 2026-08-18:</b> this header described the performance notification seam as "log-only" / "deferred to US-NTF". That is stale — <c>DependencyInjection.cs:597</c> registers <c>RealPerformanceNotificationService</c> (US-NTF-006 Phase 5b), so this job's notifications are really delivered. <c>LogOnly</c> survives only as a sibling that integration tests register. Verified before editing, not assumed.</para>
 /// </summary>
 public sealed class ReviewSignoffAutoCloseJob
 {
