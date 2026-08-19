@@ -61,6 +61,32 @@ public sealed record LopSummaryDto
 }
 
 /// <summary>
+/// One row of the HR-facing cross-employee LOP register (US-LV-011 FR-5, HR management screen). Unlike
+/// <see cref="LopEntryDto"/> — the per-employee, payroll-facing summary — this carries the employee's
+/// identity (<see cref="EmployeeId"/>/<see cref="EmployeeName"/>/<see cref="EmployeeNo"/>) so a single
+/// table can list LOP occurrences ACROSS employees and drive the per-row Override action.
+///
+/// <para>One row per LOP <c>leave_request</c> (keyed by <see cref="RequestId"/>, which the FE tracks by),
+/// NOT one row per calendar day: LOP entries are already created one-per-date (see
+/// <c>AssignLopAsync</c>/<c>GenerateAbsenteeismLopAsync</c>), the Override action is per-request, and the
+/// FE table has a single Date column. <see cref="Date"/> is the request's start date.</para>
+/// </summary>
+public sealed record LopRegisterEntryDto
+{
+    public Guid EmployeeId { get; init; }
+    public string EmployeeName { get; init; } = string.Empty;
+    public string EmployeeNo { get; init; } = string.Empty;
+    public Guid RequestId { get; init; }
+    /// <summary>The day this LOP entry applies to (the request's start date).</summary>
+    public DateOnly Date { get; init; }
+    public decimal Days { get; init; }
+    /// <summary>Origin of the LOP entry: EmployeeRequest / SystemGenerated / HrAssigned / Compulsory.</summary>
+    public string Source { get; init; } = string.Empty;
+    public string Status { get; init; } = string.Empty;
+    public string? Reason { get; init; }
+}
+
+/// <summary>
 /// Request body for POST /api/v1/leaves/compulsory (US-LV-011 FR-6). HR bulk-assigns a leave type to all
 /// (or selected) employees for the given dates. BR-4: deduct from balance first, then LOP if insufficient.
 /// </summary>

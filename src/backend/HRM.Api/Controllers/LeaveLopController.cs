@@ -76,6 +76,33 @@ public sealed class LeaveLopController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/leaves/lop-register?from={date}&amp;to={date}&amp;employeeIds={id}&amp;employeeIds={id}
+    /// Cross-employee LOP register for the HR management screen (FR-5): one row per effective LOP entry in
+    /// the period, each carrying the employee's identity. <c>employeeIds</c> is an optional filter.
+    /// </summary>
+    [HttpGet("lop-register")]
+    [RequirePermission("Leave.ManageLop")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<LopRegisterEntryDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetLopRegister(
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        [FromQuery] Guid[]? employeeIds,
+        CancellationToken cancellationToken)
+    {
+        if (from is null || to is null)
+            return StatusCode(400, ApiResponse.Fail("from and to are both required."));
+
+        var result = await _mediator.Send(
+            new GetLopRegisterQuery(from.Value, to.Value, employeeIds), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<IReadOnlyList<LopRegisterEntryDto>>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// POST /api/v1/leaves/compulsory
     /// HR bulk-assigns a compulsory leave (company shutdown) to all/selected employees for the given
     /// dates (FR-6). BR-4: deducts from balance first, then LOP if insufficient. When

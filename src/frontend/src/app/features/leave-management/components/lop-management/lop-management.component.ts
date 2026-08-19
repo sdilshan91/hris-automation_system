@@ -36,8 +36,7 @@ import {
   lopSourceBadgeClasses,
   canOverrideLop,
   filterLopEntries,
-  expandDateRange,
-} from '../../models/lop.models';
+  expandDateRange, currentMonthRange } from '../../models/lop.models';
 
 /** Cross-field validator: start date must be on or before end date. */
 function dateRangeValidator(group: AbstractControl): ValidationErrors | null {
@@ -494,6 +493,12 @@ export class LopManagementComponent implements OnInit, OnDestroy {
   readonly sourceFilters = LOP_SOURCE_FILTERS;
 
   // ─── Data signals ─────────────────────────────────────────
+  /**
+   * The register's period. Current calendar month by default — see loadEntries(). Kept as a computed signal so
+   * a period picker can drive it later without touching the load path.
+   */
+  readonly registerPeriod = signal<{ from: string; to: string }>(currentMonthRange());
+
   readonly entries = signal<ILopEntry[]>([]);
   readonly leaveTypes = signal<ILeaveType[]>([]);
   readonly employees = signal<IEmployee[]>([]);
@@ -568,10 +573,22 @@ export class LopManagementComponent implements OnInit, OnDestroy {
 
   // ─── Data loading ─────────────────────────────────────────
 
+  /**
+   * Load the cross-employee LOP register for the active period.
+   *
+   * **This used to call `getLopSummary()` with no arguments.** That endpoint is per-employee and requires
+   * `employeeId`+`from`+`to`, so every load returned **400** and the table never rendered — the screen has been
+   * non-functional. It now calls the register endpoint built for this view (queue item B2).
+   *
+   * The period defaults to the current calendar month because LOP is a payroll input and payroll runs monthly.
+   * There is deliberately no period picker yet — adding one is UI work outside this fix, and inventing a
+   * control here would have widened a defect fix into a feature change. Filed as a follow-up.
+   */
   loadEntries(): void {
     this.isLoading.set(true);
+    const { from, to } = this.registerPeriod();
     this.lopService
-      .getLopSummary()
+      .getLopRegister(from, to)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (entries) => {

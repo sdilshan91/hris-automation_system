@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   ILopEntry,
@@ -9,8 +9,7 @@ import {
   IAssignCompulsoryLeaveRequest,
   IAssignCompulsoryLeaveResult,
   IOverrideLopRequest,
-  ILopErrorResponse,
-} from '../models/lop.models';
+  ILopErrorResponse, LopRegisterWire, mapLopRegisterEntry } from '../models/lop.models';
 import { ILeaveRequest } from '../models/leave-request.models';
 
 /**
@@ -63,6 +62,30 @@ export class LopService {
       params: httpParams,
       withCredentials: true,
     });
+  }
+
+  /**
+   * Cross-employee LOP register for a period (FR-4/FR-5) — what the LOP management screen actually needs.
+   *
+   * **This is a different endpoint from `getLopSummary` on purpose.** `lop-summary` is per-employee and built
+   * for payroll: it requires `employeeId`+`from`+`to` and 400s without them, and its rows carry no employee
+   * identity. The register returns one row per LOP occurrence **across employees**, each with
+   * `employeeName`/`employeeNo`, which is what the table renders and what the per-row Override acts on.
+   *
+   * The response is typed as the GENERATED contract type and mapped explicitly, so a backend rename is a
+   * compile error rather than a blank column.
+   */
+  getLopRegister(from: string, to: string, employeeIds?: string[]): Observable<ILopEntry[]> {
+    let httpParams = new HttpParams().set('from', from).set('to', to);
+    for (const id of employeeIds ?? []) {
+      httpParams = httpParams.append('employeeIds', id);
+    }
+    return this.http
+      .get<LopRegisterWire[]>(`${this.baseUrl}/lop-register`, {
+        params: httpParams,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapLopRegisterEntry)));
   }
 
   // --- Write -------------------------------------------------

@@ -717,6 +717,26 @@ export class MainLayoutComponent implements OnInit {
       permission: 'Leave.View.Own',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.75 2a.75.75 0 0 1 .75.75V4h7V2.75a.75.75 0 0 1 1.5 0V4h.25A2.75 2.75 0 0 1 18 6.75v8.5A2.75 2.75 0 0 1 15.25 18H4.75A2.75 2.75 0 0 1 2 15.25v-8.5A2.75 2.75 0 0 1 4.75 4H5V2.75A.75.75 0 0 1 5.75 2Zm-1 5.5c-.69 0-1.25.56-1.25 1.25v6.5c0 .69.56 1.25 1.25 1.25h10.5c.69 0 1.25-.56 1.25-1.25v-6.5c0-.69-.56-1.25-1.25-1.25H4.75Z" clip-rule="evenodd"/></svg>`,
     },
+    // LOP Management — same discoverability defect as the DEC-D5 block below and as
+    // ISSUE-208 (Attendance) / ISSUE-210 (Performance): the screen at '/leave/lop' has been
+    // routed and role-guarded all along, but NOTHING linked to it — no sidebar entry, no
+    // routerLink, no card. It was reachable only by typing the URL.
+    //
+    // Surfaced by @integration-enforcer while auditing the B2 register fix: repairing that
+    // screen's data load would otherwise have delivered nothing, because no user could get
+    // to the screen to see it work. A fix behind an unreachable route is not a fix.
+    //
+    // Placed with the day-to-day Leave item rather than in the config block: assigning LOP and
+    // running a company shutdown are HR ACTIONS, not configuration. Gated on Leave.ManageLop —
+    // the same permission the four backend routes carry — plus module:'Leave' to match the
+    // parent's moduleGuard, so it never appears for a persona the route would bounce.
+    {
+      label: 'LOP Management',
+      route: '/leave/lop',
+      module: 'Leave',
+      permission: 'Leave.ManageLop',
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-11.25a.75.75 0 0 0-1.5 0v3.5a.75.75 0 0 0 .3.6l2.25 1.75a.75.75 0 1 0 .9-1.2l-1.95-1.5V6.75Z" clip-rule="evenodd" /></svg>`,
+    },
     // ─── Leave configuration (DEC-D5) ───────────────────────────────────────
     // Four HR/admin leave-config screens under the '/leave-types' tree were
     // reachable ONLY by direct URL — no sidebar entry existed (the Finance-facing

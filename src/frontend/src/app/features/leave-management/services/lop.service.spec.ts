@@ -73,6 +73,81 @@ describe('LopService', () => {
     });
   });
 
+  describe('getLopRegister', () => {
+    it('GETs the lop-register endpoint with from/to query params', () => {
+      service.getLopRegister('2026-03-01', '2026-03-31').subscribe();
+      const req = httpMock.expectOne(
+        (r) =>
+          r.url === `${baseUrl}/lop-register` &&
+          r.params.get('from') === '2026-03-01' &&
+          r.params.get('to') === '2026-03-31',
+      );
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush([]);
+    });
+
+    it('appends employeeIds as REPEATED params, not a comma-joined value', () => {
+      service.getLopRegister('2026-03-01', '2026-03-31', ['a', 'b']).subscribe();
+      const req = httpMock.expectOne((r) => r.url === `${baseUrl}/lop-register`);
+      // Repeated params -> getAll returns both; a comma-joined single value would be ['a,b'].
+      expect(req.request.params.getAll('employeeIds')).toEqual(['a', 'b']);
+      req.flush([]);
+    });
+
+    it('mapLopRegisterEntry maps requestId -> leaveRequestId and passes the rest through', () => {
+      const wire = {
+        requestId: 'lr-9',
+        employeeId: 'emp-9',
+        employeeName: 'Ann Archer',
+        employeeNo: 'E-001',
+        date: '2026-03-03',
+        days: 3,
+        source: 'HrAssigned',
+        status: 'HR-Assigned',
+        reason: 'Unpaid absence',
+      };
+      let emitted: ILopEntry[] | undefined;
+      service.getLopRegister('2026-03-01', '2026-03-31').subscribe((rows) => (emitted = rows));
+      const req = httpMock.expectOne((r) => r.url === `${baseUrl}/lop-register`);
+      req.flush([wire]);
+
+      expect(emitted!.length).toBe(1);
+      const e = emitted![0];
+      expect(e.leaveRequestId).toBe('lr-9'); // from wire `requestId`
+      expect(e.employeeId).toBe('emp-9');
+      expect(e.employeeName).toBe('Ann Archer');
+      expect(e.employeeNo).toBe('E-001');
+      expect(e.date).toBe('2026-03-03');
+      expect(e.days).toBe(3);
+      expect(e.source).toBe('HrAssigned');
+      expect(e.status).toBe('HR-Assigned');
+      expect(e.reason).toBe('Unpaid absence');
+    });
+
+    it('maps absent optional fields to their documented fallbacks, not undefined', () => {
+      // employeeNo and reason absent; source absent -> 'SystemGenerated' fallback.
+      const wire = {
+        requestId: 'lr-10',
+        employeeId: 'emp-10',
+        employeeName: 'Ben Boone',
+        date: '2026-03-04',
+        days: 1,
+        status: 'System-Generated',
+      };
+      let emitted: ILopEntry[] | undefined;
+      service.getLopRegister('2026-03-01', '2026-03-31').subscribe((rows) => (emitted = rows));
+      const req = httpMock.expectOne((r) => r.url === `${baseUrl}/lop-register`);
+      req.flush([wire]);
+
+      const e = emitted![0];
+      expect(e.employeeNo).toBeNull(); // documented fallback, not undefined
+      expect(e.reason).toBeNull();
+      expect(e.source).toBe('SystemGenerated');
+      expect(e.leaveRequestId).toBe('lr-10');
+    });
+  });
+
   describe('assignLop (FR-3)', () => {
     it('POSTs a bulk LOP assignment', () => {
       const request: IAssignLopRequest = {
