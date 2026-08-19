@@ -104,12 +104,44 @@ instances**, so probes 3–5 could not be observed end-to-end.
   headers. **Comment-only, and it retires an epic for work already done.**
 
 
+> ## ⚠ RESTRUCTURED 2026-08-19 — Tier B folded into per-module slices
+>
+> **Tier B (per-defect) and Tier D (per-module migration) covered the same files.** B3 "fix the performance
+> contract breaks" *is* D-performance; B2 was D-leave; B5 spanned D-core-hr and D-payroll. As originally
+> written this queue would have opened and migrated those model files **twice** — the duplication the loop
+> exists to avoid, baked into the plan.
+>
+> **Now one module-by-module pass, ordered so modules containing live user-facing defects go first.** Each
+> module is opened once: its interfaces migrate to generated types *and* its live defects are fixed in the
+> same slice.
+>
+> | order | slice | iface | carries |
+> |---|---|---:|---|
+> | 1 | **D-performance** | 102 | the silent-empty team list + self-assessment throwing (was B3) |
+> | 2 | **D-leave** | 79 | deletes the now-dead FE `getLopSummary` + its 9 tests (B2 residue) |
+> | 3 | **D-core-hr** | 71 | salary-grade Active no-op (was B5). B1 already did the profile slice |
+> | 4 | **D-payroll** | 75 | payslip generation panel (was B5) |
+> | 5 | **D-onboarding** | 43 | offboarding complete-gate (was B4) |
+> | 6-8 | D-admin 88 · D-attendance 70 · D-recruitment 59 | | no live defects; recruitment cheapest (adapters exist) |
+> | 9 | **D-auth** | 26 | **LAST** — 100% hand-written yet verified correct, so the risk is future drift only |
+>
+> **B6 stays separate**: a missing endpoint (`/onboarding/templates/lookups` 404s) is not contract drift, and
+> no migration slice could invent it.
+>
+> **★ Two counts in that table are suspect and must be re-measured per slice, not trusted.** The 669 total
+> came from a grep whose method already disagreed with the register's own figure (633) at the *same commit* —
+> so these per-module numbers are one method's answer, not ground truth. Re-measure when each slice starts.
+
 ### Tier B — confirmed live defects, each fixed via generated types
 
-- [ ] **B1 · Employee profile save** *(core-hr — the primary screen, runtime-reproduced 400)*. Migrate
+- [x] **B1 · Employee profile save** ✅ **DONE (#519)** — migrated to generated types; mutation-verified (3 arms RED). Also the first slice of D-core-hr.
+  - *(original text below)*
+- [x] ~~B1 original~~ *(core-hr — the primary screen, runtime-reproduced 400)*. Migrate
   `employee.models.ts` profile types to generated; fix `employee-profile.component.ts:2614`. Delete the
   `xmin: '12345'` mock in `employee-profile.component.spec.ts:112` and assert against the generated shape.
-- [ ] **B2 · LOP summary** *(leave — two bugs)*. Send the required `employeeId/from/to`, **and** read
+- [x] **B2 · LOP register** ✅ **DONE (#520)** — was NOT 'two bugs': the screen is a cross-employee register calling a per-employee payroll endpoint, so it 400'd before the documented cast was reached. Built `GET /leaves/lop-register` + FE migration + **the nav entry that makes the screen reachable at all**. 5 surviving mutations closed. **Deferred:** the now-dead FE `getLopSummary` + its 9 tests → D-leave.
+  - *(original text below)*
+- [x] ~~B2 original~~ *(leave — two bugs)*. Send the required `employeeId/from/to`, **and** read
   `response.entries`. Migrate the LOP models to generated types.
 - [ ] **B3 · Recommendation workspace + self-assessment** *(performance — worst-affected module, 102 interfaces)*.
   `ws.rows` not `ws.page.rows`; `items`/`isSelfAssessmentOpen`/`weightedSelfScore`/`submittedAt`. Rebuild
