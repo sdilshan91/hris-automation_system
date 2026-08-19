@@ -1,3 +1,5 @@
+import type { Schema } from '@core/api';
+
 /**
  * US-PRF-002: Employee self-assessment models matching the (ASSUMED) backend API
  * contract. The service layer is intentionally thin so a route/DTO mismatch is a
@@ -146,6 +148,80 @@ export interface ISelfAssessmentGoalInput {
 export interface ISaveSelfAssessmentRequest {
   cycleId: string;
   items: ISelfAssessmentGoalInput[];
+}
+
+// ─── Wire contract → view-model mappers (US-PRF-002 D-perf slice 1) ───────────
+//
+// The read responses are the GENERATED contract types, not hand-written guesses.
+// `SelfAssessmentWire` is `Schema<'PerformanceSelfAssessmentDto'>`, so a renamed C#
+// property becomes a TypeScript compile error in the mapper below rather than a
+// silent `undefined` at runtime.
+//
+// **Why this was migrated.** `ISelfAssessment` declared `windowOpen`, `weightedScore`,
+// `submittedOn`, `goals`; the API sends `isSelfAssessmentOpen`, `weightedSelfScore`,
+// `submittedAt`, `items`. The service cast the raw body with no mapping, so `goals`
+// was always `undefined` — the "My Review" screen rendered zero goals and then threw
+// on the first `.goals` access. Consuming the generated type removes the ability to
+// write that bug: every renamed field is translated exactly once, here.
+
+export type SelfAssessmentWire = Schema<'PerformanceSelfAssessmentDto'>;
+export type SelfAssessmentItemWire = Schema<'PerformanceSelfAssessmentItemDto'>;
+export type SelfAssessmentAttachmentWire =
+  Schema<'PerformanceSelfAssessmentAttachmentDto'>;
+
+/** Maps a wire evidence-attachment row onto the view-model (note `uploadedAt` → `uploadedOn`). */
+export function mapSelfAssessmentAttachment(
+  w: SelfAssessmentAttachmentWire,
+): IAssessmentAttachment {
+  return {
+    id: w.id ?? '',
+    fileName: w.fileName ?? '',
+    sizeBytes: w.sizeBytes ?? 0,
+    uploadedOn: w.uploadedAt ?? '',
+  };
+}
+
+/**
+ * Maps one wire item onto the goal view-model the template renders. The `goal*`
+ * prefixes drop away (`goalTitle` → `title`) and `achievementPercentage` →
+ * `achievementPercent` — the exact renames that previously shipped broken.
+ */
+export function mapSelfAssessmentGoal(
+  w: SelfAssessmentItemWire,
+): ISelfAssessmentGoal {
+  return {
+    goalId: w.goalId ?? '',
+    title: w.goalTitle ?? '',
+    description: w.goalDescription ?? '',
+    weight: w.goalWeight ?? 0,
+    targetValue: w.goalTargetValue ?? '',
+    measurementUnit: w.goalMeasurementUnit ?? '',
+    dueDate: w.goalDueDate ?? '',
+    selfRating: w.selfRating ?? null,
+    achievementPercent: w.achievementPercentage ?? null,
+    comment: w.comment ?? '',
+    attachments: (w.attachments ?? []).map(mapSelfAssessmentAttachment),
+  };
+}
+
+/**
+ * Maps the whole self-assessment wire payload onto the `ISelfAssessment` view-model.
+ * `status` prefers the string `statusName` (the wire enum only carries Draft|Submitted,
+ * while the UI models a `NotStarted` state too), falling back to `status`.
+ */
+export function mapSelfAssessment(w: SelfAssessmentWire): ISelfAssessment {
+  return {
+    id: w.id ?? '',
+    cycleId: w.cycleId ?? '',
+    cycleName: w.cycleName ?? '',
+    status: (w.statusName ?? w.status ?? 'NotStarted') as SelfAssessmentStatus,
+    windowOpen: w.isSelfAssessmentOpen ?? false,
+    ratingScaleMax: w.ratingScaleMax ?? 0,
+    windowClosesOn: w.windowClosesOn ?? '',
+    weightedScore: w.weightedSelfScore ?? null,
+    submittedOn: w.submittedAt ?? null,
+    goals: (w.items ?? []).map(mapSelfAssessmentGoal),
+  };
 }
 
 // ─── Validation constants (mirror the backend) ────────────────

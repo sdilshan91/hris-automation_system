@@ -13,6 +13,8 @@ import {
   IRecommendationWorkspace,
   IUpdateRecommendationRequest,
   RecommendationExportFormat,
+  RecommendationWorkspaceWire,
+  mapRecommendationWorkspace,
 } from '../models/recommendation.models';
 
 /**
@@ -73,10 +75,12 @@ export class RecommendationService {
     if (opts.page != null) params = params.set('page', String(opts.page));
     if (opts.pageSize != null)
       params = params.set('pageSize', String(opts.pageSize));
-    return this.http.get<IRecommendationWorkspace>(`${this.baseUrl}/workspace`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<RecommendationWorkspaceWire>(`${this.baseUrl}/workspace`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(mapRecommendationWorkspace));
   }
 
   /**
@@ -190,11 +194,11 @@ export class RecommendationService {
   getTeamRecommendations(cycleId: string): Observable<IRecommendationRow[]> {
     const params = new HttpParams().set('cycleId', cycleId);
     return this.http
-      .get<IRecommendationWorkspace>(`${this.baseUrl}/workspace`, {
+      .get<RecommendationWorkspaceWire>(`${this.baseUrl}/workspace`, {
         params,
         withCredentials: true,
       })
-      .pipe(map((ws) => ws?.page?.rows ?? []));
+      .pipe(map((ws) => mapRecommendationWorkspace(ws).page.rows));
   }
 
   /**
