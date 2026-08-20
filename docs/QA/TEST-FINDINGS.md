@@ -8447,3 +8447,96 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Evidence:** TC-REC-010-08's own NOTE says to assert the *enqueue* if delivery is stubbed. There is no enqueue to assert — the code path does not exist.
 - **Severity rationale:** MED not HIGH because the money/state half is correct and durable; MED not LOW because BR-5 is an explicit business rule and both legs are entirely unbuilt, so no amount of wiring the notification layer would surface them.
 - **Confidence:** 95% on the root cause (read the whole dispatch path); 100% that the notifications do not occur (verified against `notification_delivery` after a real auto-close).
+
+---
+
+### BUG-306 — seven frontend calls target routes that do not exist in the contract
+- **ID:** BUG-306
+- **Type:** BUG (FE↔BE contract — nonexistent or wrong routes)
+- **Severity:** **HIGH** — each one is a feature that cannot work; four are user-facing screens that fail silently or 404.
+- **Status:** `OPEN` (3 of the 10 originally found are already FIXED — see the table)
+- **Layer:** FE (the calls) / BE (two need an endpoint that was never built)
+- **Module / US / TC:** cross-module — core-hr, leave, onboarding, performance — surfaced 2026-08-18..21 by the D-migration slices
+- **Title:** The generated contract has no path matching these calls. Hand-written FE interfaces could not detect it; typing the responses against `Schema<'…'>` made every one visible.
+
+| # | call | reality | status |
+|---|---|---|---|
+| 1 | `GET /employees/export` | route absent; real one is `/employees/directory/export` | ✅ **FIXED** (P1) |
+| 2 | `GET /employees` for the directory | wrong endpoint — the list route ignores every filter; `/employees/directory` accepts them | ✅ **FIXED** (P1) |
+| 3 | `searchActiveEmployees` sends `statuses=Active` | the list route has no `statuses` param — active-only was dropped | ✅ **FIXED** (P1) |
+| 4 | `GET /leave-entitlements/compute-effective` | **absent.** Real: `/effective`, requires `employeeId`+`leaveTypeId`+`leaveYear`, returns a **single** DTO not an array | OPEN |
+| 5 | `POST /leave-entitlements/bulk` | **absent.** Only `/rules/bulk` exists — bulk-create-**rules**, a different feature with different shapes | OPEN |
+| 6 | `GET /leaves/reports/summary` | **absent.** `summary` is not in the backend `LeaveReportType` enum and no metrics DTO exists anywhere | OPEN |
+| 7 | `GET /import/jobs/{id}` + `/import/jobs/{id}/error-report` | **both absent.** Real: `/import/{id}/status` and `/import/{id}/errors`, with a restructured DTO | OPEN |
+| 8 | `GET /org-tree/search` | **absent** — and the method is dead (no component calls it) | OPEN (LOW) |
+| 9 | `GET /onboarding/templates/lookups` | **absent** — every template-builder load loses its dept/title/user pickers | OPEN (= queue B6) |
+
+- **Why none of these were caught:** every one had a green test suite over it. The specs mocked the FE's own invented response shape, so the request URL was never compared against anything real. **A hand-written interface cannot fail** — it is an assertion, not a check.
+- **Severity rationale:** HIGH rather than CRIT because no data is corrupted and no isolation boundary is crossed; but each is a whole feature that silently does nothing, and three of them (directory filters, bulk-import status, leave reports) are daily-use HR surfaces.
+- **Suggested direction:** items 4-7 each need a **decision** (re-point the FE, or build the endpoint the FE assumes) — they are parked at the decision gate, not auto-scheduled. Item 8 is dead code: delete it. Item 9 is already queued as B6.
+- **Confidence:** 100% — each verified against the generated `paths` block, not inferred.
+
+---
+
+### ISSUE-379 — the migration surfaced 11 backend DTO gaps: fields the UI renders that the API has never sent
+- **ID:** ISSUE-379
+- **Type:** ISSUE (backend contract gap — unbuilt fields, not drift)
+- **Severity:** **HIGH** for the four that blank a whole feature surface; MED for the rest.
+- **Status:** `OPEN` — **all are decision-gated** (add the field, or remove the UI that renders it)
+- **Layer:** BE (DTOs) with FE symptoms
+- **Module / US / TC:** performance, leave, core-hr — surfaced 2026-08-18..21 by the D-migration slices
+- **Title:** ~35 view-model fields across three modules have **no wire source at all.** These 11 are the ones something actually renders.
+
+| # | field(s) | rendered by | sev |
+|---|---|---|---|
+| 1 | dashboard `filterOptions`, `scopeLabel`, `teamRanking`, `availableExportFormats` | the FR-4 filter panel, manager team-ranking, export buttons — **a whole feature surface** | **HIGH** |
+| 2 | `/my-goals` window envelope (`windowOpen`, `cycleName`) | the BR-1 closed-window gate. **Defaulted `true`** — verified fail-SAFE, since `GoalProgressService.cs:100` enforces BR-1 server-side | **HIGH** |
+| 3 | sign-off notes: `goals[]`, `ratingScaleMax`, `managerName`, `cycleName`, `finalScore` | the entire US-PRF-006 sign-off screen | **HIGH** |
+| 4 | 360 reviewer-config: `candidatePool`, per-category `minimums`, `editable` | reviewer nomination — search-to-add is empty | **HIGH** |
+| 5 | trend + drilldown `scoreScaleMax` | polyline and bar scaling; FE falls back to a constant 5 | MED |
+| 6 | `authorName` on progress updates; `employeeName` on the drilldown list | timeline attribution and the drill-down header | MED |
+| 7 | performer/drilldown `trend`, `grade` | trend glyph (always rendered) and grade label | MED |
+| 8 | PIP `checkpointsRecorded` split; checkpoint `overdue` | the "N of M" hint shows "0 of M"; the overdue badge never renders | MED |
+| 9 | recommendation summary per-dept `promotionCount`/`bonusCount` | shows "0 promo · 0 bonus · N increment" | MED |
+| 10 | `IBudgetTracker.enabled` | gates the whole budget card; derived from object presence | MED |
+| 11 | per-competency `byCategory` split | the self/manager/peer/report chips under each competency bar | MED |
+
+- **★ What this measures:** roughly **one field in five** of the hand-written interfaces describes an endpoint that was never built. These interfaces were not an accurate API description that drifted — they were **written from what the UI wanted and never reconciled with the API**. That reframes the remaining ~570 interfaces: the migration is not mechanical renaming, and each remaining module should be expected to surface its own set.
+- **What was done:** every one is **defaulted at the single mapper seam and marked inline**, never fabricated. Two that nothing rendered were **deleted**. Several are **derived** where the wire holds the information in another shape (PIP outcome from terminal status; `deducted` = assigned − lop).
+- **Suggested direction:** **decision-gated.** For each: add the field to the DTO, or remove the UI that renders it. Grouped so the decision can be taken once per feature rather than per field.
+- **Confidence:** 100% that the fields are absent from the contract; the *disposition* is a product call.
+
+---
+
+### ISSUE-380 — dead FE surface and controls that silently do nothing
+- **ID:** ISSUE-380
+- **Type:** ISSUE (dead code / no-op controls)
+- **Severity:** **MED** — one is a control that lies to the user; the rest are unreferenced surface.
+- **Status:** `OPEN`
+- **Layer:** FE
+- **Module / US / TC:** core-hr, leave, performance — surfaced by the D-migration slices
+- **Title:** Five items that exist in the FE and do nothing.
+
+| item | detail | disposition |
+|---|---|---|
+| **salary-grade `isActive`** | The Active toggle is sent on create/update, but **neither request record has an `isActive` member** — the API discards it. The toggle silently does nothing on save. A spec *asserted* the discarded field was present (corrected). | **decision**: honour it server-side, or remove the toggle |
+| `IStatusTransition.sideEffects` | The endpoint returns only status strings; the side-effects preview is always empty. A spec had been flushing **fabricated** side-effects (corrected). | decision: add to the DTO, or drop the preview |
+| `IChangeStatusResponse.profile` / `IAssignManagerResponse.profile` | Still declare a `profile` the wire never sends; their service specs flush a fabricated `{profile}` and assert it truthy — passing, but certifying a shape the API does not return. | fix-in-frontend: migrate both to generated types |
+| `ILeaveRequest.tenantId`, `IEmployee.tenantId` | No wire source, read nowhere. | remove-dead-control |
+| `org-tree.searchNodes()` | Calls an absent route **and** has no component caller. | remove-dead-control |
+
+- **Confidence:** 100% on all five (each verified against the generated contract and grepped for consumers).
+
+---
+
+### ISSUE-381 — the accrual-exposure endpoint emits no response schema, so its envelope cannot be contract-checked
+- **ID:** ISSUE-381
+- **Type:** ISSUE (OpenAPI codegen gap)
+- **Severity:** **MED** — a hole in the contract gate itself, not a runtime defect.
+- **Status:** `OPEN`
+- **Layer:** BE (Swashbuckle annotation)
+- **Module / US / TC:** leave — `tenant/leave-entitlements/accrual-over-credit-exposure`
+- **Title:** The action returns `IActionResult` (JSON-or-file), so Swashbuckle emitted `content?: never` for the 200 and **no `AccrualOverCreditExposureReportDto` schema exists** in the generated types.
+- **Why it matters:** the migration could anchor the per-row type but had to read the envelope scalars (`asOfDate`, `leaveYear`) defensively. **A field can drift here without the compiler noticing** — which is the one thing this whole migration exists to prevent, so the gap is worth closing even though nothing is broken today.
+- **Suggested direction:** split the JSON and file endpoints, or annotate with `ProducesResponseType` so codegen emits the JSON 200 schema.
+- **Confidence:** 100% — verified in the generated file.

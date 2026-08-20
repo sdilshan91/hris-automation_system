@@ -2169,9 +2169,14 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       .changeStatus(this.employeeId, request, idempotencyKey)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
+        next: () => {
           this.isSubmittingStatus.set(false);
-          this.profile.set(this.normalizeProfile(response.profile));
+          // Refetch rather than read `response.profile`. The wire returns ChangeEmployeeStatusResult -- a
+          // SUMMARY with no profile field at all -- so `response.profile` was undefined and the header never
+          // refreshed after a status change. Refetching respects the backend's deliberate choice to return a
+          // summary; making the mutation return a full aggregate would grow the API surface to paper over an
+          // FE assumption.
+          this.loadProfile();
           this.closeStatusModal();
           this.toastr.success(
             `Status changed to ${request.newStatus} successfully.`
@@ -2268,9 +2273,11 @@ export class EmployeeProfileComponent implements OnInit, OnDestroy {
       .assignManager(this.employeeId, managerId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
+        next: () => {
           this.isAssigningManager.set(false);
-          this.profile.set(this.normalizeProfile(response.profile));
+          // Same as the status path above: AssignManagerResult is a summary with no profile, so this read
+          // was undefined and the manager never appeared until a manual reload.
+          this.loadProfile();
           this.closeManagerSelector();
           if (managerId) {
             this.toastr.success('Reporting manager assigned successfully.');

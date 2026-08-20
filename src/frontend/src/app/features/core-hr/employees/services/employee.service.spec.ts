@@ -80,6 +80,26 @@ describe('EmployeeService', () => {
     updatedAt: '2026-06-01T00:00:00Z',
   };
 
+  // The DIRECTORY wire row (`EmployeesEmployeeDirectoryItemDto`): a deliberately leaner 13-field
+  // projection returned by `/employees/directory`, distinct from the 29-field `EmployeeDto`. Note the
+  // envelope is `{data,total,page,pageSize}`, not the list's `{items,totalCount}`. Flushing this shape
+  // exercises `mapEmployeeDirectory`/`mapEmployeeDirectoryItem`.
+  const mockDirectoryItemWire = {
+    id: 'emp-1',
+    employeeNo: 'EMP-0001',
+    firstName: 'John',
+    lastName: 'Doe',
+    email: 'john.doe@company.com',
+    phone: '+94771234567',
+    departmentName: 'Engineering',
+    jobTitleName: 'Software Engineer',
+    location: 'Colombo',
+    employmentType: 'FullTime',
+    dateOfJoining: '2026-06-01',
+    profilePhotoUrl: null,
+    status: 'Active',
+  };
+
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -163,9 +183,12 @@ describe('EmployeeService', () => {
         expect(response.totalCount).toBe(1);
       });
 
+      // Hits `/employees/directory`, NOT the bare list route — the list endpoint silently ignores
+      // every filter the directory screen builds. Asserting the URL here fails against the pre-fix
+      // service, which called `baseUrl`.
       const req = httpMock.expectOne(
         (r) =>
-          r.url === baseUrl &&
+          r.url === `${baseUrl}/directory` &&
           r.params.get('search') === 'John' &&
           r.params.get('page') === '1' &&
           r.params.get('pageSize') === '20' &&
@@ -174,7 +197,8 @@ describe('EmployeeService', () => {
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ items: [mockEmployeeWire], totalCount: 1, page: 1, pageSize: 20 });
+      // Directory envelope: {data,total,page,pageSize}, not the list's {items,totalCount}.
+      req.flush({ data: [mockDirectoryItemWire], total: 1, page: 1, pageSize: 20 });
     });
 
     // BUG-127 regression: directory items expose their id as `id`
@@ -187,15 +211,15 @@ describe('EmployeeService', () => {
         .queryDirectory({ page: 1, pageSize: 20 })
         .subscribe((r) => (received = r.items));
 
-      const req = httpMock.expectOne((r) => r.url === baseUrl);
-      req.flush({ items: [{ ...mockEmployeeWire, id: 'real-id-99' }], totalCount: 1 });
+      const req = httpMock.expectOne((r) => r.url === `${baseUrl}/directory`);
+      req.flush({ data: [{ ...mockDirectoryItemWire, id: 'real-id-99' }], total: 1 });
 
       expect(received!.length).toBe(1);
       expect(received![0].employeeId).toBe('real-id-99');
       expect(received![0].firstName).toBe('John');
     });
 
-    it('should send multi-select filters as comma-separated values', () => {
+    it('should send multi-select filters as repeated params, not comma-joined', () => {
       const params: IEmployeeDirectoryParams = {
         departments: ['Engineering', 'Sales'],
         statuses: ['Active', 'Probation'],
@@ -206,14 +230,32 @@ describe('EmployeeService', () => {
 
       service.queryDirectory(params).subscribe();
 
+      // Contract names + REPEATED keys: ?departmentIds=Engineering&departmentIds=Sales. ASP.NET binds a
+      // string[] from repeated keys; the pre-fix comma-joined `departments=Engineering,Sales` bound as one
+      // element containing a comma, so every multi-select matched nothing. Asserting via getAll (and the
+      // absence of the old comma-joined keys) fails against the pre-fix service.
       const req = httpMock.expectOne(
         (r) =>
-          r.url === baseUrl &&
-          r.params.get('departments') === 'Engineering,Sales' &&
-          r.params.get('statuses') === 'Active,Probation' &&
-          r.params.get('employmentTypes') === 'FullTime,Contract'
+          r.url === `${baseUrl}/directory` &&
+          r.params.getAll('departmentIds')?.join('|') === 'Engineering|Sales' &&
+          r.params.getAll('statuses')?.join('|') === 'Active|Probation' &&
+          r.params.getAll('employmentTypes')?.join('|') === 'FullTime|Contract'
       );
-      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
+      expect(req.request.params.getAll('departmentIds')).toEqual([
+        'Engineering',
+        'Sales',
+      ]);
+      expect(req.request.params.getAll('statuses')).toEqual([
+        'Active',
+        'Probation',
+      ]);
+      expect(req.request.params.getAll('employmentTypes')).toEqual([
+        'FullTime',
+        'Contract',
+      ]);
+      // The old comma-joined names must be gone entirely.
+      expect(req.request.params.has('departments')).toBeFalse();
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
     });
 
     it('should send date range filter params', () => {
@@ -228,14 +270,14 @@ describe('EmployeeService', () => {
 
       const req = httpMock.expectOne(
         (r) =>
-          r.url === baseUrl &&
+          r.url === `${baseUrl}/directory` &&
           r.params.get('dateOfJoiningFrom') === '2026-01-01' &&
           r.params.get('dateOfJoiningTo') === '2026-12-31'
       );
-      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
     });
 
-    it('should include includeArchived param when set', () => {
+    it('should send the archived filter as the contract name showArchived', () => {
       const params: IEmployeeDirectoryParams = {
         includeArchived: true,
         page: 1,
@@ -244,10 +286,12 @@ describe('EmployeeService', () => {
 
       service.queryDirectory(params).subscribe();
 
+      // Contract param is `showArchived`; the pre-fix `includeArchived` was ignored server-side.
       const req = httpMock.expectOne(
-        (r) => r.url === baseUrl && r.params.get('includeArchived') === 'true'
+        (r) => r.url === `${baseUrl}/directory` && r.params.get('showArchived') === 'true'
       );
-      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
+      expect(req.request.params.has('includeArchived')).toBeFalse();
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
     });
 
     it('should omit undefined/empty params', () => {
@@ -258,12 +302,23 @@ describe('EmployeeService', () => {
 
       service.queryDirectory(params).subscribe();
 
-      const req = httpMock.expectOne((r) => r.url === baseUrl);
+      const req = httpMock.expectOne((r) => r.url === `${baseUrl}/directory`);
       expect(req.request.params.has('search')).toBeFalse();
-      expect(req.request.params.has('departments')).toBeFalse();
-      expect(req.request.params.has('location')).toBeFalse();
-      expect(req.request.params.has('includeArchived')).toBeFalse();
-      req.flush({ items: [], totalCount: 0, page: 1, pageSize: 20 });
+      expect(req.request.params.has('departmentIds')).toBeFalse();
+      expect(req.request.params.has('locations')).toBeFalse();
+      expect(req.request.params.has('showArchived')).toBeFalse();
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
+    });
+
+    // NEW arm (defect #2): the directory query must not fall through to the bare list route. Pre-fix,
+    // `queryDirectory` called `baseUrl`, so this expectation on `/directory` finds no match and fails.
+    it('should hit /employees/directory, never the bare /employees list route', () => {
+      service.queryDirectory({ page: 1, pageSize: 20 }).subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === `${baseUrl}/directory`);
+      expect(req.request.url).toBe(`${baseUrl}/directory`);
+      expect(req.request.url).not.toBe(baseUrl);
+      req.flush({ data: [], total: 0, page: 1, pageSize: 20 });
     });
   });
 
@@ -280,9 +335,12 @@ describe('EmployeeService', () => {
         expect(blob instanceof Blob).toBeTrue();
       });
 
+      // Route is `/employees/directory/export`. The pre-fix service called `/employees/export`, which is
+      // absent from the contract and 404'd — so asserting the `/directory/export` URL is the arm that
+      // would have caught the broken export button.
       const req = httpMock.expectOne(
         (r) =>
-          r.url === `${baseUrl}/export` &&
+          r.url === `${baseUrl}/directory/export` &&
           r.params.get('format') === 'csv' &&
           r.params.get('search') === 'John'
       );
@@ -302,10 +360,11 @@ describe('EmployeeService', () => {
 
       const req = httpMock.expectOne(
         (r) =>
-          r.url === `${baseUrl}/export` &&
+          r.url === `${baseUrl}/directory/export` &&
           r.params.get('format') === 'excel' &&
-          r.params.get('departments') === 'Engineering'
+          r.params.getAll('departmentIds')?.join('|') === 'Engineering'
       );
+      expect(req.request.params.getAll('departmentIds')).toEqual(['Engineering']);
       req.flush(
         new Blob(['xlsx-data'], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -328,7 +387,10 @@ describe('EmployeeService', () => {
       const httpParams = service.buildDirectoryParams(params);
 
       expect(httpParams.get('search')).toBe('test');
-      expect(httpParams.get('departments')).toBe('A,B');
+      // Repeated `departmentIds`, not comma-joined `departments`. getAll returns the array ASP.NET
+      // binds a string[] from; the pre-fix comma-joined single value is the bug this asserts against.
+      expect(httpParams.getAll('departmentIds')).toEqual(['A', 'B']);
+      expect(httpParams.has('departments')).toBeFalse();
       expect(httpParams.get('sort')).toBe('department');
       expect(httpParams.get('sortDirection')).toBe('desc');
       expect(httpParams.get('page')).toBe('2');
@@ -643,19 +705,34 @@ describe('EmployeeService', () => {
   });
 
   describe('searchActiveEmployees (US-CHR-011)', () => {
-    it('should query directory with active status filter', () => {
+    it('should query the list endpoint with activeOnly=true', () => {
       service.searchActiveEmployees('John').subscribe((response) => {
         expect(response.items.length).toBe(1);
       });
 
+      // The typeahead hits the LIST endpoint (baseUrl), which has an `activeOnly` flag but NO `statuses`
+      // param. Pre-fix it sent `statuses=Active` — silently ignored — so terminated employees leaked into
+      // the picker (a real hazard on payroll-adjustment and leave-encashment forms).
       const req = httpMock.expectOne(
         (r) =>
           r.url === baseUrl &&
           r.params.get('search') === 'John' &&
-          r.params.get('statuses') === 'Active' &&
+          r.params.get('activeOnly') === 'true' &&
           r.params.get('pageSize') === '10'
       );
       expect(req.request.method).toBe('GET');
+      req.flush({ items: [mockEmployeeWire], totalCount: 1, page: 1, pageSize: 10 });
+    });
+
+    // NEW arm (defect #4): the active-only restriction must be a real `activeOnly=true`, and the
+    // ineffective `statuses` param must be gone. Pre-fix this fails: `statuses` was present, `activeOnly`
+    // absent.
+    it('should send activeOnly=true and NOT the ignored statuses param', () => {
+      service.searchActiveEmployees('John').subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === baseUrl);
+      expect(req.request.params.get('activeOnly')).toBe('true');
+      expect(req.request.params.has('statuses')).toBeFalse();
       req.flush({ items: [mockEmployeeWire], totalCount: 1, page: 1, pageSize: 10 });
     });
   });
