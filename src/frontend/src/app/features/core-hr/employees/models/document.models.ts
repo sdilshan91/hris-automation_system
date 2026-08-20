@@ -1,3 +1,5 @@
+import type { Schema } from '@core/api';
+
 /**
  * US-CHR-008: Employee Document Management models.
  *
@@ -66,10 +68,30 @@ export interface IUploadDocumentRequest {
   expiryDate?: string | null;
 }
 
-/** Download response containing the signed URL */
+/** Download response containing the signed URL (view-model consumed by the documents page as `downloadUrl`) */
 export interface IDocumentDownloadResponse {
   downloadUrl: string;
   expiresAt: string;
+}
+
+// ─── Wire contract → view-model mapper (D-core-hr slice 2) ────────────────────
+//
+// LIVE DEFECT fixed here: the API returns `EmployeesDocumentDownloadResult { signedUrl, expiresAt, fileName,
+// mimeType }`, but the service cast the body to `IDocumentDownloadResponse` and the page read `.downloadUrl`.
+// The wire never sends `downloadUrl`, so `a.href` was `undefined` and clicking Download did nothing. The
+// mapper's INPUT is the generated DTO, so the rename `signedUrl → downloadUrl` happens ONCE, at the seam, and
+// the page keeps reading `downloadUrl` unchanged. (The old spec fixture invented `downloadUrl` and asserted it
+// contained 'signed-url', which is exactly what hid the break — that fixture is rebuilt from the wire shape.)
+
+/** The download response exactly as the API sends it. */
+export type DocumentDownloadWire = Schema<'EmployeesDocumentDownloadResult'>;
+
+/** Map the wire download result onto the `IDocumentDownloadResponse` view-model (`signedUrl → downloadUrl`). */
+export function mapDocumentDownload(w: DocumentDownloadWire): IDocumentDownloadResponse {
+  return {
+    downloadUrl: w.signedUrl ?? '',
+    expiresAt: w.expiresAt ?? '',
+  };
 }
 
 // ─── Validation constants (AC-3, BR-7) ──────────────────────

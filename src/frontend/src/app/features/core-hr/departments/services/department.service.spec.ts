@@ -85,6 +85,22 @@ describe('DepartmentService', () => {
       const req = httpMock.expectOne(baseUrl);
       req.flush([]);
     });
+
+    it('guarantees id/name/code even when the wire omits them (mapper runs; fails against the raw cast)', () => {
+      // The generated DepartmentsDepartmentDto makes every field optional. The un-migrated raw cast leaked
+      // `undefined` into the three fields the list/tree cannot render a row without; the mapper defaults them
+      // to '' — so this arm passes against the migrated mapper and FAILS against the pre-migration cast.
+      let received: IDepartment[] | undefined;
+      service.getDepartments().subscribe((d) => (received = d));
+
+      const req = httpMock.expectOne(baseUrl);
+      req.flush([{ description: 'a row with no identity fields', isActive: true }]);
+
+      expect(received!.length).toBe(1);
+      expect(received![0].id).toBe('');
+      expect(received![0].name).toBe('');
+      expect(received![0].code).toBe('');
+    });
   });
 
   describe('getDepartment', () => {

@@ -149,21 +149,40 @@ describe('DocumentService', () => {
   });
 
   describe('getDownloadUrl', () => {
-    it('should GET the signed download URL for a document', () => {
-      const downloadResponse: IDocumentDownloadResponse = {
-        downloadUrl: 'https://storage.example.com/signed-url?token=abc',
+    it('maps the wire `signedUrl` onto the view-model `downloadUrl` (fixes the dead download link)', () => {
+      // REAL wire shape — EmployeesDocumentDownloadResult { signedUrl, expiresAt, fileName, mimeType }.
+      // The API never sends `downloadUrl`. The previous fixture invented `downloadUrl` and only asserted it
+      // *contained* 'signed-url', which certified a field that does not exist and hid the fact that the page's
+      // `a.href = response.downloadUrl` resolved to `undefined`. This arm flushes the true shape, so it FAILS
+      // against the un-migrated raw cast (downloadUrl === undefined) and passes once the mapper renames it.
+      const wire = {
+        signedUrl: 'https://storage.example.com/signed-url?token=abc',
         expiresAt: '2026-06-12T10:05:00Z',
+        fileName: 'contract.pdf',
+        mimeType: 'application/pdf',
       };
 
-      service.getDownloadUrl(employeeId, 'doc-1').subscribe((resp) => {
-        expect(resp.downloadUrl).toContain('signed-url');
-        expect(resp.expiresAt).toBeTruthy();
-      });
+      let received: IDocumentDownloadResponse | undefined;
+      service.getDownloadUrl(employeeId, 'doc-1').subscribe((resp) => (received = resp));
 
       const req = httpMock.expectOne(`${docUrl}/doc-1/download`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(downloadResponse);
+      req.flush(wire);
+
+      expect(received!.downloadUrl).toBe('https://storage.example.com/signed-url?token=abc');
+      expect(received!.expiresAt).toBe('2026-06-12T10:05:00Z');
+    });
+
+    it('defaults `downloadUrl` to empty string when the wire omits `signedUrl`', () => {
+      // Every generated field is optional; the mapper must not leak `undefined` into `a.href`.
+      let received: IDocumentDownloadResponse | undefined;
+      service.getDownloadUrl(employeeId, 'doc-2').subscribe((resp) => (received = resp));
+
+      const req = httpMock.expectOne(`${docUrl}/doc-2/download`);
+      req.flush({ expiresAt: '2026-06-12T10:05:00Z' });
+
+      expect(received!.downloadUrl).toBe('');
     });
   });
 

@@ -72,3 +72,22 @@ export interface IJobTitleErrorResponse {
   code?: 'duplicate_name' | 'has_active_employees' | string;
   employeeCount?: number;
 }
+
+// ─── Wire contract → view-model mapper (D-core-hr slice 2) ────────────────────
+//
+// `IJobTitle` already aliased the generated `JobTitlesJobTitleDto`, but the service cast the raw body straight
+// to `IJobTitle[]`, so `id`/`titleName` (the fields deactivate + the list depend on) were only assumed present.
+// This mapper's INPUT is the generated DTO — a backend rename becomes a compile error — and it guarantees the
+// two narrowed fields while carrying every other read field (`gradeName`, `employeeCount`, `isActive`, …).
+
+/** The job-title row exactly as the API sends it (all fields optional per the generated contract). */
+export type JobTitleWire = Schema<'JobTitlesJobTitleDto'>;
+
+/** Map a wire job-title row onto the `IJobTitle` view-model. No field is renamed. */
+export function mapJobTitle(w: JobTitleWire): IJobTitle {
+  return {
+    ...w,
+    id: w.id ?? '',
+    titleName: w.titleName ?? '',
+  };
+}

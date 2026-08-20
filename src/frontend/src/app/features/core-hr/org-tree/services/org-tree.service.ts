@@ -6,8 +6,9 @@ import { environment } from '../../../../../environments/environment';
 import {
   IOrgTreeNode,
   IOrgTreeQueryParams,
-  IOrgTreeResult,
   IOrgTreeSearchResult,
+  OrgTreeResultWire,
+  mapOrgTreeResult,
 } from '../models/org-tree.models';
 
 /**
@@ -45,13 +46,13 @@ export class OrgTreeService {
       httpParams = httpParams.set('depth', params.depth.toString());
     }
 
-    // ISSUE-207: the endpoint returns { nodes, view, reportingViewAvailable } — project the
-    // root node list off it (a null/short payload degrades to []), never the raw object.
-    // DF-17: each root keeps its nested `children` intact so the page can build the whole
-    // delivered subtree without a per-expand round-trip.
+    // ISSUE-207: the endpoint returns { nodes, view, reportingViewAvailable } — `mapOrgTreeResult` projects
+    // the root node list off it (a null/short payload degrades to []), never the raw object.
+    // DF-17: each root keeps its nested `children` intact so the page can build the whole delivered subtree
+    // without a per-expand round-trip.
     return this.http
-      .get<IOrgTreeResult>(this.baseUrl, { params: httpParams, withCredentials: true })
-      .pipe(map((result) => result?.nodes ?? []));
+      .get<OrgTreeResultWire>(this.baseUrl, { params: httpParams, withCredentials: true })
+      .pipe(map(mapOrgTreeResult));
   }
 
   /**

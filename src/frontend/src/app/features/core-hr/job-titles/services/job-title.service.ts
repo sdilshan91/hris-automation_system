@@ -9,6 +9,8 @@ import {
   IUpdateJobTitleRequest,
   IEmploymentTypeDto,
   IEmploymentTypeOption,
+  JobTitleWire,
+  mapJobTitle,
 } from '../models/job-title.models';
 
 /**
@@ -33,16 +35,17 @@ export class JobTitleService {
 
   /** Get all job titles for the current tenant (FR-1) */
   getJobTitles(): Observable<IJobTitle[]> {
-    return this.http.get<IJobTitle[]>(this.baseUrl, {
-      withCredentials: true,
-    });
+    // IReadOnlyList<JobTitlesJobTitleDto> (bare array post-envelope); map each row through the mapper.
+    return this.http
+      .get<JobTitleWire[]>(this.baseUrl, { withCredentials: true })
+      .pipe(map((rows) => rows.map(mapJobTitle)));
   }
 
   /** Get a single job title by ID */
   getJobTitle(id: string): Observable<IJobTitle> {
-    return this.http.get<IJobTitle>(`${this.baseUrl}/${id}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<JobTitleWire>(`${this.baseUrl}/${id}`, { withCredentials: true })
+      .pipe(map(mapJobTitle));
   }
 
   /**
@@ -69,9 +72,9 @@ export class JobTitleService {
 
   /** Create a new job title (FR-1, FR-2) */
   createJobTitle(request: ICreateJobTitleRequest): Observable<IJobTitle> {
-    return this.http.post<IJobTitle>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<JobTitleWire>(this.baseUrl, request, { withCredentials: true })
+      .pipe(map(mapJobTitle));
   }
 
   /** Update an existing job title (FR-1) */
@@ -79,11 +82,11 @@ export class JobTitleService {
     id: string,
     request: IUpdateJobTitleRequest
   ): Observable<IJobTitle> {
-    return this.http.put<IJobTitle>(
-      `${this.baseUrl}/${id}`,
-      request,
-      { withCredentials: true }
-    );
+    return this.http
+      .put<JobTitleWire>(`${this.baseUrl}/${id}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapJobTitle));
   }
 
   /** Deactivate (soft-delete) a job title (FR-5, FR-7) */

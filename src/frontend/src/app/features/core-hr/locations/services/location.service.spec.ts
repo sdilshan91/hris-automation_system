@@ -105,6 +105,20 @@ describe('LocationService', () => {
       const req = httpMock.expectOne(baseUrl);
       req.flush([]);
     });
+
+    it('guarantees id/name even when the wire omits them (mapper runs; fails against the raw cast)', () => {
+      // Every generated LocationsLocationDto field is optional; deactivate + the list key off id/name, so the
+      // mapper defaults them to '' rather than leaking `undefined` as the pre-migration cast did.
+      let received: ILocation[] | undefined;
+      service.getLocations().subscribe((l) => (received = l));
+
+      const req = httpMock.expectOne(baseUrl);
+      req.flush([{ city: 'Nowhere', timeZone: 'UTC', isActive: true }]);
+
+      expect(received!.length).toBe(1);
+      expect(received![0].id).toBe('');
+      expect(received![0].name).toBe('');
+    });
   });
 
   describe('getLocation', () => {

@@ -85,6 +85,20 @@ describe('JobTitleService', () => {
       const req = httpMock.expectOne(baseUrl);
       req.flush([]);
     });
+
+    it('guarantees id/titleName even when the wire omits them (mapper runs; fails against the raw cast)', () => {
+      // Every generated JobTitlesJobTitleDto field is optional; deactivate + the list key off id/titleName,
+      // so the mapper defaults them to '' rather than leaking `undefined` as the pre-migration cast did.
+      let received: IJobTitle[] | undefined;
+      service.getJobTitles().subscribe((jt) => (received = jt));
+
+      const req = httpMock.expectOne(baseUrl);
+      req.flush([{ description: 'a row with no identity fields', isActive: true }]);
+
+      expect(received!.length).toBe(1);
+      expect(received![0].id).toBe('');
+      expect(received![0].titleName).toBe('');
+    });
   });
 
   describe('getJobTitle', () => {

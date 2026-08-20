@@ -67,3 +67,28 @@ export interface IDepartmentErrorResponse {
   code?: 'duplicate_name' | 'circular_reference' | 'has_active_employees' | string;
   employeeCount?: number;
 }
+
+// ─── Wire contract → view-model mapper (D-core-hr slice 2) ────────────────────
+//
+// The model already aliased the response to the generated `DepartmentsDepartmentDto`, but the SERVICE still
+// cast the raw HTTP body straight to `IDepartment[]`. That cast is a lie: every generated property is optional
+// (Swashbuckle emits no `required`), so `id`/`name`/`code` — the three fields the list cannot render a row
+// without — were only *assumed* present. This mapper's INPUT is the generated DTO, so a backend rename is a
+// compile error here; its output guarantees the three narrowed fields instead of trusting the wire.
+
+/** The department row exactly as the API sends it (all fields optional per the generated contract). */
+export type DepartmentWire = Schema<'DepartmentsDepartmentDto'>;
+
+/**
+ * Map a wire department row onto the `IDepartment` view-model. No field is renamed — the VM IS the generated
+ * shape plus a hard guarantee of `id`/`name`/`code` — so the spread carries every other field the list/tree
+ * read (`employeeCount`, `managerName`, `parentDepartmentId`, `isActive`, …) through untouched.
+ */
+export function mapDepartment(w: DepartmentWire): IDepartment {
+  return {
+    ...w,
+    id: w.id ?? '',
+    name: w.name ?? '',
+    code: w.code ?? '',
+  };
+}
