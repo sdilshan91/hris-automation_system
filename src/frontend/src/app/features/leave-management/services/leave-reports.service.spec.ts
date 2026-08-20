@@ -68,17 +68,31 @@ describe('LeaveReportsService (US-LV-012)', () => {
   });
 
   describe('getAnalytics (FR-7)', () => {
-    it('GETs the analytics endpoint for a chart type with filters', () => {
+    it('GETs the analytics endpoint and maps the wire (points→data, series[].points→values)', () => {
+      let a: import('../models/leave-reports.models').IAnalyticsResponse | undefined;
       service
         .getAnalytics('utilization-by-department', { departmentId: 'd1' })
-        .subscribe((a) => expect(a.data?.length).toBe(1));
+        .subscribe((r) => (a = r));
       const req = httpMock.expectOne(
         (r) => r.url === `${baseUrl}/analytics/utilization-by-department`,
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
       expect(req.request.params.get('departmentId')).toBe('d1');
-      req.flush({ data: [{ label: 'Eng', value: 40 }] });
+      // Real wire shape (LeaveAnalyticsResult): `points` / `series[].points` / `categories` — NOT `data`.
+      req.flush({
+        chartType: 'UtilizationByDepartment',
+        points: [{ label: 'Eng', value: 40 }],
+        categories: ['Jan', 'Feb'],
+        series: [{ name: 'Annual', points: [{ label: 'Jan', value: 5 }, { label: 'Feb', value: 7 }] }],
+        scope: 'All',
+      });
+      // Fails against the un-migrated pass-through: `a.data` would be undefined (wire has `points`), and the
+      // series would carry `points` objects rather than a bare number[] of `values`.
+      expect(a!.data?.length).toBe(1);
+      expect(a!.data![0]).toEqual({ label: 'Eng', value: 40 });
+      expect(a!.categories).toEqual(['Jan', 'Feb']);
+      expect(a!.series![0].values).toEqual([5, 7]);
     });
   });
 

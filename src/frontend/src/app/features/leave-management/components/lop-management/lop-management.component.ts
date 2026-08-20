@@ -576,9 +576,10 @@ export class LopManagementComponent implements OnInit, OnDestroy {
   /**
    * Load the cross-employee LOP register for the active period.
    *
-   * **This used to call `getLopSummary()` with no arguments.** That endpoint is per-employee and requires
-   * `employeeId`+`from`+`to`, so every load returned **400** and the table never rendered — the screen has been
-   * non-functional. It now calls the register endpoint built for this view (queue item B2).
+   * **This screen originally read the per-employee `/leaves/lop-summary` payroll endpoint.** That endpoint
+   * requires `employeeId`+`from`+`to`, so every load returned **400** and the table never rendered — the
+   * screen was non-functional. It now calls `getLopRegister`, the cross-employee register endpoint built for
+   * this view (queue item B2). The FE no longer has a `getLopSummary` method at all.
    *
    * The period defaults to the current calendar month because LOP is a payroll input and payroll runs monthly.
    * There is deliberately no period picker yet — adding one is UI work outside this fix, and inventing a

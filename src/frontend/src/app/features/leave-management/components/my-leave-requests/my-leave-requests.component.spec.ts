@@ -61,8 +61,9 @@ describe('MyLeaveRequestsComponent', () => {
       'cancelLeaveRequest',
     ]);
     serviceSpy.getMyLeaveRequests.and.returnValue(of(requests));
+    // cancel now returns the small LeaveCancellationResultDto view-model, not a full leave request.
     serviceSpy.cancelLeaveRequest.and.returnValue(
-      of(makeRequest({ status: 'Cancelled' })),
+      of({ leaveRequestId: 'lr-1', status: 'Cancelled', balanceAfter: 12 }),
     );
     toastrSpy = jasmine.createSpyObj('ToastrService', ['success', 'error', 'warning', 'info']);
 

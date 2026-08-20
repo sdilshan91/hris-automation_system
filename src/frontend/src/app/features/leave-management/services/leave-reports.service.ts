@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   ReportType,
@@ -13,6 +13,8 @@ import {
   ExportFormat,
   IReportFilters,
   IReportErrorResponse,
+  LeaveAnalyticsWire,
+  mapAnalyticsResponse,
 } from '../models/leave-reports.models';
 
 /**
@@ -39,7 +41,14 @@ export class LeaveReportsService {
 
   // ─── Report data (FR-3 / FR-6) ───────────────────────────
 
-  /** Fetch one page of a tabular report with filters + server-side sort/pagination. */
+  /**
+   * Fetch one page of a tabular report with filters + server-side sort/pagination.
+   *
+   * NOT migrated to a generated type (D-leave slice-2 finding): the wire `LeaveReportsLeaveReportResult`
+   * returns POSITIONAL `{ cells: string[] }` rows + label `columns`, which do not align to this FE's keyed
+   * camelCase `IReportRow` table model (and the backend column order/labels are semantically swapped vs
+   * `REPORT_COLUMNS`). Reshaping that is a product decision, not a type migration — reported, not invented.
+   */
   getReport(reportType: ReportType, query: IReportQuery): Observable<IReportPage> {
     return this.http.get<IReportPage>(`${this.baseUrl}/reports/${reportType}`, {
       params: this.toParams(query),
@@ -51,15 +60,24 @@ export class LeaveReportsService {
 
   /** Fetch chart-shaped aggregates for a chart in a report-detail view. */
   getAnalytics(chartType: ChartType, filters: IReportFilters): Observable<IAnalyticsResponse> {
-    return this.http.get<IAnalyticsResponse>(`${this.baseUrl}/analytics/${chartType}`, {
-      params: this.filterParams(filters),
-      withCredentials: true,
-    });
+    return this.http
+      .get<LeaveAnalyticsWire>(`${this.baseUrl}/analytics/${chartType}`, {
+        params: this.filterParams(filters),
+        withCredentials: true,
+      })
+      .pipe(map(mapAnalyticsResponse));
   }
 
   // ─── Dashboard summary widgets (AC cards) ────────────────
 
-  /** Fetch the landing-page summary metrics (total utilization %, top type, absenteeism rate). */
+  /**
+   * Fetch the landing-page summary metrics (total utilization %, top type, absenteeism rate).
+   *
+   * NOT migrated (D-leave slice-2 finding): `/leaves/reports/summary` is not a distinct endpoint in the
+   * generated `paths` — the only `/leaves/reports/*` routes are `{reportType}` and `{reportType}/export`, so
+   * this request resolves to the generic report route (`reportType = "summary"`) and returns a
+   * `LeaveReportResult`, NOT `ILeaveSummaryMetrics`. There is no matching DTO to migrate to; reported.
+   */
   getSummaryMetrics(filters: IReportFilters = {}): Observable<ILeaveSummaryMetrics> {
     return this.http.get<ILeaveSummaryMetrics>(`${this.baseUrl}/reports/summary`, {
       params: this.filterParams(filters),

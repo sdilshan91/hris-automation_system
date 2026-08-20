@@ -1,10 +1,16 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   ILeaveBalanceSummary,
   ILeaveLedgerEntry,
+  LeaveBalanceWire,
+  mapLeaveBalanceSummary,
+  LeaveLedgerWire,
+  mapLeaveLedgerEntry,
+  UpcomingLeaveWire,
+  mapUpcomingLeave,
 } from '../models/leave-dashboard.models';
 import { ILeaveRequest } from '../models/leave-request.models';
 
@@ -37,10 +43,12 @@ export class LeaveDashboardService {
    */
   getMyBalance(year: number): Observable<ILeaveBalanceSummary[]> {
     const params = new HttpParams().set('year', String(year));
-    return this.http.get<ILeaveBalanceSummary[]>(`${this.baseUrl}/my-balance`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<LeaveBalanceWire[]>(`${this.baseUrl}/my-balance`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapLeaveBalanceSummary)));
   }
 
   /**
@@ -51,10 +59,12 @@ export class LeaveDashboardService {
     const params = new HttpParams()
       .set('leaveTypeId', leaveTypeId)
       .set('year', String(year));
-    return this.http.get<ILeaveLedgerEntry[]>(`${this.baseUrl}/my-ledger`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<LeaveLedgerWire[]>(`${this.baseUrl}/my-ledger`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapLeaveLedgerEntry)));
   }
 
   /**
@@ -62,8 +72,10 @@ export class LeaveDashboardService {
    * Returns the same ILeaveRequest shape used by the My Requests list.
    */
   getMyUpcoming(): Observable<ILeaveRequest[]> {
-    return this.http.get<ILeaveRequest[]>(`${this.baseUrl}/my-upcoming`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<UpcomingLeaveWire[]>(`${this.baseUrl}/my-upcoming`, {
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapUpcomingLeave)));
   }
 }

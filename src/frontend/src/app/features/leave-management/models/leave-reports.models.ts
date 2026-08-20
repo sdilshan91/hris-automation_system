@@ -17,6 +17,8 @@
  * tenant-isolated (BR-1) and role-scoped (BR-2); the FE only renders.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Report identity ─────────────────────────────────────────
 
 /** The pre-built report types (FR-1). Used as the `{reportType}` path segment. */
@@ -276,6 +278,31 @@ export interface ILeaveSummaryMetrics {
   topLeaveType: string;
   /** Absenteeism rate (unplanned + LOP days / total working days) as a percentage. */
   absenteeismRatePct: number;
+}
+
+// ─── Analytics wire contract → view-model mapper (D-leave slice 2) ───────────
+//
+// The analytics response is the GENERATED contract type. The wire diverges from the chart view-model:
+//  - wire `points` (a `ChartPoint[]` of `{ label, value }`) → VM `data` (`IChartDatum[]`)
+//  - wire `series[].points` (`ChartPoint[]`) → VM `series[].values` (a bare `number[]`)
+// so this mapper is a real reshape, not a pass-through.
+//
+// (The sibling `getReport` and `getSummaryMetrics` calls are NOT migrated — see the D-leave slice-2 report:
+//  the report wire is positional `{ cells[] }` rows + label columns that don't align to the FE's keyed
+//  camelCase table model, and `/leaves/reports/summary` is not a distinct endpoint in the generated `paths`.
+//  Both are structural/route findings that need a product decision, not a type migration.)
+
+export type LeaveAnalyticsWire = Schema<'LeaveReportsLeaveAnalyticsResult'>;
+
+export function mapAnalyticsResponse(w: LeaveAnalyticsWire): IAnalyticsResponse {
+  return {
+    data: (w.points ?? []).map((p) => ({ label: p.label ?? '', value: p.value ?? 0 })),
+    categories: w.categories ?? [],
+    series: (w.series ?? []).map((s) => ({
+      name: s.name ?? '',
+      values: (s.points ?? []).map((pt) => pt.value ?? 0),
+    })),
+  };
 }
 
 // ─── Export (FR-4 / AC-5) ────────────────────────────────────

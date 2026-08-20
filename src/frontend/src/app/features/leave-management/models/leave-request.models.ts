@@ -9,6 +9,8 @@
  * is reused (see ILeaveBalance below).
  */
 
+import type { Schema } from '@core/api';
+
 /** Half-day session selector (AC-4). Null when not a half-day request. */
 export type HalfDaySession = 'AM' | 'PM';
 
@@ -211,6 +213,77 @@ export function evaluateCancelEligibility(
     }
   }
   return { eligible: true, reason: '' };
+}
+
+// ─── Wire contract → view-model mappers (D-leave slice 2) ─────────────────────
+//
+// The read/write responses are the GENERATED contract types, not hand-written guesses. Each mapper's INPUT is
+// the generated DTO, so a backend rename is a compile error here rather than a silent `undefined`.
+
+export type LeaveRequestWire = Schema<'LeaveRequestsLeaveRequestDto'>;
+export type LeaveCancellationResultWire = Schema<'LeaveRequestsLeaveCancellationResultDto'>;
+
+/**
+ * Maps a leave-request wire row (`LeaveRequestsLeaveRequestDto`) onto the `ILeaveRequest` view-model used by
+ * the create/mine screens.
+ *
+ * Renames at the seam:
+ *  - `id` (wire) → `leaveRequestId` (VM)
+ *  - `attachments` (wire) → `attachmentUrls` (VM)
+ *
+ * No-source fields (defaulted here, reported):
+ *  - `leaveTypeColor`: the wire `LeaveRequestDto` carries NO colour, yet the My-Requests badge renders
+ *    `req.leaveTypeColor`. Defaulted to '' so the badge renders (uncoloured) instead of `undefined`. The
+ *    upcoming-timeline DTO *does* carry a colour (see `mapUpcomingLeave` in leave-dashboard.models).
+ *  - `tenantId`: no wire source and nothing in the module reads it. Kept on the shared VM (defaulted '') rather
+ *    than removed, because deleting it would churn several sibling component-spec fixtures; flagged as a
+ *    deletion candidate.
+ */
+export function mapLeaveRequest(w: LeaveRequestWire): ILeaveRequest {
+  return {
+    leaveRequestId: w.id ?? '',
+    tenantId: '',
+    employeeId: w.employeeId ?? '',
+    leaveTypeId: w.leaveTypeId ?? '',
+    leaveTypeName: w.leaveTypeName ?? '',
+    leaveTypeColor: '',
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    isHalfDay: w.isHalfDay ?? false,
+    halfDaySession: (w.halfDaySession ?? null) as HalfDaySession | null,
+    totalDays: w.totalDays ?? 0,
+    reason: w.reason ?? '',
+    status: (w.status ?? 'Pending') as LeaveRequestStatus,
+    requestedAt: w.requestedAt ?? '',
+    attachmentUrls: w.attachments ?? [],
+    cancellationWindowDays: w.cancellationWindowDays ?? 0,
+  };
+}
+
+/**
+ * The cancel action's result. The endpoint returns a small `LeaveCancellationResultDto`
+ * (`{ requestId, status, balanceAfter, ledgerEntryId, cancelledAt }`), NOT a full leave request — the
+ * previous `ILeaveRequest` return type was wrong. `requestId` (wire) → `leaveRequestId` (VM). The My-Requests
+ * screen ignores the body (it just refreshes on success), but the type is now contract-accurate.
+ */
+export interface ILeaveCancellationResult {
+  leaveRequestId: string;
+  status: string;
+  balanceAfter?: number | null;
+  ledgerEntryId?: string | null;
+  cancelledAt?: string;
+}
+
+export function mapLeaveCancellationResult(
+  w: LeaveCancellationResultWire,
+): ILeaveCancellationResult {
+  return {
+    leaveRequestId: w.requestId ?? '',
+    status: w.status ?? '',
+    balanceAfter: w.balanceAfter ?? null,
+    ledgerEntryId: w.ledgerEntryId ?? null,
+    cancelledAt: w.cancelledAt ?? undefined,
+  };
 }
 
 /** Half-day session display options for the form select (AC-4). */

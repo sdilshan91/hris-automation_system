@@ -9,8 +9,17 @@ import {
   IAssignCompulsoryLeaveRequest,
   IAssignCompulsoryLeaveResult,
   IOverrideLopRequest,
-  ILopErrorResponse, LopRegisterWire, mapLopRegisterEntry } from '../models/lop.models';
-import { ILeaveRequest } from '../models/leave-request.models';
+  IOverrideLopResult,
+  ILopErrorResponse,
+  LopRegisterWire,
+  mapLopRegisterEntry,
+  AssignLopResultWire,
+  mapAssignLopResult,
+  CompulsoryLeaveResultWire,
+  mapCompulsoryLeaveResult,
+  OverrideLopResultWire,
+  mapOverrideLopResult,
+} from '../models/lop.models';
 
 /**
  * US-LV-011: Service for Loss-of-Pay (LOP) / compulsory-leave HR management.
@@ -22,12 +31,14 @@ import { ILeaveRequest } from '../models/leave-request.models';
  * `environment.apiBaseUrl` already includes `/api/v1`, so the resource base is
  * `${apiBaseUrl}/leaves`.
  *
- * Backend endpoints (assumed contract — backend agent building in parallel; see
- * the vault "Frontend (US-LV-011)" section for reconciliation):
- *   GET  /api/v1/leaves/lop-summary?employeeId&from&to   - list LOP entries (FR-5)
+ * Backend endpoints the service calls:
+ *   GET  /api/v1/leaves/lop-register?from&to&employeeIds  - cross-employee LOP register (FR-5)
  *   POST /api/v1/leaves/assign-lop                        - bulk LOP assign (FR-3)
  *   POST /api/v1/leaves/compulsory                        - compulsory leave (FR-6)
  *   POST /api/v1/leaves/lop/{id}/override                 - override system LOP (BR-3)
+ *
+ * (The per-employee, payroll-facing `GET /leaves/lop-summary` still exists on the backend for payroll but is
+ * no longer called from the FE — the register endpoint above is what the HR management screen needs.)
  */
 @Injectable({ providedIn: 'root' })
 export class LopService {
@@ -37,40 +48,12 @@ export class LopService {
   // --- Read --------------------------------------------------
 
   /**
-   * List LOP entries for display (FR-5).
-   *
-   * `employeeId` scopes to one employee; omit it for the whole tenant. `from`/`to`
-   * bound the period (date-only 'YYYY-MM-DD'). The source/status filters are applied
-   * client-side over the returned rows (the filter chips), so all sources are fetched.
-   */
-  getLopSummary(params?: {
-    employeeId?: string | null;
-    from?: string | null;
-    to?: string | null;
-  }): Observable<ILopEntry[]> {
-    let httpParams = new HttpParams();
-    if (params?.employeeId) {
-      httpParams = httpParams.set('employeeId', params.employeeId);
-    }
-    if (params?.from) {
-      httpParams = httpParams.set('from', params.from);
-    }
-    if (params?.to) {
-      httpParams = httpParams.set('to', params.to);
-    }
-    return this.http.get<ILopEntry[]>(`${this.baseUrl}/lop-summary`, {
-      params: httpParams,
-      withCredentials: true,
-    });
-  }
-
-  /**
    * Cross-employee LOP register for a period (FR-4/FR-5) — what the LOP management screen actually needs.
    *
-   * **This is a different endpoint from `getLopSummary` on purpose.** `lop-summary` is per-employee and built
-   * for payroll: it requires `employeeId`+`from`+`to` and 400s without them, and its rows carry no employee
-   * identity. The register returns one row per LOP occurrence **across employees**, each with
-   * `employeeName`/`employeeNo`, which is what the table renders and what the per-row Override acts on.
+   * **This is a different endpoint from the payroll `lop-summary` read on purpose.** `lop-summary` is
+   * per-employee and built for payroll: it requires `employeeId`+`from`+`to` and 400s without them, and its
+   * rows carry no employee identity. The register returns one row per LOP occurrence **across employees**,
+   * each with `employeeName`/`employeeNo`, which is what the table renders and what the per-row Override acts on.
    *
    * The response is typed as the GENERATED contract type and mapped explicitly, so a backend rename is a
    * compile error rather than a blank column.
@@ -92,9 +75,11 @@ export class LopService {
 
   /** Bulk-assign LOP days to one employee (FR-3, AC-3). */
   assignLop(request: IAssignLopRequest): Observable<IAssignLopResult> {
-    return this.http.post<IAssignLopResult>(`${this.baseUrl}/assign-lop`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<AssignLopResultWire>(`${this.baseUrl}/assign-lop`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapAssignLopResult));
   }
 
   /**
@@ -104,26 +89,28 @@ export class LopService {
   assignCompulsoryLeave(
     request: IAssignCompulsoryLeaveRequest,
   ): Observable<IAssignCompulsoryLeaveResult> {
-    return this.http.post<IAssignCompulsoryLeaveResult>(
-      `${this.baseUrl}/compulsory`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<CompulsoryLeaveResultWire>(`${this.baseUrl}/compulsory`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapCompulsoryLeaveResult));
   }
 
   /**
    * Override a system-generated LOP entry by converting it to a different leave
-   * type (BR-3). Returns the updated leave request.
+   * type (BR-3). Returns the small override result (not a full leave request).
    */
   overrideLop(
     leaveRequestId: string,
     request: IOverrideLopRequest,
-  ): Observable<ILeaveRequest> {
-    return this.http.post<ILeaveRequest>(
-      `${this.baseUrl}/lop/${leaveRequestId}/override`,
-      request,
-      { withCredentials: true },
-    );
+  ): Observable<IOverrideLopResult> {
+    return this.http
+      .post<OverrideLopResultWire>(
+        `${this.baseUrl}/lop/${leaveRequestId}/override`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map(mapOverrideLopResult));
   }
 
   // --- Error helper ------------------------------------------

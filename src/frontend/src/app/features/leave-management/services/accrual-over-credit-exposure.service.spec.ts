@@ -47,7 +47,7 @@ describe('AccrualOverCreditExposureService (BUG-291)', () => {
 
   afterEach(() => httpMock.verify());
 
-  it('getExposure calls the endpoint with the asOfDate param and returns the report', () => {
+  it('getExposure calls the endpoint with the asOfDate param and maps each row', () => {
     let result: IAccrualOverCreditExposureReport | undefined;
     service.getExposure('2026-07-30').subscribe((r) => (result = r));
 
@@ -57,10 +57,18 @@ describe('AccrualOverCreditExposureService (BUG-291)', () => {
     expect(req.request.method).toBe('GET');
     expect(req.request.params.has('format')).toBeFalse();
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockReport);
+    // Flush the wire envelope + a row carrying a field the VM does not model.
+    req.flush({
+      ...mockReport,
+      rows: [{ ...mockReport.rows[0], legacyBatchId: 'batch-9' }],
+    });
 
+    // mapAccrualExposureRow reconstructs each row from the generated contract, so the mapped result equals the
+    // VM report and the wire-only field is dropped. A raw pass-through cast would leak it — fails pre-migration.
     expect(result).toEqual(mockReport);
     expect(result!.rows[0].overCreditedDays).toBe(10);
+    expect(result!.rows[0].employeeName).toBe('Alice Anderson');
+    expect('legacyBatchId' in result!.rows[0]).toBeFalse();
   });
 
   it('exportExposure passes format=csv through and reads the blob as a file', () => {

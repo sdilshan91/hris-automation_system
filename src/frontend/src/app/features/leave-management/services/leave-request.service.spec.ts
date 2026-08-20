@@ -17,13 +17,13 @@ describe('LeaveRequestService', () => {
   let httpMock: HttpTestingController;
   const baseUrl = `${environment.apiBaseUrl}/leaves`;
 
-  const mockRequest: ILeaveRequest = {
-    leaveRequestId: 'lr-1',
-    tenantId: 'tenant-1',
+  // Real wire shape (LeaveRequestsLeaveRequestDto): note `id` (not leaveRequestId), `attachments` (not
+  // attachmentUrls), and NO leaveTypeColor/tenantId. Flushing this exercises mapLeaveRequest.
+  const wireRequest = {
+    id: 'lr-1',
     employeeId: 'emp-1',
     leaveTypeId: 'lt-1',
     leaveTypeName: 'Annual Leave',
-    leaveTypeColor: '#2563eb',
     startDate: '2026-07-06',
     endDate: '2026-07-08',
     isHalfDay: false,
@@ -32,7 +32,11 @@ describe('LeaveRequestService', () => {
     reason: 'Vacation',
     status: 'Pending',
     requestedAt: '2026-06-13T10:00:00Z',
-    attachmentUrls: [],
+    createdAt: '2026-06-13T10:00:00Z',
+    isLop: false,
+    lopSource: null,
+    attachments: ['https://files/x.pdf'],
+    cancellationWindowDays: 2,
   };
 
   const mockBalance: ILeaveBalance = {
@@ -83,16 +87,19 @@ describe('LeaveRequestService', () => {
         attachments: [],
       };
 
-      service.createLeaveRequest(body).subscribe((req) => {
-        expect(req.leaveRequestId).toBe('lr-1');
-        expect(req.status).toBe('Pending');
-      });
+      let created: ILeaveRequest | undefined;
+      service.createLeaveRequest(body).subscribe((r) => (created = r));
 
       const req = httpMock.expectOne(baseUrl);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(body);
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(mockRequest);
+      req.flush(wireRequest);
+      // Mapper arm — fails against the un-migrated pass-through (wire has `id`/`attachments`, not
+      // `leaveRequestId`/`attachmentUrls`).
+      expect(created!.leaveRequestId).toBe('lr-1');
+      expect(created!.status).toBe('Pending');
+      expect(created!.attachmentUrls).toEqual(['https://files/x.pdf']);
     });
 
     it('should send half-day session in the payload (AC-4)', () => {
@@ -111,7 +118,7 @@ describe('LeaveRequestService', () => {
       const req = httpMock.expectOne(baseUrl);
       expect(req.request.body.isHalfDay).toBeTrue();
       expect(req.request.body.halfDaySession).toBe('AM');
-      req.flush({ ...mockRequest, isHalfDay: true, halfDaySession: 'AM', totalDays: 0.5 });
+      req.flush({ ...wireRequest, isHalfDay: true, halfDaySession: 'AM', totalDays: 0.5 });
     });
   });
 
@@ -119,13 +126,15 @@ describe('LeaveRequestService', () => {
     it('should GET the current employee requests', () => {
       service.getMyLeaveRequests().subscribe((reqs) => {
         expect(reqs.length).toBe(1);
+        // Fails against the un-migrated pass-through (wire row has `id`, not `leaveRequestId`).
         expect(reqs[0].leaveRequestId).toBe('lr-1');
+        expect(reqs[0].attachmentUrls).toEqual(['https://files/x.pdf']);
       });
 
       const req = httpMock.expectOne(`${baseUrl}/mine`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush([mockRequest]);
+      req.flush([wireRequest]);
     });
   });
 
@@ -163,23 +172,34 @@ describe('LeaveRequestService', () => {
   });
 
   describe('cancelLeaveRequest (US-LV-010)', () => {
-    it('should POST to /{id}/cancel with the reason body and return the updated request', () => {
-      service.cancelLeaveRequest('lr-1', { reason: 'plans changed' }).subscribe((req) => {
-        expect(req.status).toBe('Cancelled');
-      });
+    it('should POST to /{id}/cancel and map the LeaveCancellationResultDto (requestId→leaveRequestId)', () => {
+      let res: import('../models/leave-request.models').ILeaveCancellationResult | undefined;
+      service.cancelLeaveRequest('lr-1', { reason: 'plans changed' }).subscribe((r) => (res = r));
 
       const req = httpMock.expectOne(`${baseUrl}/lr-1/cancel`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ reason: 'plans changed' });
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ ...mockRequest, status: 'Cancelled' });
+      // Real wire shape: requestId / status / balanceAfter / ledgerEntryId / cancelledAt.
+      req.flush({
+        requestId: 'lr-1',
+        status: 'Cancelled',
+        balanceAfter: 12,
+        ledgerEntryId: 'led-1',
+        cancelledAt: '2026-08-20T09:00:00Z',
+      });
+      // Fails against the un-migrated code (typed ILeaveRequest): `res.leaveRequestId` would be undefined
+      // because the wire field is `requestId`.
+      expect(res!.leaveRequestId).toBe('lr-1');
+      expect(res!.status).toBe('Cancelled');
+      expect(res!.balanceAfter).toBe(12);
     });
 
     it('should allow an empty reason (pending requests, BR-5)', () => {
       service.cancelLeaveRequest('lr-1', { reason: '' }).subscribe();
       const req = httpMock.expectOne(`${baseUrl}/lr-1/cancel`);
       expect(req.request.body).toEqual({ reason: '' });
-      req.flush({ ...mockRequest, status: 'Cancelled' });
+      req.flush({ requestId: 'lr-1', status: 'Cancelled' });
     });
   });
 });

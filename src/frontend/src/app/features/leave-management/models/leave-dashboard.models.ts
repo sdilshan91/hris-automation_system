@@ -13,6 +13,13 @@
  * NOTE: `apiBaseUrl` already includes `/api/v1`, so the leaves resource is `${apiBaseUrl}/leaves`.
  */
 
+import type { Schema } from '@core/api';
+import type {
+  ILeaveRequest,
+  HalfDaySession,
+  LeaveRequestStatus,
+} from './leave-request.models';
+
 /**
  * Per-leave-type balance summary card data (FR-2, AC-1).
  * BR-1: balance = entitlement + carryForward - used - expired + adjustments.
@@ -75,6 +82,81 @@ export interface ILeaveLedgerEntry {
   balanceAfter: number;
   description: string;
   occurredAt: string;
+}
+
+// ─── Wire contract → view-model mappers (D-leave slice 2) ─────────────────────
+//
+// The three dashboard reads are the GENERATED contract types. Each mapper's INPUT is the generated DTO, so a
+// backend rename is a compile error here rather than a silent `undefined`.
+
+export type LeaveBalanceWire = Schema<'LeaveRequestsLeaveBalanceDto'>;
+export type LeaveLedgerWire = Schema<'LeaveRequestsLeaveLedgerEntryDto'>;
+export type UpcomingLeaveWire = Schema<'LeaveRequestsUpcomingLeaveDto'>;
+
+/**
+ * Maps a wire balance row onto `ILeaveBalanceSummary`. Names align 1:1; the wire's extra `adjustments`/
+ * `leaveYear` have no card field and are dropped. `carryForwardExpiry` has NO wire source (documented absent)
+ * and is left undefined.
+ */
+export function mapLeaveBalanceSummary(w: LeaveBalanceWire): ILeaveBalanceSummary {
+  return {
+    leaveTypeId: w.leaveTypeId ?? '',
+    leaveTypeName: w.leaveTypeName ?? '',
+    color: w.color ?? '',
+    entitlement: w.entitlement ?? 0,
+    used: w.used ?? 0,
+    pending: w.pending ?? 0,
+    balance: w.balance ?? 0,
+    carryForward: w.carryForward ?? 0,
+    expired: w.expired ?? 0,
+    isArchived: w.isArchived ?? false,
+  };
+}
+
+/** Maps a wire ledger row onto `ILeaveLedgerEntry`. `id` (wire) → `ledgerId` (VM). */
+export function mapLeaveLedgerEntry(w: LeaveLedgerWire): ILeaveLedgerEntry {
+  return {
+    ledgerId: w.id ?? '',
+    leaveTypeId: w.leaveTypeId ?? '',
+    leaveYear: w.leaveYear ?? 0,
+    entryType: (w.entryType ?? 'Adjusted') as LedgerEntryType,
+    amount: w.amount ?? 0,
+    balanceAfter: w.balanceAfter ?? 0,
+    description: w.description ?? '',
+    occurredAt: w.occurredAt ?? '',
+  };
+}
+
+/**
+ * Maps a wire upcoming-leave row (`LeaveRequestsUpcomingLeaveDto`) onto the shared `ILeaveRequest` view-model
+ * the dashboard timeline renders.
+ *
+ * The upcoming DTO is a DIFFERENT, smaller shape than `LeaveRequestDto`: `requestId` (not `id`), and it DOES
+ * carry `leaveTypeColor` (which `LeaveRequestDto` lacks). The timeline renders type/colour/dates/status/days
+ * only, so the ILeaveRequest fields with no upcoming source are defaulted here (and reported, not fabricated):
+ *  - `employeeId` '' (the timeline is the caller's own leaves; never rendered)
+ *  - `reason` '' (not rendered on the timeline)
+ *  - `requestedAt` '' (the timeline sorts by startDate, not requestedAt)
+ *  - `attachmentUrls` [] · `tenantId` '' (never rendered)
+ */
+export function mapUpcomingLeave(w: UpcomingLeaveWire): ILeaveRequest {
+  return {
+    leaveRequestId: w.requestId ?? '',
+    tenantId: '',
+    employeeId: '',
+    leaveTypeId: w.leaveTypeId ?? '',
+    leaveTypeName: w.leaveTypeName ?? '',
+    leaveTypeColor: w.leaveTypeColor ?? '',
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    isHalfDay: w.isHalfDay ?? false,
+    halfDaySession: (w.halfDaySession ?? null) as HalfDaySession | null,
+    totalDays: w.totalDays ?? 0,
+    reason: '',
+    status: (w.status ?? 'Pending') as LeaveRequestStatus,
+    requestedAt: '',
+    attachmentUrls: [],
+  };
 }
 
 /**

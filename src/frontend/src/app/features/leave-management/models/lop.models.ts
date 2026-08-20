@@ -184,6 +184,71 @@ export interface ILopErrorResponse {
   code?: string;
 }
 
+// ─── Write-result wire contracts → view-model mappers (D-leave slice 2) ────────
+//
+// The three LOP write responses are the GENERATED contract types, not hand-written guesses. Each mapper's
+// INPUT is the generated DTO, so a backend rename is a compile error here rather than a silent `undefined`.
+
+export type AssignLopResultWire = Schema<'LeaveRequestsAssignLopResultDto'>;
+export type CompulsoryLeaveResultWire = Schema<'LeaveRequestsCompulsoryLeaveResultDto'>;
+export type OverrideLopResultWire = Schema<'LeaveRequestsOverrideLopResultDto'>;
+
+/**
+ * Maps the bulk-assign result. Two fields are renamed at the seam:
+ *  - `createdCount` (wire) → `created` (VM)
+ *  - `skippedDates` (wire) → `skipped` (VM)
+ * The wire's `leaveTypeId`/`requestIds` have no VM field (the screen ignores the result body) and are dropped.
+ */
+export function mapAssignLopResult(w: AssignLopResultWire): IAssignLopResult {
+  return {
+    employeeId: w.employeeId ?? '',
+    created: w.createdCount ?? 0,
+    skipped: w.skippedDates ?? undefined,
+  };
+}
+
+/**
+ * Maps the compulsory-leave result (FR-6, BR-4).
+ *
+ * The wire counts are per-employee-per-date ROWS: `assignedCount` is the total created and `lopCount` the
+ * subset that fell back to LOP for insufficient balance. The VM's `deducted` (balance-covered) has no direct
+ * wire field, so it is DERIVED as `assignedCount − lopCount`; `total` = `assignedCount`, which keeps the
+ * invariant `deducted + lop === total`. The wire's `employeesProcessed`/`dates`/`leaveTypeId` have no VM
+ * field and are dropped (the screen renders only "{deducted} deducted, {lop} as LOP").
+ */
+export function mapCompulsoryLeaveResult(w: CompulsoryLeaveResultWire): IAssignCompulsoryLeaveResult {
+  const assigned = w.assignedCount ?? 0;
+  const lop = w.lopCount ?? 0;
+  return {
+    deducted: Math.max(0, assigned - lop),
+    lop,
+    total: assigned,
+  };
+}
+
+/**
+ * The override result (BR-3). Replaces the previous WRONG `ILeaveRequest` return type: the endpoint returns a
+ * small `OverrideLopResultDto`, not a full leave request. `requestId` (wire) → `leaveRequestId` (VM); the
+ * remaining fields pass through. The screen ignores the body, but the type is now contract-accurate.
+ */
+export interface IOverrideLopResult {
+  leaveRequestId: string;
+  leaveTypeId: string;
+  isLop: boolean;
+  status: string;
+  ledgerEntryId?: string | null;
+}
+
+export function mapOverrideLopResult(w: OverrideLopResultWire): IOverrideLopResult {
+  return {
+    leaveRequestId: w.requestId ?? '',
+    leaveTypeId: w.leaveTypeId ?? '',
+    isLop: w.isLop ?? false,
+    status: w.status ?? '',
+    ledgerEntryId: w.ledgerEntryId ?? null,
+  };
+}
+
 // ─── Display helpers (pure, unit-tested) ──────────────────────
 
 /** Human-readable label for each LOP source (filter chips + row meta). */
