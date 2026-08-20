@@ -7,6 +7,8 @@ import {
   IEmployeeDocument,
   IUploadDocumentRequest,
   IDocumentDownloadResponse,
+  DocumentDownloadWire,
+  mapDocumentDownload,
 } from '../models/document.models';
 import { IPaginatedResponse } from '../models/employee.models';
 
@@ -91,10 +93,14 @@ export class DocumentService {
     employeeId: string,
     documentId: string
   ): Observable<IDocumentDownloadResponse> {
-    return this.http.get<IDocumentDownloadResponse>(
-      `${this.baseUrl}/${employeeId}/documents/${documentId}/download`,
-      { withCredentials: true }
-    );
+    // The wire DTO is `EmployeesDocumentDownloadResult { signedUrl, … }`; the mapper renames `signedUrl` →
+    // `downloadUrl` so the page's `a.href = response.downloadUrl` resolves to a real URL (was `undefined`).
+    return this.http
+      .get<DocumentDownloadWire>(
+        `${this.baseUrl}/${employeeId}/documents/${documentId}/download`,
+        { withCredentials: true }
+      )
+      .pipe(map(mapDocumentDownload));
   }
 
   /**

@@ -1,3 +1,5 @@
+import type { Schema } from '@core/api';
+
 /**
  * US-CHR-006: Organization Tree / Hierarchy Visualization models.
  *
@@ -84,6 +86,43 @@ export interface IOrgTreeResult {
 
 /** The nodes the service exposes after projecting `.nodes` off {@link IOrgTreeResult}. */
 export type IOrgTreeResponse = IOrgTreeNode[];
+
+// ─── Wire contract → view-model mappers (D-core-hr slice 2) ───────────────────
+//
+// The org-tree GET used a HAND-WRITTEN `IOrgTreeResult`/`IOrgTreeNode` guess. The service now types the
+// response as the GENERATED `OrganizationTreeOrgTreeResult` and maps each node, so a backend rename is a
+// compile error. Two wire fields need normalising at the seam:
+//   - `nodeType` is `string | null` on the wire but the union `'department' | 'employee'` in the VM.
+//   - `employeeCount` is `number | null` on the wire but `number` in the VM (a null count would otherwise
+//     leak into the "N employees" label and the tree math).
+// DF-17 truncation semantics are preserved: a wire node with NO `children` key maps to `children: undefined`
+// (a depth-truncated node the page must lazy-fetch), while a delivered empty `[]` stays `[]`.
+
+export type OrgTreeResultWire = Schema<'OrganizationTreeOrgTreeResult'>;
+export type OrgTreeNodeWire = Schema<'OrganizationTreeOrgTreeNodeDto'>;
+
+/** Map a single wire org-tree node (recursively, over any inline `children`) onto {@link IOrgTreeNode}. */
+export function mapOrgTreeNode(w: OrgTreeNodeWire): IOrgTreeNode {
+  return {
+    nodeId: w.nodeId ?? '',
+    nodeType: (w.nodeType ?? 'department') as IOrgTreeNode['nodeType'],
+    name: w.name ?? '',
+    title: w.title ?? null,
+    avatarUrl: w.avatarUrl ?? null,
+    employeeCount: w.employeeCount ?? 0,
+    childrenCount: w.childrenCount ?? 0,
+    parentId: w.parentId ?? null,
+    children: w.children == null ? undefined : w.children.map(mapOrgTreeNode),
+  };
+}
+
+/**
+ * Project the ROOT node list off the wire result and map each (ISSUE-207: the payload is the object
+ * `{ nodes, view, reportingViewAvailable }`, never a bare array). A null/short payload degrades to `[]`.
+ */
+export function mapOrgTreeResult(w: OrgTreeResultWire | null | undefined): IOrgTreeNode[] {
+  return (w?.nodes ?? []).map(mapOrgTreeNode);
+}
 
 // ─── Search result ───────────────────────────────────────────
 

@@ -1,11 +1,14 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IDepartment,
   ICreateDepartmentRequest,
   IUpdateDepartmentRequest,
+  DepartmentWire,
+  mapDepartment,
 } from '../models/department.models';
 
 /**
@@ -30,25 +33,27 @@ export class DepartmentService {
 
   /** Get all departments for the current tenant (FR-1, FR-8) */
   getDepartments(): Observable<IDepartment[]> {
-    return this.http.get<IDepartment[]>(this.baseUrl, {
-      withCredentials: true,
-    });
+    // The list endpoint returns IReadOnlyList<DepartmentsDepartmentDto> (a bare array after the envelope
+    // interceptor strips ApiResponse<T>); map each row through the contract-anchored mapper.
+    return this.http
+      .get<DepartmentWire[]>(this.baseUrl, { withCredentials: true })
+      .pipe(map((rows) => rows.map(mapDepartment)));
   }
 
   /** Get a single department by ID */
   getDepartment(id: string): Observable<IDepartment> {
-    return this.http.get<IDepartment>(`${this.baseUrl}/${id}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<DepartmentWire>(`${this.baseUrl}/${id}`, { withCredentials: true })
+      .pipe(map(mapDepartment));
   }
 
   // ─── Write ───────────────────────────────────────────────
 
   /** Create a new department (FR-1, FR-2) */
   createDepartment(request: ICreateDepartmentRequest): Observable<IDepartment> {
-    return this.http.post<IDepartment>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<DepartmentWire>(this.baseUrl, request, { withCredentials: true })
+      .pipe(map(mapDepartment));
   }
 
   /** Update an existing department (FR-1, FR-4) */
@@ -56,11 +61,11 @@ export class DepartmentService {
     id: string,
     request: IUpdateDepartmentRequest
   ): Observable<IDepartment> {
-    return this.http.put<IDepartment>(
-      `${this.baseUrl}/${id}`,
-      request,
-      { withCredentials: true }
-    );
+    return this.http
+      .put<DepartmentWire>(`${this.baseUrl}/${id}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapDepartment));
   }
 
   /** Deactivate (soft-delete) a department (FR-6, FR-7) */

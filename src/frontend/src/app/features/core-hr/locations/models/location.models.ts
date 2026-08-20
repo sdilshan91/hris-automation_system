@@ -55,3 +55,22 @@ export interface ILocationErrorResponse {
   code?: 'duplicate_name' | 'has_active_employees' | string;
   employeeCount?: number;
 }
+
+// ─── Wire contract → view-model mapper (D-core-hr slice 2) ────────────────────
+//
+// `ILocation` already aliased the generated `LocationsLocationDto`, but the service cast the raw body straight
+// to `ILocation[]`, so `id`/`name` (the fields deactivate + the list depend on) were only assumed present.
+// This mapper's INPUT is the generated DTO — a backend rename becomes a compile error — and it guarantees the
+// two narrowed fields while carrying every other read field (`city`, `timeZone`, `employeeCount`, `phone`, …).
+
+/** The location row exactly as the API sends it (all fields optional per the generated contract). */
+export type LocationWire = Schema<'LocationsLocationDto'>;
+
+/** Map a wire location row onto the `ILocation` view-model. No field is renamed. */
+export function mapLocation(w: LocationWire): ILocation {
+  return {
+    ...w,
+    id: w.id ?? '',
+    name: w.name ?? '',
+  };
+}

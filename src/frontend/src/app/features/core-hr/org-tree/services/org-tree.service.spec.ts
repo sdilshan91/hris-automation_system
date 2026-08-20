@@ -189,6 +189,35 @@ describe('OrgTreeService', () => {
       expect(req.request.withCredentials).toBeTrue();
       req.flush({ nodes: [], view: 'department', reportingViewAvailable: false });
     });
+
+    it('normalizes the wire `employeeCount: null` to 0 (mapper runs; fails against the raw projection)', () => {
+      // The generated OrgTreeNodeDto types `employeeCount` as `number | null` and omits `children` on a
+      // depth-truncated node. The un-migrated code projected `.nodes` raw, leaking `null` into the "N
+      // employees" label and the tree math; the node mapper defaults it to 0 and keeps `children` undefined
+      // so the page still lazy-fetches the truncated subtree.
+      let received: IOrgTreeNode[] | undefined;
+      service.getOrgTree({ view: 'department', depth: 1 }).subscribe((n) => (received = n));
+
+      const req = httpMock.expectOne((r) => r.url === baseUrl);
+      req.flush({
+        nodes: [
+          {
+            nodeId: 'd1',
+            nodeType: 'department',
+            name: 'Ops',
+            childrenCount: 4,
+            employeeCount: null,
+            parentId: null,
+          },
+        ],
+        view: 'department',
+        reportingViewAvailable: false,
+      });
+
+      expect(received!.length).toBe(1);
+      expect(received![0].employeeCount).toBe(0);
+      expect(received![0].children).toBeUndefined();
+    });
   });
 
   describe('searchNodes', () => {
