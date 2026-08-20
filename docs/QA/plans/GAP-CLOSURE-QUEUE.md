@@ -97,6 +97,22 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > | leave reports keyed-vs-positional | which side is authoritative — the backend's positional cells or the FE's keyed columns |
 > | salary-grade `isActive` | honour it server-side, or remove the toggle |
 >
+> ### ⚠ Second pass — the first heal was itself incomplete
+>
+> The user asked whether the *earlier* session findings had been filed. They had not. The 2026-08-21 heal
+> reconciled the recent migration slices and **recalled** the rest instead of enumerating it. Four more items
+> were missing; now filed as [[BUG-307]] and [[ISSUE-382]], plus an owed [[ISSUE-232]] flip.
+>
+> **[[BUG-307]] came back higher than it was first flagged.** It was reported as a LOW "seed data" note; it is
+> actually **tenant plan limits failing open** — a `plan_id` matching no `subscription_plans` row resolves
+> `MaxEmployees` to unlimited, silently. The original rating described the *cause* (seed data) rather than the
+> *effect* (a paid-plan cap that does not exist). Re-rated MED, possibly HIGH depending on how many real
+> tenants carry an unmatched `plan_id` — **check that before scheduling.**
+>
+> **Process correction, recorded because it will recur:** a heal must **enumerate its sources** — every agent
+> hand-back, every PR body, every OUT-OF-LANE block in the window — not recall them. Memory is exactly the
+> mechanism the protocol exists to replace.
+>
 > **★ The one number worth carrying forward:** roughly **one field in five** of the hand-written interfaces
 > describes an endpoint that was never built. These were not an accurate API description that drifted — they
 > were written from what the UI wanted and never reconciled. The remaining ~570 interfaces should be expected
