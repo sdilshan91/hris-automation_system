@@ -637,6 +637,33 @@ try
     }
 
     // Exception handling (outermost)
+    // §23.4 security headers on API responses (GAP-033a).
+    //
+    // Registered BEFORE ExceptionHandlingMiddleware, so it WRAPS the exception handler rather than sitting
+    // inside it. That ordering is the whole point: the headers are written on the way IN, before anything
+    // downstream can short-circuit, so a 500 or a 403 still carries them -- an error response is still a
+    // response a browser acts on, and nosniff / frame-ancestors matter there as much as on a 200.
+    // Moving this below UseAuthorization turns SecurityHeaders_SurviveAn_ErrorResponse_GAP033a red (verified).
+    //
+    // The API is not framed and returns JSON, so the policy is deliberately tighter than the SPA's:
+    // frame-ancestors 'none' and default-src 'none' are correct for an API and cost nothing.
+    // HSTS is emitted only when the request arrived over HTTPS -- sending it over plain HTTP is ignored by
+    // browsers per RFC 6797 and would be misleading in local dev.
+    app.Use(async (ctx, next) =>
+    {
+        var h = ctx.Response.Headers;
+        h["X-Content-Type-Options"] = "nosniff";
+        h["X-Frame-Options"] = "DENY";
+        h["Referrer-Policy"] = "strict-origin-when-cross-origin";
+        h["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+        h["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+        if (ctx.Request.IsHttps)
+        {
+            h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+        }
+        await next();
+    });
+
     app.UseMiddleware<ExceptionHandlingMiddleware>();
 
     // Tenant resolution (before auth)

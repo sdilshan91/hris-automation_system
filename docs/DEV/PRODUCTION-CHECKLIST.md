@@ -182,7 +182,15 @@ load balancer* and matched **zero**.
       Guid.Empty`, which no `user_tenants` row can match, so **nobody can authenticate there**
       (`SystemEndpointHostGuardMiddleware.cs:27-33` explains why). Platform admins are users of the real
       `platform` tenant. **Do not point production DNS or the admin console at `admin.*`** — see GAP-038.
-- [ ] **Security response headers are set at the terminating proxy** — CSP, HSTS, X-Frame-Options,
+- [ ] **Decide where the security headers live — they are now set in TWO places.** `src/frontend/nginx.conf`
+      and the API pipeline both emit them as of GAP-033a. **If the terminating proxy also sets them, remove
+      the duplicate rather than shipping both**: browsers take the FIRST `Strict-Transport-Security` and
+      ignore the rest, so two sources silently diverge the moment one is edited.
+- [ ] **Promote the SPA's CSP from report-only to enforcing.** It ships as
+      `Content-Security-Policy-Report-Only` deliberately — Angular Material injects runtime `<style>`
+      elements, so a strict `style-src` blocks them. Collect reports, then promote. An enforcing CSP shipped
+      blind is how a CSP takes down a working UI.
+- [ ] **Original item — security response headers at the terminating proxy** — CSP, HSTS, X-Frame-Options,
       X-Content-Type-Options, Referrer-Policy, Permissions-Policy. §23.4 requires all six; **none exists
       anywhere today**, and `src/frontend/nginx.conf` (the config baked into the served image by
       `Dockerfile:21`) sets only `Cache-Control`. Tracked as GAP-033a. If TLS terminates upstream of that nginx,

@@ -8447,3 +8447,44 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Evidence:** TC-REC-010-08's own NOTE says to assert the *enqueue* if delivery is stubbed. There is no enqueue to assert — the code path does not exist.
 - **Severity rationale:** MED not HIGH because the money/state half is correct and durable; MED not LOW because BR-5 is an explicit business rule and both legs are entirely unbuilt, so no amount of wiring the notification layer would surface them.
 - **Confidence:** 95% on the root cause (read the whole dispatch path); 100% that the notifications do not occur (verified against `notification_delivery` after a real auto-close).
+
+---
+
+### BUG-308
+
+- **Type:** BUG · **Severity:** MED · **Status:** OPEN · **Layer:** Backend / deployment topology
+- **Module:** Platform (cross-cutting) · **US:** GAP-033a (§23.4) · **TC:** SecurityHeadersApiTests
+- **Found:** 2026-08-21, by `@integration-enforcer` auditing the E1 security-headers change (out-of-lane flag).
+- **Summary:** The API's `Strict-Transport-Security` header is **never emitted in the containerised TLS deployment**. The middleware guards it with `if (ctx.Request.IsHttps)` (`src/backend/HRM.Api/Program.cs`), which is correct per RFC 6797 — but TLS terminates at the reverse-proxy nginx (`docker-compose.tls.yml`) which forwards to `backend:5000` over **plain HTTP** with `X-Forwarded-Proto: https`. `Program.cs` registers **no** `UseForwardedHeaders`, so `ctx.Request.IsHttps` is `false` behind the proxy and the HSTS branch is dead code in the only deployment that has TLS at all.
+- **Root cause (confidence 90%):** missing `ForwardedHeaders` middleware. `Program.cs` even notes its absence in a comment near the end of the file. Every `Request.Scheme`/`IsHttps` read in the app has the same blind spot, not just this one.
+- **Blast radius beyond HSTS:** anything deriving an absolute URL or a scheme decision from `Request` — password-reset/invite links, OAuth redirect URIs, `RequireHttpsMetadata` — sees `http` behind the proxy. Worth measuring before fixing, because the fix changes all of them at once.
+- **Mitigation today (why MED, not HIGH):** the SPA's nginx emits HSTS with `always` + `includeSubDomains` on the same host, so the browser **is** armed for the origin. The gap is that the API's own HSTS path is unreachable, contrary to its stated intent — not that the origin is unprotected.
+- **Reproduction:** `docker compose -f docker-compose.yml -f docker-compose.tls.yml up`, then `curl -skI https://<tenant>.localhost/api/v1/health | grep -i strict-transport` → **absent**. `curl -skI https://<tenant>.localhost/ | grep -i strict-transport` → **present** (served by the SPA nginx).
+- **Why not fixed in the E1 PR:** adding `UseForwardedHeaders` is a pipeline-wide change that must be scoped to known proxies — an unscoped `ForwardedHeaders` middleware trusts a client-supplied `X-Forwarded-Proto`, which is a spoofing vector. That is a deliberate decision with its own test surface, not a drive-by edit inside a header PR. **Parked at the decision gate.**
+
+### ISSUE-383
+
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** Backend (dev-only)
+- **Module:** Platform (cross-cutting) · **US:** GAP-033a (§23.4)
+- **Found:** 2026-08-21, by `@integration-enforcer` (out-of-lane flag).
+- **Summary:** Swagger UI and `swagger.json` responses do not carry the six §23.4 security headers. `UseSwagger`/`UseSwaggerUI` are registered inside the `IsDevelopment()` block **earlier** in the pipeline than the header middleware, so Swagger terminates the request before the headers are written.
+- **Severity rationale:** LOW because the whole Swagger block is `IsDevelopment()`-gated and therefore absent in production. It is a correctness wart in the ordering, not a production exposure.
+- **Suggested fix:** move the header middleware above the dev-gated Swagger block. Cheap, but deferred out of the E1 PR because it reorders a block E1 did not otherwise touch.
+
+### ISSUE-384
+
+- **Type:** ISSUE · **Severity:** LOW (was MED) · **Status:** PARTIALLY-RESOLVED · **Layer:** Tooling (agent meta-system)
+- **Module:** Platform / `.claude` hooks · **US:** n/a
+- **Found:** 2026-08-21, incidentally, while reviewing the working tree before the GAP-033a commit.
+- **Summary:** The `vault-compliance-advisor` hook is **written, documented, and completely unwired.** `.claude/hooks/scripts/vault-compliance-advisor.py` exists (8.6 KB), `CLAUDE.md`'s Automation Hooks table documents it as a live `SubagentStop` hook, and `.gitignore` excludes its log file — but it is **registered nowhere**. `.claude/settings.json`'s `SubagentStop` entry runs only `python .claude/hooks/scripts/hooks.py` (the sound notifier), and `grep -rl vault-compliance-advisor .claude/` returns **nothing**. The hook has never executed.
+- **Root cause (confidence 100%):** the settings.json registration step was never done. Verified directly, not inferred: the script is on disk, the docs describe it, the registration is absent.
+- **★ Why this matters more than its size suggests.** This is the **fourth** instance in this repo of documentation describing behaviour that does not exist — after `RealNotificationDispatcher.cs:32`, `TenantProvisioningService.cs:31-34`, and `ApplicantConversionService.cs:478`. This one is worse in one specific way: the hook's *purpose* is to catch agents that skip the vault contract. So the mechanism meant to detect silent non-compliance is itself silently non-compliant, and its own docs are the reason nobody checked.
+- **Reproduction:** `grep -rl "vault-compliance-advisor" .claude/` → no output. `python3 -c "import json;print(json.load(open('.claude/settings.json'))['hooks']['SubagentStop'])"` → only `hooks.py`.
+- **Suggested fix:** register it under `SubagentStop` alongside `hooks.py`, then verify it actually fires by running any writing sub-agent and confirming a line lands in `.claude/hooks/vault-compliance.log`. **Do not mark this resolved on the registration edit alone** — the whole finding is that "it looks wired" was never tested.
+- **Why not fixed on the spot:** unrelated to the GAP-033a header work in progress.
+
+**UPDATE 2026-08-21 (same day, hours later) — the registration half was fixed WHILE THIS FINDING WAS BEING WRITTEN.** A parallel session committed `806166fd chore(agents): register vault-compliance hook + record both tooling rejections`, which adds the script to `.claude/settings.json` under `SubagentStop` alongside `hooks.py`. **Re-verified against the file, not the commit message:** `hooks.SubagentStop` now lists `python "$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/vault-compliance-advisor.py"`, and `grep -rl vault-compliance-advisor .claude/` now returns `.claude/settings.json`. The original claim ("registered nowhere") was true when observed and is **now false**. Downgraded to LOW and corrected here rather than left standing — a stale finding that reads as open is the same failure mode this finding is about.
+
+- **RESIDUAL, STILL OPEN — and it is the half that mattered.** The finding's own closing condition was *"do not mark this resolved on the registration edit alone."* That condition is **not yet met**: `.claude/hooks/vault-compliance.log` **does not exist**, so the hook has still never been observed to fire. Registration is necessary, not sufficient — a wrong path, a bad exit code, or a `$CLAUDE_PROJECT_DIR` that doesn't expand would all look identical to "wired" in settings.json.
+- **Note on why my own session could not prove it:** the two sub-agents run here were `@test-authenticator` and `@integration-enforcer`, both **read-only auditors, which the hook deliberately excludes from scope**. So their completion is not evidence either way. Proof requires a *writing* agent (`backend-dev`/`frontend-dev`/`qa-engineer`/`business-analyst`) finishing a run that touches =3 files under `src/`, `docs/BA/` or `docs/QA/` without writing to the vault.
+- **Close this only when** a line actually lands in `.claude/hooks/vault-compliance.log` after such a run.
