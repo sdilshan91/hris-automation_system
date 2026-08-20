@@ -37,6 +37,8 @@
  * integers — matching the C# member names via the global JsonStringEnumConverter.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Enums ────────────────────────────────────────────────────
 
 /** Lifecycle status of an appraisal cycle (FR-7, §8). Matches C# `CycleStatus`. */
@@ -431,4 +433,97 @@ export function progressFillClass(percent: number): string {
     return 'bg-amber-500';
   }
   return 'bg-neutral-300';
+}
+
+// ─── Wire contract → view-model mappers (US-PRF-004 D-perf slice 2) ────────────
+//
+// The read responses are the GENERATED contract types, not hand-written guesses.
+// The service maps every wire payload through here so a renamed C# property becomes
+// a TypeScript compile error in the mapper rather than a silent `undefined` on screen.
+//
+// **Why this was migrated.** `ICycle.cancelledReason` never matched the wire: the
+// backend emits `cancellationReason` (see PerformanceCycleDto). The service cast the
+// raw body straight to `ICycle`, so the cycle-dashboard "Cancelled: …" banner always
+// rendered a blank reason. Enum fields also arrive twice (`status` + `statusName`); the
+// mapper prefers the `*Name` string. Consuming the generated type makes the rename a
+// compile error rather than a runtime blank.
+
+export type CycleSummaryWire = Schema<'PerformanceCycleSummaryDto'>;
+export type CycleWire = Schema<'PerformanceCycleDto'>;
+export type CyclePhaseWire = Schema<'PerformanceCyclePhaseDto'>;
+export type CycleScopeWire = Schema<'PerformanceCycleScopeDto'>;
+export type CycleDashboardWire = Schema<'PerformanceCycleDashboardDto'>;
+export type PhaseCompletionWire = Schema<'PerformancePhaseCompletionDto'>;
+
+/** Maps one wire cycle-list row onto the `ICycleSummary` view-model. */
+export function mapCycleSummary(w: CycleSummaryWire): ICycleSummary {
+  return {
+    id: w.id ?? '',
+    name: w.name ?? '',
+    type: (w.typeName ?? w.type ?? 'Annual') as CycleType,
+    status: (w.statusName ?? w.status ?? 'Draft') as CycleStatus,
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    participantCount: w.participantCount ?? 0,
+  };
+}
+
+/** Maps one wire phase onto `ICyclePhase` (note `phaseTypeName` → `phaseType`). */
+export function mapCyclePhase(w: CyclePhaseWire): ICyclePhase {
+  return {
+    phaseType: (w.phaseTypeName ?? w.phaseType ?? 'GoalSetting') as CyclePhaseKind,
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+  };
+}
+
+/**
+ * Maps the full wire cycle detail onto `ICycle`. The one substantive rename is
+ * `cancellationReason` → `cancelledReason` (the cancelled-banner source); the enum
+ * `*Name` strings are preferred over their numeric-ish enum twins.
+ */
+export function mapCycle(w: CycleWire): ICycle {
+  return {
+    id: w.id ?? '',
+    name: w.name ?? '',
+    type: (w.typeName ?? w.type ?? 'Annual') as CycleType,
+    status: (w.statusName ?? w.status ?? 'Draft') as CycleStatus,
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    phases: (w.phases ?? []).map(mapCyclePhase),
+    scope: {
+      scopeType: (w.scope?.scopeType ?? 'AllEmployees') as ParticipantScopeType,
+      departmentIds: w.scope?.departmentIds ?? [],
+      employeeIds: w.scope?.employeeIds ?? [],
+    },
+    ratingScaleMax: w.ratingScaleMax ?? RATING_SCALE_DEFAULT,
+    selfWeightPercent: w.selfWeightPercent ?? 0,
+    is360Enabled: w.is360Enabled ?? false,
+    isCalibrationEnabled: w.isCalibrationEnabled ?? false,
+    participantCount: w.participantCount ?? 0,
+    cancelledReason: w.cancellationReason ?? null,
+  };
+}
+
+/** Maps one wire phase-completion row onto `IPhaseStat` (AC-3 dashboard). */
+export function mapPhaseStat(w: PhaseCompletionWire): IPhaseStat {
+  return {
+    phaseType: (w.phaseTypeName ?? w.phaseType ?? 'GoalSetting') as CyclePhaseKind,
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    completedCount: w.completedCount ?? 0,
+    totalParticipants: w.totalParticipants ?? 0,
+    overdueCount: w.overdueCount ?? 0,
+  };
+}
+
+/** Maps the wire cycle-dashboard payload onto `ICycleDashboard`. */
+export function mapCycleDashboard(w: CycleDashboardWire): ICycleDashboard {
+  return {
+    cycleId: w.cycleId ?? '',
+    name: w.name ?? '',
+    status: (w.statusName ?? w.status ?? 'Draft') as CycleStatus,
+    participantCount: w.participantCount ?? 0,
+    phases: (w.phases ?? []).map(mapPhaseStat),
+  };
 }

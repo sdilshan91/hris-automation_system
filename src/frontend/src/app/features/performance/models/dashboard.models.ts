@@ -45,6 +45,8 @@
  * (US-PLT-003).
  */
 
+import type { Schema } from '@core/api';
+
 /** Who the dashboard data is scoped to (authoritative, server-decided). */
 export type DashboardScope = 'Organization' | 'Team';
 
@@ -182,6 +184,211 @@ export interface IDepartmentDrilldown {
   averageScore: number | null;
   scoreScaleMax: number;
   employees: IDepartmentEmployeeScore[];
+}
+
+// ─── Wire contract → view-model mappers (US-PRF-007 D-perf slice 2) ────────────
+//
+// The three read responses are the GENERATED contract types, not hand-written
+// guesses. The service maps every wire payload through here so a renamed C# property
+// becomes a TypeScript compile error rather than a silent `undefined` on screen.
+//
+// **Why this was migrated.** The overview view-model diverged from the wire on almost
+// every scalar: the FE read `scoreScaleMax`/`ratedCount`/`histogram`/`cycleProgress`
+// and a top-level `completionRate`, while the API sends `ratingScaleMax`/
+// `scoredEmployeeCount`/`scoreDistribution`/`progress` (with `completionRate` NESTED
+// under `progress`) and the phase-completion counts are `*Completed`, not `*Complete`.
+// The service cast the raw body straight to `IDashboardOverview`, so the completion
+// donut, the "N rated", the histogram, the department bars and the cycle-progress
+// metrics all rendered blank/undefined. Mapping through the generated type turns each
+// of those into a compile error instead of a runtime blank.
+//
+// Fields with NO wire source are set to a null/empty/marked default here and reported
+// (see the D-perf slice-2 report) — this file is the single place a backend addition
+// would be wired in. Do NOT invent values for them.
+
+export type DashboardOverviewWire = Schema<'PerformancePerformanceDashboardDto'>;
+export type CycleProgressWire = Schema<'PerformanceCycleProgressDto'>;
+export type ScoreBucketWire = Schema<'PerformanceScoreDistributionBucketDto'>;
+export type DepartmentAverageWire = Schema<'PerformanceDepartmentAverageDto'>;
+export type PerformerWire = Schema<'PerformancePerformerDto'>;
+export type TrendWire = Schema<'PerformancePerformanceTrendDto'>;
+export type CycleTrendPointWire = Schema<'PerformanceCycleTrendPointDto'>;
+export type DepartmentTrendSeriesWire =
+  Schema<'PerformanceDepartmentTrendSeriesDto'>;
+export type DepartmentDrilldownWire = Schema<'PerformanceDepartmentDrilldownDto'>;
+export type DepartmentEmployeeScoreWire =
+  Schema<'PerformanceDepartmentEmployeeScoreDto'>;
+
+/**
+ * Fallback score-scale for the TREND and DRILL-DOWN surfaces. NOTE (finding): neither
+ * `PerformancePerformanceTrendDto` nor `PerformanceDepartmentDrilldownDto` carries a
+ * score-scale field, yet both are rendered against one (the polyline / the score bars).
+ * The overview supplies `ratingScaleMax`; these two do not, so this constant stands in
+ * until the backend adds the field (or the caller threads the overview's scale). The
+ * dashboard scores share the cycle rating scale (default 5), so that is the fallback.
+ */
+export const DASHBOARD_SCALE_FALLBACK = 5;
+
+/** Maps the wire cycle-progress block onto `ICycleProgress` (`*Completed` → `*Complete`). */
+export function mapCycleProgress(
+  w: CycleProgressWire | undefined,
+): ICycleProgress {
+  return {
+    totalParticipants: w?.totalParticipants ?? 0,
+    goalSettingComplete: w?.goalSettingCompleted ?? 0,
+    selfAssessmentComplete: w?.selfAssessmentCompleted ?? 0,
+    managerReviewComplete: w?.managerReviewCompleted ?? 0,
+    signedOff: w?.signedOff ?? 0,
+  };
+}
+
+/** Maps one wire histogram bucket onto `IHistogramBucket`. */
+export function mapHistogramBucket(w: ScoreBucketWire): IHistogramBucket {
+  return {
+    rangeStart: w.rangeStart ?? 0,
+    rangeEnd: w.rangeEnd ?? 0,
+    label: w.label ?? '',
+    count: w.count ?? 0,
+  };
+}
+
+/** Maps one wire department-average row onto `IDepartmentAverage`. */
+export function mapDepartmentAverage(
+  w: DepartmentAverageWire,
+): IDepartmentAverage {
+  return {
+    departmentId: w.departmentId ?? '',
+    departmentName: w.departmentName ?? '',
+    averageScore: w.averageScore ?? null,
+    headcount: w.headcount ?? 0,
+  };
+}
+
+/**
+ * Maps one wire performer onto `IPerformerRow`. NOTE (finding): the wire
+ * `PerformancePerformerDto` has NO `jobTitle` and NO `trend`, but the performer list
+ * renders both (job title conditionally; the trend glyph always). `jobTitle` → null
+ * (the `@if` hides it); `trend` → 'Flat' (a neutral glyph). Reported — not invented.
+ */
+export function mapPerformer(w: PerformerWire): IPerformerRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    departmentName: w.departmentName ?? '',
+    jobTitle: null,
+    score: w.score ?? null,
+    trend: 'Flat',
+  };
+}
+
+/**
+ * Maps the whole overview wire payload onto `IDashboardOverview`.
+ *
+ * NOTE (findings): four rendered fields have NO wire source and are defaulted +
+ * reported here, not invented:
+ *   • `scopeLabel`        → '' (the scope subtitle renders blank)
+ *   • `filterOptions`     → empty lists (the FR-4 filter panel has no options to show)
+ *   • `teamRanking`       → [] (the manager-scope ranking list is empty)
+ *   • `availableExportFormats` → [] (no export buttons render)
+ * The renames that WERE broken (`ratingScaleMax`/`scoredEmployeeCount`/
+ * `scoreDistribution`/`progress`, nested `completionRate`) are fixed below.
+ */
+export function mapDashboardOverview(
+  w: DashboardOverviewWire,
+): IDashboardOverview {
+  return {
+    scope: (w.scope ?? 'Organization') as DashboardScope,
+    scopeLabel: '',
+    filterOptions: {
+      cycles: [],
+      departments: [],
+      grades: [],
+      employmentTypes: [],
+      locations: [],
+    },
+    completionRate: w.progress?.completionRate ?? 0,
+    averageScore: w.averageScore ?? null,
+    scoreScaleMax: w.ratingScaleMax ?? 0,
+    ratedCount: w.scoredEmployeeCount ?? 0,
+    histogram: (w.scoreDistribution ?? []).map(mapHistogramBucket),
+    departmentAverages: (w.departmentAverages ?? []).map(mapDepartmentAverage),
+    topPerformers: (w.topPerformers ?? []).map(mapPerformer),
+    bottomPerformers: (w.bottomPerformers ?? []).map(mapPerformer),
+    teamRanking: [],
+    cycleProgress: mapCycleProgress(w.progress),
+    availableExportFormats: [],
+  };
+}
+
+/** Maps one wire trend point onto `ITrendPoint` (`cycleName` → `cycleLabel`). */
+export function mapTrendPoint(w: CycleTrendPointWire): ITrendPoint {
+  return {
+    cycleId: w.cycleId ?? '',
+    cycleLabel: w.cycleName ?? '',
+    averageScore: w.averageScore ?? null,
+  };
+}
+
+/**
+ * Maps the wire trend payload onto `ITrendResponse`. The wire keeps the aggregate
+ * (`points`) and the per-department overlays (`departmentSeries`) apart; the FE flattens
+ * them into one `series` list where the first, keyless series is the org/team aggregate.
+ * NOTE (finding): the wire carries NO score-scale, so `scoreScaleMax` falls back to
+ * `DASHBOARD_SCALE_FALLBACK` (reported).
+ */
+export function mapTrendResponse(w: TrendWire): ITrendResponse {
+  const aggregate: ITrendSeries = {
+    key: null,
+    label: w.scope === 'Team' ? 'Team' : 'Organization',
+    points: (w.points ?? []).map(mapTrendPoint),
+  };
+  const overlays: ITrendSeries[] = (w.departmentSeries ?? []).map((d) => ({
+    key: d.departmentId ?? null,
+    label: d.departmentName ?? '',
+    points: (d.points ?? []).map(mapTrendPoint),
+  }));
+  return {
+    series: [aggregate, ...overlays],
+    scoreScaleMax: DASHBOARD_SCALE_FALLBACK,
+  };
+}
+
+/**
+ * Maps one wire drill-down employee onto `IDepartmentEmployeeScore`. NOTE (finding):
+ * the wire has no `grade` and no `trend` (it carries a review `status` string instead),
+ * yet both are rendered — `grade` conditionally (`@if` hides null) and the trend glyph
+ * always. `grade` → null, `trend` → 'Flat'. Reported — not invented.
+ */
+export function mapDepartmentEmployeeScore(
+  w: DepartmentEmployeeScoreWire,
+): IDepartmentEmployeeScore {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    jobTitle: w.jobTitle ?? null,
+    grade: null,
+    score: w.score ?? null,
+    trend: 'Flat',
+  };
+}
+
+/**
+ * Maps the wire drill-down payload onto `IDepartmentDrilldown`. NOTE (findings): the
+ * wire has no cycle LABEL (only a `cycleId`) and no score-scale, both of which are
+ * rendered. `cycleLabel` → '' and `scoreScaleMax` → `DASHBOARD_SCALE_FALLBACK`.
+ * Reported — not invented.
+ */
+export function mapDepartmentDrilldown(
+  w: DepartmentDrilldownWire,
+): IDepartmentDrilldown {
+  return {
+    departmentId: w.departmentId ?? '',
+    departmentName: w.departmentName ?? '',
+    cycleLabel: '',
+    averageScore: w.averageScore ?? null,
+    scoreScaleMax: DASHBOARD_SCALE_FALLBACK,
+    employees: (w.employees ?? []).map(mapDepartmentEmployeeScore),
+  };
 }
 
 // ─── pure presentation helpers (shared by component + asserted by specs) ───

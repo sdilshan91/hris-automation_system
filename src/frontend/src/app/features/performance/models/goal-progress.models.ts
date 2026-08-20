@@ -50,6 +50,8 @@
  * Bare payloads (US-PLT-001 unwrap); PascalCase enum strings (US-PLT-003), never ints.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Enums ────────────────────────────────────────────────────
 
 /**
@@ -136,8 +138,6 @@ export interface IGoalComment {
 export interface IGoalAttachment {
   attachmentId: string;
   fileName: string;
-  /** Optional download URL the server exposes. */
-  url?: string | null;
 }
 
 /**
@@ -214,7 +214,6 @@ export interface ITeamGoalProgressRow {
 export interface IEmployeeGoalProgress {
   employeeId: string;
   employeeName: string;
-  jobTitle?: string | null;
   overallCompletionPercent: number;
   goals: IGoalProgress[];
 }
@@ -305,4 +304,233 @@ export function completionBandClass(ratePercent: number): string {
     return 'text-amber-600';
   }
   return 'text-neutral-400';
+}
+
+// ─── Wire contract → view-model mappers (US-PRF-009 D-perf slice 2) ────────────
+//
+// The read responses are the GENERATED contract types, not hand-written guesses. The
+// wire shapes diverge STRUCTURALLY from the view-models, which is why these screens
+// shipped broken:
+//
+//   • GET /my-goals and GET /team-goals/employees/{id} return a FLAT LIST of goals
+//     (`PerformanceMyGoalProgressDto[]`), NOT an envelope object. The service cast the
+//     array straight to `IMyGoals`/`IEmployeeGoalProgress`, so `.goals` was undefined
+//     and the "My Goals" screen threw on `d.goals.length`. There is no cycle-window
+//     envelope on the wire at all (see the no-source notes below).
+//   • GET /goals/{id}/timeline (and the progress/comment POSTs) return a single
+//     `PerformanceGoalTimelineDto` — `{ updates[], comments[] }` — NOT an array of
+//     updates. Comments live at the TIMELINE level keyed by `progressUpdateId`, so the
+//     per-update thread is reconstructed here by grouping.
+//   • Field renames: `currentProgressPct`/`currentStatusName`/`lastUpdatedAt` (goals),
+//     `progressPct`/`statusName`/`createdAt` (updates), `id`/`body`/`createdAt`
+//     (comments), `overallCompletionPct`/`atRiskGoalCount`/`lastUpdatedAt` (team rows).
+//
+// Fields with NO wire source are set to a null/empty/marked default and reported (see
+// the D-perf slice-2 report) — this file is the single place a backend addition would
+// be wired in. Do NOT invent values for them.
+
+export type MyGoalProgressWire = Schema<'PerformanceMyGoalProgressDto'>;
+export type GoalTimelineWire = Schema<'PerformanceGoalTimelineDto'>;
+export type GoalProgressUpdateWire = Schema<'PerformanceGoalProgressUpdateDto'>;
+export type GoalCommentWire = Schema<'PerformanceGoalCommentDto'>;
+export type GoalAttachmentWire = Schema<'PerformanceGoalProgressAttachmentDto'>;
+export type TeamGoalRowWire = Schema<'PerformanceTeamGoalProgressRowDto'>;
+
+/** Maps one wire goal onto the `IGoalProgress` card view-model. */
+export function mapGoalProgress(w: MyGoalProgressWire): IGoalProgress {
+  return {
+    goalId: w.goalId ?? '',
+    title: w.title ?? '',
+    target: w.targetValue ?? w.description ?? '',
+    weight: w.weight ?? 0,
+    progressPercent: w.currentProgressPct ?? 0,
+    status: (w.currentStatusName ??
+      w.currentStatus ??
+      'NotStarted') as GoalProgressStatus,
+    lastUpdatedOn: w.lastUpdatedAt ?? null,
+    needsAttention: w.needsAttention ?? false,
+  };
+}
+
+/**
+ * Maps the flat wire goal list onto `IMyGoals`.
+ *
+ * NOTE (findings): the my-goals endpoint carries NO cycle-window envelope, so two
+ * rendered fields have no source and are defaulted + reported:
+ *   • `cycleName`  → '' (the donut subtitle renders blank)
+ *   • `windowOpen` → true (the authoritative BR-1 gate is absent; defaulting to open
+ *     keeps "Add update" usable — the backend still enforces the real window on submit)
+ * `overallCompletionPercent` is FE-DERIVED from the goal weights (the component already
+ * falls back to exactly this) — it is not a wire field either.
+ */
+export function mapMyGoals(items: MyGoalProgressWire[]): IMyGoals {
+  const goals = items.map(mapGoalProgress);
+  return {
+    cycleId: items[0]?.cycleId ?? '',
+    cycleName: '',
+    windowOpen: true,
+    overallCompletionPercent: weightedOverallCompletion(goals),
+    goals,
+  };
+}
+
+/** Maps the manager drill-down goal list onto `IEmployeeGoalProgress`. */
+export function mapEmployeeGoalProgress(
+  items: MyGoalProgressWire[],
+  employeeId: string,
+): IEmployeeGoalProgress {
+  const goals = items.map(mapGoalProgress);
+  return {
+    // NOTE (finding): the drill-down list has no `employeeId`/`employeeName`, so the
+    // id is threaded from the caller and the name is left blank (rendered in the
+    // drill-down header) — reported, not invented. Completion % is FE-derived. (The
+    // old `jobTitle?` field was removed: no wire source and the drill-down never
+    // rendered it.)
+    employeeId,
+    employeeName: '',
+    overallCompletionPercent: weightedOverallCompletion(goals),
+    goals,
+  };
+}
+
+/** Maps one wire team row onto `ITeamGoalProgressRow`. */
+export function mapTeamGoalRow(w: TeamGoalRowWire): ITeamGoalProgressRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    // NOTE (finding): the wire has no `jobTitle` (rendered conditionally) — reported.
+    jobTitle: null,
+    overallCompletionPercent: w.overallCompletionPct ?? 0,
+    goalCount: w.goalCount ?? 0,
+    goalsAtRisk: w.atRiskGoalCount ?? 0,
+    lastUpdatedOn: w.lastUpdatedAt ?? null,
+  };
+}
+
+/** Maps one wire comment onto `IGoalComment` (`id`/`body`/`createdAt` renames). */
+export function mapGoalComment(w: GoalCommentWire): IGoalComment {
+  return {
+    commentId: w.id ?? '',
+    authorName: w.authorName ?? '',
+    comment: w.body ?? '',
+    createdOn: w.createdAt ?? '',
+  };
+}
+
+/**
+ * Maps one wire attachment onto `IGoalAttachment` (`id` → `attachmentId`). The wire
+ * carries `contentType`/`sizeBytes` too, but the timeline only renders the file name.
+ * (The old `url?` field was removed: the wire never sent one and nothing rendered it.)
+ */
+export function mapGoalAttachment(w: GoalAttachmentWire): IGoalAttachment {
+  return {
+    attachmentId: w.id ?? '',
+    fileName: w.fileName ?? '',
+  };
+}
+
+/**
+ * Maps one wire progress update onto `IGoalUpdate`. `previousProgressPercent` is
+ * FE-DERIVED (threaded in from the prior chronological update) and the per-update
+ * `comments` are grouped in by the caller.
+ *
+ * NOTE (finding): the wire update carries only `employeeId`, no author name, but the
+ * "My Goals" timeline renders `authorName`. Left blank and reported — not invented.
+ */
+export function mapGoalUpdate(
+  w: GoalProgressUpdateWire,
+  previousProgressPercent: number | null,
+  comments: IGoalComment[],
+): IGoalUpdate {
+  return {
+    updateId: w.id ?? '',
+    progressPercent: w.progressPct ?? 0,
+    previousProgressPercent,
+    status: (w.statusName ?? w.status ?? 'NotStarted') as GoalProgressStatus,
+    notes: w.notes ?? null,
+    authorName: '',
+    createdOn: w.createdAt ?? '',
+    attachments: (w.attachments ?? []).map(mapGoalAttachment),
+    comments,
+  };
+}
+
+/**
+ * Maps the single wire timeline onto the `IGoalUpdate[]` the timeline UI renders.
+ * Groups the timeline-level comments back onto their update by `progressUpdateId`,
+ * derives each update's `previousProgressPercent` from the prior chronological update,
+ * and returns the list newest-first for display.
+ */
+export function mapGoalTimeline(w: GoalTimelineWire): IGoalUpdate[] {
+  const commentsByUpdate = new Map<string, IGoalComment[]>();
+  for (const c of w.comments ?? []) {
+    const key = c.progressUpdateId ?? '';
+    const list = commentsByUpdate.get(key) ?? [];
+    list.push(mapGoalComment(c));
+    commentsByUpdate.set(key, list);
+  }
+
+  const ascending = [...(w.updates ?? [])].sort((a, b) =>
+    (a.createdAt ?? '').localeCompare(b.createdAt ?? ''),
+  );
+
+  const mapped: IGoalUpdate[] = [];
+  let previous: number | null = null;
+  for (const u of ascending) {
+    mapped.push(
+      mapGoalUpdate(u, previous, commentsByUpdate.get(u.id ?? '') ?? []),
+    );
+    previous = u.progressPct ?? previous;
+  }
+  return mapped.reverse();
+}
+
+/**
+ * The newest update from a posted-progress response (the POST returns the whole
+ * timeline). Falls back to echoing the request + the timeline's current state when the
+ * server returns no updates, so the optimistic card refresh still works.
+ */
+export function latestGoalUpdate(
+  w: GoalTimelineWire,
+  echo: IAddGoalUpdateRequest,
+): IGoalUpdate {
+  const updates = mapGoalTimeline(w);
+  if (updates.length > 0) {
+    return updates[0];
+  }
+  return {
+    updateId: '',
+    progressPercent: w.currentProgressPct ?? echo.progressPercent,
+    previousProgressPercent: null,
+    status: (w.currentStatusName ?? echo.status) as GoalProgressStatus,
+    notes: echo.notes || null,
+    authorName: '',
+    createdOn: new Date().toISOString(),
+    attachments: [],
+    comments: [],
+  };
+}
+
+/**
+ * The just-posted comment from a comment response (the POST returns the whole
+ * timeline). Picks the newest comment for the target update, falling back to echoing
+ * the submitted text when the server returns none.
+ */
+export function latestGoalComment(
+  w: GoalTimelineWire,
+  updateId: string,
+  echo: string,
+): IGoalComment {
+  const mine = (w.comments ?? []).filter(
+    (c) => c.progressUpdateId === updateId,
+  );
+  if (mine.length > 0) {
+    return mapGoalComment(mine[mine.length - 1]);
+  }
+  return {
+    commentId: '',
+    authorName: '',
+    comment: echo,
+    createdOn: new Date().toISOString(),
+  };
 }

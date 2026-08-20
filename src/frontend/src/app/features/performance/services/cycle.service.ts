@@ -4,12 +4,18 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  CycleDashboardWire,
+  CycleSummaryWire,
+  CycleWire,
   ICloneCycleRequest,
   ICycle,
   ICycleDashboard,
   ICycleSummary,
   ICycleTransitionRequest,
   ISaveCycleRequest,
+  mapCycle,
+  mapCycleDashboard,
+  mapCycleSummary,
 } from '../models/cycle.models';
 
 /**
@@ -35,17 +41,17 @@ export class CycleService {
   /** All cycles for the tenant (FR-7). Tolerates a bare array or a `{ data }` page. */
   list(): Observable<ICycleSummary[]> {
     return this.http
-      .get<ICycleSummary[] | { data: ICycleSummary[] }>(this.baseUrl, {
+      .get<CycleSummaryWire[] | { data: CycleSummaryWire[] }>(this.baseUrl, {
         withCredentials: true,
       })
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapCycleSummary)));
   }
 
   /** Full cycle detail incl. phases + participant scope (AC-5 edit prefill). */
   get(cycleId: string): Observable<ICycle> {
-    return this.http.get<ICycle>(`${this.baseUrl}/${cycleId}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<CycleWire>(`${this.baseUrl}/${cycleId}`, { withCredentials: true })
+      .pipe(map(mapCycle));
   }
 
   /**
@@ -54,9 +60,9 @@ export class CycleService {
    * returns the persisted cycle.
    */
   create(request: ISaveCycleRequest): Observable<ICycle> {
-    return this.http.post<ICycle>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<CycleWire>(this.baseUrl, request, { withCredentials: true })
+      .pipe(map(mapCycle));
   }
 
   /**
@@ -64,17 +70,20 @@ export class CycleService {
    * sequencing, reschedules affected Hangfire jobs, and notifies participants.
    */
   update(cycleId: string, request: ISaveCycleRequest): Observable<ICycle> {
-    return this.http.put<ICycle>(`${this.baseUrl}/${cycleId}`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .put<CycleWire>(`${this.baseUrl}/${cycleId}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapCycle));
   }
 
   /** Phase timeline + completion/overdue stats for the dashboard (AC-3). */
   dashboard(cycleId: string): Observable<ICycleDashboard> {
-    return this.http.get<ICycleDashboard>(
-      `${this.baseUrl}/${cycleId}/dashboard`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<CycleDashboardWire>(`${this.baseUrl}/${cycleId}/dashboard`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapCycleDashboard));
   }
 
   /**
@@ -87,11 +96,11 @@ export class CycleService {
     request: ICycleTransitionRequest,
   ): Observable<ICycle> {
     // BUG-243: the backend route is POST cycles/{id}/status (not /transition).
-    return this.http.post<ICycle>(
-      `${this.baseUrl}/${cycleId}/status`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<CycleWire>(`${this.baseUrl}/${cycleId}/status`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapCycle));
   }
 
   /**
@@ -100,11 +109,13 @@ export class CycleService {
    * `sourceCycleId` (CloneCycleInput) — not a path segment.
    */
   clone(cycleId: string, request: ICloneCycleRequest): Observable<ICycle> {
-    return this.http.post<ICycle>(
-      `${this.baseUrl}/clone`,
-      { sourceCycleId: cycleId, ...request },
-      { withCredentials: true },
-    );
+    return this.http
+      .post<CycleWire>(
+        `${this.baseUrl}/clone`,
+        { sourceCycleId: cycleId, ...request },
+        { withCredentials: true },
+      )
+      .pipe(map(mapCycle));
   }
 
   /** Accept either a bare array or a `{ data }` page; default to []. */
