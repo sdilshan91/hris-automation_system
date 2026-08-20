@@ -55,6 +55,7 @@ playwright-report/
 
 # /freeze guard state (per-session, never committed)
 .claude/hooks/.freeze-dir
+.claude/hooks/vault-compliance.log
 
 # Local backup archive (not source)
 .claude.zip
