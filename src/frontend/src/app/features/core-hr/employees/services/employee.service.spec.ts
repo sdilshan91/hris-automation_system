@@ -12,8 +12,7 @@ import {
   ICreateEmployeeRequest,
   IUpdateEmployeeProfileRequest,
   IEmployeeDirectoryParams,
-  IBulkAssignManagerResponse,
-  IDirectReport,
+  EmployeeWire,
 } from '../models/employee.models';
 import { environment } from '../../../../../environments/environment';
 
@@ -52,6 +51,35 @@ describe('EmployeeService', () => {
     updatedAt: '2026-06-01T00:00:00Z',
   };
 
+  // The REAL wire shape (`EmployeesEmployeeDto`): id (not employeeId), string-typed enums, no tenantId,
+  // customFields as a JSON string. Flushing this exercises `mapEmployee`.
+  const mockEmployeeWire: EmployeeWire = {
+    id: 'emp-1',
+    employeeNo: 'EMP-0001',
+    firstName: 'John',
+    lastName: 'Doe',
+    email: 'john.doe@company.com',
+    phone: '+94771234567',
+    dateOfBirth: '1990-01-15',
+    gender: 'Male',
+    dateOfJoining: '2026-06-01',
+    departmentId: 'dept-1',
+    departmentName: 'Engineering',
+    jobTitleId: 'jt-1',
+    jobTitleName: 'Software Engineer',
+    locationId: null,
+    locationName: null,
+    employmentType: 'FullTime',
+    fte: 1,
+    workArrangement: 'OnSite',
+    status: 'Active',
+    profilePhotoUrl: null,
+    customFields: null,
+    isActive: true,
+    createdAt: '2026-06-01T00:00:00Z',
+    updatedAt: '2026-06-01T00:00:00Z',
+  };
+
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -74,17 +102,22 @@ describe('EmployeeService', () => {
   });
 
   describe('getEmployees', () => {
-    it('should return all employees for the tenant', () => {
+    // Fails against the un-migrated service: the endpoint returns the `EmployeeListResult` ENVELOPE,
+    // not a bare array. The old `http.get<IEmployee[]>` handed the envelope object straight through, so
+    // `employees.length` was `undefined`. The mapper unwraps `.items`, so `.length` is 1.
+    it('should unwrap the EmployeeListResult envelope into an IEmployee[]', () => {
       service.getEmployees().subscribe((employees) => {
         expect(employees.length).toBe(1);
         expect(employees[0].firstName).toBe('John');
         expect(employees[0].employeeNo).toBe('EMP-0001');
+        // `id` (wire) mapped onto `employeeId` (view-model).
+        expect(employees[0].employeeId).toBe('emp-1');
       });
 
       const req = httpMock.expectOne(baseUrl);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush([mockEmployee]);
+      req.flush({ items: [mockEmployeeWire], page: 1, pageSize: 20, totalCount: 1 });
     });
 
     it('should return an empty array when no employees exist', () => {
@@ -93,21 +126,23 @@ describe('EmployeeService', () => {
       });
 
       const req = httpMock.expectOne(baseUrl);
-      req.flush([]);
+      req.flush({ items: [], page: 1, pageSize: 20, totalCount: 0 });
     });
   });
 
   describe('getEmployee', () => {
-    it('should return a single employee by ID', () => {
+    it('should return a single employee by ID, mapped from the wire DTO', () => {
       service.getEmployee('emp-1').subscribe((employee) => {
         expect(employee.employeeId).toBe('emp-1');
         expect(employee.email).toBe('john.doe@company.com');
+        // customFields is a JSON string on the wire; the mapper parses it to an object (null here).
+        expect(employee.customFields).toBeNull();
       });
 
       const req = httpMock.expectOne(`${baseUrl}/emp-1`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(mockEmployee);
+      req.flush(mockEmployeeWire);
     });
   });
 
@@ -139,13 +174,13 @@ describe('EmployeeService', () => {
       );
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ items: [mockEmployee], totalCount: 1, page: 1, pageSize: 20 });
+      req.flush({ items: [mockEmployeeWire], totalCount: 1, page: 1, pageSize: 20 });
     });
 
     // BUG-127 regression: directory items expose their id as `id`
-    // (EmployeeDirectoryItemDto.Id), but the FE model uses `employeeId`. The
-    // service must bridge `id → employeeId` so card nav / selection / trackBy get
-    // a real id instead of undefined (card click → /employees/undefined).
+    // (EmployeeDto.Id), but the FE model uses `employeeId`. The mapper must bridge
+    // `id → employeeId` so card nav / selection / trackBy get a real id instead of
+    // undefined (card click → /employees/undefined).
     it('BUG-127: maps backend `id` to `employeeId` on directory items', () => {
       let received: IEmployee[] | undefined;
       service
@@ -153,9 +188,7 @@ describe('EmployeeService', () => {
         .subscribe((r) => (received = r.items));
 
       const req = httpMock.expectOne((r) => r.url === baseUrl);
-      const backendItem = { ...mockEmployee, id: 'real-id-99' } as unknown as Record<string, unknown>;
-      delete backendItem['employeeId'];
-      req.flush({ items: [backendItem], totalCount: 1 });
+      req.flush({ items: [{ ...mockEmployeeWire, id: 'real-id-99' }], totalCount: 1 });
 
       expect(received!.length).toBe(1);
       expect(received![0].employeeId).toBe('real-id-99');
@@ -333,7 +366,7 @@ describe('EmployeeService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(createRequest);
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ ...mockEmployee, firstName: 'Jane', lastName: 'Smith' });
+      req.flush({ ...mockEmployeeWire, firstName: 'Jane', lastName: 'Smith' });
     });
 
     it('should create an employee with multipart FormData when a photo is provided', () => {
@@ -357,7 +390,7 @@ describe('EmployeeService', () => {
       expect(formData.get('email')).toBe('jane.smith@company.com');
       expect(formData.get('profilePhoto')).toBeTruthy();
 
-      req.flush({ ...mockEmployee, firstName: 'Jane', lastName: 'Smith' });
+      req.flush({ ...mockEmployeeWire, firstName: 'Jane', lastName: 'Smith' });
     });
 
     it('should not send null/undefined fields in FormData', () => {
@@ -377,29 +410,31 @@ describe('EmployeeService', () => {
       const formData = req.request.body as FormData;
       expect(formData.has('phone')).toBeFalse();
       expect(formData.has('dateOfBirth')).toBeFalse();
-      req.flush(mockEmployee);
+      req.flush(mockEmployeeWire);
     });
   });
 
   // ─── US-CHR-009: Status management ─────────────────────────
 
   describe('getValidTransitions (US-CHR-009)', () => {
-    it('should GET valid transitions for an employee', () => {
-      const mockTransitions = [
-        { targetStatus: 'suspended' as const, label: 'Suspended', sideEffects: ['Disable portal access'] },
-        { targetStatus: 'terminated' as const, label: 'Terminated', sideEffects: ['Disable portal access', 'Exclude from payroll'] },
-      ];
-
+    // Fails against the un-migrated service: the endpoint returns the
+    // `ValidTransitionsResult` object `{ currentStatus, validTransitions: string[] }`, NOT the
+    // `IStatusTransition[]` the old `http.get<IStatusTransition[]>` claimed. The mapper turns the
+    // string list into transition rows (label derived; sideEffects defaulted — the wire has none).
+    it('should map ValidTransitionsResult.validTransitions into IStatusTransition[]', () => {
       service.getValidTransitions('emp-1').subscribe((transitions) => {
         expect(transitions.length).toBe(2);
-        expect(transitions[0].targetStatus).toBe('suspended');
-        expect(transitions[1].sideEffects.length).toBe(2);
+        expect(transitions[0].targetStatus).toBe('Suspended');
+        expect(transitions[0].label).toBe('Suspended');
+        // NO wire source for per-transition side-effects → mapper defaults to [].
+        expect(transitions[0].sideEffects).toEqual([]);
+        expect(transitions[1].targetStatus).toBe('Terminated');
       });
 
       const req = httpMock.expectOne(`${baseUrl}/emp-1/status/transitions`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(mockTransitions);
+      req.flush({ currentStatus: 'Active', validTransitions: ['Suspended', 'Terminated'] });
     });
 
     it('should return empty array for terminal status', () => {
@@ -408,7 +443,7 @@ describe('EmployeeService', () => {
       });
 
       const req = httpMock.expectOne(`${baseUrl}/emp-2/status/transitions`);
-      req.flush([]);
+      req.flush({ currentStatus: 'Terminated', validTransitions: [] });
     });
   });
 
@@ -540,57 +575,70 @@ describe('EmployeeService', () => {
   });
 
   describe('getDirectReports (US-CHR-011)', () => {
-    it('should GET direct reports for a manager', () => {
-      const mockReports: IDirectReport[] = [
-        {
-          employeeId: 'emp-2',
-          firstName: 'Jane',
-          lastName: 'Smith',
-          jobTitleName: 'QA',
-          departmentName: 'Engineering',
-          status: 'Active',
-          profilePhotoUrl: null,
-          email: 'jane@test.com',
-          employeeNo: 'EMP-0002',
-        },
-      ];
-
+    // Fails against the un-migrated service: the endpoint returns the
+    // `DirectReportsResult` ENVELOPE `{ directReports[], managerId, managerName }`, NOT a bare array,
+    // and each item uses `id`/`jobTitle`/`avatarUrl`. The old `http.get<IDirectReport[]>` iterated a
+    // non-array; the mapper unwraps `.directReports` and renames the fields.
+    it('should unwrap DirectReportsResult and map each DirectReportDto', () => {
       service.getDirectReports('emp-1').subscribe((reports) => {
         expect(reports.length).toBe(1);
         expect(reports[0].firstName).toBe('Jane');
+        expect(reports[0].employeeId).toBe('emp-2');
+        expect(reports[0].jobTitleName).toBe('QA');
+        expect(reports[0].profilePhotoUrl).toBe('https://cdn/pic.png');
+        // NO wire source for email → mapper defaults to '' (was undefined before).
+        expect(reports[0].email).toBe('');
       });
 
       const req = httpMock.expectOne(`${baseUrl}/emp-1/direct-reports`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(mockReports);
+      req.flush({
+        managerId: 'emp-1',
+        managerName: 'John Doe',
+        directReports: [
+          {
+            id: 'emp-2',
+            firstName: 'Jane',
+            lastName: 'Smith',
+            jobTitle: 'QA',
+            departmentName: 'Engineering',
+            status: 'Active',
+            avatarUrl: 'https://cdn/pic.png',
+            employeeNo: 'EMP-0002',
+          },
+        ],
+      });
     });
   });
 
   describe('bulkAssignManager (US-CHR-011)', () => {
-    it('should POST bulk assignment and return results', () => {
-      const mockResponse: IBulkAssignManagerResponse = {
-        results: [
-          { employeeId: 'emp-2', employeeName: 'Jane Smith', success: true, error: null },
-          { employeeId: 'emp-3', employeeName: 'Bob', success: false, error: 'Circular chain detected' },
-        ],
-        totalSuccess: 1,
-        totalFailed: 1,
-      };
-
+    // Fails against the un-migrated service: the wire result uses `successCount`/`failureCount`, NOT
+    // the FE's `totalSuccess`/`totalFailed`. The old `http.post<IBulkAssignManagerResponse>` left those
+    // undefined; the mapper renames them.
+    it('should POST bulk assignment and map the wire result counts', () => {
       service
         .bulkAssignManager({ employeeIds: ['emp-2', 'emp-3'], managerEmployeeId: 'emp-1' })
         .subscribe((response) => {
           expect(response.results.length).toBe(2);
           expect(response.totalSuccess).toBe(1);
           expect(response.totalFailed).toBe(1);
+          expect(response.results[0].employeeName).toBe('Jane Smith');
         });
 
       const req = httpMock.expectOne(`${baseUrl}/bulk-assign-manager`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body.employeeIds).toEqual(['emp-2', 'emp-3']);
       expect(req.request.body.managerEmployeeId).toBe('emp-1');
-      req.flush(mockResponse);
+      req.flush({
+        totalRequested: 2,
+        successCount: 1,
+        failureCount: 1,
+        results: [
+          { employeeId: 'emp-2', employeeName: 'Jane Smith', success: true, error: null, message: 'Manager assigned.' },
+          { employeeId: 'emp-3', employeeName: 'Bob', success: false, error: 'Circular chain detected', message: null },
+        ],
+      });
     });
   });
 
@@ -608,7 +656,7 @@ describe('EmployeeService', () => {
           r.params.get('pageSize') === '10'
       );
       expect(req.request.method).toBe('GET');
-      req.flush({ items: [mockEmployee], totalCount: 1, page: 1, pageSize: 10 });
+      req.flush({ items: [mockEmployeeWire], totalCount: 1, page: 1, pageSize: 10 });
     });
   });
 

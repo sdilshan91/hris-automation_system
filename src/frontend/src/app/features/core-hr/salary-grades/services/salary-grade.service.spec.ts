@@ -8,6 +8,7 @@ import { SalaryGradeService } from './salary-grade.service';
 import {
   ISalaryGrade,
   ISalaryGradeRequest,
+  SalaryGradeWire,
 } from '../models/salary-grade.models';
 import { environment } from '../../../../../environments/environment';
 
@@ -17,7 +18,9 @@ describe('SalaryGradeService', () => {
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/salary-grades`;
 
-  const mockGrade: ISalaryGrade = {
+  // Fixtures are the REAL wire shape (`SalaryGradesSalaryGradeDto`) — including the wire-only
+  // createdAt/updatedAt fields the FE never renders — so the flush exercises `mapSalaryGrade`.
+  const mockGrade: SalaryGradeWire = {
     id: 'sg-1',
     code: 'G1',
     name: 'Grade 1',
@@ -27,9 +30,11 @@ describe('SalaryGradeService', () => {
     currency: 'USD',
     description: 'Entry level',
     isActive: true,
+    createdAt: '2026-06-01T00:00:00Z',
+    updatedAt: null,
   };
 
-  const mockGrade2: ISalaryGrade = {
+  const mockGrade2: SalaryGradeWire = {
     id: 'sg-2',
     code: 'G2',
     name: 'Grade 2',
@@ -39,6 +44,8 @@ describe('SalaryGradeService', () => {
     currency: 'USD',
     description: null,
     isActive: true,
+    createdAt: '2026-06-02T00:00:00Z',
+    updatedAt: null,
   };
 
   beforeEach(() => {
@@ -98,6 +105,34 @@ describe('SalaryGradeService', () => {
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
       req.flush(mockGrade);
+    });
+
+    // Mapper contract arm. Exercises `mapSalaryGrade` against a wire DTO that OMITS `description`
+    // (all wire fields are optional). The un-migrated service cast the body straight to ISalaryGrade,
+    // so `description` was `undefined`; the mapper defaults it to `null`. `toBeNull()` fails for
+    // `undefined`, so this arm goes red against the pre-migration direct cast — and against any
+    // mutation of the mapper's `code` / `description` defaulting lines.
+    it('maps the wire DTO → ISalaryGrade, defaulting fields the wire omits', () => {
+      let received: ISalaryGrade | undefined;
+      service.get('sg-9').subscribe((g) => (received = g));
+
+      const req = httpMock.expectOne(`${baseUrl}/sg-9`);
+      req.flush({
+        id: 'sg-9',
+        code: 'G9',
+        name: 'Grade 9',
+        minAmount: 90000,
+        midAmount: null,
+        maxAmount: 120000,
+        currency: 'USD',
+        isActive: true,
+        createdAt: '2026-06-09T00:00:00Z',
+        updatedAt: null,
+        // description deliberately absent — the wire may omit it.
+      });
+
+      expect(received!.code).toBe('G9');
+      expect(received!.description).toBeNull();
     });
   });
 

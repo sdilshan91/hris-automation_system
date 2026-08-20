@@ -21,6 +21,18 @@ import {
   IBulkAssignManagerRequest,
   IBulkAssignManagerResponse,
   IRevealNationalIdResponse,
+  EmployeeWire,
+  EmployeeListWire,
+  DirectReportsResultWire,
+  ValidTransitionsWire,
+  BulkAssignManagerResultWire,
+  NationalIdRevealWire,
+  mapEmployee,
+  mapEmployeeList,
+  mapDirectReports,
+  mapValidTransitions,
+  mapBulkAssignManager,
+  mapNationalIdReveal,
 } from '../models/employee.models';
 
 /**
@@ -48,18 +60,24 @@ export class EmployeeService {
 
   // ─── Read ────────────────────────────────────────────────
 
-  /** Get all employees for the current tenant */
+  /**
+   * Get all employees for the current tenant.
+   * The endpoint returns `EmployeesEmployeeListResult` (an envelope), so the bare
+   * `IEmployee[]` is projected off `.items` through the contract mapper.
+   */
   getEmployees(): Observable<IEmployee[]> {
-    return this.http.get<IEmployee[]>(this.baseUrl, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<EmployeeListWire>(this.baseUrl, { withCredentials: true })
+      .pipe(map((w) => (w.items ?? []).map(mapEmployee)));
   }
 
   /** Get a single employee by ID */
   getEmployee(employeeId: string): Observable<IEmployee> {
-    return this.http.get<IEmployee>(`${this.baseUrl}/${employeeId}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<EmployeeWire>(`${this.baseUrl}/${employeeId}`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapEmployee));
   }
 
   // ─── Directory (US-CHR-003) ──────────────────────────────
@@ -77,13 +95,11 @@ export class EmployeeService {
   ): Observable<IPaginatedResponse<IEmployee>> {
     const httpParams = this.buildDirectoryParams(params);
     return this.http
-      .get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
+      .get<EmployeeListWire>(this.baseUrl, {
         params: httpParams,
         withCredentials: true,
       })
-      .pipe(
-        map((page) => ({ ...page, items: this.normalizeEmployeeIds(page.items) }))
-      );
+      .pipe(map(mapEmployeeList));
   }
 
   /**
@@ -168,14 +184,14 @@ export class EmployeeService {
   ): Observable<IEmployee> {
     if (profilePhoto) {
       const formData = this.buildFormData(request, profilePhoto);
-      return this.http.post<IEmployee>(this.baseUrl, formData, {
-        withCredentials: true,
-      });
+      return this.http
+        .post<EmployeeWire>(this.baseUrl, formData, { withCredentials: true })
+        .pipe(map(mapEmployee));
     }
 
-    return this.http.post<IEmployee>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<EmployeeWire>(this.baseUrl, request, { withCredentials: true })
+      .pipe(map(mapEmployee));
   }
 
   // ─── US-CHR-002: Profile ──────────────────────────────────
@@ -228,10 +244,11 @@ export class EmployeeService {
    * unwraps the envelope, so this stream emits the inner `{ nationalId }` shape.
    */
   revealNationalId(employeeId: string): Observable<IRevealNationalIdResponse> {
-    return this.http.get<IRevealNationalIdResponse>(
-      `${this.baseUrl}/${employeeId}/national-id`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<NationalIdRevealWire>(`${this.baseUrl}/${employeeId}/national-id`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapNationalIdReveal));
   }
 
   // ─── US-CHR-009: Status Management ─────────────────────────
@@ -244,10 +261,12 @@ export class EmployeeService {
    * Returns: IStatusTransition[] — only the transitions valid from the current status.
    */
   getValidTransitions(employeeId: string): Observable<IStatusTransition[]> {
-    return this.http.get<IStatusTransition[]>(
-      `${this.baseUrl}/${employeeId}/status/transitions`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<ValidTransitionsWire>(
+        `${this.baseUrl}/${employeeId}/status/transitions`,
+        { withCredentials: true }
+      )
+      .pipe(map(mapValidTransitions));
   }
 
   /**
@@ -302,10 +321,12 @@ export class EmployeeService {
    * Endpoint assumption: GET /api/v1/tenant/employees/:managerId/direct-reports
    */
   getDirectReports(managerId: string): Observable<IDirectReport[]> {
-    return this.http.get<IDirectReport[]>(
-      `${this.baseUrl}/${managerId}/direct-reports`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<DirectReportsResultWire>(
+        `${this.baseUrl}/${managerId}/direct-reports`,
+        { withCredentials: true }
+      )
+      .pipe(map(mapDirectReports));
   }
 
   /**
@@ -317,11 +338,13 @@ export class EmployeeService {
   bulkAssignManager(
     request: IBulkAssignManagerRequest
   ): Observable<IBulkAssignManagerResponse> {
-    return this.http.post<IBulkAssignManagerResponse>(
-      `${this.baseUrl}/bulk-assign-manager`,
-      request,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<BulkAssignManagerResultWire>(
+        `${this.baseUrl}/bulk-assign-manager`,
+        request,
+        { withCredentials: true }
+      )
+      .pipe(map(mapBulkAssignManager));
   }
 
   /**
@@ -338,27 +361,11 @@ export class EmployeeService {
       .set('page', '1')
       .set('pageSize', pageSize.toString());
     return this.http
-      .get<IPaginatedResponse<IEmployee>>(this.baseUrl, {
+      .get<EmployeeListWire>(this.baseUrl, {
         params,
         withCredentials: true,
       })
-      .pipe(
-        map((page) => ({ ...page, items: this.normalizeEmployeeIds(page.items) }))
-      );
-  }
-
-  /**
-   * The backend directory/search DTOs expose the employee identifier as `id`
-   * (`EmployeeDirectoryItemDto.Id`), but the FE `IEmployee` model uses
-   * `employeeId`. Bridge the two so navigation, row selection and trackBy get a
-   * real id instead of `undefined` (BUG-127: card click → /employees/undefined,
-   * NG0955 duplicate track-keys). All other fields already match by name.
-   */
-  private normalizeEmployeeIds(items: IEmployee[] | undefined): IEmployee[] {
-    return (items ?? []).map((e) => ({
-      ...e,
-      employeeId: e.employeeId ?? (e as IEmployee & { id?: string }).id ?? '',
-    }));
+      .pipe(map(mapEmployeeList));
   }
 
   // ─── Helpers ─────────────────────────────────────────────

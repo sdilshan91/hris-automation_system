@@ -22,7 +22,8 @@ import { AuthService } from '../../../../../core/auth/auth.service';
 import { environment } from '../../../../../../environments/environment';
 import {
   IEmployee,
-  IPaginatedResponse,
+  EmployeeWire,
+  EmployeeListWire,
 } from '../../models/employee.models';
 
 describe('EmployeeListComponent', () => {
@@ -34,9 +35,10 @@ describe('EmployeeListComponent', () => {
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/employees`;
 
-  const mockEmployee: IEmployee = {
-    employeeId: 'emp-1',
-    tenantId: 'tenant-1',
+  // Real wire shape (`EmployeesEmployeeDto`): `id` (not employeeId), no tenantId. Flushed through the
+  // real service so `mapEmployee` runs — the id→employeeId bridge is exercised, not bypassed.
+  const mockEmployee: EmployeeWire = {
+    id: 'emp-1',
     employeeNo: 'EMP-0001',
     firstName: 'John',
     lastName: 'Doe',
@@ -64,11 +66,11 @@ describe('EmployeeListComponent', () => {
   };
 
   function buildPaginatedResponse(
-    employees: IEmployee[],
+    employees: EmployeeWire[],
     total?: number,
     page?: number,
     pageSize?: number
-  ): IPaginatedResponse<IEmployee> {
+  ): EmployeeListWire {
     return {
       items: employees,
       totalCount: total ?? employees.length,
@@ -79,7 +81,7 @@ describe('EmployeeListComponent', () => {
 
   /** Flush the initial directory load request */
   function flushInitialLoad(
-    employees: IEmployee[] = [],
+    employees: EmployeeWire[] = [],
     total?: number
   ): void {
     const req = httpMock.expectOne((r) => r.url === baseUrl && r.method === 'GET');
@@ -186,8 +188,10 @@ describe('EmployeeListComponent', () => {
     req.flush({ items: [mockEmployee, mockEmployee], totalCount: 34, page: 1, pageSize: 20 });
     fixture.detectChanges();
 
-    expect(component.employees()).toEqual([mockEmployee, mockEmployee]);
+    // Items are mapped view-models now (wire `id` → `employeeId`), not the raw wire objects.
     expect(component.employees().length).toBe(2);
+    expect(component.employees()[0].employeeId).toBe('emp-1');
+    expect(component.employees()[0].firstName).toBe('John');
     expect(component.totalCount()).toBe(34);
   });
 
@@ -676,7 +680,7 @@ describe('EmployeeListComponent', () => {
 
   it('should select/deselect all visible employees', () => {
     fixture.detectChanges();
-    flushInitialLoad([mockEmployee, { ...mockEmployee, employeeId: 'emp-2' }], 2);
+    flushInitialLoad([mockEmployee, { ...mockEmployee, id: 'emp-2' }], 2);
 
     expect(component.allVisibleSelected()).toBeFalse();
 
@@ -725,7 +729,7 @@ describe('EmployeeListComponent', () => {
         r.params.get('statuses') === 'Active'
     );
     searchReq.flush({
-      items: [{ ...mockEmployee, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
+      items: [{ ...mockEmployee, id: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
       totalCount: 1,
       page: 1,
       pageSize: 10,
@@ -757,8 +761,10 @@ describe('EmployeeListComponent', () => {
         { employeeId: 'emp-1', employeeName: 'John Doe', success: true, error: null },
         { employeeId: 'emp-2', employeeName: 'Jane Smith', success: true, error: null },
       ],
-      totalSuccess: 2,
-      totalFailed: 0,
+      // Wire result: successCount/failureCount (mapped → totalSuccess/totalFailed).
+      successCount: 2,
+      failureCount: 0,
+      totalRequested: 2,
     });
     tick();
 
@@ -791,8 +797,9 @@ describe('EmployeeListComponent', () => {
           message: 'Manager assigned successfully. John Doe now reports to Alice Boss.',
         },
       ],
-      totalSuccess: 1,
-      totalFailed: 0,
+      successCount: 1,
+      failureCount: 0,
+      totalRequested: 1,
     });
     tick();
     fixture.detectChanges();
@@ -820,8 +827,9 @@ describe('EmployeeListComponent', () => {
         { employeeId: 'emp-1', employeeName: 'John', success: true, error: null },
         { employeeId: 'emp-2', employeeName: 'Jane', success: false, error: 'Circular chain' },
       ],
-      totalSuccess: 1,
-      totalFailed: 1,
+      successCount: 1,
+      failureCount: 1,
+      totalRequested: 2,
     });
     tick();
 
@@ -852,7 +860,7 @@ describe('EmployeeListComponent', () => {
 
   it('should compute someVisibleSelected correctly', () => {
     fixture.detectChanges();
-    flushInitialLoad([mockEmployee, { ...mockEmployee, employeeId: 'emp-2' }], 2);
+    flushInitialLoad([mockEmployee, { ...mockEmployee, id: 'emp-2' }], 2);
 
     expect(component.someVisibleSelected()).toBeFalse();
 
