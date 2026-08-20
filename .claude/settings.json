@@ -118,7 +118,8 @@
     "SubagentStop": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
+          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 },
+          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/vault-compliance-advisor.py\"", "timeout": 5 }
         ]
       }
     ]
