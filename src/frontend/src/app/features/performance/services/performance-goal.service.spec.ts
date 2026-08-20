@@ -19,6 +19,31 @@ describe('PerformanceGoalService', () => {
   let httpMock: HttpTestingController;
   const baseUrl = `${environment.apiBaseUrl}/tenant/performance`;
 
+  // Real wire shape (PerformanceActiveCycleDto): the goal-setting window lives inside
+  // `phases[]` (the GoalSetting phase), NOT as flat opensOn/closesOn date fields.
+  const mockCycleWire = {
+    id: 'cyc-1',
+    name: '2026 Annual',
+    goalSettingOpen: true,
+    startDate: '2026-01-01T00:00:00Z',
+    endDate: '2026-12-31T00:00:00Z',
+    phases: [
+      {
+        phaseType: 'GoalSetting',
+        phaseTypeName: 'GoalSetting',
+        startDate: '2026-01-01T00:00:00Z',
+        endDate: '2026-01-31T00:00:00Z',
+      },
+      {
+        phaseType: 'SelfAssessment',
+        phaseTypeName: 'SelfAssessment',
+        startDate: '2026-02-01T00:00:00Z',
+        endDate: '2026-02-28T00:00:00Z',
+      },
+    ],
+  };
+
+  // The mapped view-model the service must produce from `mockCycleWire`.
   const mockCycle: IAppraisalCycle = {
     id: 'cyc-1',
     name: '2026 Annual',
@@ -68,16 +93,32 @@ describe('PerformanceGoalService', () => {
     expect(service).toBeTruthy();
   });
 
-  it('getActiveCycle GETs the active cycle (bare payload)', () => {
+  it('getActiveCycle GETs the active cycle and maps the wire DTO', () => {
     let result: IAppraisalCycle | undefined;
     service.getActiveCycle().subscribe((c) => (result = c));
 
     const req = httpMock.expectOne(`${baseUrl}/cycles/active`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockCycle);
+    req.flush(mockCycleWire);
 
     expect(result).toEqual(mockCycle);
+  });
+
+  it('getActiveCycle derives the window dates from the GoalSetting phase (fails on the un-migrated pass-through)', () => {
+    // The un-migrated code returned the raw payload as IAppraisalCycle, so
+    // goalSettingOpensOn/ClosesOn were `undefined` (the wire has no such fields).
+    // These assertions prove the mapper reads the GoalSetting phase window, not a
+    // sibling phase and not a flat field.
+    let result: IAppraisalCycle | undefined;
+    service.getActiveCycle().subscribe((c) => (result = c));
+
+    const req = httpMock.expectOne(`${baseUrl}/cycles/active`);
+    req.flush(mockCycleWire);
+
+    expect(result?.goalSettingOpensOn).toBe('2026-01-01');
+    expect(result?.goalSettingClosesOn).toBe('2026-01-31');
+    expect(result?.goalSettingOpen).toBeTrue();
   });
 
   it('getTeamStatus GETs the team list for a cycle', () => {

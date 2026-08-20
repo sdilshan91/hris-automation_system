@@ -57,6 +57,8 @@
  * STRINGS (US-PLT-003), never integers.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Enums ────────────────────────────────────────────────────
 
 /** FR-1: the four reviewer categories. Matches the C# enum (PascalCase strings). */
@@ -343,129 +345,51 @@ export interface IFeedback360Results {
   releaseWarning: string | null;
 }
 
-// ─── Raw backend wire shapes (Feedback360ResultsDto) ──────────
-// These mirror the ASP.NET DTOs exactly (camelCased by the serializer). The adapter
-// below maps them into the FE vocabulary above; the templates never see these.
+// ─── Wire contract → view-model mapper (US-PRF-005 D-perf slice 3) ─────────────
+//
+// The 360 results read consumes the GENERATED `PerformanceFeedback360ResultsDto`. The
+// #510 adapter STAYS — only its INPUT type changes from a hand-written wire interface to
+// the generated one, so a backend rename becomes a compile error here rather than a
+// silent mis-map. `IFeedback360ResultsRaw` is retained as a back-compat alias of the
+// generated type for the adapter's own unit spec.
+export type Feedback360ResultsWire = Schema<'PerformanceFeedback360ResultsDto'>;
+export type Feedback360ResultEntryWire =
+  Schema<'PerformanceFeedback360ResultEntryDto'>;
+export type IFeedback360ResultsRaw = Feedback360ResultsWire;
 
-/** One competency/goal average as the backend emits it (`CompetencyAverageDto`). */
-export interface ICompetencyAverageRaw {
-  goalId: string | null;
-  competencyKey: string | null;
-  label: string;
-  averageRating: number;
-  responseCount: number;
-}
-
-/** One per-category average as the backend emits it (`CategoryAverageDto`). */
-export interface ICategoryAverageRaw {
-  category: ReviewerCategory;
-  categoryName: string;
-  averageRating: number | null;
-  responseCount: number;
-  weight: number;
-}
-
-/** One competency/goal rating inside a result entry (`Feedback360ResultItemDto`). */
-export interface IFeedback360ResultItemRaw {
-  goalId: string | null;
-  competencyKey: string | null;
-  label: string;
-  rating: number;
-  comment: string | null;
-}
-
-/**
- * One submitted feedback entry as the backend emits it (`Feedback360ResultEntryDto`).
- * When anonymity is on the backend NULLS `reviewerEmployeeId`/`reviewerName` in the
- * projection (NFR-3/FR-5) — the adapter simply carries that through, never reconstructs.
- */
-export interface IFeedback360ResultEntryRaw {
-  feedbackId: string;
-  category: ReviewerCategory;
-  categoryName: string;
-  isAnonymous: boolean;
-  reviewerEmployeeId: string | null;
-  reviewerName: string | null;
-  overallComment: string | null;
-  submittedAt: string;
-  items: IFeedback360ResultItemRaw[];
-}
-
-/** The full aggregated-results wire payload (`Feedback360ResultsDto`). */
-export interface IFeedback360ResultsRaw {
-  cycleId: string;
-  cycleName: string;
-  revieweeEmployeeId: string;
-  revieweeName: string;
-  jobTitle: string;
-  isAnonymousFeedback: boolean;
-  ratingScaleMax: number;
-  compositeScore: number;
-  competencyAverages: ICompetencyAverageRaw[];
-  categoryAverages: ICategoryAverageRaw[];
-  entries: IFeedback360ResultEntryRaw[];
-  minPeerReviewers: number;
-  peerResponseCount: number;
-  minPeerThresholdMet: boolean;
-  releaseWarning: string | null;
-  released: boolean;
-  releasedAt: string | null;
-  exportAvailable: boolean;
-}
-
-/** Result of the release action (`Feedback360ReleaseDto`, BR-4/FR-3). */
-export interface IFeedback360ReleaseResult {
-  cycleId: string;
-  revieweeEmployeeId: string;
-  releasedAt: string;
-  releasedByEmployeeId: string;
-}
-
-/**
- * ISSUE-373 / GAP-012 (S-1): translate the backend `Feedback360ResultsDto` into the FE
- * `IFeedback360Results`. This is the ONE place the wire↔UI field-name drift is
- * reconciled, so the templates stay stable. Rules:
- *  - straight renames per the drift table (revieweeName→employeeName, etc.);
- *  - `categoryAverages[].averageRating` → `.average`;
- *  - `competencyAverages` (flat) → `competencies` with `byCategory: []` — the backend
- *    sends NO per-competency category split, so that field has no source (reported);
- *  - `entries` (per-reviewer, nested items) → `comments` (flat rows): the reviewer's
- *    overall comment plus each item comment become individual rows, carrying the
- *    (already-nulled-under-anonymity) reviewer name UNCHANGED — never reconstructed.
- */
 export function mapFeedback360Results(
-  raw: IFeedback360ResultsRaw,
+  raw: Feedback360ResultsWire,
 ): IFeedback360Results {
   return {
-    cycleId: raw.cycleId,
-    cycleName: raw.cycleName,
-    employeeId: raw.revieweeEmployeeId,
-    employeeName: raw.revieweeName,
+    cycleId: raw.cycleId ?? '',
+    cycleName: raw.cycleName ?? '',
+    employeeId: raw.revieweeEmployeeId ?? '',
+    employeeName: raw.revieweeName ?? '',
     jobTitle: raw.jobTitle || null,
-    ratingScaleMax: raw.ratingScaleMax,
-    anonymous: raw.isAnonymousFeedback,
-    released: raw.released,
-    releasedAt: raw.releasedAt,
+    ratingScaleMax: raw.ratingScaleMax ?? 0,
+    anonymous: raw.isAnonymousFeedback ?? false,
+    released: raw.released ?? false,
+    releasedAt: raw.releasedAt ?? null,
     compositeScore: raw.compositeScore ?? null,
     competencies: (raw.competencyAverages ?? []).map((c) => ({
-      questionId: c.goalId ?? c.competencyKey ?? c.label,
-      title: c.label,
+      questionId: c.goalId ?? c.competencyKey ?? c.label ?? '',
+      title: c.label ?? '',
       kind: c.goalId != null ? ('Goal' as const) : ('Competency' as const),
-      overallAverage: c.averageRating,
+      overallAverage: c.averageRating ?? null,
       // No per-competency category split exists on the wire (GAP — see S-1 report).
       byCategory: [] as ICategoryAverage[],
     })),
     categoryAverages: (raw.categoryAverages ?? []).map((c) => ({
-      category: c.category,
-      average: c.averageRating,
-      responseCount: c.responseCount,
+      category: c.category as ReviewerCategory,
+      average: c.averageRating ?? null,
+      responseCount: c.responseCount ?? 0,
     })),
     comments: flattenResultEntries(raw.entries ?? []),
-    exportAvailable: raw.exportAvailable,
-    minPeerReviewers: raw.minPeerReviewers,
-    peerResponseCount: raw.peerResponseCount,
-    minPeerThresholdMet: raw.minPeerThresholdMet,
-    releaseWarning: raw.releaseWarning,
+    exportAvailable: raw.exportAvailable ?? false,
+    minPeerReviewers: raw.minPeerReviewers ?? 0,
+    peerResponseCount: raw.peerResponseCount ?? 0,
+    minPeerThresholdMet: raw.minPeerThresholdMet ?? false,
+    releaseWarning: raw.releaseWarning ?? null,
   };
 }
 
@@ -476,15 +400,16 @@ export function mapFeedback360Results(
  * it under anonymity (NFR-3/FR-5); this NEVER invents or reconstructs an identity.
  */
 function flattenResultEntries(
-  entries: IFeedback360ResultEntryRaw[],
+  entries: Feedback360ResultEntryWire[],
 ): IFeedbackComment[] {
   const rows: IFeedbackComment[] = [];
   for (const e of entries) {
     const reviewerName = e.reviewerName ?? undefined;
+    const category = e.category as ReviewerCategory;
     if (e.overallComment && e.overallComment.trim().length > 0) {
       rows.push({
         questionTitle: '',
-        category: e.category,
+        category,
         comment: e.overallComment,
         reviewerName,
       });
@@ -492,8 +417,8 @@ function flattenResultEntries(
     for (const item of e.items ?? []) {
       if (item.comment && item.comment.trim().length > 0) {
         rows.push({
-          questionTitle: item.label,
-          category: e.category,
+          questionTitle: item.label ?? '',
+          category,
           comment: item.comment,
           reviewerName,
         });
@@ -502,6 +427,7 @@ function flattenResultEntries(
   }
   return rows;
 }
+
 
 // ─── Pure helpers (testable without a component) ──────────────
 
@@ -641,4 +567,133 @@ export function initials(name: string): string {
     parts[0].charAt(0).toUpperCase() +
     parts[parts.length - 1].charAt(0).toUpperCase()
   );
+}
+
+// ─── Reviewer-config / tracker / form / release mappers (D-perf slice 3) ──────
+//
+// These consume the GENERATED contract types. The reviewer-CONFIG DTO has the widest
+// drift: the notes-style DTO carries `assignments` (not `reviewers`), suggested
+// reviewers as bare {id,no,name}, and NONE of `candidatePool`, per-category `minimums`
+// (only a scalar `minPeerReviewers`), `cycleName`, or an `editable` window flag — those
+// are defaulted here and REPORTED.
+export type ReviewerConfigurationWire =
+  Schema<'PerformanceReviewerConfigurationDto'>;
+export type ReviewerAssignmentWire =
+  Schema<'PerformanceReviewerAssignmentDto'>;
+export type SuggestedReviewerWire = Schema<'PerformanceSuggestedReviewerDto'>;
+export type CompletionTrackerWire =
+  Schema<'PerformanceCompletionTrackerDto'>;
+export type FeedbackFormWire = Schema<'PerformanceFeedbackFormDto'>;
+export type Feedback360ReleaseWire =
+  Schema<'PerformanceFeedback360ReleaseDto'>;
+
+/** Result of the release action (`Feedback360ReleaseDto`, BR-4/FR-3). */
+export interface IFeedback360ReleaseResult {
+  cycleId: string;
+  revieweeEmployeeId: string;
+  releasedAt: string;
+  releasedByEmployeeId: string;
+}
+
+function mapAssignmentToReviewer(w: ReviewerAssignmentWire): IReviewer {
+  const category = (w.categoryName ?? w.category ?? 'Peer') as ReviewerCategory;
+  return {
+    reviewerId: w.reviewerEmployeeId ?? '',
+    name: w.reviewerName ?? '',
+    // No wire source on the assignment DTO — defaulted (reported).
+    jobTitle: null,
+    departmentName: null,
+    category,
+    avatarUrl: null,
+    // No wire `locked` flag — Self + the auto-assigned Manager are server-owned
+    // (non-removable); derived from the category (reported).
+    locked: category === 'Self' || category === 'Manager',
+  };
+}
+
+function mapSuggestedReviewer(w: SuggestedReviewerWire): IEmployeeOption {
+  return {
+    employeeId: w.employeeId ?? '',
+    name: w.name ?? '',
+    // No wire source on the suggested-reviewer DTO — defaulted (reported).
+    jobTitle: null,
+    departmentId: '',
+    departmentName: '',
+    avatarUrl: null,
+  };
+}
+
+export function mapReviewerConfig(
+  w: ReviewerConfigurationWire,
+): IReviewerConfig {
+  return {
+    cycleId: w.cycleId ?? '',
+    // No wire source — defaulted (reported).
+    cycleName: '',
+    employeeId: w.revieweeEmployeeId ?? '',
+    employeeName: w.revieweeName ?? '',
+    reviewers: (w.assignments ?? []).map(mapAssignmentToReviewer),
+    suggestedPeers: (w.suggestedPeers ?? []).map(mapSuggestedReviewer),
+    suggestedDirectReports: (w.suggestedDirectReports ?? []).map(
+      mapSuggestedReviewer,
+    ),
+    // No wire source — the config DTO carries no candidate pool (reported).
+    candidatePool: [],
+    // The wire carries only a scalar `minPeerReviewers`; the single Peer minimum it
+    // represents is surfaced here (the other categories have no wire minimum — reported).
+    minimums: [{ category: 'Peer', minimum: w.minPeerReviewers ?? 0 }],
+    anonymous: w.isAnonymousFeedback ?? false,
+    // No wire source — the config DTO carries no window/lock flag; defaulted true (reported).
+    editable: true,
+  };
+}
+
+export function mapCompletionTracker(
+  w: CompletionTrackerWire,
+): ICompletionTracker {
+  return {
+    employeeId: w.employeeId ?? '',
+    categories: (w.categories ?? []).map((c) => ({
+      category: c.category as ReviewerCategory,
+      submitted: c.submitted ?? 0,
+      pending: c.pending ?? 0,
+      overdue: c.overdue ?? 0,
+      minimum: c.minimum ?? 0,
+    })),
+  };
+}
+
+export function mapFeedbackForm(w: FeedbackFormWire): IFeedbackForm {
+  return {
+    assignmentId: w.assignmentId ?? '',
+    cycleId: w.cycleId ?? '',
+    cycleName: w.cycleName ?? '',
+    revieweeId: w.revieweeId ?? '',
+    revieweeName: w.revieweeName ?? '',
+    revieweeJobTitle: w.revieweeJobTitle ?? null,
+    category: (w.category ?? 'Peer') as ReviewerCategory,
+    ratingScaleMax: w.ratingScaleMax ?? 0,
+    submitted: w.submitted ?? false,
+    submittedOn: w.submittedOn ?? null,
+    anonymous: w.anonymous ?? false,
+    questions: (w.questions ?? []).map((q) => ({
+      questionId: q.questionId ?? '',
+      kind: (q.kind ?? 'Competency') as QuestionKind,
+      title: q.title ?? '',
+      description: q.description ?? null,
+      rating: q.rating ?? null,
+      comment: q.comment ?? '',
+    })),
+  };
+}
+
+export function mapFeedback360Release(
+  w: Feedback360ReleaseWire,
+): IFeedback360ReleaseResult {
+  return {
+    cycleId: w.cycleId ?? '',
+    revieweeEmployeeId: w.revieweeEmployeeId ?? '',
+    releasedAt: w.releasedAt ?? '',
+    releasedByEmployeeId: w.releasedByEmployeeId ?? '',
+  };
 }

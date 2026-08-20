@@ -304,3 +304,100 @@ export function ratingBandClasses(
   }
   return 'bg-rose-50 text-rose-700 ring-rose-600/20';
 }
+
+// ─── Wire contract → view-model mappers (US-PRF-003 D-perf slice 3) ───────────
+//
+// The reads consume the GENERATED contract types, not hand-written guesses.
+// Drift reconciled here (was silently wrong):
+//  • the team dashboard endpoint returns `PerformanceTeamReviewsDashboardDto`
+//    (`{ cycleId, members }`), NOT a bare array — the un-migrated `toArray` saw an
+//    object that was neither an array nor `{ data }` and returned `[]`, so the Team
+//    Reviews dashboard was permanently empty;
+//  • the per-employee review nests the goals under `items`, not `goals`, and renames
+//    every goal descriptor (`goalTitle`/`goalWeight`/…) and score field
+//    (`weightedSelfScore`/`isReviewWindowOpen`/`submittedAt`).
+export type ManagerReviewWire = Schema<'PerformanceManagerReviewDto'>;
+export type ManagerReviewItemWire = Schema<'PerformanceManagerReviewItemDto'>;
+export type TeamReviewsDashboardWire =
+  Schema<'PerformanceTeamReviewsDashboardDto'>;
+export type TeamReviewStatusWire = Schema<'PerformanceTeamReviewStatusDto'>;
+
+/**
+ * Derive the FE 4-value workflow status from the wire. The review record's own
+ * `status` enum is only `Draft`/`Submitted`; the 4-value workflow status the UI
+ * badges + gates on is reconstructed from the submission flags. `Completed` is a
+ * cycle-closure state the per-employee endpoint does not signal, so it is never
+ * produced here (no fabricated value).
+ */
+function deriveManagerReviewStatus(w: ManagerReviewWire): ManagerReviewStatus {
+  const submitted =
+    (w.statusName ?? w.status) === 'Submitted' || w.submittedAt != null;
+  if (submitted) {
+    return 'ManagerReviewSubmitted';
+  }
+  if (w.selfAssessmentSubmitted) {
+    return 'SelfAssessmentSubmitted';
+  }
+  return 'PendingSelfAssessment';
+}
+
+export function mapManagerReviewGoal(
+  w: ManagerReviewItemWire,
+): IManagerReviewGoal {
+  return {
+    goalId: w.goalId ?? '',
+    title: w.goalTitle ?? '',
+    description: w.goalDescription ?? '',
+    weight: w.goalWeight ?? 0,
+    targetValue: w.goalTargetValue ?? '',
+    measurementUnit: w.goalMeasurementUnit ?? '',
+    dueDate: w.goalDueDate ?? '',
+    selfRating: w.selfRating ?? null,
+    selfComment: w.selfComment ?? '',
+    managerRating: w.managerRating ?? null,
+    managerComment: w.managerComment ?? '',
+  };
+}
+
+export function mapManagerReview(w: ManagerReviewWire): IManagerReview {
+  return {
+    id: w.id ?? '',
+    cycleId: w.cycleId ?? '',
+    cycleName: w.cycleName ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    jobTitle: w.jobTitle ?? null,
+    status: deriveManagerReviewStatus(w),
+    windowOpen: w.isReviewWindowOpen ?? false,
+    ratingScaleMax: w.ratingScaleMax ?? 0,
+    selfScore: w.weightedSelfScore ?? null,
+    managerScore: w.weightedManagerScore ?? null,
+    finalScore: w.finalScore ?? null,
+    summaryComment: w.summaryComment ?? '',
+    flag: (w.flagName ?? w.flag ?? 'None') as ReviewFlag,
+    submittedOn: w.submittedAt ?? null,
+    goals: (w.items ?? []).map(mapManagerReviewGoal),
+  };
+}
+
+export function mapManagerTeamRow(w: TeamReviewStatusWire): IManagerTeamRow {
+  return {
+    // No wire source: the dashboard row carries no review id (null until the
+    // workflow creates the review record — reported).
+    reviewId: null,
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    // No wire source on PerformanceTeamReviewStatusDto — defaulted (reported).
+    jobTitle: null,
+    status: (w.status ?? 'PendingSelfAssessment') as ManagerReviewStatus,
+    goalCount: w.goalCount ?? 0,
+    // No wire source — defaulted (reported).
+    selfSubmittedOn: null,
+  };
+}
+
+export function mapTeamReviewsDashboard(
+  w: TeamReviewsDashboardWire,
+): IManagerTeamRow[] {
+  return (w.members ?? []).map(mapManagerTeamRow);
+}

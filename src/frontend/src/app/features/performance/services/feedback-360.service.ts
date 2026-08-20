@@ -4,15 +4,23 @@ import { Observable } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  CompletionTrackerWire,
+  Feedback360ReleaseWire,
+  Feedback360ResultsWire,
+  FeedbackFormWire,
   ICompletionTracker,
   IFeedback360ReleaseResult,
   IFeedback360Results,
-  IFeedback360ResultsRaw,
   IFeedbackForm,
   IReviewerConfig,
   ISaveReviewersRequest,
   ISubmitFeedbackRequest,
+  ReviewerConfigurationWire,
+  mapCompletionTracker,
+  mapFeedback360Release,
   mapFeedback360Results,
+  mapFeedbackForm,
+  mapReviewerConfig,
 } from '../models/feedback-360.models';
 
 /**
@@ -62,10 +70,12 @@ export class Feedback360Service {
    * the per-category minimums and the anonymity flag — one call (NFR-1).
    */
   getReviewerConfig(employeeId: string): Observable<IReviewerConfig> {
-    return this.http.get<IReviewerConfig>(
-      `${this.baseUrl}/employees/${employeeId}/config`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<ReviewerConfigurationWire>(
+        `${this.baseUrl}/employees/${employeeId}/config`,
+        { withCredentials: true },
+      )
+      .pipe(map(mapReviewerConfig));
   }
 
   /**
@@ -78,19 +88,23 @@ export class Feedback360Service {
     employeeId: string,
     request: ISaveReviewersRequest,
   ): Observable<IReviewerConfig> {
-    return this.http.put<IReviewerConfig>(
-      `${this.baseUrl}/employees/${employeeId}/reviewers`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .put<ReviewerConfigurationWire>(
+        `${this.baseUrl}/employees/${employeeId}/reviewers`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map(mapReviewerConfig));
   }
 
   /** Per-category submitted/pending/overdue counts for the completion tracker (AC-3). */
   getTracker(employeeId: string): Observable<ICompletionTracker> {
-    return this.http.get<ICompletionTracker>(
-      `${this.baseUrl}/employees/${employeeId}/tracker`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<CompletionTrackerWire>(
+        `${this.baseUrl}/employees/${employeeId}/tracker`,
+        { withCredentials: true },
+      )
+      .pipe(map(mapCompletionTracker));
   }
 
   /**
@@ -99,10 +113,12 @@ export class Feedback360Service {
    * server-side; RLS ensures a reviewer only loads their own assignment.
    */
   getFeedbackForm(assignmentId: string): Observable<IFeedbackForm> {
-    return this.http.get<IFeedbackForm>(
-      `${this.baseUrl}/assignments/${assignmentId}/form`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<FeedbackFormWire>(
+        `${this.baseUrl}/assignments/${assignmentId}/form`,
+        { withCredentials: true },
+      )
+      .pipe(map(mapFeedbackForm));
   }
 
   /**
@@ -114,11 +130,13 @@ export class Feedback360Service {
     assignmentId: string,
     request: ISubmitFeedbackRequest,
   ): Observable<IFeedbackForm> {
-    return this.http.post<IFeedbackForm>(
-      `${this.baseUrl}/assignments/${assignmentId}/submit`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<FeedbackFormWire>(
+        `${this.baseUrl}/assignments/${assignmentId}/submit`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map(mapFeedbackForm));
   }
 
   /**
@@ -133,7 +151,7 @@ export class Feedback360Service {
   getResults(employeeId: string): Observable<IFeedback360Results> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.get<IFeedback360ResultsRaw>(
+        this.http.get<Feedback360ResultsWire>(
           `${this.perfBase}/360/cycles/${cycleId}/employees/${employeeId}/results`,
           { withCredentials: true },
         ),
@@ -153,12 +171,13 @@ export class Feedback360Service {
   releaseResults(employeeId: string): Observable<IFeedback360ReleaseResult> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.post<IFeedback360ReleaseResult>(
+        this.http.post<Feedback360ReleaseWire>(
           `${this.perfBase}/360/cycles/${cycleId}/employees/${employeeId}/release`,
           {},
           { withCredentials: true },
         ),
       ),
+      map(mapFeedback360Release),
     );
   }
 
