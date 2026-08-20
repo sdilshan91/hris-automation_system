@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
+  EmployeeDirectoryWire,
+  mapEmployeeDirectory,
   IEmployee,
   IEmployeeProfile,
   ICreateEmployeeRequest,
@@ -94,18 +96,27 @@ export class EmployeeService {
     params: IEmployeeDirectoryParams
   ): Observable<IPaginatedResponse<IEmployee>> {
     const httpParams = this.buildDirectoryParams(params);
+    // `/directory`, NOT the bare list route. The list endpoint accepts only page/pageSize/activeOnly/
+    // search/includeTerminated, so every departmental, status, employment-type, location and date filter
+    // the screen builds was being discarded server-side. Different endpoint, different envelope
+    // ({data,total} vs {items,totalCount}) -- hence a distinct wire type and mapper.
     return this.http
-      .get<EmployeeListWire>(this.baseUrl, {
+      .get<EmployeeDirectoryWire>(`${this.baseUrl}/directory`, {
         params: httpParams,
         withCredentials: true,
       })
-      .pipe(map(mapEmployeeList));
+      .pipe(map(mapEmployeeDirectory));
   }
 
   /**
-   * Export filtered employee directory as CSV or Excel.
-   * Backend contract: GET /api/v1/tenant/employees/export?format=csv|excel&...filters
-   * Returns a Blob for file download (AC-5, FR-8).
+   * Export the filtered employee directory as CSV or Excel (AC-5, FR-8).
+   *
+   * Route: `GET /api/v1/tenant/employees/directory/export`.
+   *
+   * **This used to call `/employees/export`, which does not exist in the contract** — the export button
+   * 404'd. Corrected 2026-08-21 alongside the directory filter routing below; both were found by the
+   * D-core-hr migration, which typed the responses against the generated contract and made the mismatch
+   * visible.
    */
   exportDirectory(
     params: IEmployeeDirectoryParams,
@@ -113,7 +124,7 @@ export class EmployeeService {
   ): Observable<Blob> {
     let httpParams = this.buildDirectoryParams(params);
     httpParams = httpParams.set('format', format);
-    return this.http.get(`${this.baseUrl}/export`, {
+    return this.http.get(`${this.baseUrl}/directory/export`, {
       params: httpParams,
       responseType: 'blob',
       withCredentials: true,
@@ -130,20 +141,26 @@ export class EmployeeService {
     if (params.search) {
       httpParams = httpParams.set('search', params.search);
     }
-    if (params.departments?.length) {
-      httpParams = httpParams.set('departments', params.departments.join(','));
+    // Multi-selects are APPENDED as repeated params (?departmentIds=a&departmentIds=b), not comma-joined.
+    // ASP.NET binds a string[] query parameter from repeated keys; a single comma-joined value binds as ONE
+    // element containing a comma, so every multi-select silently matched nothing. Names corrected too:
+    // the contract expects departmentIds / locations (plural), not departments / location.
+    for (const id of params.departments ?? []) {
+      httpParams = httpParams.append('departmentIds', id);
     }
-    if (params.jobTitles?.length) {
-      httpParams = httpParams.set('jobTitles', params.jobTitles.join(','));
+    for (const t of params.jobTitles ?? []) {
+      httpParams = httpParams.append('jobTitles', t);
     }
-    if (params.statuses?.length) {
-      httpParams = httpParams.set('statuses', params.statuses.join(','));
+    for (const st of params.statuses ?? []) {
+      httpParams = httpParams.append('statuses', st);
     }
     if (params.employmentTypes?.length) {
-      httpParams = httpParams.set('employmentTypes', params.employmentTypes.join(','));
+      for (const et of params.employmentTypes) {
+        httpParams = httpParams.append('employmentTypes', et);
+      }
     }
     if (params.location) {
-      httpParams = httpParams.set('location', params.location);
+      httpParams = httpParams.append('locations', params.location);
     }
     if (params.dateOfJoiningFrom) {
       httpParams = httpParams.set('dateOfJoiningFrom', params.dateOfJoiningFrom);
@@ -164,7 +181,8 @@ export class EmployeeService {
       httpParams = httpParams.set('pageSize', params.pageSize.toString());
     }
     if (params.includeArchived) {
-      httpParams = httpParams.set('includeArchived', 'true');
+      // contract name is showArchived; includeArchived was ignored
+      httpParams = httpParams.set('showArchived', 'true');
     }
 
     return httpParams;
@@ -355,9 +373,13 @@ export class EmployeeService {
     search: string,
     pageSize = 10
   ): Observable<IPaginatedResponse<IEmployee>> {
+    // `activeOnly`, not `statuses`. This is the LIST endpoint (correct for a lightweight typeahead), and it
+    // has no `statuses` parameter -- so the active-only restriction was silently dropped and the picker
+    // offered terminated employees. Six call sites rely on this, including the payroll adjustment and
+    // leave-encashment forms, where selecting a terminated employee is a real hazard.
     let params = new HttpParams()
       .set('search', search)
-      .set('statuses', 'Active')
+      .set('activeOnly', 'true')
       .set('page', '1')
       .set('pageSize', pageSize.toString());
     return this.http

@@ -63,6 +63,45 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ---
 
+## 🔁 AUTO-HEAL 2026-08-21 — the migration's own discoveries, folded in
+
+> **Prime directive: never silently drop an out-of-lane discovery.** The D-migration slices surfaced ~25
+> findings across three modules. They had been reported in commits and PR bodies but **not folded into this
+> queue** — exactly the evaporation auto-heal exists to prevent. Filed now as [[BUG-306]], [[ISSUE-379]],
+> [[ISSUE-380]], [[ISSUE-381]] and ranked below.
+>
+> **Grouped, not minted individually.** 25 separate IDs would bury the ledger; each finding carries a table of
+> its instances. De-dup per the protocol.
+>
+> ### Re-sorted by severity × blast-radius × unblocks-others − gated
+>
+> | rank | item | why here |
+> |---|---|---|
+> | **1** | ~~P1 route breaks~~ ✅ **DONE** — 3 of BUG-306's 9 fixed | live breakage, no decision needed |
+> | **2** | **E2 `HRM.ArchitectureTests`** | *unblocks-others*: a guard that prevents the whole GAP-006 class recurring. Value compounds over the 6 remaining modules, so it ranks above bigger items. |
+> | **3** | **E1 security headers** | HIGH severity × systemic blast-radius (every session, every tenant). **Zero of six** §23.4 headers exist. S-sized, ungated. |
+> | **4** | **C1 workflow seed** | *unblocks-others*: flips the entire US-ADM-011 runtime engine from dormant to live for every new tenant. S-sized. |
+> | **5** | **B6 `/onboarding/templates/lookups`** | BUG-306 #9 — the only nonexistent route whose fix needs no decision (build the endpoint the FE already calls). |
+> | **6** | **Remaining migration** (payroll → onboarding → admin → attendance → recruitment → auth) | preventive; each slice now fixes its own HIGH findings rather than deferring |
+> | **7** | ISSUE-380 dead-code removals | LOW severity, local blast-radius, but trivially cheap |
+> | **8** | ISSUE-381 codegen gap | MED; a hole in the gate itself, worth closing before the gate is relied on further |
+>
+> ### 🚧 Parked at the decision gate — NOT auto-scheduled
+>
+> Per the protocol these are **tracked and ranked, then wait for the human call**, regardless of raw score:
+>
+> | item | the decision |
+> |---|---|
+> | **ISSUE-379** (11 backend DTO gaps) | per feature: add the fields, or remove the UI that renders them |
+> | **BUG-306 #4-#7** | per route: re-point the FE, or build the endpoint the FE assumes |
+> | leave reports keyed-vs-positional | which side is authoritative — the backend's positional cells or the FE's keyed columns |
+> | salary-grade `isActive` | honour it server-side, or remove the toggle |
+>
+> **★ The one number worth carrying forward:** roughly **one field in five** of the hand-written interfaces
+> describes an endpoint that was never built. These were not an accurate API description that drifted — they
+> were written from what the UI wanted and never reconciled. The remaining ~570 interfaces should be expected
+> to behave the same way, so "finish the migration" is not a mechanical task and should not be estimated as one.
+
 ## The queue
 
 ### Tier A — cheap, high-leverage, unblocks others

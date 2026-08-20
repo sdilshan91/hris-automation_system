@@ -875,8 +875,24 @@ describe('EmployeeProfileComponent', () => {
       expect(statusReq.request.body.effectiveDate).toBe('2026-06-15');
       expect(statusReq.request.body.reason).toBe('Pending investigation');
 
-      const updatedProfile = { ...mockProfile, status: 'suspended' };
-      statusReq.flush({ profile: updatedProfile });
+      // The wire returns ChangeEmployeeStatusResult — a SUMMARY with NO `profile` field. Flushing exactly
+      // that shape proves the component no longer reads `response.profile` (which was always undefined and
+      // left the header stale). Instead it must refetch.
+      statusReq.flush({
+        employeeId: 'emp-1',
+        previousStatus: 'Active',
+        newStatus: 'Suspended',
+        effectiveDate: '2026-06-15',
+        isFutureDated: false,
+        message: 'Status changed.',
+      });
+      tick();
+
+      // NEW arm (defect #5): a profile GET must be re-issued after the status change (the refetch). Pre-fix
+      // there was no refetch and the header never refreshed — this expectation finds no request and fails.
+      const refetchReq = httpMock.expectOne(profileUrl);
+      expect(refetchReq.request.method).toBe('GET');
+      refetchReq.flush({ ...mockProfile, status: 'suspended' });
       tick();
 
       expect(component.profile()!.status).toBe('suspended');
@@ -1032,11 +1048,15 @@ describe('EmployeeProfileComponent', () => {
       component.onManagerSearch('Al');
       tick(350);
 
+      // searchActiveEmployees hits the LIST endpoint with activeOnly=true (the list route has no `statuses`
+      // param). Pre-fix it sent `statuses=Active`, silently ignored, so terminated employees could be
+      // picked as a manager. Asserting activeOnly (and no statuses) is the arm that catches that.
       const searchReq = httpMock.expectOne(
         (r) => r.url === `${environment.apiBaseUrl}/tenant/employees` &&
           r.params.get('search') === 'Al' &&
-          r.params.get('statuses') === 'Active'
+          r.params.get('activeOnly') === 'true'
       );
+      expect(searchReq.request.params.has('statuses')).toBeFalse();
       searchReq.flush({
         items: [{ ...mockProfile, employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
         totalCount: 1,
@@ -1076,6 +1096,20 @@ describe('EmployeeProfileComponent', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body.managerEmployeeId).toBe('mgr-1');
 
+      // AssignManagerResult is a SUMMARY with no `profile` field. Flush that real shape; the component must
+      // ignore it and refetch, so the pre-fix `response.profile` read (undefined) is proven insufficient.
+      req.flush({
+        employeeId: 'emp-1',
+        previousManagerId: null,
+        previousManagerName: null,
+        newManagerId: 'mgr-1',
+        newManagerName: 'Alice Manager',
+        message: 'Manager assigned.',
+      });
+      tick();
+
+      // NEW arm (defect #5): the manager assignment must trigger a profile refetch. Pre-fix there was no
+      // GET here and the manager never appeared until a manual reload.
       const updatedProfile = {
         ...mockProfile,
         reportingManagerId: 'mgr-1',
@@ -1084,7 +1118,9 @@ describe('EmployeeProfileComponent', () => {
         reportingManagerPhotoUrl: null,
         reportingChain: [{ employeeId: 'mgr-1', firstName: 'Alice', lastName: 'Manager', jobTitleName: 'Lead', profilePhotoUrl: null }],
       };
-      req.flush({ profile: updatedProfile });
+      const refetchReq = httpMock.expectOne(profileUrl);
+      expect(refetchReq.request.method).toBe('GET');
+      refetchReq.flush(updatedProfile);
       tick();
 
       expect(component.profile()!.reportingManagerId).toBe('mgr-1');
@@ -1135,7 +1171,20 @@ describe('EmployeeProfileComponent', () => {
         `${environment.apiBaseUrl}/tenant/employees/emp-1/manager`
       );
       expect(req.request.body.managerEmployeeId).toBeNull();
-      req.flush({ profile: { ...mockProfile, reportingManagerId: null, reportingManagerName: null } });
+      // Summary result (no profile), then the refetch drives the header back to "unassigned".
+      req.flush({
+        employeeId: 'emp-1',
+        previousManagerId: 'mgr-1',
+        previousManagerName: 'Alice',
+        newManagerId: null,
+        newManagerName: null,
+        message: 'Manager removed.',
+      });
+      tick();
+
+      const refetchReq = httpMock.expectOne(profileUrl);
+      expect(refetchReq.request.method).toBe('GET');
+      refetchReq.flush({ ...mockProfile, reportingManagerId: null, reportingManagerName: null });
       tick();
 
       expect(component.profile()!.reportingManagerId).toBeNull();
