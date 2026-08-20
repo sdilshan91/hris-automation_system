@@ -8540,3 +8540,45 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Why it matters:** the migration could anchor the per-row type but had to read the envelope scalars (`asOfDate`, `leaveYear`) defensively. **A field can drift here without the compiler noticing** — which is the one thing this whole migration exists to prevent, so the gap is worth closing even though nothing is broken today.
 - **Suggested direction:** split the JSON and file endpoints, or annotate with `ProducesResponseType` so codegen emits the JSON 200 schema.
 - **Confidence:** 100% — verified in the generated file.
+
+---
+
+### BUG-307 — tenant plan limits are silently unenforced: `tenants.plan_id` values match no `subscription_plans` row
+- **ID:** BUG-307
+- **Type:** BUG (seed/config data — a business rule that silently does not apply)
+- **Severity:** **MED**, and arguably HIGH depending on how plan limits are sold. **Not the LOW it was first flagged as.**
+- **Status:** `OPEN`
+- **Layer:** Data / BE
+- **Module / US / TC:** Admin Console / plan limits, BR-3 (US-REC-010 TC-010-10 exercised it) — found 2026-08-18 during the A1c test run, **filed late 2026-08-21**
+- **Title:** The `e2e` tenant's `plan_id` is `'default'`, which matches **no row** in `subscription_plans` (whose codes are `starter`/`professional`/`enterprise`). Plan-based `MaxEmployees` therefore resolves to `NULL` = **unlimited**.
+- **Consequence:** BR-3's employee cap only engages via the per-tenant snapshot or an explicit `PlanLimitOverride`. **For any tenant whose `plan_id` does not match a real plan code, the cap silently does not exist.** The limit test only passed because the QA run set a reversible `max_employees` snapshot by hand.
+- **Why the severity was raised:** it was flagged LOW as "seed data". But a paid-plan employee cap that silently resolves to unlimited is a **revenue-affecting rule that fails open**, and the failure is invisible — no error, no log, just no limit. The original rating described the *cause* (seed data) rather than the *effect*.
+- **Reproduction:** `SELECT t.subdomain, t.plan_id, p.code FROM tenants t LEFT JOIN subscription_plans p ON p.code = t.plan_id;` → rows where `p.code IS NULL` have no plan-derived cap.
+- **Suggested direction:** either seed a `default` plan row, or repoint tenants at real plan codes; **and** add a guard so a tenant whose `plan_id` resolves to nothing fails loudly rather than becoming unlimited. Check how many tenants are affected before choosing.
+- **Confidence:** 95% on the mechanism (observed directly during the A1c run); the blast radius depends on how many real tenants carry an unmatched `plan_id`.
+
+---
+
+### ISSUE-382 — three smaller out-of-lane items from earlier in the session, filed late
+- **ID:** ISSUE-382
+- **Type:** ISSUE (bundle — three unrelated small findings, grouped to avoid three near-empty IDs)
+- **Severity:** **MED** (the bulk-import one) / LOW (the other two)
+- **Status:** `OPEN`
+- **Layer:** FE / BE
+- **Module / US / TC:** core-hr, performance — surfaced 2026-08-17..21, **filed late 2026-08-21**
+- **Title:** Three findings that were reported in agent hand-backs and PR bodies but never reached this ledger.
+
+| # | finding | sev | disposition |
+|---|---|---|---|
+| 1 | **`uploadImport` is typed as a discriminated union** (`IImportResult \| IImportJobRef`) while the wire returns a **single unified** `BulkImportResult` with an `isComplete`/`jobId` flag. The component's `'total' in resp` sync-vs-async guard is **unreliable — the wire always sends `total`.** Separate from [[BUG-306]] #7, which covers the two absent `/import/jobs/*` routes. | **MED** | needs-decision: map wire→union at the seam, or branch on `isComplete` |
+| 2 | **`Feedback360Release.ReleasedByEmployeeId` is `Guid.Empty`** when the releasing user has no linked employee record. Documented in the entity's XML doc at the time, but never filed. **Not an audit hole** — `BaseEntity.CreatedBy` is stamped with the acting user id by `AuditInterceptor`, so "who released this" is durably answerable; this field answers the narrower "which *employee*". | LOW | leave as-is, or make it nullable |
+| 3 | **`feedback-360.models.ts` header docstring is stale** — still describes an "(ASSUMED)" contract and lists routes that were superseded by the cycle-keyed ones. | LOW | doc fix; this repo has **four** recorded cases of a comment outliving its code and causing real damage |
+
+- **Why these were missed:** the 2026-08-21 auto-heal pass reconciled the **recent migration slices** and did not sweep the **whole session**. That is the same evaporation the protocol exists to prevent, one level up — a heal that only heals what it happens to remember. **A sweep must enumerate its sources, not recall them.**
+- **Confidence:** 100% on all three (each observed directly in an agent hand-back with file:line).
+
+---
+
+### ✅ ISSUE-232 — ledger flip owed (verified resolved 2026-08-18, never flipped)
+- **Status update:** `TC-REC-010-05` **passed** during the A1c run, confirming the applicant read path now carries `convertedToEmployeeId`/`isConverted`/`convertedAt` — the exact projection gap ISSUE-232 recorded. The finding above should be marked **RESOLVED**; it was verified three days ago and the flip was never made.
+- **Why this is recorded rather than silently flipped:** flipping a finding without a `/verify-fix` run is how this repo produced ISSUE-371 and ISSUE-377. The evidence here is a real executed TC, so the flip is justified — but it is stated explicitly rather than done quietly, so the next reader can see what earned it.
