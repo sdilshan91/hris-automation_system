@@ -30,7 +30,6 @@ function makeEmployee(
   return {
     employeeId: 'e-1',
     employeeName: 'Alex Doe',
-    jobTitle: 'Engineer',
     overallCompletionPercent: 55,
     goals: [
       {

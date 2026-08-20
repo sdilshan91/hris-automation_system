@@ -1,13 +1,20 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  DashboardOverviewWire,
+  DepartmentDrilldownWire,
   ExportFormat,
   IDashboardFilters,
   IDashboardOverview,
   IDepartmentDrilldown,
   ITrendResponse,
+  TrendWire,
+  mapDashboardOverview,
+  mapDepartmentDrilldown,
+  mapTrendResponse,
 } from '../models/dashboard.models';
 
 /**
@@ -42,10 +49,12 @@ export class PerformanceDashboardService {
    * whenever the filter selection changes.
    */
   getOverview(filters: IDashboardFilters): Observable<IDashboardOverview> {
-    return this.http.get<IDashboardOverview>(`${this.baseUrl}/overview`, {
-      params: this.toParams(filters),
-      withCredentials: true,
-    });
+    return this.http
+      .get<DashboardOverviewWire>(`${this.baseUrl}/overview`, {
+        params: this.toParams(filters),
+        withCredentials: true,
+      })
+      .pipe(map(mapDashboardOverview));
   }
 
   /**
@@ -54,10 +63,12 @@ export class PerformanceDashboardService {
    * departments come from the filter selection.
    */
   getTrend(filters: IDashboardFilters): Observable<ITrendResponse> {
-    return this.http.get<ITrendResponse>(`${this.baseUrl}/trend`, {
-      params: this.toParams(filters),
-      withCredentials: true,
-    });
+    return this.http
+      .get<TrendWire>(`${this.baseUrl}/trend`, {
+        params: this.toParams(filters),
+        withCredentials: true,
+      })
+      .pipe(map(mapTrendResponse));
   }
 
   /**
@@ -75,10 +86,12 @@ export class PerformanceDashboardService {
     }
     // BUG-243: the backend drill-down route is GET dashboard/department/{id}
     // (singular), not /departments/{id}.
-    return this.http.get<IDepartmentDrilldown>(
-      `${this.baseUrl}/department/${departmentId}`,
-      { params, withCredentials: true },
-    );
+    return this.http
+      .get<DepartmentDrilldownWire>(
+        `${this.baseUrl}/department/${departmentId}`,
+        { params, withCredentials: true },
+      )
+      .pipe(map(mapDepartmentDrilldown));
   }
 
   /**

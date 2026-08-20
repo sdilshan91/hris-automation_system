@@ -4,12 +4,21 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  GoalTimelineWire,
   IAddGoalUpdateRequest,
   IEmployeeGoalProgress,
   IGoalComment,
   IGoalUpdate,
   IMyGoals,
   ITeamGoalProgressRow,
+  MyGoalProgressWire,
+  TeamGoalRowWire,
+  latestGoalComment,
+  latestGoalUpdate,
+  mapEmployeeGoalProgress,
+  mapGoalTimeline,
+  mapMyGoals,
+  mapTeamGoalRow,
 } from '../models/goal-progress.models';
 
 /**
@@ -37,21 +46,25 @@ export class GoalProgressService {
 
   /** AC-1: the employee's "My Goals" screen (cycle window, overall %, goal cards). */
   getMyGoals(): Observable<IMyGoals> {
-    return this.http.get<IMyGoals>(`${this.baseUrl}/my-goals`, {
-      withCredentials: true,
-    });
+    // The wire is a FLAT goal list (PerformanceMyGoalProgressDto[]), not an envelope.
+    return this.http
+      .get<
+        MyGoalProgressWire[] | { data: MyGoalProgressWire[] }
+      >(`${this.baseUrl}/my-goals`, { withCredentials: true })
+      .pipe(map((res) => mapMyGoals(this.toArray(res))));
   }
 
   /**
    * AC-3/FR-3: the append-only update history for one goal (chronological timeline +
-   * per-update manager comment thread). Tolerates a bare array or a `{ data }` page.
+   * per-update manager comment thread). The wire is a single `PerformanceGoalTimelineDto`
+   * — the mapper unpacks its `updates[]` and regroups the timeline-level comments.
    */
   getGoalUpdates(goalId: string): Observable<IGoalUpdate[]> {
     return this.http
-      .get<
-        IGoalUpdate[] | { data: IGoalUpdate[] }
-      >(`${this.baseUrl}/goals/${goalId}/timeline`, { withCredentials: true })
-      .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
+      .get<GoalTimelineWire>(`${this.baseUrl}/goals/${goalId}/timeline`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapGoalTimeline));
   }
 
   /**
@@ -65,6 +78,7 @@ export class GoalProgressService {
     files?: readonly File[] | null,
   ): Observable<IGoalUpdate> {
     const url = `${this.baseUrl}/goals/${goalId}/progress`;
+    // The POST returns the whole timeline; `latestGoalUpdate` picks the appended row.
     if (files && files.length > 0) {
       const form = new FormData();
       form.append('progressPercent', String(request.progressPercent));
@@ -73,9 +87,13 @@ export class GoalProgressService {
       for (const file of files) {
         form.append('files', file, file.name);
       }
-      return this.http.post<IGoalUpdate>(url, form, { withCredentials: true });
+      return this.http
+        .post<GoalTimelineWire>(url, form, { withCredentials: true })
+        .pipe(map((w) => latestGoalUpdate(w, request)));
     }
-    return this.http.post<IGoalUpdate>(url, request, { withCredentials: true });
+    return this.http
+      .post<GoalTimelineWire>(url, request, { withCredentials: true })
+      .pipe(map((w) => latestGoalUpdate(w, request)));
   }
 
   /**
@@ -88,11 +106,14 @@ export class GoalProgressService {
     updateId: string,
     comment: string,
   ): Observable<IGoalComment> {
-    return this.http.post<IGoalComment>(
-      `${this.baseUrl}/goals/${goalId}/comments`,
-      { progressUpdateId: updateId, body: comment },
-      { withCredentials: true },
-    );
+    // The POST returns the whole timeline; `latestGoalComment` picks the new comment.
+    return this.http
+      .post<GoalTimelineWire>(
+        `${this.baseUrl}/goals/${goalId}/comments`,
+        { progressUpdateId: updateId, body: comment },
+        { withCredentials: true },
+      )
+      .pipe(map((w) => latestGoalComment(w, updateId, comment)));
   }
 
   /**
@@ -102,16 +123,31 @@ export class GoalProgressService {
   getTeamProgress(): Observable<ITeamGoalProgressRow[]> {
     return this.http
       .get<
-        ITeamGoalProgressRow[] | { data: ITeamGoalProgressRow[] }
+        TeamGoalRowWire[] | { data: TeamGoalRowWire[] }
       >(`${this.baseUrl}/team-goals`, { withCredentials: true })
-      .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
+      .pipe(map((res) => this.toArray(res).map(mapTeamGoalRow)));
   }
 
   /** AC-4 drill-down: one direct report's goals + progress (for the manager). */
   getEmployeeProgress(employeeId: string): Observable<IEmployeeGoalProgress> {
-    return this.http.get<IEmployeeGoalProgress>(
-      `${this.baseUrl}/team-goals/employees/${employeeId}`,
-      { withCredentials: true },
-    );
+    // The wire is a FLAT goal list; the employee id is threaded from the caller.
+    return this.http
+      .get<
+        MyGoalProgressWire[] | { data: MyGoalProgressWire[] }
+      >(`${this.baseUrl}/team-goals/employees/${employeeId}`, {
+        withCredentials: true,
+      })
+      .pipe(map((res) => mapEmployeeGoalProgress(this.toArray(res), employeeId)));
+  }
+
+  /** Accept either a bare array or a `{ data }` page; default to []. */
+  private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
+    if (Array.isArray(res)) {
+      return res;
+    }
+    if (res && Array.isArray((res as { data: T[] }).data)) {
+      return (res as { data: T[] }).data;
+    }
+    return [];
   }
 }

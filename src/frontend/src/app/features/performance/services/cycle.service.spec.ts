@@ -8,6 +8,9 @@ import { provideHttpClient } from '@angular/common/http';
 import { CycleService } from './cycle.service';
 import { environment } from '../../../../environments/environment';
 import {
+  CycleDashboardWire,
+  CycleSummaryWire,
+  CycleWire,
   ICloneCycleRequest,
   ICycle,
   ICycleDashboard,
@@ -21,19 +24,87 @@ describe('CycleService', () => {
   let httpMock: HttpTestingController;
   const baseUrl = `${environment.apiBaseUrl}/tenant/performance/cycles`;
 
-  const summaries: ICycleSummary[] = [
-    {
-      id: 'cyc-1',
-      name: '2026 Annual',
-      type: 'Annual',
-      status: 'Active',
-      startDate: '2026-01-01',
-      endDate: '2026-12-31',
-      participantCount: 120,
-    },
-  ];
+  // ─── WIRE fixtures (the real PerformanceCycle*Dto shapes the API sends) ──────
+  const summaryWire: CycleSummaryWire = {
+    id: 'cyc-1',
+    name: '2026 Annual',
+    type: 'Annual',
+    typeName: 'Annual',
+    status: 'Active',
+    statusName: 'Active',
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    participantCount: 120,
+  };
 
-  const cycle: ICycle = {
+  const cycleWire: CycleWire = {
+    id: 'cyc-1',
+    name: '2026 Annual',
+    type: 'Annual',
+    typeName: 'Annual',
+    status: 'Draft',
+    statusName: 'Draft',
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    phases: [
+      {
+        phaseType: 'GoalSetting',
+        phaseTypeName: 'GoalSetting',
+        startDate: '2026-01-05',
+        endDate: '2026-01-20',
+        sequence: 1,
+        isCurrent: false,
+      },
+    ],
+    scope: {
+      scopeType: 'AllEmployees',
+      departmentIds: [],
+      employeeIds: [],
+    },
+    ratingScaleMax: 5,
+    selfWeightPercent: 40,
+    managerWeightPercent: 60,
+    is360Enabled: false,
+    isCalibrationEnabled: false,
+    participantCount: 120,
+    // The API field is `cancellationReason` — the FE view-model exposes it as
+    // `cancelledReason`. The mapper is the single place that bridges the rename.
+    cancellationReason: null,
+  };
+
+  const dashboardWire: CycleDashboardWire = {
+    cycleId: 'cyc-1',
+    name: '2026 Annual',
+    status: 'Active',
+    statusName: 'Active',
+    participantCount: 120,
+    phases: [
+      {
+        phaseType: 'GoalSetting',
+        phaseTypeName: 'GoalSetting',
+        startDate: '2026-01-05',
+        endDate: '2026-01-20',
+        completedCount: 80,
+        totalParticipants: 120,
+        overdueCount: 5,
+        completionPercent: 67,
+        isCurrent: true,
+      },
+    ],
+  };
+
+  // ─── Expected VIEW-MODELS (what the mappers produce) ────────────────────────
+  const expectedSummary: ICycleSummary = {
+    id: 'cyc-1',
+    name: '2026 Annual',
+    type: 'Annual',
+    status: 'Active',
+    startDate: '2026-01-01',
+    endDate: '2026-12-31',
+    participantCount: 120,
+  };
+
+  const expectedCycle: ICycle = {
     id: 'cyc-1',
     name: '2026 Annual',
     type: 'Annual',
@@ -52,7 +123,7 @@ describe('CycleService', () => {
     cancelledReason: null,
   };
 
-  const dashboard: ICycleDashboard = {
+  const expectedDashboard: ICycleDashboard = {
     cycleId: 'cyc-1',
     name: '2026 Annual',
     status: 'Active',
@@ -83,16 +154,16 @@ describe('CycleService', () => {
 
   afterEach(() => httpMock.verify());
 
-  it('list() GETs all cycles and returns the array', () => {
+  it('list() GETs all cycles and maps the wire rows to the view-model', () => {
     let result: ICycleSummary[] | undefined;
     service.list().subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(baseUrl);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(summaries);
+    req.flush([summaryWire]);
 
-    expect(result).toEqual(summaries);
+    expect(result).toEqual([expectedSummary]);
   });
 
   it('list() unwraps a { data } paged envelope', () => {
@@ -100,23 +171,41 @@ describe('CycleService', () => {
     service.list().subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(baseUrl);
-    req.flush({ data: summaries });
+    req.flush({ data: [summaryWire] });
 
-    expect(result).toEqual(summaries);
+    expect(result).toEqual([expectedSummary]);
   });
 
-  it('get() GETs the full cycle detail', () => {
+  it('get() GETs the full cycle detail and maps it', () => {
     let result: ICycle | undefined;
     service.get('cyc-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${baseUrl}/cyc-1`);
     expect(req.request.method).toBe('GET');
-    req.flush(cycle);
+    req.flush(cycleWire);
 
-    expect(result).toEqual(cycle);
+    expect(result).toEqual(expectedCycle);
   });
 
-  it('create() POSTs the save request', () => {
+  it('get() maps the wire `cancellationReason` onto `cancelledReason` (rename bug)', () => {
+    // MUTATION ARM: fails against the un-migrated code, which cast the raw body to
+    // ICycle so `cancelledReason` was always undefined (the cancelled banner blank).
+    let result: ICycle | undefined;
+    service.get('cyc-1').subscribe((r) => (result = r));
+
+    const req = httpMock.expectOne(`${baseUrl}/cyc-1`);
+    req.flush({
+      ...cycleWire,
+      status: 'Cancelled',
+      statusName: 'Cancelled',
+      cancellationReason: 'Company reorganisation',
+    });
+
+    expect(result?.status).toBe('Cancelled');
+    expect(result?.cancelledReason).toBe('Company reorganisation');
+  });
+
+  it('create() POSTs the save request and maps the response', () => {
     const body: ISaveCycleRequest = {
       name: 'New cycle',
       type: 'Quarterly',
@@ -148,55 +237,70 @@ describe('CycleService', () => {
     expect(req.request.body.phases[0].phaseType).toBe('GoalSetting');
     expect(req.request.body.scope.scopeType).toBe('AllEmployees');
     expect('gradeIds' in req.request.body.scope).toBeFalse();
-    req.flush(cycle);
+    req.flush(cycleWire);
 
-    expect(result).toEqual(cycle);
+    expect(result).toEqual(expectedCycle);
   });
 
   it('update() PUTs the save request to the cycle route', () => {
-    const body = { ...cycle } as unknown as ISaveCycleRequest;
-    service.update('cyc-1', body).subscribe();
+    const body = { ...expectedCycle } as unknown as ISaveCycleRequest;
+    let result: ICycle | undefined;
+    service.update('cyc-1', body).subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${baseUrl}/cyc-1`);
     expect(req.request.method).toBe('PUT');
-    req.flush(cycle);
+    req.flush(cycleWire);
+
+    expect(result).toEqual(expectedCycle);
   });
 
-  it('dashboard() GETs the dashboard stats', () => {
+  it('dashboard() GETs the dashboard stats and maps the phase rows', () => {
     let result: ICycleDashboard | undefined;
     service.dashboard('cyc-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${baseUrl}/cyc-1/dashboard`);
     expect(req.request.method).toBe('GET');
-    req.flush(dashboard);
+    req.flush(dashboardWire);
 
-    expect(result).toEqual(dashboard);
+    expect(result).toEqual(expectedDashboard);
   });
 
-  it('transition() POSTs the action (and reason for cancel)', () => {
+  it('transition() POSTs the action (and reason for cancel) and maps the result', () => {
     const body: ICycleTransitionRequest = {
       action: 'Cancel',
       reason: 'Reorg',
     };
-    service.transition('cyc-1', body).subscribe();
+    let result: ICycle | undefined;
+    service.transition('cyc-1', body).subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${baseUrl}/cyc-1/status`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
-    req.flush({ ...cycle, status: 'Cancelled', cancelledReason: 'Reorg' });
+    req.flush({
+      ...cycleWire,
+      status: 'Cancelled',
+      statusName: 'Cancelled',
+      cancellationReason: 'Reorg',
+    });
+
+    expect(result?.status).toBe('Cancelled');
+    expect(result?.cancelledReason).toBe('Reorg');
   });
 
-  it('clone() POSTs the clone request', () => {
+  it('clone() POSTs the clone request and maps the response', () => {
     const body: ICloneCycleRequest = {
       name: '2027 Annual',
       startDate: '2027-01-01',
       endDate: '2027-12-31',
     };
-    service.clone('cyc-1', body).subscribe();
+    let result: ICycle | undefined;
+    service.clone('cyc-1', body).subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${baseUrl}/clone`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ sourceCycleId: 'cyc-1', ...body });
-    req.flush({ ...cycle, id: 'cyc-2' });
+    req.flush({ ...cycleWire, id: 'cyc-2' });
+
+    expect(result?.id).toBe('cyc-2');
   });
 });
