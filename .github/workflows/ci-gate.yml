@@ -190,7 +190,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U hrm"
+          --health-cmd "pg_isready -U hrm -d hrm_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -233,9 +233,20 @@ jobs:
 
       - name: Assert expected schema exists
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
-          export PGPASSWORD=hrm
-          PSQL="psql -h localhost -U hrm -d hrm_ci -tAc"
+          # No apt install. The postgres SERVICE CONTAINER already ships psql, so we exec into it
+          # instead of fetching a client onto the runner.
+          #
+          # This step used to begin `sudo apt-get update -qq && apt-get install -y -qq postgresql-client`.
+          # On 2026-08-19 that apt call stalled, and because -qq suppresses output it produced ZERO log
+          # lines while holding the job open until GitHub's 6-hour ceiling killed it (08:25:40 -> 14:26:48).
+          # A frontend-only PR sat blocked for six hours on a package fetch it never needed. Removing the
+          # network dependency is strictly better than timing it out: there is now nothing to stall.
+          PG=$(docker ps --filter "ancestor=postgres:16" --format '{{.ID}}' | head -1)
+          if [ -z "$PG" ]; then
+            echo "::error::postgres service container not found — cannot assert schema"
+            exit 1
+          fi
+          PSQL="docker exec -i -e PGPASSWORD=hrm $PG psql -U hrm -d hrm_ci -tAc"
           fail=0
           for t in employees emergency_contacts employment_histories employee_field_audit_logs; do
             exists=$($PSQL "SELECT to_regclass('public.$t') IS NOT NULL")
@@ -319,7 +330,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U hrm"
+          --health-cmd "pg_isready -U hrm -d hrm_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
