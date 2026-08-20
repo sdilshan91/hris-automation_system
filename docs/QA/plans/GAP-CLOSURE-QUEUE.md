@@ -232,9 +232,15 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ### Tier E — infrastructure + guards
 
-- [ ] **E1 · GAP-033a security headers** — **zero** of the six §23.4 requires exist. `src/frontend/nginx.conf` is the
-  **shipped production config** and sets only `Cache-Control`. Four cheap headers first; CSP separately
-  (report-only → enforce) because of Angular Material inline styles.
+- [x] **E1 · GAP-033a security headers** — **DONE, PR #530 (merged 2026-08-21).** All six now set in both places;
+  CSP ships report-only on the SPA as planned (Angular Material injects runtime `<style>`).
+  **The gap was bigger than the entry said.** Adding them at nginx's *server* level looked complete and was not:
+  nginx inherits `add_header` only if the current level declares none, and the static-asset `location` block
+  already declared `Cache-Control` — silently dropping all six for every `.js`/`.css`/`.woff2`/image.
+  Measured, not argued: `/app.js` **0 of 6** before → **6 of 6** after, while `/` read 6 of 6 *both* times, so a
+  browser spot-check would have hidden it. `NginxSecurityHeaderInheritanceTests` now fails if any future
+  `location` block repeats the mistake. 3/3 mutations RED. Gate 5444/5444 + 4104/4104.
+  **Spawned:** BUG-308 (HSTS dead behind the TLS proxy — in flight), ISSUE-383 (Swagger ordering).
 - [ ] **E2 · `HRM.ArchitectureTests`** — ~6 NetArchTest rules. Mechanically catches the GAP-006 class forever.
   **Highest durable value per effort in the tail.**
 - [ ] **E3 · Leg-3 parity** — port the InMemory integration suites on stateful paths to Testcontainers, worst-first:
