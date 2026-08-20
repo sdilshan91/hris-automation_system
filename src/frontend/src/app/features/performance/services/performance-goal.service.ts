@@ -4,10 +4,12 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  ActiveCycleWire,
   IAppraisalCycle,
   IGoal,
   ISaveGoalsRequest,
   ITeamGoalStatus,
+  mapActiveCycle,
 } from '../models/goal.models';
 
 /**
@@ -34,9 +36,11 @@ export class PerformanceGoalService {
    * `goalSettingOpen` from the configured window dates (BR-1).
    */
   getActiveCycle(): Observable<IAppraisalCycle> {
-    return this.http.get<IAppraisalCycle>(`${this.baseUrl}/cycles/active`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<ActiveCycleWire>(`${this.baseUrl}/cycles/active`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapActiveCycle));
   }
 
   /**

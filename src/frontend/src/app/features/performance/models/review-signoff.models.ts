@@ -31,6 +31,8 @@
  * Bare payloads (US-PLT-001 unwrap); PascalCase enum strings (US-PLT-003), never ints.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Enums ────────────────────────────────────────────────────
 
 /**
@@ -317,4 +319,84 @@ export function buildSignoffTimeline(
   });
 
   return entries;
+}
+
+// ─── Wire contract → view-model mapper (US-PRF-006 D-perf slice 3) ────────────
+//
+// All nine reads consume the GENERATED `PerformanceReviewMeetingNotesDto`. Drift
+// reconciled here: `reviewId ← managerReviewId`, `meetingNotesHtml ← body`, the status
+// enum is remapped (wire `NotStarted`/`NotesAdded` → FE `NotesDraft`), and the manager/
+// employee signatures + dispute are read out of the `signoffs[]` audit array (the notes
+// DTO has no flat signature fields).
+export type ReviewMeetingNotesWire =
+  Schema<'PerformanceReviewMeetingNotesDto'>;
+export type ReviewSignoffEntryWire =
+  Schema<'PerformanceReviewSignoffEntryDto'>;
+
+/** Wire ReviewSignoffStatus → FE SignoffStatus (the wire has no `Completed`). */
+const SIGNOFF_STATUS_WIRE_MAP: Record<string, SignoffStatus> = {
+  NotStarted: 'NotesDraft',
+  NotesAdded: 'NotesDraft',
+  PendingEmployeeSignOff: 'PendingEmployeeSignOff',
+  SignedOff: 'SignedOff',
+  Disputed: 'Disputed',
+  NoResponse: 'NoResponse',
+};
+
+function toSignature(
+  entry: ReviewSignoffEntryWire | undefined,
+): ISignature | null {
+  if (!entry) {
+    return null;
+  }
+  return {
+    name: entry.signerName ?? '',
+    signedOn: entry.signedAt ?? '',
+    ipAddress: entry.clientIpAddress ?? null,
+  };
+}
+
+/**
+ * Maps `PerformanceReviewMeetingNotesDto` onto `IReviewSignoff`. The notes DTO is
+ * notes-centric: it does NOT carry the review's goal/rating snapshot, rating scale,
+ * manager name, cycle name, final score, or an export flag — those are defaulted here
+ * and REPORTED (the sign-off screen renders them, so this is a real backend gap, not a
+ * fabricated value).
+ */
+export function mapReviewSignoff(w: ReviewMeetingNotesWire): IReviewSignoff {
+  const signoffs = w.signoffs ?? [];
+  const byAction = (action: string): ReviewSignoffEntryWire | undefined =>
+    signoffs.find((s) => (s.actionName ?? s.action) === action);
+  const disputeEntry = byAction('Disputed');
+  const rawStatus = w.signoffStatusName ?? w.signoffStatus;
+  return {
+    reviewId: w.managerReviewId ?? '',
+    cycleId: w.cycleId ?? '',
+    // No wire source on the notes DTO — defaulted (reported).
+    cycleName: '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    // No wire source — defaulted (reported).
+    jobTitle: null,
+    // No wire source — defaulted (reported).
+    managerName: '',
+    status:
+      (rawStatus ? SIGNOFF_STATUS_WIRE_MAP[rawStatus] : undefined) ??
+      'NotesDraft',
+    // No wire source — defaulted (reported).
+    ratingScaleMax: 0,
+    // No wire source — defaulted (reported).
+    finalScore: null,
+    meetingNotesHtml: w.body ?? '',
+    managerSignature: toSignature(byAction('RequestedSignOff')),
+    employeeSignature: toSignature(byAction('Acknowledged')),
+    disputeComments: disputeEntry?.comments ?? null,
+    disputedOn: disputeEntry?.signedAt ?? null,
+    // No wire source — defaulted (reported).
+    employeeViewed: false,
+    // No wire source: the notes DTO carries no goal/rating snapshot — defaulted (reported).
+    goals: [],
+    // No wire source — defaulted (reported).
+    exportAvailable: false,
+  };
 }

@@ -57,6 +57,8 @@
  * Bare payloads (US-PLT-001 unwrap); PascalCase enum strings (US-PLT-003), never ints.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Enums ────────────────────────────────────────────────────
 
 /**
@@ -468,4 +470,133 @@ export function checkpointMarkerPosition(
     return 0;
   }
   return Math.min(1, Math.max(0, (due - start) / (end - start)));
+}
+
+// ─── Wire contract → view-model mappers (US-PRF-008 D-perf slice 3) ───────────
+//
+// The reads consume the GENERATED contract types. Drift reconciled here (was
+// silently wrong): the record id is `id` not `pipId`; the objective id is `id` not
+// `objectiveId` (the `@for … track obj.objectiveId` tracked every objective by
+// `undefined`, colliding keys with >1 objective); checkpoints rename
+// `checkpointDate`/`progressStatus`/`evidenceNotes`/`reviewerName` →
+// `dueDate`/`status`/`notes`/`recordedBy`; the summary carries a single
+// `checkpointCount` (no recorded/total split); and there is no acknowledgement
+// signature / final-outcome DTO — both are derived.
+export type PipWire = Schema<'PerformancePipDto'>;
+export type PipSummaryWire = Schema<'PerformancePipSummaryDto'>;
+export type PipObjectiveWire = Schema<'PerformancePipObjectiveDto'>;
+export type PipCheckpointWire = Schema<'PerformancePipCheckpointDto'>;
+export type PipDraftWire = Schema<'PerformancePipDraftDto'>;
+
+export function mapPipCheckpoint(w: PipCheckpointWire): IPipCheckpoint {
+  return {
+    checkpointId: w.id ?? '',
+    dueDate: w.checkpointDate ?? '',
+    recordedOn: w.recordedAt ?? null,
+    status: (w.progressStatusName ??
+      w.progressStatus ??
+      null) as CheckpointStatus | null,
+    notes: w.evidenceNotes ?? null,
+    recordedBy: w.reviewerName ?? null,
+    attachmentName: w.attachmentFileName ?? null,
+    // No wire source — the checkpoint DTO carries no overdue flag (reported).
+    overdue: false,
+  };
+}
+
+export function mapPipObjective(w: PipObjectiveWire): IPipObjective {
+  return {
+    objectiveId: w.id ?? '',
+    title: w.title ?? '',
+    description: w.description ?? '',
+    successCriteria: w.successCriteria ?? '',
+    dueDate: w.dueDate ?? '',
+    checkpoints: (w.checkpoints ?? []).map(mapPipCheckpoint),
+  };
+}
+
+export function mapPipSummary(w: PipSummaryWire): IPipSummary {
+  return {
+    pipId: w.id ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    // No wire source on PerformancePipSummaryDto — defaulted (reported).
+    jobTitle: null,
+    status: (w.statusName ?? w.status ?? 'Draft') as PipStatus,
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    objectiveCount: w.objectiveCount ?? 0,
+    // The summary DTO carries a single `checkpointCount` (no recorded/total split);
+    // mapped to the total. There is NO recorded-count field, so `checkpointsRecorded`
+    // defaults to 0 (reported — the "N of M" list hint under-reports).
+    checkpointsRecorded: 0,
+    checkpointsTotal: w.checkpointCount ?? 0,
+    acknowledgement: (w.acknowledgementStatusName ??
+      w.acknowledgementStatus ??
+      'Pending') as PipAcknowledgement,
+  };
+}
+
+export function mapPip(w: PipWire): IPip {
+  const derivedStatus = (w.statusName ?? w.status) as PipStatus | undefined;
+  const escalationConfirmedBy = (w.events ?? []).find(
+    (e) => (e.eventTypeName ?? e.eventType) === 'EscalationConfirmed',
+  )?.actorName;
+  return {
+    pipId: w.id ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    // No wire source on PerformancePipDto — defaulted (reported).
+    jobTitle: null,
+    managerName: w.managerName ?? null,
+    status: (derivedStatus ?? 'Draft') as PipStatus,
+    reason: w.reason ?? '',
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    mentorName: w.mentorName ?? null,
+    objectives: (w.objectives ?? []).map(mapPipObjective),
+    escalationAction: (w.escalationActionName ??
+      w.escalationAction ??
+      'Reassignment') as EscalationAction,
+    escalation: w.escalationConfirmed
+      ? {
+          action: (w.escalationActionName ??
+            w.escalationAction ??
+            'Reassignment') as EscalationAction,
+          note: w.escalationNotes ?? null,
+          // No dedicated field — read from the EscalationConfirmed event (reported when absent).
+          confirmedBy: escalationConfirmedBy ?? '',
+          confirmedOn: w.escalationConfirmedAt ?? '',
+        }
+      : null,
+    acknowledgement: (w.acknowledgementStatusName ??
+      w.acknowledgementStatus ??
+      'Pending') as PipAcknowledgement,
+    // No signature DTO on the wire — synthesised from the acknowledgement timestamp +
+    // the acknowledging employee; IP address has no wire source (reported).
+    acknowledgedSignature: w.acknowledgedAt
+      ? { name: w.employeeName ?? '', signedOn: w.acknowledgedAt, ipAddress: null }
+      : null,
+    // No outcome enum on the wire — derived from the terminal status once an outcome
+    // has been set (`outcomeSetAt`); never fabricated (reported).
+    outcome:
+      w.outcomeSetAt != null &&
+      (derivedStatus === 'SuccessfullyCompleted' ||
+        derivedStatus === 'Extended' ||
+        derivedStatus === 'NotMet')
+        ? (derivedStatus as PipOutcome)
+        : null,
+  };
+}
+
+export function mapPipDraft(w: PipDraftWire): IPipDraft {
+  return {
+    employeeId: w.employeeId ?? null,
+    employeeName: w.employeeName ?? null,
+    jobTitle: w.jobTitle ?? null,
+    managerName: w.managerName ?? null,
+    suggestedReason: w.suggestedReason ?? null,
+    hasActivePip: w.hasActivePip ?? false,
+    escalationOptions: (w.escalationOptions ?? []) as EscalationAction[],
+  };
 }

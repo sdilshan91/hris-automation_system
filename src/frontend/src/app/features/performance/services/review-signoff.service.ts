@@ -8,6 +8,8 @@ import {
   IResolveDisputeRequest,
   IReviewSignoff,
   ISaveMeetingNotesRequest,
+  ReviewMeetingNotesWire,
+  mapReviewSignoff,
 } from '../models/review-signoff.models';
 
 /**
@@ -62,10 +64,12 @@ export class ReviewSignoffService {
 
   /** Load the caller's OWN sign-off record in the active cycle (AC-3/AC-4). */
   getMySignoff(): Observable<IReviewSignoff> {
-    return this.http.get<IReviewSignoff>(
-      `${this.reviewsBase}/cycles/active/me/notes`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<ReviewMeetingNotesWire>(
+        `${this.reviewsBase}/cycles/active/me/notes`,
+        { withCredentials: true },
+      )
+      .pipe(map(mapReviewSignoff));
   }
 
   /**
@@ -73,11 +77,13 @@ export class ReviewSignoffService {
    * signature (name+timestamp+IP) and flips status to SignedOff. Empty body.
    */
   acknowledgeMy(): Observable<IReviewSignoff> {
-    return this.http.post<IReviewSignoff>(
-      `${this.reviewsBase}/cycles/active/me/acknowledge`,
-      {},
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ReviewMeetingNotesWire>(
+        `${this.reviewsBase}/cycles/active/me/acknowledge`,
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map(mapReviewSignoff));
   }
 
   /**
@@ -85,22 +91,25 @@ export class ReviewSignoffService {
    * server records the dispute, flips status to Disputed, notifies manager + HR.
    */
   disputeMy(comments: string): Observable<IReviewSignoff> {
-    return this.http.post<IReviewSignoff>(
-      `${this.reviewsBase}/cycles/active/me/dispute`,
-      { comments },
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ReviewMeetingNotesWire>(
+        `${this.reviewsBase}/cycles/active/me/dispute`,
+        { comments },
+        { withCredentials: true },
+      )
+      .pipe(map(mapReviewSignoff));
   }
 
   /** Load the full sign-off record for an employee (drives every US-PRF-006 screen). */
   getSignoff(employeeId: string): Observable<IReviewSignoff> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.get<IReviewSignoff>(
+        this.http.get<ReviewMeetingNotesWire>(
           `${this.notesBase(cycleId, employeeId)}/notes`,
           { withCredentials: true },
         ),
       ),
+      map(mapReviewSignoff),
     );
   }
 
@@ -114,12 +123,13 @@ export class ReviewSignoffService {
   ): Observable<IReviewSignoff> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.put<IReviewSignoff>(
+        this.http.put<ReviewMeetingNotesWire>(
           `${this.notesBase(cycleId, employeeId)}/notes`,
           { body: request.meetingNotesHtml },
           { withCredentials: true },
         ),
       ),
+      map(mapReviewSignoff),
     );
   }
 
@@ -133,12 +143,13 @@ export class ReviewSignoffService {
   ): Observable<IReviewSignoff> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.post<IReviewSignoff>(
+        this.http.post<ReviewMeetingNotesWire>(
           `${this.notesBase(cycleId, employeeId)}/request-signoff`,
           { body: request.meetingNotesHtml },
           { withCredentials: true },
         ),
       ),
+      map(mapReviewSignoff),
     );
   }
 
@@ -149,12 +160,13 @@ export class ReviewSignoffService {
   acknowledge(employeeId: string): Observable<IReviewSignoff> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.post<IReviewSignoff>(
+        this.http.post<ReviewMeetingNotesWire>(
           `${this.notesBase(cycleId, employeeId)}/acknowledge`,
           {},
           { withCredentials: true },
         ),
       ),
+      map(mapReviewSignoff),
     );
   }
 
@@ -168,12 +180,13 @@ export class ReviewSignoffService {
   ): Observable<IReviewSignoff> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.post<IReviewSignoff>(
+        this.http.post<ReviewMeetingNotesWire>(
           `${this.notesBase(cycleId, employeeId)}/dispute`,
           { comments: request.comments },
           { withCredentials: true },
         ),
       ),
+      map(mapReviewSignoff),
     );
   }
 
@@ -184,12 +197,13 @@ export class ReviewSignoffService {
   ): Observable<IReviewSignoff> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.post<IReviewSignoff>(
+        this.http.post<ReviewMeetingNotesWire>(
           `${this.notesBase(cycleId, employeeId)}/resolve-dispute`,
           { amend: request.resolution === 'Amend', comments: request.note ?? null },
           { withCredentials: true },
         ),
       ),
+      map(mapReviewSignoff),
     );
   }
 

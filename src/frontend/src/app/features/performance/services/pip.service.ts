@@ -11,6 +11,12 @@ import {
   IPipSummary,
   IRecordCheckpointRequest,
   ISetOutcomeRequest,
+  PipDraftWire,
+  PipSummaryWire,
+  PipWire,
+  mapPip,
+  mapPipDraft,
+  mapPipSummary,
 } from '../models/pip.models';
 
 /**
@@ -37,17 +43,23 @@ export class PipService {
   /** AC-1: the HR PIP list. Tolerates either a bare array or a `{ data }` page. */
   listPips(): Observable<IPipSummary[]> {
     return this.http
-      .get<IPipSummary[] | { data: IPipSummary[] }>(this.baseUrl, {
+      .get<PipSummaryWire[] | { data: PipSummaryWire[] }>(this.baseUrl, {
         withCredentials: true,
       })
-      .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
+      .pipe(
+        map((res) =>
+          (Array.isArray(res) ? res : (res?.data ?? [])).map(mapPipSummary),
+        ),
+      );
   }
 
   /** Load the full PIP record (drives the detail/timeline screen + employee My PIP). */
   getPip(pipId: string): Observable<IPip> {
-    return this.http.get<IPip>(`${this.baseUrl}/${pipId}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<PipWire>(`${this.baseUrl}/${pipId}`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPip));
   }
 
   /**
@@ -65,10 +77,12 @@ export class PipService {
     }
     // BUG-243: no backend route — PipController exposes no draft/pre-fill endpoint.
     // Needs a BE endpoint (see COMPLETION-PLAN Theme F/K).
-    return this.http.get<IPipDraft>(`${this.baseUrl}/draft`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<PipDraftWire>(`${this.baseUrl}/draft`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(mapPipDraft));
   }
 
   /**
@@ -77,9 +91,11 @@ export class PipService {
    * employee/manager/mentor and schedules checkpoint reminders.
    */
   createPip(request: ICreatePipRequest): Observable<IPip> {
-    return this.http.post<IPip>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<PipWire>(this.baseUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPip));
   }
 
   /**
@@ -101,9 +117,13 @@ export class PipService {
       form.append('progressStatus', request.progressStatus);
       form.append('evidenceNotes', request.evidenceNotes);
       form.append('file', file, file.name);
-      return this.http.post<IPip>(url, form, { withCredentials: true });
+      return this.http
+        .post<PipWire>(url, form, { withCredentials: true })
+        .pipe(map(mapPip));
     }
-    return this.http.post<IPip>(url, request, { withCredentials: true });
+    return this.http
+      .post<PipWire>(url, request, { withCredentials: true })
+      .pipe(map(mapPip));
   }
 
   /**
@@ -112,9 +132,11 @@ export class PipService {
    * NotMet and unlocks the escalation step (AC-5).
    */
   setOutcome(pipId: string, request: ISetOutcomeRequest): Observable<IPip> {
-    return this.http.post<IPip>(`${this.baseUrl}/${pipId}/outcome`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<PipWire>(`${this.baseUrl}/${pipId}/outcome`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPip));
   }
 
   /**
@@ -123,11 +145,11 @@ export class PipService {
    */
   escalate(pipId: string, request: IEscalateRequest): Observable<IPip> {
     // BUG-243: the backend route is POST pips/{pipId}/escalation (not /escalate).
-    return this.http.post<IPip>(
-      `${this.baseUrl}/${pipId}/escalation`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PipWire>(`${this.baseUrl}/${pipId}/escalation`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPip));
   }
 
   /**
@@ -135,10 +157,12 @@ export class PipService {
    * Reached from the employee "My PIP" view under /my-review.
    */
   acknowledge(pipId: string): Observable<IPip> {
-    return this.http.post<IPip>(
-      `${this.baseUrl}/${pipId}/acknowledge`,
-      {},
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PipWire>(
+        `${this.baseUrl}/${pipId}/acknowledge`,
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map(mapPip));
   }
 }

@@ -15,7 +15,6 @@ function summary(
     cycleName: '2026 Annual',
     currency: 'USD',
     totalPromotions: 6,
-    totalBonuses: 12,
     totalIncrements: 9,
     totalTrainingNominations: 3,
     bonusPoolAllocated: 250000,

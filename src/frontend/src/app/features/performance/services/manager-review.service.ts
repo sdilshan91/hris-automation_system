@@ -7,6 +7,10 @@ import {
   IManagerReview,
   IManagerTeamRow,
   ISaveManagerReviewRequest,
+  ManagerReviewWire,
+  TeamReviewsDashboardWire,
+  mapManagerReview,
+  mapTeamReviewsDashboard,
 } from '../models/manager-review.models';
 
 /**
@@ -54,12 +58,12 @@ export class ManagerReviewService {
   getTeam(): Observable<IManagerTeamRow[]> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.get<IManagerTeamRow[] | { data: IManagerTeamRow[] }>(
+        this.http.get<TeamReviewsDashboardWire>(
           `${this.reviewsBase}/cycles/${cycleId}/team`,
           { withCredentials: true },
         ),
       ),
-      map((res) => this.toArray(res)),
+      map(mapTeamReviewsDashboard),
     );
   }
 
@@ -72,11 +76,12 @@ export class ManagerReviewService {
   getEmployeeReview(employeeId: string): Observable<IManagerReview> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.get<IManagerReview>(
+        this.http.get<ManagerReviewWire>(
           `${this.reviewsBase}/cycles/${cycleId}/employees/${employeeId}`,
           { withCredentials: true },
         ),
       ),
+      map(mapManagerReview),
     );
   }
 
@@ -85,9 +90,11 @@ export class ManagerReviewService {
    * unchanged. cycleId + employeeId travel in the body. Returns the persisted review.
    */
   saveDraft(request: ISaveManagerReviewRequest): Observable<IManagerReview> {
-    return this.http.put<IManagerReview>(`${this.reviewsBase}/draft`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .put<ManagerReviewWire>(`${this.reviewsBase}/draft`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapManagerReview));
   }
 
   /**
@@ -98,21 +105,10 @@ export class ManagerReviewService {
    * (BR-1). cycleId + employeeId travel in the body. Returns the locked review.
    */
   submit(request: ISaveManagerReviewRequest): Observable<IManagerReview> {
-    return this.http.post<IManagerReview>(
-      `${this.reviewsBase}/submit`,
-      request,
-      { withCredentials: true },
-    );
-  }
-
-  /** Accept either a bare array or a `{ data }` page; default to []. */
-  private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
-    if (Array.isArray(res)) {
-      return res;
-    }
-    if (res && Array.isArray((res as { data: T[] }).data)) {
-      return (res as { data: T[] }).data;
-    }
-    return [];
+    return this.http
+      .post<ManagerReviewWire>(`${this.reviewsBase}/submit`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapManagerReview));
   }
 }

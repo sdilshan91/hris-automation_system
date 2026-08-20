@@ -21,6 +21,8 @@
  * payloads. Do NOT double-unwrap.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Enums ────────────────────────────────────────────────────
 
 /** Goal category (FR-2, §7). Matches C# `GoalCategory`. */
@@ -192,3 +194,28 @@ export const WEIGHT_BAR_COLORS = [
   '#f97316',
   '#84cc16',
 ];
+
+// ─── Wire contract → view-model mapper (US-PRF-001 D-perf slice 3) ────────────
+//
+// `getActiveCycle` consumes the GENERATED `PerformanceActiveCycleDto`, not a
+// hand-written guess. **Drift reconciled here:** `IAppraisalCycle` declared flat
+// `goalSettingOpensOn`/`goalSettingClosesOn` date fields; the wire carries NO such
+// fields — the goal-setting window lives inside the `phases[]` array (the phase whose
+// type is `GoalSetting`). The un-migrated code returned the raw payload as
+// `IAppraisalCycle`, so both window dates were `undefined`. This mapper derives them
+// from the `GoalSetting` phase — the closest faithful reading, not a fabricated value.
+export type ActiveCycleWire = Schema<'PerformanceActiveCycleDto'>;
+
+export function mapActiveCycle(w: ActiveCycleWire): IAppraisalCycle {
+  const goalSetting = (w.phases ?? []).find(
+    (p) => (p.phaseTypeName ?? p.phaseType) === 'GoalSetting',
+  );
+  return {
+    id: w.id ?? '',
+    name: w.name ?? '',
+    // No dedicated wire field — derived from the GoalSetting phase window (reported).
+    goalSettingOpensOn: (goalSetting?.startDate ?? '').slice(0, 10),
+    goalSettingClosesOn: (goalSetting?.endDate ?? '').slice(0, 10),
+    goalSettingOpen: w.goalSettingOpen ?? false,
+  };
+}

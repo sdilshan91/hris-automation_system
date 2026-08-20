@@ -8,6 +8,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { Feedback360Service } from './feedback-360.service';
 import { environment } from '../../../../environments/environment';
 import {
+  CompletionTrackerWire,
+  FeedbackFormWire,
   IReviewerConfig,
   IFeedbackForm,
   IFeedback360Results,
@@ -16,6 +18,7 @@ import {
   ICompletionTracker,
   ISaveReviewersRequest,
   ISubmitFeedbackRequest,
+  ReviewerConfigurationWire,
 } from '../models/feedback-360.models';
 
 describe('Feedback360Service', () => {
@@ -25,16 +28,47 @@ describe('Feedback360Service', () => {
   const perfBase = `${environment.apiBaseUrl}/tenant/performance`;
   const activeCycleUrl = `${perfBase}/cycles/active`;
 
+  // Real wire (PerformanceReviewerConfigurationDto): `assignments` (not `reviewers`),
+  // suggested reviewers as bare {id,no,name}, a scalar `minPeerReviewers`, and NO
+  // candidatePool / per-category minimums / cycleName / editable flag.
+  const mockConfigWire: ReviewerConfigurationWire = {
+    cycleId: 'cyc-1',
+    revieweeEmployeeId: 'e-1',
+    revieweeName: 'Alex Doe',
+    is360Enabled: true,
+    isAnonymousFeedback: true,
+    minPeerReviewers: 2,
+    assignments: [
+      {
+        id: 'as-1',
+        cycleId: 'cyc-1',
+        revieweeEmployeeId: 'e-1',
+        reviewerEmployeeId: 'e-1',
+        reviewerName: 'Alex Doe',
+        category: 'Self',
+        categoryName: 'Self',
+        status: 'Pending',
+        statusName: 'Pending',
+      },
+    ],
+    suggestedPeers: [],
+    suggestedDirectReports: [],
+  };
+
+  // Expected mapped view-model (the backend-gap fields are defaulted).
   const mockConfig: IReviewerConfig = {
     cycleId: 'cyc-1',
-    cycleName: '2026 Annual',
+    cycleName: '',
     employeeId: 'e-1',
     employeeName: 'Alex Doe',
     reviewers: [
       {
         reviewerId: 'e-1',
         name: 'Alex Doe',
+        jobTitle: null,
+        departmentName: null,
         category: 'Self',
+        avatarUrl: null,
         locked: true,
       },
     ],
@@ -44,6 +78,29 @@ describe('Feedback360Service', () => {
     minimums: [{ category: 'Peer', minimum: 2 }],
     anonymous: true,
     editable: true,
+  };
+
+  const mockFormWire: FeedbackFormWire = {
+    assignmentId: 'a-1',
+    cycleId: 'cyc-1',
+    cycleName: '2026 Annual',
+    revieweeId: 'e-1',
+    revieweeName: 'Alex Doe',
+    revieweeJobTitle: 'Engineer',
+    category: 'Peer',
+    ratingScaleMax: 5,
+    submitted: false,
+    submittedOn: null,
+    anonymous: true,
+    questions: [
+      {
+        questionId: 'q-1',
+        kind: 'Competency',
+        title: 'Communication',
+        rating: null,
+        comment: '',
+      },
+    ],
   };
 
   const mockForm: IFeedbackForm = {
@@ -63,6 +120,7 @@ describe('Feedback360Service', () => {
         questionId: 'q-1',
         kind: 'Competency',
         title: 'Communication',
+        description: null,
         rating: null,
         comment: '',
       },
@@ -137,6 +195,13 @@ describe('Feedback360Service', () => {
     exportAvailable: true,
   };
 
+  const mockTrackerWire: CompletionTrackerWire = {
+    employeeId: 'e-1',
+    categories: [
+      { category: 'Peer', submitted: 1, pending: 1, overdue: 0, minimum: 2 },
+    ],
+  };
+
   const mockTracker: ICompletionTracker = {
     employeeId: 'e-1',
     categories: [
@@ -165,7 +230,7 @@ describe('Feedback360Service', () => {
     const req = httpMock.expectOne(`${baseUrl}/employees/e-1/config`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockConfig);
+    req.flush(mockConfigWire);
 
     expect(result).toEqual(mockConfig);
   });
@@ -180,7 +245,7 @@ describe('Feedback360Service', () => {
     const req = httpMock.expectOne(`${baseUrl}/employees/e-1/reviewers`);
     expect(req.request.method).toBe('PUT');
     expect(req.request.body).toEqual(body);
-    req.flush(mockConfig);
+    req.flush(mockConfigWire);
 
     expect(result).toEqual(mockConfig);
   });
@@ -191,7 +256,7 @@ describe('Feedback360Service', () => {
 
     const req = httpMock.expectOne(`${baseUrl}/employees/e-1/tracker`);
     expect(req.request.method).toBe('GET');
-    req.flush(mockTracker);
+    req.flush(mockTrackerWire);
 
     expect(result).toEqual(mockTracker);
   });
@@ -203,7 +268,7 @@ describe('Feedback360Service', () => {
     const req = httpMock.expectOne(`${baseUrl}/assignments/a-1/form`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockForm);
+    req.flush(mockFormWire);
 
     expect(result).toEqual(mockForm);
   });
@@ -212,8 +277,8 @@ describe('Feedback360Service', () => {
     const body: ISubmitFeedbackRequest = {
       items: [{ questionId: 'q-1', rating: 4, comment: 'Strong work' }],
     };
-    const submitted: IFeedbackForm = {
-      ...mockForm,
+    const submitted: FeedbackFormWire = {
+      ...mockFormWire,
       submitted: true,
       submittedOn: '2026-06-10T10:00:00Z',
     };

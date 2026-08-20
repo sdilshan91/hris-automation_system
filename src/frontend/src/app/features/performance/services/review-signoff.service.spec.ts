@@ -7,7 +7,10 @@ import { provideHttpClient } from '@angular/common/http';
 
 import { ReviewSignoffService } from './review-signoff.service';
 import { environment } from '../../../../environments/environment';
-import { IReviewSignoff } from '../models/review-signoff.models';
+import {
+  IReviewSignoff,
+  ReviewMeetingNotesWire,
+} from '../models/review-signoff.models';
 
 describe('ReviewSignoffService', () => {
   let service: ReviewSignoffService;
@@ -17,25 +20,43 @@ describe('ReviewSignoffService', () => {
   // reviews/cycles/{cycleId}/employees/{employeeId}
   const notesBase = `${perfBase}/reviews/cycles/cyc-1/employees/e-1`;
 
+  // Real wire (PerformanceReviewMeetingNotesDto): the record id is `managerReviewId`,
+  // the notes HTML is `body`, the status enum is `signoffStatusName` (wire `NotesAdded`),
+  // and the signatures live in the `signoffs[]` audit array — there is NO goal snapshot,
+  // rating scale, manager name, cycle name, final score, or export flag on this DTO.
+  const mockNotesWire: ReviewMeetingNotesWire = {
+    managerReviewId: 'rv-1',
+    cycleId: 'cyc-1',
+    employeeId: 'e-1',
+    employeeName: 'Alex Doe',
+    employeeNo: 'E-001',
+    body: '<p>Notes</p>',
+    signoffStatus: 'NotesAdded',
+    signoffStatusName: 'NotesAdded',
+    isLocked: false,
+    signoffs: [],
+  };
+
+  // Expected mapped view-model. The eight backend-gap fields are defaulted here.
   const mockRecord: IReviewSignoff = {
     reviewId: 'rv-1',
     cycleId: 'cyc-1',
-    cycleName: '2026 Annual',
+    cycleName: '',
     employeeId: 'e-1',
     employeeName: 'Alex Doe',
-    jobTitle: 'Engineer',
-    managerName: 'Sam Lead',
+    jobTitle: null,
+    managerName: '',
     status: 'NotesDraft',
-    ratingScaleMax: 5,
-    finalScore: 87,
+    ratingScaleMax: 0,
+    finalScore: null,
     meetingNotesHtml: '<p>Notes</p>',
     managerSignature: null,
     employeeSignature: null,
     disputeComments: null,
     disputedOn: null,
     employeeViewed: false,
-    goals: [{ goalId: 'g-1', title: 'NPS', weight: 100, managerRating: 4 }],
-    exportAvailable: true,
+    goals: [],
+    exportAvailable: false,
   };
 
   beforeEach(() => {
@@ -52,12 +73,15 @@ describe('ReviewSignoffService', () => {
 
   afterEach(() => httpMock.verify());
 
-  /** Every method first resolves the active cycle. */
+  /** Every manager/HR method first resolves the active cycle. */
   function flushActiveCycle(): void {
     httpMock.expectOne(activeCycleUrl).flush({ id: 'cyc-1' });
   }
 
-  it('getSignoff() resolves the cycle then GETs the notes record', () => {
+  it('getSignoff() resolves the cycle then maps the notes record (fails on the un-migrated pass-through)', () => {
+    // The un-migrated code returned the raw payload cast to IReviewSignoff, so
+    // `reviewId` (wire `managerReviewId`) and `meetingNotesHtml` (wire `body`) were
+    // undefined, and `status` was the wire `NotesAdded` — not a valid FE SignoffStatus.
     let result: IReviewSignoff | undefined;
     service.getSignoff('e-1').subscribe((r) => (result = r));
 
@@ -65,9 +89,54 @@ describe('ReviewSignoffService', () => {
     const req = httpMock.expectOne(`${notesBase}/notes`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockRecord);
+    req.flush(mockNotesWire);
 
     expect(result).toEqual(mockRecord);
+    expect(result?.reviewId).toBe('rv-1');
+    expect(result?.meetingNotesHtml).toBe('<p>Notes</p>');
+    expect(result?.status).toBe('NotesDraft');
+  });
+
+  it('getSignoff() reads the manager + employee signatures and dispute out of signoffs[]', () => {
+    let result: IReviewSignoff | undefined;
+    service.getSignoff('e-1').subscribe((r) => (result = r));
+
+    flushActiveCycle();
+    httpMock.expectOne(`${notesBase}/notes`).flush({
+      ...mockNotesWire,
+      signoffStatus: 'Disputed',
+      signoffStatusName: 'Disputed',
+      signoffs: [
+        {
+          action: 'RequestedSignOff',
+          actionName: 'RequestedSignOff',
+          party: 'Manager',
+          partyName: 'Manager',
+          signerName: 'Sam Lead',
+          signedAt: '2026-06-10T09:00:00Z',
+          clientIpAddress: '10.0.0.1',
+        },
+        {
+          action: 'Disputed',
+          actionName: 'Disputed',
+          party: 'Employee',
+          partyName: 'Employee',
+          signerName: 'Alex Doe',
+          signedAt: '2026-06-12T10:00:00Z',
+          comments: 'I disagree with goal 1.',
+        },
+      ],
+    });
+
+    expect(result?.status).toBe('Disputed');
+    expect(result?.managerSignature).toEqual({
+      name: 'Sam Lead',
+      signedOn: '2026-06-10T09:00:00Z',
+      ipAddress: '10.0.0.1',
+    });
+    expect(result?.disputeComments).toBe('I disagree with goal 1.');
+    expect(result?.disputedOn).toBe('2026-06-12T10:00:00Z');
+    expect(result?.employeeSignature).toBeNull();
   });
 
   it('saveNotes() PUTs the notes mapped to the backend Body field', () => {
@@ -77,10 +146,10 @@ describe('ReviewSignoffService', () => {
     const req = httpMock.expectOne(`${notesBase}/notes`);
     expect(req.request.method).toBe('PUT');
     expect(req.request.body).toEqual({ body: '<p>Updated</p>' });
-    req.flush(mockRecord);
+    req.flush(mockNotesWire);
   });
 
-  it('requestSignoff() POSTs the notes to request-signoff and returns the pending record', () => {
+  it('requestSignoff() POSTs the notes to request-signoff and maps the pending record', () => {
     let result: IReviewSignoff | undefined;
     service
       .requestSignoff('e-1', { meetingNotesHtml: '<p>Final notes</p>' })
@@ -90,12 +159,16 @@ describe('ReviewSignoffService', () => {
     const req = httpMock.expectOne(`${notesBase}/request-signoff`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ body: '<p>Final notes</p>' });
-    req.flush({ ...mockRecord, status: 'PendingEmployeeSignOff' });
+    req.flush({
+      ...mockNotesWire,
+      signoffStatus: 'PendingEmployeeSignOff',
+      signoffStatusName: 'PendingEmployeeSignOff',
+    });
 
     expect(result?.status).toBe('PendingEmployeeSignOff');
   });
 
-  it('acknowledge() POSTs an empty body to the acknowledge route', () => {
+  it('acknowledge() POSTs an empty body and maps the signed-off record', () => {
     let result: IReviewSignoff | undefined;
     service.acknowledge('e-1').subscribe((r) => (result = r));
 
@@ -104,16 +177,26 @@ describe('ReviewSignoffService', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
     req.flush({
-      ...mockRecord,
-      status: 'SignedOff',
-      employeeSignature: { name: 'Alex Doe', signedOn: '2026-06-12T10:00:00Z' },
+      ...mockNotesWire,
+      signoffStatus: 'SignedOff',
+      signoffStatusName: 'SignedOff',
+      signoffs: [
+        {
+          action: 'Acknowledged',
+          actionName: 'Acknowledged',
+          party: 'Employee',
+          partyName: 'Employee',
+          signerName: 'Alex Doe',
+          signedAt: '2026-06-12T10:00:00Z',
+        },
+      ],
     });
 
     expect(result?.status).toBe('SignedOff');
     expect(result?.employeeSignature?.name).toBe('Alex Doe');
   });
 
-  it('dispute() POSTs the comments and returns the disputed record', () => {
+  it('dispute() POSTs the comments and maps the disputed record', () => {
     const body = { comments: 'I disagree with the rating on goal 1.' };
     let result: IReviewSignoff | undefined;
     service.dispute('e-1', body).subscribe((r) => (result = r));
@@ -123,9 +206,9 @@ describe('ReviewSignoffService', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual(body);
     req.flush({
-      ...mockRecord,
-      status: 'Disputed',
-      disputeComments: body.comments,
+      ...mockNotesWire,
+      signoffStatus: 'Disputed',
+      signoffStatusName: 'Disputed',
     });
 
     expect(result?.status).toBe('Disputed');
@@ -138,7 +221,7 @@ describe('ReviewSignoffService', () => {
     const req = httpMock.expectOne(`${notesBase}/resolve-dispute`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ amend: true, comments: null });
-    req.flush({ ...mockRecord, status: 'NotesDraft' });
+    req.flush(mockNotesWire);
   });
 
   // ── Employee self-service (ISSUE-288) ──────────────────────────────────────
@@ -152,7 +235,7 @@ describe('ReviewSignoffService', () => {
     const req = httpMock.expectOne(`${selfBase}/notes`);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockRecord);
+    req.flush(mockNotesWire);
 
     // No secondary call to cycles/active — the server resolves the cycle itself.
     httpMock.expectNone(activeCycleUrl);
@@ -168,9 +251,19 @@ describe('ReviewSignoffService', () => {
     expect(req.request.body).toEqual({});
     expect(req.request.withCredentials).toBeTrue();
     req.flush({
-      ...mockRecord,
-      status: 'SignedOff',
-      employeeSignature: { name: 'Alex Doe', signedOn: '2026-06-12T10:00:00Z' },
+      ...mockNotesWire,
+      signoffStatus: 'SignedOff',
+      signoffStatusName: 'SignedOff',
+      signoffs: [
+        {
+          action: 'Acknowledged',
+          actionName: 'Acknowledged',
+          party: 'Employee',
+          partyName: 'Employee',
+          signerName: 'Alex Doe',
+          signedAt: '2026-06-12T10:00:00Z',
+        },
+      ],
     });
 
     httpMock.expectNone(activeCycleUrl);
@@ -187,7 +280,11 @@ describe('ReviewSignoffService', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ comments });
     expect(req.request.withCredentials).toBeTrue();
-    req.flush({ ...mockRecord, status: 'Disputed', disputeComments: comments });
+    req.flush({
+      ...mockNotesWire,
+      signoffStatus: 'Disputed',
+      signoffStatusName: 'Disputed',
+    });
 
     httpMock.expectNone(activeCycleUrl);
     expect(result?.status).toBe('Disputed');

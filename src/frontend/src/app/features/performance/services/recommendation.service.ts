@@ -4,6 +4,8 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  AutoGenerateResultWire,
+  CompletedCycleOptionWire,
   IAutoGeneratePreview,
   IAutoGenerateRequest,
   IBudgetTracker,
@@ -12,8 +14,16 @@ import {
   IRecommendationSummary,
   IRecommendationWorkspace,
   IUpdateRecommendationRequest,
+  RecommendationBudgetWire,
+  RecommendationDtoWire,
   RecommendationExportFormat,
+  RecommendationSummaryWire,
   RecommendationWorkspaceWire,
+  mapAutoGeneratePreview,
+  mapCompletedCycle,
+  mapRecommendationBudget,
+  mapRecommendationDto,
+  mapRecommendationSummary,
   mapRecommendationWorkspace,
 } from '../models/recommendation.models';
 
@@ -42,9 +52,11 @@ export class RecommendationService {
   getCompletedCycles(): Observable<ICompletedCycleOption[]> {
     return this.http
       .get<
-        ICompletedCycleOption[] | { data: ICompletedCycleOption[] }
+        CompletedCycleOptionWire[] | { data: CompletedCycleOptionWire[] }
       >(`${this.baseUrl}/cycles/completed`, { withCredentials: true })
-      .pipe(map((res) => (Array.isArray(res) ? res : (res?.data ?? []))));
+      .pipe(
+        map((res) => (Array.isArray(res) ? res : (res?.data ?? [])).map(mapCompletedCycle)),
+      );
   }
 
   /**
@@ -94,11 +106,12 @@ export class RecommendationService {
     preview = true,
   ): Observable<IAutoGeneratePreview> {
     const params = new HttpParams().set('preview', String(preview));
-    return this.http.post<IAutoGeneratePreview>(
-      `${this.baseUrl}/auto-generate`,
-      request,
-      { params, withCredentials: true },
-    );
+    return this.http
+      .post<AutoGenerateResultWire>(`${this.baseUrl}/auto-generate`, request, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(mapAutoGeneratePreview));
   }
 
   /**
@@ -134,9 +147,11 @@ export class RecommendationService {
       },
       justification: request.justification,
     };
-    return this.http.post<IRecommendationRow>(this.baseUrl, body, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<RecommendationDtoWire>(this.baseUrl, body, {
+        withCredentials: true,
+      })
+      .pipe(map(mapRecommendationDto));
   }
 
   /** AC-3: submit a finalized recommendation into the approval workflow (FR-4). */
@@ -144,11 +159,13 @@ export class RecommendationService {
     recommendationId: string,
     comment?: string,
   ): Observable<IRecommendationRow> {
-    return this.http.post<IRecommendationRow>(
-      `${this.baseUrl}/${recommendationId}/submit`,
-      { comment: comment ?? null },
-      { withCredentials: true },
-    );
+    return this.http
+      .post<RecommendationDtoWire>(
+        `${this.baseUrl}/${recommendationId}/submit`,
+        { comment: comment ?? null },
+        { withCredentials: true },
+      )
+      .pipe(map(mapRecommendationDto));
   }
 
   /** Approver decision (status → Approved/Rejected). Approver-gated server-side. */
@@ -160,29 +177,35 @@ export class RecommendationService {
     // The backend has separate approve/reject routes (not a single /decision
     // endpoint); the decision selects the path and the body carries only the comment.
     const action = decision === 'Approve' ? 'approve' : 'reject';
-    return this.http.post<IRecommendationRow>(
-      `${this.baseUrl}/${recommendationId}/${action}`,
-      { comment: comment ?? null },
-      { withCredentials: true },
-    );
+    return this.http
+      .post<RecommendationDtoWire>(
+        `${this.baseUrl}/${recommendationId}/${action}`,
+        { comment: comment ?? null },
+        { withCredentials: true },
+      )
+      .pipe(map(mapRecommendationDto));
   }
 
   /** FR-8/BR-4: re-fetch the budget tracker after an edit/submit. */
   getBudget(cycleId: string): Observable<IBudgetTracker> {
     const params = new HttpParams().set('cycleId', cycleId);
-    return this.http.get<IBudgetTracker>(`${this.baseUrl}/budget`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<RecommendationBudgetWire>(`${this.baseUrl}/budget`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((w) => mapRecommendationBudget(w)));
   }
 
   /** AC-4/FR-6: the aggregate summary (promotions, bonus pool, dept distribution). */
   getSummary(cycleId: string): Observable<IRecommendationSummary> {
     const params = new HttpParams().set('cycleId', cycleId);
-    return this.http.get<IRecommendationSummary>(`${this.baseUrl}/summary`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<RecommendationSummaryWire>(`${this.baseUrl}/summary`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(mapRecommendationSummary));
   }
 
   /**
