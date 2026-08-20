@@ -11,6 +11,10 @@ import {
   IAssessmentAttachment,
   ISaveSelfAssessmentRequest,
   ISelfAssessment,
+  SelfAssessmentAttachmentWire,
+  SelfAssessmentWire,
+  mapSelfAssessment,
+  mapSelfAssessmentAttachment,
 } from '../models/self-assessment.models';
 
 /**
@@ -65,9 +69,11 @@ export class SelfAssessmentService {
   getActive(): Observable<ISelfAssessment> {
     return this.activeCycleId().pipe(
       switchMap((cycleId) =>
-        this.http.get<ISelfAssessment>(`${this.baseUrl}/cycles/${cycleId}/me`, {
-          withCredentials: true,
-        }),
+        this.http
+          .get<SelfAssessmentWire>(`${this.baseUrl}/cycles/${cycleId}/me`, {
+            withCredentials: true,
+          })
+          .pipe(map(mapSelfAssessment)),
       ),
     );
   }
@@ -78,9 +84,11 @@ export class SelfAssessmentService {
    * the persisted assessment.
    */
   saveDraft(request: ISaveSelfAssessmentRequest): Observable<ISelfAssessment> {
-    return this.http.put<ISelfAssessment>(`${this.baseUrl}/draft`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .put<SelfAssessmentWire>(`${this.baseUrl}/draft`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapSelfAssessment));
   }
 
   /**
@@ -91,9 +99,11 @@ export class SelfAssessmentService {
    * locked assessment.
    */
   submit(request: ISaveSelfAssessmentRequest): Observable<ISelfAssessment> {
-    return this.http.post<ISelfAssessment>(`${this.baseUrl}/submit`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<SelfAssessmentWire>(`${this.baseUrl}/submit`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapSelfAssessment));
   }
 
   /**
@@ -109,7 +119,7 @@ export class SelfAssessmentService {
     const form = new FormData();
     form.append('file', file, file.name);
     return this.http
-      .post<IAssessmentAttachment>(
+      .post<SelfAssessmentAttachmentWire>(
         `${this.baseUrl}/cycles/${cycleId}/goals/${goalId}/attachments`,
         form,
         {
@@ -120,21 +130,24 @@ export class SelfAssessmentService {
       )
       .pipe(
         filter(
-          (e: HttpEvent<IAssessmentAttachment>) =>
+          (e: HttpEvent<SelfAssessmentAttachmentWire>) =>
             e.type === HttpEventType.UploadProgress ||
             e.type === HttpEventType.Response,
         ),
-        map((e: HttpEvent<IAssessmentAttachment>): IAttachmentUploadEvent => {
+        map((e: HttpEvent<SelfAssessmentAttachmentWire>): IAttachmentUploadEvent => {
           if (e.type === HttpEventType.UploadProgress) {
             const progress = e.total
               ? Math.round((100 * e.loaded) / e.total)
               : 0;
             return { type: 'progress', progress };
           }
-          // Response — bare IAssessmentAttachment (envelope unwrapped).
+          // Response — the generated attachment wire (envelope unwrapped), mapped to
+          // the view-model so `uploadedAt` → `uploadedOn` cannot silently drift.
           return {
             type: 'done',
-            attachment: (e as { body: IAssessmentAttachment }).body,
+            attachment: mapSelfAssessmentAttachment(
+              (e as { body: SelfAssessmentAttachmentWire }).body,
+            ),
           };
         }),
       );
