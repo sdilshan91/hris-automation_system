@@ -7,6 +7,8 @@ import {
   IAccrualOverCreditExposureReport,
   IAccrualExposureExport,
   AccrualExposureExportFormat,
+  AccrualExposureRowWire,
+  mapAccrualExposureRow,
 } from '../models/accrual-over-credit-exposure.models';
 
 /**
@@ -34,10 +36,21 @@ export class AccrualOverCreditExposureService {
    */
   getExposure(asOfDate: string): Observable<IAccrualOverCreditExposureReport> {
     const params = new HttpParams().set('asOfDate', asOfDate);
-    return this.http.get<IAccrualOverCreditExposureReport>(this.resource, {
-      params,
-      withCredentials: true,
-    });
+    // The per-row substance is typed to the generated contract (`AccrualExposureRowWire`) and mapped
+    // explicitly. The report envelope has no generated DTO (see the mapper's note — the endpoint's 200 is
+    // `content?: never`), so its two scalars are read defensively.
+    return this.http
+      .get<{ asOfDate?: string; leaveYear?: number; rows?: AccrualExposureRowWire[] }>(
+        this.resource,
+        { params, withCredentials: true },
+      )
+      .pipe(
+        map((r) => ({
+          asOfDate: r.asOfDate ?? '',
+          leaveYear: r.leaveYear ?? 0,
+          rows: (r.rows ?? []).map(mapAccrualExposureRow),
+        })),
+      );
   }
 
   /**

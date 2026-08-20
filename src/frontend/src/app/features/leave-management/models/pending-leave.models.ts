@@ -16,6 +16,8 @@
  * a sign-based tier (>=0 neutral, <0 red). TODO(backend): add `entitlementDays` to the DTO.
  */
 
+import type { Schema } from '@core/api';
+
 /**
  * A single pending leave request in the manager's approval queue (FR-2).
  *
@@ -90,6 +92,64 @@ export interface IApiEnvelope<T> {
   data: T;
   success?: boolean;
   message?: string;
+}
+
+// ─── Wire contract → view-model mappers (D-leave slice 2) ─────────────────────
+//
+// The read/write responses are the GENERATED contract types. Each mapper's INPUT is the generated DTO, so a
+// backend rename is a compile error here rather than a silent `undefined`.
+
+export type PendingLeaveRequestWire = Schema<'LeaveRequestsPendingLeaveRequestDto'>;
+export type PendingLeaveQueueWire = Schema<'LeaveRequestsPendingLeaveQueueResult'>;
+
+/**
+ * Maps one wire pending-request row onto `IPendingLeaveRequest`. All names align 1:1 with the wire except the
+ * two documented-absent optionals (`entitlementDays`, `attachmentUrls`) which the wire never sends and which
+ * are left undefined (rendered conditionally) — reported, not fabricated.
+ */
+export function mapPendingLeaveRequest(w: PendingLeaveRequestWire): IPendingLeaveRequest {
+  return {
+    requestId: w.requestId ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    employeePhoto: w.employeePhoto ?? null,
+    leaveTypeName: w.leaveTypeName ?? '',
+    leaveTypeColor: w.leaveTypeColor ?? '',
+    leaveTypeId: w.leaveTypeId ?? undefined,
+    startDate: w.startDate ?? '',
+    endDate: w.endDate ?? '',
+    totalDays: w.totalDays ?? 0,
+    reason: w.reason ?? '',
+    hasAttachments: w.hasAttachments ?? false,
+    currentBalance: w.currentBalance ?? 0,
+    requestedAt: w.requestedAt ?? '',
+    isOverdue: w.isOverdue ?? false,
+    teamConflictCount: w.teamConflictCount ?? 0,
+  };
+}
+
+/** Maps the wire paged queue onto `IPendingLeaveResponse`, mapping each row. */
+export function mapPendingQueue(w: PendingLeaveQueueWire): IPendingLeaveResponse {
+  return {
+    items: (w.items ?? []).map(mapPendingLeaveRequest),
+    totalCount: w.totalCount ?? 0,
+    page: w.page ?? undefined,
+    pageSize: w.pageSize ?? undefined,
+  };
+}
+
+export type LeaveApprovalResultWire = Schema<'LeaveRequestsLeaveApprovalResultDto'>;
+
+/**
+ * Maps the approve/reject wire result onto `ILeaveActionResult`. `balanceAfter` (wire) → `currentBalance`
+ * (VM); the wire's `action`/`actionedAt`/`approvalLevel`/`ledgerEntryId` have no VM field and are dropped.
+ */
+export function mapLeaveActionResult(w: LeaveApprovalResultWire): ILeaveActionResult {
+  return {
+    requestId: w.requestId ?? '',
+    status: w.status ?? '',
+    currentBalance: w.balanceAfter ?? undefined,
+  };
 }
 
 /** Sort options for the queue (FR-3). Default is oldest-requested-first (AC-1). */

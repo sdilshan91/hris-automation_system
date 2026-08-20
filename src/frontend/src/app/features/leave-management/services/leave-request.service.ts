@@ -9,6 +9,11 @@ import {
   ILeaveRequestErrorResponse,
   ICancelLeaveRequest,
   ICancelLeaveErrorResponse,
+  ILeaveCancellationResult,
+  LeaveRequestWire,
+  mapLeaveRequest,
+  LeaveCancellationResultWire,
+  mapLeaveCancellationResult,
 } from '../models/leave-request.models';
 
 /**
@@ -45,15 +50,15 @@ export class LeaveRequestService {
 
   /** Submit a new leave request (FR-5, AC-1). Returns the created request. */
   createLeaveRequest(request: ICreateLeaveRequest): Observable<ILeaveRequest> {
-    return this.http.post<ILeaveRequest>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<LeaveRequestWire>(this.baseUrl, request, { withCredentials: true })
+      .pipe(map(mapLeaveRequest));
   }
 
   /**
    * US-LV-010: Cancel one of the employee's own leave requests (FR-1, AC-1/AC-2).
    *
-   *   POST /api/v1/leaves/{id}/cancel  body { reason }  -> ILeaveRequest (status 'Cancelled')
+   *   POST /api/v1/leaves/{id}/cancel  body { reason }  -> LeaveCancellationResultDto (status 'Cancelled')
    *
    * `reason` is required for approved requests (BR-5) and may be empty for pending.
    * Errors the caller maps to §8 UX:
@@ -65,21 +70,23 @@ export class LeaveRequestService {
   cancelLeaveRequest(
     requestId: string,
     body: ICancelLeaveRequest,
-  ): Observable<ILeaveRequest> {
-    return this.http.post<ILeaveRequest>(
-      `${this.baseUrl}/${requestId}/cancel`,
-      body,
-      { withCredentials: true },
-    );
+  ): Observable<ILeaveCancellationResult> {
+    return this.http
+      .post<LeaveCancellationResultWire>(
+        `${this.baseUrl}/${requestId}/cancel`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapLeaveCancellationResult));
   }
 
   // --- Read --------------------------------------------------
 
   /** Get the current employee's own leave requests (My Leaves list). */
   getMyLeaveRequests(): Observable<ILeaveRequest[]> {
-    return this.http.get<ILeaveRequest[]>(`${this.baseUrl}/mine`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<LeaveRequestWire[]>(`${this.baseUrl}/mine`, { withCredentials: true })
+      .pipe(map((rows) => (rows ?? []).map(mapLeaveRequest)));
   }
 
   /**

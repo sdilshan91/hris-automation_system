@@ -21,6 +21,8 @@
  *   format=csv|xlsx -> file download
  */
 
+import type { Schema } from '@core/api';
+
 /** One (employee × leave type) row over-credited relative to its accrual frequency. */
 export interface IAccrualOverCreditExposureRow {
   employeeId: string;
@@ -47,6 +49,36 @@ export interface IAccrualOverCreditExposureReport {
   asOfDate: string;
   leaveYear: number;
   rows: IAccrualOverCreditExposureRow[];
+}
+
+// ─── Wire contract → view-model mapper (D-leave slice 2) ──────────────────────
+//
+// The exposure ROW is the GENERATED contract type, so a backend rename of an exposure field is a compile error
+// here. NOTE (finding): the report ENVELOPE (`AccrualOverCreditExposureReportDto`) is ABSENT from the generated
+// contract — the endpoint's 200 response is `content?: never` because the action returns JSON-or-file
+// (`IActionResult`), so Swashbuckle emitted no schema for it. The two envelope scalars (`asOfDate`,
+// `leaveYear`) are therefore read defensively in the service, while the substance — the per-row fields — is
+// anchored to the generated `LeaveEntitlementsAccrualOverCreditExposureRow`.
+
+export type AccrualExposureRowWire = Schema<'LeaveEntitlementsAccrualOverCreditExposureRow'>;
+
+/** Maps a wire exposure row onto `IAccrualOverCreditExposureRow` (names align 1:1 with the backend DTO). */
+export function mapAccrualExposureRow(
+  w: AccrualExposureRowWire,
+): IAccrualOverCreditExposureRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeNo: w.employeeNo ?? '',
+    employeeName: w.employeeName ?? '',
+    leaveTypeId: w.leaveTypeId ?? '',
+    leaveTypeName: w.leaveTypeName ?? '',
+    leaveYear: w.leaveYear ?? 0,
+    accrualFrequency: w.accrualFrequency ?? '',
+    creditedDays: w.creditedDays ?? 0,
+    shouldHaveAccruedDays: w.shouldHaveAccruedDays ?? 0,
+    overCreditedDays: w.overCreditedDays ?? 0,
+    isEmployeeActive: w.isEmployeeActive ?? false,
+  };
 }
 
 /** Server-generated export formats supported by the endpoint. */

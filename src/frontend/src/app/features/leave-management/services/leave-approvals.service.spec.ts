@@ -67,11 +67,14 @@ describe('LeaveApprovalsService', () => {
     service
       .getPendingQueue({ page: 2, pageSize: 20 })
       .subscribe((res) => {
-        // Service unwraps `.data` -> caller sees the bare result.
+        // Service unwraps `.data` -> caller sees the bare, mapped result.
         expect(res.items.length).toBe(1);
         expect(res.items[0].requestId).toBe('lr-1');
         expect(res.items[0].currentBalance).toBe(10);
         expect(res.totalCount).toBe(1);
+        // mapPendingLeaveRequest reconstructs each row, so a wire-only field is dropped. A raw pass-through
+        // cast would leak it — this fails against the un-migrated code.
+        expect('employeeDepartment' in res.items[0]).toBeFalse();
       });
 
     const req = httpMock.expectOne(
@@ -83,7 +86,13 @@ describe('LeaveApprovalsService', () => {
     // Optional filters must NOT be present when not supplied.
     expect(req.request.params.has('leaveTypeId')).toBeFalse();
     expect(req.request.params.has('employeeId')).toBeFalse();
-    req.flush(mockResult);
+    // Flush the real wire shape, incl. a field the VM does not carry.
+    req.flush({
+      items: [{ ...mockItem, employeeDepartment: 'Engineering' }],
+      totalCount: 1,
+      page: 1,
+      pageSize: 20,
+    });
   });
 
   it('should include all optional filter + sort params when supplied', () => {
@@ -130,7 +139,7 @@ describe('LeaveApprovalsService', () => {
 
   // ─── US-LV-005: approve / reject ───────────────────────────────
   describe('approve', () => {
-    it('POSTs to /{id}/approve with the body + credentials and unwraps the envelope', () => {
+    it('POSTs to /{id}/approve and maps the wire result (balanceAfter→currentBalance)', () => {
       let result: ILeaveActionResult | undefined;
       service.approve('lr-1', { comment: 'ok' }).subscribe((r) => (result = r));
 
@@ -138,8 +147,20 @@ describe('LeaveApprovalsService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ comment: 'ok' });
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(actionResult);
+      // Real wire shape (LeaveApprovalResultDto): balanceAfter / action / actionedAt / approvalLevel /
+      // ledgerEntryId — NOT currentBalance.
+      req.flush({
+        requestId: 'lr-1',
+        status: 'Approved',
+        balanceAfter: 7,
+        action: 'Approve',
+        approvalLevel: 1,
+        ledgerEntryId: 'led-3',
+      });
       expect(result?.status).toBe('Approved');
+      // Fails against the un-migrated pass-through: `currentBalance` would be undefined (wire has
+      // `balanceAfter`).
+      expect(result?.currentBalance).toBe(7);
     });
 
     it('defaults to an empty body and forwards confirmNegativeBalance', () => {

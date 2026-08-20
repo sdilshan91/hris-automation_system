@@ -9,8 +9,7 @@ import { LopManagementComponent } from './lop-management.component';
 import { LopService } from '../../services/lop.service';
 import { LeaveTypeService } from '../../services/leave-type.service';
 import { EmployeeService } from '../../../core-hr/employees/services/employee.service';
-import { ILopEntry } from '../../models/lop.models';
-import { ILeaveRequest } from '../../models/leave-request.models';
+import { ILopEntry, IOverrideLopResult } from '../../models/lop.models';
 import { ILeaveType } from '../../models/leave-type.models';
 import { IEmployee } from '../../../core-hr/employees/models/employee.models';
 
@@ -104,14 +103,19 @@ describe('LopManagementComponent', () => {
       'assignCompulsoryLeave',
       'overrideLop',
     ]);
-    // The screen loads the cross-employee REGISTER, not the per-employee payroll summary. This spy used to
-    // mock getLopSummary — a method that 400s in production because it requires employeeId+from+to — which is
-    // how a permanently-broken screen kept a green suite.
+    // The screen loads the cross-employee REGISTER (getLopRegister), not the per-employee payroll read. The
+    // per-employee `/leaves/lop-summary` endpoint requires employeeId+from+to and 400s without them; the FE
+    // no longer calls it (it has no getLopSummary method), so this spy mocks the register the screen uses.
     lopServiceSpy.getLopRegister.and.returnValue(of([sysEntry, hrEntry]));
     lopServiceSpy.assignLop.and.returnValue(of({ employeeId: 'emp-1', created: 1 }));
     lopServiceSpy.assignCompulsoryLeave.and.returnValue(of({ deducted: 1, lop: 1, total: 2 }));
     lopServiceSpy.overrideLop.and.returnValue(
-      of({ leaveRequestId: 'lr-1', status: 'Approved' } as unknown as ILeaveRequest),
+      of({
+        leaveRequestId: 'lr-1',
+        leaveTypeId: 'lt-2',
+        isLop: false,
+        status: 'Approved',
+      } as IOverrideLopResult),
     );
 
     leaveTypeServiceSpy = jasmine.createSpyObj('LeaveTypeService', ['getLeaveTypes']);
