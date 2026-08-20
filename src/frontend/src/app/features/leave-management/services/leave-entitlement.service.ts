@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   IEntitlementRule,
@@ -13,6 +13,12 @@ import {
   IBulkEntitlementRequest,
   IBulkEntitlementResponse,
   IEntitlementRuleFilter,
+  EntitlementRuleWire,
+  EntitlementOverrideWire,
+  EffectiveEntitlementWire,
+  mapEntitlementRule,
+  mapEntitlementOverride,
+  mapEffectiveEntitlement,
 } from '../models/leave-entitlement.models';
 
 /**
@@ -58,38 +64,48 @@ export class LeaveEntitlementService {
     if (filter?.activeOnly !== undefined) {
       params = params.set('activeOnly', String(filter.activeOnly));
     }
-    return this.http.get<IEntitlementRule[]>(`${this.baseUrl}/rules`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<EntitlementRuleWire[]>(`${this.baseUrl}/rules`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapEntitlementRule)));
   }
 
   /** Get a single rule by ID */
   getRule(ruleId: string): Observable<IEntitlementRule> {
-    return this.http.get<IEntitlementRule>(`${this.baseUrl}/rules/${ruleId}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<EntitlementRuleWire>(`${this.baseUrl}/rules/${ruleId}`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapEntitlementRule));
   }
 
   /** Create a new entitlement rule (FR-1) */
   createRule(request: ICreateEntitlementRuleRequest): Observable<IEntitlementRule> {
-    return this.http.post<IEntitlementRule>(`${this.baseUrl}/rules`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<EntitlementRuleWire>(`${this.baseUrl}/rules`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapEntitlementRule));
   }
 
   /** Update an existing entitlement rule */
   updateRule(ruleId: string, request: IUpdateEntitlementRuleRequest): Observable<IEntitlementRule> {
-    return this.http.put<IEntitlementRule>(`${this.baseUrl}/rules/${ruleId}`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .put<EntitlementRuleWire>(`${this.baseUrl}/rules/${ruleId}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapEntitlementRule));
   }
 
   /** Inline update only the entitlement days for a rule (matrix cell edit) */
   updateRuleDays(ruleId: string, request: IInlineUpdateRequest): Observable<IEntitlementRule> {
-    return this.http.patch<IEntitlementRule>(`${this.baseUrl}/rules/${ruleId}/days`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .patch<EntitlementRuleWire>(`${this.baseUrl}/rules/${ruleId}/days`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapEntitlementRule));
   }
 
   /** Delete an entitlement rule */
@@ -107,19 +123,23 @@ export class LeaveEntitlementService {
     if (leaveYear !== undefined) {
       params = params.set('leaveYear', String(leaveYear));
     }
-    return this.http.get<IEntitlementOverride[]>(`${this.baseUrl}/overrides`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<EntitlementOverrideWire[]>(`${this.baseUrl}/overrides`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapEntitlementOverride)));
   }
 
   /** Create or update (upsert) a per-employee override */
   upsertOverride(employeeId: string, request: IUpsertOverrideRequest): Observable<IEntitlementOverride> {
-    return this.http.post<IEntitlementOverride>(
-      `${this.baseUrl}/overrides`,
-      { ...request, employeeId },
-      { withCredentials: true },
-    );
+    return this.http
+      .post<EntitlementOverrideWire>(
+        `${this.baseUrl}/overrides`,
+        { ...request, employeeId },
+        { withCredentials: true },
+      )
+      .pipe(map(mapEntitlementOverride));
   }
 
   /** Delete an override */
@@ -134,10 +154,12 @@ export class LeaveEntitlementService {
   /** Get computed effective entitlements for an employee */
   getEffectiveEntitlements(employeeId: string): Observable<IEffectiveEntitlement[]> {
     const params = new HttpParams().set('employeeId', employeeId);
-    return this.http.get<IEffectiveEntitlement[]>(`${this.baseUrl}/compute-effective`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<EffectiveEntitlementWire[]>(`${this.baseUrl}/compute-effective`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapEffectiveEntitlement)));
   }
 
   // ─── Bulk (FR-4) ──────────────────────────────────────────

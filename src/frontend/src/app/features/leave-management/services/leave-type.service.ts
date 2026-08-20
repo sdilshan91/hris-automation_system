@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   ILeaveType,
@@ -8,6 +8,8 @@ import {
   IUpdateLeaveTypeRequest,
   IReorderLeaveTypesRequest,
   ILeaveTypeErrorResponse,
+  LeaveTypeWire,
+  mapLeaveType,
 } from '../models/leave-type.models';
 
 /**
@@ -34,25 +36,31 @@ export class LeaveTypeService {
 
   /** Get all leave types for the current tenant, ordered by display_order */
   getLeaveTypes(): Observable<ILeaveType[]> {
-    return this.http.get<ILeaveType[]>(this.baseUrl, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<LeaveTypeWire[]>(this.baseUrl, {
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapLeaveType)));
   }
 
   /** Get a single leave type by ID */
   getLeaveType(id: string): Observable<ILeaveType> {
-    return this.http.get<ILeaveType>(`${this.baseUrl}/${id}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<LeaveTypeWire>(`${this.baseUrl}/${id}`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapLeaveType));
   }
 
   // --- Write -------------------------------------------------
 
   /** Create a new leave type (FR-1, FR-2) */
   createLeaveType(request: ICreateLeaveTypeRequest): Observable<ILeaveType> {
-    return this.http.post<ILeaveType>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<LeaveTypeWire>(this.baseUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapLeaveType));
   }
 
   /** Update an existing leave type (FR-1) */
@@ -60,29 +68,23 @@ export class LeaveTypeService {
     id: string,
     request: IUpdateLeaveTypeRequest
   ): Observable<ILeaveType> {
-    return this.http.put<ILeaveType>(
-      `${this.baseUrl}/${id}`,
-      request,
-      { withCredentials: true }
-    );
+    return this.http
+      .put<LeaveTypeWire>(`${this.baseUrl}/${id}`, request, { withCredentials: true })
+      .pipe(map(mapLeaveType));
   }
 
   /** Deactivate a leave type (AC-4, FR-5) */
   deactivateLeaveType(id: string): Observable<ILeaveType> {
-    return this.http.post<ILeaveType>(
-      `${this.baseUrl}/${id}/deactivate`,
-      {},
-      { withCredentials: true }
-    );
+    return this.http
+      .post<LeaveTypeWire>(`${this.baseUrl}/${id}/deactivate`, {}, { withCredentials: true })
+      .pipe(map(mapLeaveType));
   }
 
   /** Reactivate a previously deactivated leave type */
   activateLeaveType(id: string): Observable<ILeaveType> {
-    return this.http.post<ILeaveType>(
-      `${this.baseUrl}/${id}/reactivate`,
-      {},
-      { withCredentials: true }
-    );
+    return this.http
+      .post<LeaveTypeWire>(`${this.baseUrl}/${id}/reactivate`, {}, { withCredentials: true })
+      .pipe(map(mapLeaveType));
   }
 
   /** Reorder leave types display order (FR-3) */

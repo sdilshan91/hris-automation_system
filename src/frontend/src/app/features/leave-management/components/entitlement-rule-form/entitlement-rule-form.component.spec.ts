@@ -23,7 +23,6 @@ describe('EntitlementRuleFormComponent', () => {
 
   const mockRule: IEntitlementRule = {
     ruleId: 'rule-1',
-    tenantId: 'tenant-1',
     leaveTypeId: 'lt-1',
     leaveTypeName: 'Annual Leave',
     departmentId: 'dept-1',

@@ -9,9 +9,10 @@ import { ToastrService, provideToastr } from 'ngx-toastr';
 import { EmployeeLeaveOverridesComponent } from './employee-leave-overrides.component';
 import {
   IEntitlementOverride,
-  IEffectiveEntitlement,
+  EntitlementOverrideWire,
+  EffectiveEntitlementWire,
 } from '../../models/leave-entitlement.models';
-import { ILeaveType } from '../../models/leave-type.models';
+import { LeaveTypeWire } from '../../models/leave-type.models';
 import { environment } from '../../../../../environments/environment';
 
 describe('EmployeeLeaveOverridesComponent', () => {
@@ -25,7 +26,6 @@ describe('EmployeeLeaveOverridesComponent', () => {
 
   const mockOverride: IEntitlementOverride = {
     overrideId: 'ov-1',
-    tenantId: 'tenant-1',
     employeeId: 'emp-1',
     leaveTypeId: 'lt-1',
     leaveTypeName: 'Annual Leave',
@@ -36,19 +36,31 @@ describe('EmployeeLeaveOverridesComponent', () => {
     updatedAt: '2026-01-01T00:00:00Z',
   };
 
-  const mockEffective: IEffectiveEntitlement = {
+  // Wire shape (`EffectiveEntitlementDto`): no flat `entitlementDays` — the mapper derives it from
+  // `proratedEntitlementDays`; `source` is the raw contract string the mapper narrows.
+  const mockEffective: EffectiveEntitlementWire = {
     employeeId: 'emp-1',
     leaveTypeId: 'lt-1',
     leaveTypeName: 'Annual Leave',
-    entitlementDays: 30,
+    proratedEntitlementDays: 30,
     source: 'override',
-    ruleId: null,
-    overrideId: 'ov-1',
   };
 
-  const mockLeaveType: ILeaveType = {
+  // Wire override (`id`, not `overrideId`) for the HTTP flushes that pass through the service mapper.
+  const wireOverride: EntitlementOverrideWire = {
+    id: 'ov-1',
+    employeeId: 'emp-1',
     leaveTypeId: 'lt-1',
-    tenantId: 'tenant-1',
+    leaveTypeName: 'Annual Leave',
+    leaveYear: 2026,
+    entitlementDays: 30,
+    reason: 'Senior adjustment',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+
+  const mockLeaveType: LeaveTypeWire = {
+    id: 'lt-1',
     name: 'Annual Leave',
     code: 'AL',
     color: '#2563eb',
@@ -75,8 +87,8 @@ describe('EmployeeLeaveOverridesComponent', () => {
   };
 
   function flushInitialRequests(
-    overrides: IEntitlementOverride[] = [mockOverride],
-    effective: IEffectiveEntitlement[] = [mockEffective],
+    overrides: EntitlementOverrideWire[] = [wireOverride],
+    effective: EffectiveEntitlementWire[] = [mockEffective],
   ): void {
     const overridesReq = httpMock.expectOne(r =>
       r.url === `${baseUrl}/overrides` &&
@@ -188,7 +200,7 @@ describe('EmployeeLeaveOverridesComponent', () => {
       expect(req.request.body.leaveTypeId).toBe('lt-1');
       expect(req.request.body.entitlementDays).toBe(35);
       req.flush({
-        ...mockOverride,
+        ...wireOverride,
         entitlementDays: 35,
         reason: 'Special case',
       });

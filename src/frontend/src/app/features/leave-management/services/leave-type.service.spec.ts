@@ -7,10 +7,10 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpErrorResponse } from '@angular/common/http';
 import { LeaveTypeService } from './leave-type.service';
 import {
-  ILeaveType,
   ICreateLeaveTypeRequest,
   IUpdateLeaveTypeRequest,
   IReorderLeaveTypesRequest,
+  LeaveTypeWire,
 } from '../models/leave-type.models';
 import { environment } from '../../../../environments/environment';
 
@@ -20,9 +20,10 @@ describe('LeaveTypeService', () => {
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/leave-types`;
 
-  const mockLeaveType: ILeaveType = {
-    leaveTypeId: 'lt-1',
-    tenantId: 'tenant-1',
+  // The REAL wire shape (`LeaveTypesLeaveTypeDto`, unwrapped from the envelope). Note it carries `id` (NOT
+  // `leaveTypeId`), no `tenantId`, and a `systemCategory` the UI never renders — the drift the mapper closes.
+  const wireLeaveType: LeaveTypeWire = {
+    id: 'lt-1',
     name: 'Annual Leave',
     code: 'AL',
     color: '#2563eb',
@@ -44,13 +45,14 @@ describe('LeaveTypeService', () => {
     negativeBalanceLimit: null,
     displayOrder: 0,
     isActive: true,
+    systemCategory: 'Annual',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
   };
 
-  const mockLeaveType2: ILeaveType = {
-    ...mockLeaveType,
-    leaveTypeId: 'lt-2',
+  const wireLeaveType2: LeaveTypeWire = {
+    ...wireLeaveType,
+    id: 'lt-2',
     name: 'Sick Leave',
     code: 'SL',
     color: '#dc2626',
@@ -85,17 +87,25 @@ describe('LeaveTypeService', () => {
   });
 
   describe('getLeaveTypes', () => {
-    it('should return all leave types for the tenant', () => {
+    it('should return all leave types and map wire `id` to `leaveTypeId` (fails against un-migrated code)', () => {
       service.getLeaveTypes().subscribe((types) => {
         expect(types.length).toBe(2);
+        // The un-migrated service returned the wire verbatim, so `leaveTypeId` was undefined here.
+        expect(types[0].leaveTypeId).toBe('lt-1');
+        expect(types[1].leaveTypeId).toBe('lt-2');
         expect(types[0].name).toBe('Annual Leave');
         expect(types[1].name).toBe('Sick Leave');
+        expect(types[0].accrualFrequency).toBe('Monthly');
+        expect(types[0].gender).toBe('All');
+        // Wire-only field must not leak into the view-model.
+        expect((types[0] as unknown as Record<string, unknown>)['systemCategory']).toBeUndefined();
+        expect((types[0] as unknown as Record<string, unknown>)['id']).toBeUndefined();
       });
 
       const req = httpMock.expectOne(baseUrl);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush([mockLeaveType, mockLeaveType2]);
+      req.flush([wireLeaveType, wireLeaveType2]);
     });
 
     it('should return an empty array when no leave types exist', () => {
@@ -109,7 +119,7 @@ describe('LeaveTypeService', () => {
   });
 
   describe('getLeaveType', () => {
-    it('should return a single leave type by ID', () => {
+    it('should return a single leave type by ID and map it', () => {
       service.getLeaveType('lt-1').subscribe((type) => {
         expect(type.leaveTypeId).toBe('lt-1');
         expect(type.name).toBe('Annual Leave');
@@ -118,12 +128,12 @@ describe('LeaveTypeService', () => {
       const req = httpMock.expectOne(`${baseUrl}/lt-1`);
       expect(req.request.method).toBe('GET');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(mockLeaveType);
+      req.flush(wireLeaveType);
     });
   });
 
   describe('createLeaveType', () => {
-    it('should create a new leave type', () => {
+    it('should create a new leave type and map the wire response', () => {
       const request: ICreateLeaveTypeRequest = {
         name: 'Casual Leave',
         code: 'CL',
@@ -143,6 +153,7 @@ describe('LeaveTypeService', () => {
 
       service.createLeaveType(request).subscribe((type) => {
         expect(type.name).toBe('Casual Leave');
+        expect(type.leaveTypeId).toBe('lt-3');
       });
 
       const req = httpMock.expectOne(baseUrl);
@@ -150,8 +161,8 @@ describe('LeaveTypeService', () => {
       expect(req.request.body).toEqual(request);
       expect(req.request.withCredentials).toBeTrue();
       req.flush({
-        ...mockLeaveType,
-        leaveTypeId: 'lt-3',
+        ...wireLeaveType,
+        id: 'lt-3',
         name: 'Casual Leave',
         code: 'CL',
         color: '#16a34a',
@@ -160,7 +171,7 @@ describe('LeaveTypeService', () => {
   });
 
   describe('updateLeaveType', () => {
-    it('should update an existing leave type', () => {
+    it('should update an existing leave type and map the wire response', () => {
       const request: IUpdateLeaveTypeRequest = {
         name: 'Updated Annual Leave',
         code: 'AL',
@@ -180,13 +191,14 @@ describe('LeaveTypeService', () => {
 
       service.updateLeaveType('lt-1', request).subscribe((type) => {
         expect(type.name).toBe('Updated Annual Leave');
+        expect(type.leaveTypeId).toBe('lt-1');
       });
 
       const req = httpMock.expectOne(`${baseUrl}/lt-1`);
       expect(req.request.method).toBe('PUT');
       expect(req.request.body).toEqual(request);
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ ...mockLeaveType, name: 'Updated Annual Leave', annualEntitlement: 25 });
+      req.flush({ ...wireLeaveType, name: 'Updated Annual Leave', annualEntitlement: 25 });
     });
   });
 
@@ -199,7 +211,7 @@ describe('LeaveTypeService', () => {
       const req = httpMock.expectOne(`${baseUrl}/lt-1/deactivate`);
       expect(req.request.method).toBe('POST');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ ...mockLeaveType, isActive: false });
+      req.flush({ ...wireLeaveType, isActive: false });
     });
   });
 
@@ -212,7 +224,7 @@ describe('LeaveTypeService', () => {
       const req = httpMock.expectOne(`${baseUrl}/lt-1/reactivate`);
       expect(req.request.method).toBe('POST');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush({ ...mockLeaveType, isActive: true });
+      req.flush({ ...wireLeaveType, isActive: true });
     });
   });
 

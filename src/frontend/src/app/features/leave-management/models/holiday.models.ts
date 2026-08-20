@@ -1,3 +1,5 @@
+import type { Schema } from '@core/api';
+
 /**
  * US-LV-007: Holiday Calendar models matching the backend API contract.
  *
@@ -26,6 +28,36 @@ export interface IHoliday {
   description: string | null;
   isRecurring: boolean;
   isActive: boolean;
+}
+
+/**
+ * The holiday wire shape — the GENERATED contract type, not a hand-written guess.
+ *
+ * Sourced from `Schema<'HolidaysHolidayDto'>`, so a renamed C# property becomes a compile error here rather
+ * than a silent `undefined`. Every `IHoliday` field has a wire source; only `type` is narrowed (the wire
+ * sends a plain `string`, the UI needs the `HolidayType` union). The wire also carries `createdAt`/`updatedAt`
+ * which nothing in the calendar renders, so they are intentionally dropped by the mapper.
+ */
+export type HolidayWire = Schema<'HolidaysHolidayDto'>;
+
+/**
+ * Map a wire holiday onto the view-model the calendar + list render.
+ *
+ * The **input** is the generated type, so this mapper cannot silently drift from the contract. `type` is
+ * narrowed once here (defaulting to `'Public'`, the safe colour) instead of being cast at each use site.
+ */
+export function mapHoliday(w: HolidayWire): IHoliday {
+  return {
+    id: w.id ?? '',
+    name: w.name ?? '',
+    date: w.date ?? '',
+    type: (w.type ?? 'Public') as HolidayType,
+    locationId: w.locationId ?? null,
+    locationName: w.locationName ?? null,
+    description: w.description ?? null,
+    isRecurring: w.isRecurring ?? false,
+    isActive: w.isActive ?? false,
+  };
 }
 
 /** Request payload for creating a holiday (AC-1, FR-2). */
@@ -68,6 +100,32 @@ export interface IHolidayImportResult {
   imported: number;
   skipped: number;
   errors: { row: number; message: string }[];
+}
+
+/**
+ * The bulk-import result wire shape — GENERATED (`Schema<'HolidaysHolidayImportResult'>`).
+ *
+ * The wire and the FE view-model diverge in NAME for the same concepts; the mapper translates rather than
+ * pretending they match. Confirmed against `HolidayService.ImportHolidaysAsync`, whose own log line reads
+ * "{Created} imported, {Failed} skipped of {Total}":
+ *   - `imported` (VM)  ← `created` (wire)
+ *   - `skipped`  (VM)  ← `failed`  (wire)  — same count: rows that were not imported
+ *   - `errors[].row`     ← `errors[].rowNumber`
+ *   - `errors[].message` ← `errors[].error`   (the wire's per-row `field` is unused by the UI)
+ */
+export type HolidayImportResultWire = Schema<'HolidaysHolidayImportResult'>;
+
+/** Map the generated import result onto the toast/summary view-model. */
+export function mapHolidayImportResult(w: HolidayImportResultWire): IHolidayImportResult {
+  return {
+    total: w.total ?? 0,
+    imported: w.created ?? 0,
+    skipped: w.failed ?? 0,
+    errors: (w.errors ?? []).map((e) => ({
+      row: e.rowNumber ?? 0,
+      message: e.error ?? '',
+    })),
+  };
 }
 
 /** Error response shape from the backend for holiday operations. */

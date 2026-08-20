@@ -19,7 +19,6 @@ describe('LeaveTypeFormComponent', () => {
 
   const mockLeaveType: ILeaveType = {
     leaveTypeId: 'lt-1',
-    tenantId: 'tenant-1',
     name: 'Annual Leave',
     code: 'AL',
     color: '#2563eb',

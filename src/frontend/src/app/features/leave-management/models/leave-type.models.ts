@@ -1,3 +1,5 @@
+import type { Schema } from '@core/api';
+
 /**
  * US-LV-001: Leave Type models matching the backend API contract.
  *
@@ -26,7 +28,6 @@ export type GenderApplicability = 'All' | 'Male' | 'Female';
 /** Leave type entity returned by the API */
 export interface ILeaveType {
   leaveTypeId: string;
-  tenantId: string;
   name: string;
   code: string;
   color: string;
@@ -50,6 +51,51 @@ export interface ILeaveType {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * The leave-type wire shape — GENERATED (`Schema<'LeaveTypesLeaveTypeDto'>`), so a backend rename is a
+ * compile error here, not a blank cell.
+ *
+ * Reconciled against `LeaveTypeDto`:
+ *   - `leaveTypeId` (VM) ← `id` (wire).
+ *   - `tenantId` was NOT sent by the API and nothing in the UI rendered it — removed from `ILeaveType`.
+ *   - `accrualFrequency` / `gender` arrive as plain strings and are narrowed to their unions here.
+ *   - the wire also carries `systemCategory`, which no leave-type screen renders — intentionally dropped.
+ */
+export type LeaveTypeWire = Schema<'LeaveTypesLeaveTypeDto'>;
+
+/**
+ * Map a wire leave type onto the view-model every leave-type screen renders. The **input** is the generated
+ * type, so the mapper cannot drift from the contract silently.
+ */
+export function mapLeaveType(w: LeaveTypeWire): ILeaveType {
+  return {
+    leaveTypeId: w.id ?? '',
+    name: w.name ?? '',
+    code: w.code ?? '',
+    color: w.color ?? '',
+    description: w.description ?? null,
+    annualEntitlement: w.annualEntitlement ?? 0,
+    accrualFrequency: (w.accrualFrequency ?? 'Monthly') as AccrualFrequency,
+    carryForwardLimit: w.carryForwardLimit ?? 0,
+    carryForwardExpiryMonths: w.carryForwardExpiryMonths ?? 0,
+    probationEligible: w.probationEligible ?? false,
+    documentsRequired: w.documentsRequired ?? false,
+    documentDayThreshold: w.documentDayThreshold ?? null,
+    encashable: w.encashable ?? false,
+    maxEncashDays: w.maxEncashDays ?? null,
+    halfDayAllowed: w.halfDayAllowed ?? false,
+    hourlyAllowed: w.hourlyAllowed ?? false,
+    gender: (w.gender ?? 'All') as GenderApplicability,
+    maxConsecutiveDays: w.maxConsecutiveDays ?? null,
+    negativeBalanceAllowed: w.negativeBalanceAllowed ?? false,
+    negativeBalanceLimit: w.negativeBalanceLimit ?? null,
+    displayOrder: w.displayOrder ?? 0,
+    isActive: w.isActive ?? false,
+    createdAt: w.createdAt ?? '',
+    updatedAt: w.updatedAt ?? '',
+  };
 }
 
 /** Request payload for creating a leave type (FR-1, FR-2) */
