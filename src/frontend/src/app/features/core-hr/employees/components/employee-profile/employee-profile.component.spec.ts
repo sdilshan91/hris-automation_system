@@ -740,10 +740,8 @@ describe('EmployeeProfileComponent', () => {
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       );
       expect(transReq.request.method).toBe('GET');
-      transReq.flush([
-        { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access'] },
-        { targetStatus: 'terminated', label: 'Terminated', sideEffects: ['Disable portal access', 'Exclude from payroll'] },
-      ]);
+      // Real wire shape: ValidTransitionsResult — `{ currentStatus, validTransitions: string[] }`.
+      transReq.flush({ currentStatus: 'Active', validTransitions: ['Suspended', 'Terminated'] });
       tick();
 
       expect(component.isLoadingTransitions()).toBeFalse();
@@ -759,14 +757,12 @@ describe('EmployeeProfileComponent', () => {
       const transReq = httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
       );
-      // Backend returns only one transition
-      transReq.flush([
-        { targetStatus: 'inactive', label: 'Inactive', sideEffects: [] },
-      ]);
+      // Backend returns only one transition (wire shape: bare status strings, PascalCase enum values).
+      transReq.flush({ currentStatus: 'Active', validTransitions: ['Inactive'] });
       tick();
 
       expect(component.validTransitions().length).toBe(1);
-      expect(component.validTransitions()[0].targetStatus).toBe('inactive');
+      expect(component.validTransitions()[0].targetStatus).toBe('Inactive');
     }));
 
     it('should close modal on closeStatusModal', fakeAsync(() => {
@@ -777,7 +773,7 @@ describe('EmployeeProfileComponent', () => {
       component.openStatusChangeModal();
       httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
-      ).flush([]);
+      ).flush({ currentStatus: 'Active', validTransitions: [] });
       tick();
 
       component.closeStatusModal();
@@ -792,9 +788,7 @@ describe('EmployeeProfileComponent', () => {
       component.openStatusChangeModal();
       httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
-      ).flush([
-        { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
-      ]);
+      ).flush({ currentStatus: 'Active', validTransitions: ['Suspended'] });
       tick();
 
       // Form should be invalid with empty values
@@ -816,9 +810,7 @@ describe('EmployeeProfileComponent', () => {
       component.openStatusChangeModal();
       httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
-      ).flush([
-        { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access'] },
-      ]);
+      ).flush({ currentStatus: 'Active', validTransitions: ['Suspended'] });
       tick();
 
       component.statusChangeForm.patchValue({
@@ -839,9 +831,7 @@ describe('EmployeeProfileComponent', () => {
       component.openStatusChangeModal();
       httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
-      ).flush([
-        { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
-      ]);
+      ).flush({ currentStatus: 'Active', validTransitions: ['Suspended'] });
       tick();
 
       component.statusChangeForm.patchValue({
@@ -864,9 +854,7 @@ describe('EmployeeProfileComponent', () => {
       component.openStatusChangeModal();
       httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
-      ).flush([
-        { targetStatus: 'suspended', label: 'Suspended', sideEffects: [] },
-      ]);
+      ).flush({ currentStatus: 'Active', validTransitions: ['Suspended'] });
       tick();
 
       component.statusChangeForm.patchValue({
@@ -904,9 +892,7 @@ describe('EmployeeProfileComponent', () => {
       component.openStatusChangeModal();
       httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
-      ).flush([
-        { targetStatus: 'probation', label: 'Probation', sideEffects: [] },
-      ]);
+      ).flush({ currentStatus: 'Active', validTransitions: ['Probation'] });
       tick();
 
       component.statusChangeForm.patchValue({
@@ -932,7 +918,13 @@ describe('EmployeeProfileComponent', () => {
       expect(component.isSubmittingStatus()).toBeFalse();
     }));
 
-    it('should compute side effects for selected transition', fakeAsync(() => {
+    // CONTRACT CORRECTION (D-core-hr slice 1): the transitions endpoint returns
+    // `ValidTransitionsResult` = `{ currentStatus, validTransitions: string[] }` — bare status strings,
+    // with NO per-transition side-effects anywhere in the DTO. This test used to flush a fabricated
+    // `sideEffects` array the API has never sent, certifying a preview that has no wire source. Corrected
+    // to select a real transition and assert the (empty) side-effects the contract actually provides.
+    // The side-effects preview being unsourced is a reported finding.
+    it('resolves the selected transition; side-effects are empty (no wire source)', fakeAsync(() => {
       fixture.detectChanges();
       httpMock.expectOne(profileUrl).flush(mockProfile);
       tick();
@@ -940,17 +932,16 @@ describe('EmployeeProfileComponent', () => {
       component.openStatusChangeModal();
       httpMock.expectOne(
         `${environment.apiBaseUrl}/tenant/employees/emp-1/status/transitions`
-      ).flush([
-        { targetStatus: 'suspended', label: 'Suspended', sideEffects: ['Disable portal access', 'Pause leave accrual'] },
-        { targetStatus: 'terminated', label: 'Terminated', sideEffects: ['Disable portal access', 'Exclude from payroll'] },
-      ]);
+      ).flush({ currentStatus: 'Active', validTransitions: ['Suspended', 'Terminated'] });
       tick();
 
-      component.statusChangeForm.patchValue({ newStatus: 'suspended' });
-      expect(component.selectedTransitionSideEffects()).toEqual(['Disable portal access', 'Pause leave accrual']);
+      expect(component.validTransitions().map((t) => t.targetStatus)).toEqual(['Suspended', 'Terminated']);
 
-      component.statusChangeForm.patchValue({ newStatus: 'terminated' });
-      expect(component.selectedTransitionSideEffects()).toEqual(['Disable portal access', 'Exclude from payroll']);
+      component.statusChangeForm.patchValue({ newStatus: 'Suspended' });
+      expect(component.selectedTransitionSideEffects()).toEqual([]);
+
+      component.statusChangeForm.patchValue({ newStatus: 'Terminated' });
+      expect(component.selectedTransitionSideEffects()).toEqual([]);
     }));
   });
 

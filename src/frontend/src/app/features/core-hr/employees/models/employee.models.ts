@@ -719,3 +719,163 @@ export interface IReportingChainNode {
 export function getInitialsFromName(firstName: string, lastName: string): string {
   return ((firstName?.[0] ?? '') + (lastName?.[0] ?? '')).toUpperCase();
 }
+
+// ─── Wire contract → view-model mappers (D-core-hr slice 1) ────────────────────
+//
+// The read responses are the GENERATED contract types, not hand-written guesses. `IEmployeeProfile`
+// was pinned to the contract by PR #519; these mappers extend the same discipline to the rest of
+// EmployeeService's reads. The wire shapes diverge from the view-models in three ways this migration
+// surfaced — a renamed id (`EmployeeDto.id` → `employeeId`), string-typed enums, and (for several
+// endpoints) an ENVELOPE the service was casting straight to a bare array/list:
+//
+//   • GET /employees and the directory GET return `EmployeesEmployeeListResult` — `{ items, page,
+//     pageSize, totalCount }`, NOT a bare `EmployeeDto[]`. The service was typed `IEmployee[]` /
+//     `IPaginatedResponse`, so the un-unwrapped envelope's `.length`/`.items` read undefined at runtime.
+//   • GET /:id/direct-reports returns `EmployeesDirectReportsResult` — `{ directReports[], … }`, NOT a
+//     bare array; the My-Team grid iterated a non-array.
+//   • GET /:id/status/transitions returns `EmployeesValidTransitionsResult` — `{ currentStatus,
+//     validTransitions: string[] }`, NOT `IStatusTransition[]`; the status dropdown iterated an object.
+//   • customFields is a JSON *string* on the wire (`EmployeeDto.customFields`), parsed here to an object.
+//
+// Fields with NO wire source are defaulted at this seam, marked inline, and reported — never invented.
+
+export type EmployeeWire = Schema<'EmployeesEmployeeDto'>;
+export type EmployeeListWire = Schema<'EmployeesEmployeeListResult'>;
+export type DirectReportWire = Schema<'EmployeesDirectReportDto'>;
+export type DirectReportsResultWire = Schema<'EmployeesDirectReportsResult'>;
+export type ValidTransitionsWire = Schema<'EmployeesValidTransitionsResult'>;
+export type BulkAssignManagerResultWire = Schema<'EmployeesBulkAssignManagerResult'>;
+export type BulkAssignManagerItemWire = Schema<'EmployeesBulkAssignManagerItemResult'>;
+export type NationalIdRevealWire = Schema<'EmployeesNationalIdRevealDto'>;
+
+/** Parse the wire `customFields` JSON string into the FE's object view-model (null on absence/parse-fail). */
+function parseCustomFields(
+  raw: string | null | undefined
+): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Maps one wire `EmployeesEmployeeDto` onto the `IEmployee` view-model (`id` → `employeeId`). */
+export function mapEmployee(w: EmployeeWire): IEmployee {
+  return {
+    employeeId: w.id ?? '',
+    // NO wire source: EmployeeDto carries no tenantId (tenant is scoped server-side and nothing
+    // renders employee.tenantId). Defaulted to '' and reported — a deletion candidate for a later pass.
+    tenantId: '',
+    employeeNo: w.employeeNo ?? '',
+    firstName: w.firstName ?? '',
+    lastName: w.lastName ?? '',
+    email: w.email ?? '',
+    phone: w.phone ?? null,
+    dateOfBirth: w.dateOfBirth ?? null,
+    gender: (w.gender ?? null) as EmployeeGender | null,
+    dateOfJoining: w.dateOfJoining ?? '',
+    departmentId: w.departmentId ?? '',
+    departmentName: w.departmentName ?? null,
+    jobTitleId: w.jobTitleId ?? '',
+    jobTitleName: w.jobTitleName ?? null,
+    locationId: w.locationId ?? null,
+    locationName: w.locationName ?? null,
+    employmentType: (w.employmentType ?? 'FullTime') as EmploymentType,
+    status: (w.status ?? 'Active') as EmployeeStatus,
+    fte: w.fte ?? 1,
+    workArrangement: (w.workArrangement ?? 'OnSite') as WorkArrangement,
+    profilePhotoUrl: w.profilePhotoUrl ?? null,
+    nationalId: w.nationalId ?? null,
+    customFields: parseCustomFields(w.customFields),
+    isActive: w.isActive ?? true,
+    createdAt: w.createdAt ?? '',
+    updatedAt: w.updatedAt ?? '',
+  };
+}
+
+/** Maps the wire `EmployeesEmployeeListResult` envelope onto the FE's paginated view-model. */
+export function mapEmployeeList(
+  w: EmployeeListWire
+): IPaginatedResponse<IEmployee> {
+  return {
+    items: (w.items ?? []).map(mapEmployee),
+    totalCount: w.totalCount ?? 0,
+    page: w.page ?? 0,
+    pageSize: w.pageSize ?? 0,
+  };
+}
+
+/** Maps one wire `EmployeesDirectReportDto` onto `IDirectReport` (`id`/`jobTitle`/`avatarUrl` renames). */
+export function mapDirectReport(w: DirectReportWire): IDirectReport {
+  return {
+    employeeId: w.id ?? '',
+    firstName: w.firstName ?? '',
+    lastName: w.lastName ?? '',
+    jobTitleName: w.jobTitle ?? null,
+    departmentName: w.departmentName ?? null,
+    status: (w.status ?? 'Active') as EmployeeStatus,
+    profilePhotoUrl: w.avatarUrl ?? null,
+    // NO wire source: DirectReportDto has no email, though the My-Team card renders `report.email`.
+    // Defaulted to '' (was `undefined` before) and reported.
+    email: '',
+    employeeNo: w.employeeNo ?? '',
+  };
+}
+
+/** Unwraps the wire `EmployeesDirectReportsResult` envelope onto the bare `IDirectReport[]` the grid renders. */
+export function mapDirectReports(w: DirectReportsResultWire): IDirectReport[] {
+  return (w.directReports ?? []).map(mapDirectReport);
+}
+
+/**
+ * Maps the wire `EmployeesValidTransitionsResult` (`{ validTransitions: string[] }`) onto the
+ * `IStatusTransition[]` the status dropdown renders. `label` is derived from the status value.
+ */
+export function mapValidTransitions(
+  w: ValidTransitionsWire
+): IStatusTransition[] {
+  return (w.validTransitions ?? []).map((s) => ({
+    targetStatus: s as EmployeeStatus,
+    label: employeeStatusLabel(s),
+    // NO wire source: the transitions endpoint returns only status strings, not per-transition
+    // side-effects. Defaulted to [] and reported (the side-effects preview is always empty here).
+    sideEffects: [] as string[],
+  }));
+}
+
+/** Maps one wire `EmployeesBulkAssignManagerItemResult` onto `IBulkAssignResult`. */
+export function mapBulkAssignItem(
+  w: BulkAssignManagerItemWire
+): IBulkAssignResult {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    success: w.success ?? false,
+    error: w.error ?? null,
+    message: w.message ?? null,
+  };
+}
+
+/** Maps the wire `EmployeesBulkAssignManagerResult` onto `IBulkAssignManagerResponse` (count renames). */
+export function mapBulkAssignManager(
+  w: BulkAssignManagerResultWire
+): IBulkAssignManagerResponse {
+  return {
+    results: (w.results ?? []).map(mapBulkAssignItem),
+    totalSuccess: w.successCount ?? 0,
+    totalFailed: w.failureCount ?? 0,
+  };
+}
+
+/** Maps the wire `EmployeesNationalIdRevealDto` onto `IRevealNationalIdResponse`. */
+export function mapNationalIdReveal(
+  w: NationalIdRevealWire
+): IRevealNationalIdResponse {
+  return {
+    nationalId: w.nationalId ?? '',
+  };
+}

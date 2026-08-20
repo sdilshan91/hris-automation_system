@@ -9,7 +9,7 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { signal } from '@angular/core';
 import { MyTeamComponent } from './my-team.component';
 import { AuthService } from '@core/auth/auth.service';
-import { IDirectReport } from '../../models/employee.models';
+import { DirectReportWire } from '../../models/employee.models';
 
 describe('MyTeamComponent', () => {
   let component: MyTeamComponent;
@@ -17,27 +17,27 @@ describe('MyTeamComponent', () => {
   let httpMock: HttpTestingController;
   let router: Router;
 
-  const mockReports: IDirectReport[] = [
+  // Real wire shape: EmployeesDirectReportDto — `id`/`jobTitle`/`avatarUrl`, no email — inside the
+  // DirectReportsResult envelope (wrapped by flushDirectReports below).
+  const mockReports: DirectReportWire[] = [
     {
-      employeeId: 'emp-2',
+      id: 'emp-2',
       firstName: 'Jane',
       lastName: 'Smith',
-      jobTitleName: 'QA Engineer',
+      jobTitle: 'QA Engineer',
       departmentName: 'Engineering',
       status: 'Active',
-      profilePhotoUrl: null,
-      email: 'jane@company.com',
+      avatarUrl: null,
       employeeNo: 'EMP-0002',
     },
     {
-      employeeId: 'emp-3',
+      id: 'emp-3',
       firstName: 'Bob',
       lastName: 'Johnson',
-      jobTitleName: 'Designer',
+      jobTitle: 'Designer',
       departmentName: 'Design',
       status: 'Probation',
-      profilePhotoUrl: null,
-      email: 'bob@company.com',
+      avatarUrl: null,
       employeeNo: 'EMP-0003',
     },
   ];
@@ -74,9 +74,9 @@ describe('MyTeamComponent', () => {
     httpMock.verify();
   });
 
-  function flushDirectReports(reports: IDirectReport[] = mockReports): void {
+  function flushDirectReports(reports: DirectReportWire[] = mockReports): void {
     const req = httpMock.expectOne((r) => r.url.includes('/direct-reports'));
-    req.flush(reports);
+    req.flush({ managerId: 'emp-1', managerName: 'Manager', directReports: reports });
   }
 
   it('should create the component', () => {

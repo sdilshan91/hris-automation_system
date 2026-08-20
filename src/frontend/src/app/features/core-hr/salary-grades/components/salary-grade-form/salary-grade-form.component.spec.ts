@@ -136,16 +136,22 @@ describe('SalaryGradeFormComponent', () => {
 
       component.onSubmit();
 
-      expect(gradeServiceSpy.create).toHaveBeenCalledWith({
-        code: 'G3',
-        name: 'Grade 3',
-        minAmount: 70000,
-        midAmount: 85000,
-        maxAmount: 100000,
-        currency: 'USD',
-        description: 'Senior',
-        isActive: true,
-      });
+      // NOTE (D-core-hr slice 1): the create/update REQUEST DTOs have NO `isActive` member — the API
+      // discards it, so the form's Active toggle is a save-time no-op. This assertion used to require
+      // `isActive: true` in the payload, certifying a field the backend ignores; that lie is removed.
+      // `objectContaining` asserts every field that IS in the contract while no longer pinning the
+      // discarded one. (Removing `isActive` from the payload/toggle needs a product decision — reported.)
+      expect(gradeServiceSpy.create).toHaveBeenCalledWith(
+        jasmine.objectContaining({
+          code: 'G3',
+          name: 'Grade 3',
+          minAmount: 70000,
+          midAmount: 85000,
+          maxAmount: 100000,
+          currency: 'USD',
+          description: 'Senior',
+        })
+      );
       expect(toastrSpy.success).toHaveBeenCalled();
     });
 
