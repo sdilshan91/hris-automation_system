@@ -7,8 +7,8 @@ import {
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { ToastrService, provideToastr } from 'ngx-toastr';
 import { EntitlementRulesComponent } from './entitlement-rules.component';
-import { IEntitlementRule } from '../../models/leave-entitlement.models';
-import { ILeaveType } from '../../models/leave-type.models';
+import { IEntitlementRule, EntitlementRuleWire } from '../../models/leave-entitlement.models';
+import { ILeaveType, LeaveTypeWire } from '../../models/leave-type.models';
 import { environment } from '../../../../../environments/environment';
 
 describe('EntitlementRulesComponent', () => {
@@ -22,7 +22,6 @@ describe('EntitlementRulesComponent', () => {
 
   const mockRule: IEntitlementRule = {
     ruleId: 'rule-1',
-    tenantId: 'tenant-1',
     leaveTypeId: 'lt-1',
     leaveTypeName: 'Annual Leave',
     departmentId: 'dept-1',
@@ -56,7 +55,6 @@ describe('EntitlementRulesComponent', () => {
 
   const mockLeaveType: ILeaveType = {
     leaveTypeId: 'lt-1',
-    tenantId: 'tenant-1',
     name: 'Annual Leave',
     code: 'AL',
     color: '#2563eb',
@@ -82,11 +80,22 @@ describe('EntitlementRulesComponent', () => {
     updatedAt: '2026-01-01T00:00:00Z',
   };
 
+  // The API sends `id`; the services map it to `ruleId`/`leaveTypeId`. HTTP flush bodies must therefore be
+  // wire-shaped (they pass through the service mappers) — these helpers rename the VM fixtures back to wire.
+  const ruleWire = (r: IEntitlementRule): EntitlementRuleWire => {
+    const { ruleId, ...rest } = r;
+    return { id: ruleId, ...rest };
+  };
+  const ltWire = (lt: ILeaveType): LeaveTypeWire => {
+    const { leaveTypeId, ...rest } = lt;
+    return { id: leaveTypeId, ...rest };
+  };
+
   function flushInitialRequests(rules: IEntitlementRule[] = [mockRule, mockRule2]): void {
     const rulesReq = httpMock.expectOne(rulesUrl);
     const leaveTypesReq = httpMock.expectOne(leaveTypesUrl);
-    rulesReq.flush(rules);
-    leaveTypesReq.flush([mockLeaveType]);
+    rulesReq.flush(rules.map(ruleWire));
+    leaveTypesReq.flush([ltWire(mockLeaveType)]);
   }
 
   beforeEach(() => {
@@ -236,7 +245,7 @@ describe('EntitlementRulesComponent', () => {
       const req = httpMock.expectOne(`${rulesUrl}/rule-1/days`);
       expect(req.request.method).toBe('PATCH');
       expect(req.request.body.entitlementDays).toBe(30);
-      req.flush({ ...mockRule, entitlementDays: 30 });
+      req.flush(ruleWire({ ...mockRule, entitlementDays: 30 }));
       tick();
 
       expect(toastrSpy.success).toHaveBeenCalledWith(
@@ -321,14 +330,14 @@ describe('EntitlementRulesComponent', () => {
 
       const createReq = httpMock.expectOne(rulesUrl);
       expect(createReq.request.method).toBe('POST');
-      createReq.flush(mockRule);
+      createReq.flush(ruleWire(mockRule));
       tick();
 
       // loadData is called after create — flush those requests
       const rulesReq = httpMock.expectOne(rulesUrl);
       const leaveTypesReq = httpMock.expectOne(leaveTypesUrl);
-      rulesReq.flush([mockRule]);
-      leaveTypesReq.flush([mockLeaveType]);
+      rulesReq.flush([ruleWire(mockRule)]);
+      leaveTypesReq.flush([ltWire(mockLeaveType)]);
       tick();
 
       expect(toastrSpy.success).toHaveBeenCalledWith(
@@ -352,14 +361,14 @@ describe('EntitlementRulesComponent', () => {
 
       const updateReq = httpMock.expectOne(`${rulesUrl}/rule-1`);
       expect(updateReq.request.method).toBe('PUT');
-      updateReq.flush({ ...mockRule, entitlementDays: 30 });
+      updateReq.flush(ruleWire({ ...mockRule, entitlementDays: 30 }));
       tick();
 
       // loadData is called after update
       const rulesReq = httpMock.expectOne(rulesUrl);
       const leaveTypesReq = httpMock.expectOne(leaveTypesUrl);
-      rulesReq.flush([{ ...mockRule, entitlementDays: 30 }]);
-      leaveTypesReq.flush([mockLeaveType]);
+      rulesReq.flush([ruleWire({ ...mockRule, entitlementDays: 30 })]);
+      leaveTypesReq.flush([ltWire(mockLeaveType)]);
       tick();
 
       expect(toastrSpy.success).toHaveBeenCalledWith(
@@ -465,12 +474,12 @@ describe('EntitlementRulesComponent', () => {
         effectiveFrom: '2026-01-01',
       });
 
-      httpMock.expectOne(rulesUrl).flush(mockRule);
+      httpMock.expectOne(rulesUrl).flush(ruleWire(mockRule));
       tick();
 
       // Flush reload
-      httpMock.expectOne(rulesUrl).flush([mockRule]);
-      httpMock.expectOne(leaveTypesUrl).flush([mockLeaveType]);
+      httpMock.expectOne(rulesUrl).flush([ruleWire(mockRule)]);
+      httpMock.expectOne(leaveTypesUrl).flush([ltWire(mockLeaveType)]);
       tick();
 
       expect(toastrSpy.success).toHaveBeenCalledWith(
@@ -486,7 +495,7 @@ describe('EntitlementRulesComponent', () => {
       const fakeEvent = { target: { value: '30' } } as unknown as Event;
       component.saveInlineEdit(mockRule, fakeEvent);
 
-      httpMock.expectOne(`${rulesUrl}/rule-1/days`).flush({ ...mockRule, entitlementDays: 30 });
+      httpMock.expectOne(`${rulesUrl}/rule-1/days`).flush(ruleWire({ ...mockRule, entitlementDays: 30 }));
       tick();
 
       expect(toastrSpy.success).toHaveBeenCalledWith(

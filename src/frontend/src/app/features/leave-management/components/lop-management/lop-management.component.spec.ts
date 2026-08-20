@@ -42,7 +42,6 @@ describe('LopManagementComponent', () => {
 
   const leaveType: ILeaveType = {
     leaveTypeId: 'lt-1',
-    tenantId: 't-1',
     name: 'Casual Leave',
     code: 'CL',
     color: '#16a34a',

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   IHoliday,
@@ -8,6 +8,10 @@ import {
   IUpdateHolidayRequest,
   IHolidayImportResult,
   IHolidayErrorResponse,
+  HolidayWire,
+  HolidayImportResultWire,
+  mapHoliday,
+  mapHolidayImportResult,
 } from '../models/holiday.models';
 
 /**
@@ -45,53 +49,57 @@ export class HolidayService {
     if (locationId) {
       params = params.set('locationId', locationId);
     }
-    return this.http.get<IHoliday[]>(this.baseUrl, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<HolidayWire[]>(this.baseUrl, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapHoliday)));
   }
 
   /** Get holidays within a date range (FR-6 — used by leave-day calculation). */
   getHolidaysInRange(from: string, to: string): Observable<IHoliday[]> {
     const params = new HttpParams().set('from', from).set('to', to);
-    return this.http.get<IHoliday[]>(this.baseUrl, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<HolidayWire[]>(this.baseUrl, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapHoliday)));
   }
 
   // --- Write -------------------------------------------------
 
   /** Create a new holiday (AC-1, FR-1, FR-2). */
   createHoliday(request: ICreateHolidayRequest): Observable<IHoliday> {
-    return this.http.post<IHoliday>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<HolidayWire>(this.baseUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapHoliday));
   }
 
   /** Update an existing holiday (FR-1). */
   updateHoliday(id: string, request: IUpdateHolidayRequest): Observable<IHoliday> {
-    return this.http.put<IHoliday>(`${this.baseUrl}/${id}`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .put<HolidayWire>(`${this.baseUrl}/${id}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapHoliday));
   }
 
   /** Deactivate a holiday (BR-4 — deletion blocked in finalized payroll periods). */
   deactivateHoliday(id: string): Observable<IHoliday> {
-    return this.http.post<IHoliday>(
-      `${this.baseUrl}/${id}/deactivate`,
-      {},
-      { withCredentials: true }
-    );
+    return this.http
+      .post<HolidayWire>(`${this.baseUrl}/${id}/deactivate`, {}, { withCredentials: true })
+      .pipe(map(mapHoliday));
   }
 
   /** Reactivate a previously deactivated holiday. */
   reactivateHoliday(id: string): Observable<IHoliday> {
-    return this.http.post<IHoliday>(
-      `${this.baseUrl}/${id}/reactivate`,
-      {},
-      { withCredentials: true }
-    );
+    return this.http
+      .post<HolidayWire>(`${this.baseUrl}/${id}/reactivate`, {}, { withCredentials: true })
+      .pipe(map(mapHoliday));
   }
 
   /**
@@ -101,11 +109,11 @@ export class HolidayService {
   importHolidays(file: File): Observable<IHolidayImportResult> {
     const formData = new FormData();
     formData.append('file', file);
-    return this.http.post<IHolidayImportResult>(
-      `${this.baseUrl}/import`,
-      formData,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<HolidayImportResultWire>(`${this.baseUrl}/import`, formData, {
+        withCredentials: true,
+      })
+      .pipe(map(mapHolidayImportResult));
   }
 
   /** Parse an error response into a typed holiday error. */

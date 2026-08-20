@@ -19,7 +19,6 @@ describe('LeaveTypeListComponent', () => {
   const mockLeaveTypes: ILeaveType[] = [
     {
       leaveTypeId: 'lt-1',
-      tenantId: 'tenant-1',
       name: 'Annual Leave',
       code: 'AL',
       color: '#2563eb',
@@ -46,7 +45,6 @@ describe('LeaveTypeListComponent', () => {
     },
     {
       leaveTypeId: 'lt-2',
-      tenantId: 'tenant-1',
       name: 'Sick Leave',
       code: 'SL',
       color: '#dc2626',
@@ -73,7 +71,6 @@ describe('LeaveTypeListComponent', () => {
     },
     {
       leaveTypeId: 'lt-3',
-      tenantId: 'tenant-1',
       name: 'Maternity Leave',
       code: 'ML',
       color: '#db2777',
