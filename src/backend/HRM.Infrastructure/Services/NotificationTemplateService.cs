@@ -168,23 +168,30 @@ public sealed class NotificationTemplateService : INotificationTemplateService
         if (tenant is null)
             return DefaultCap;
 
-        var planValue = await _db.SubscriptionPlans
-            .AsNoTracking()
-            .Where(p => p.Code == tenant.PlanId)
-            .Select(p => (long?)p.MaxTemplateLanguageVariants)
-            .FirstOrDefaultAsync(cancellationToken);
-        var overrides = await _db.PlanLimitOverrides
-            .AsNoTracking()
-            .Where(o => o.TenantId == tenantId)
-            .ToListAsync(cancellationToken);
+        // BUG-307 / ISSUE-388. `tenant` is a projection, not the entity, so this uses the (tenantId, planId)
+        // overload rather than materialising a whole Tenant to read two columns.
+        var effective = await PlanLimitLookup.ResolveAsync(
+            _db, tenantId, tenant.PlanId, PlanLimitKeys.MaxTemplateLanguageVariants,
+            p => p.MaxTemplateLanguageVariants, DateTime.UtcNow, cancellationToken);
 
-        var resolved = PlanLimitResolver.Resolve(
-            PlanLimitKeys.MaxTemplateLanguageVariants, planValue, overrides, DateTime.UtcNow);
-        long? overrideValue = resolved.Source == PlanLimitResolver.LimitSource.Override
-            ? resolved.Value
+        if (effective.IsConfigurationError)
+        {
+            // Bare long return: "fail closed" = the strictest value any configured plan defines.
+            _logger.LogError(
+                "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; falling back "
+                + "to the strictest configured {LimitKey} rather than treating it as unlimited (BUG-307).",
+                tenantId, tenant.PlanId, PlanLimitKeys.MaxTemplateLanguageVariants);
+
+            var strictest = await PlanLimitLookup.StrictestConfiguredAsync(
+                _db, p => p.MaxTemplateLanguageVariants, cancellationToken);
+            return strictest ?? DefaultCap;
+        }
+
+        long? overrideValue = effective.Source == PlanLimitResolver.LimitSource.Override
+            ? effective.Value
             : null;
 
-        return overrideValue ?? planValue ?? tenant.MaxTemplateLanguageVariants ?? DefaultCap;
+        return overrideValue ?? effective.Value ?? tenant.MaxTemplateLanguageVariants ?? DefaultCap;
     }
 
     public async Task<Result<TemplateDetailDto>> ResetAsync(

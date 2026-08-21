@@ -54,9 +54,9 @@ public sealed class PlanLimitLookupUsageGuardTests
     /// </summary>
     private static readonly HashSet<string> KnownUnmigrated = new(StringComparer.Ordinal)
     {
-        "CustomFieldService.cs",          // MaxCustomFieldsPerEntity -> Task<int>
-        "NotificationTemplateService.cs", // MaxTemplateLanguageVariants -> Task<long>
-        "RealNotificationDispatcher.cs",  // MaxEmailSendsPerMonth -> Task (no channel at all)
+        // EMPTY — all ten call sites are migrated. The list did what it was for: it kept the guard live while
+        // three of them waited on a product decision, then shrank to nothing. The staleness arm below is what
+        // forced it to shrink rather than quietly becoming a permanent exemption.
     };
 
     private static IEnumerable<string> ProductionSources()

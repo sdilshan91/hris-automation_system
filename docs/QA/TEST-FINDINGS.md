@@ -8776,10 +8776,18 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   pass as a change rippling into callers with nothing to do with plan limits. Because #536's startup
   reconciler repoints unresolvable `plan_id`s, this fallback should never actually fire — it is a backstop,
   like the fail-closed branch on the other six.
-- **`TenantSettingsService` (FeatureFlags):** gets a **sibling helper**, `ResolveFeatureFlagsAsync`, sharing
-  the same plan-exists distinction rather than contorting the numeric API. Feature gating carries the same
-  fail-open risk — an unresolvable plan silently granting or denying features — and deserves the same guard.
-  (Defaulting flags to *off* might already be fail-closed, but that needs verifying, not assuming.)
+- **`TenantSettingsService` (FeatureFlags): DECISION WITHDRAWN — it was never broken, and listing it was my
+  error.** I put it in the survey by eye rather than by evidence. On reading it: it projects to an anonymous
+  type (`new { p.Code, p.FeatureFlags }`) and then does `if (plan is null) return null;` — an explicit,
+  unambiguous "no plan row" branch. The BUG-307 ambiguity comes specifically from `(long?)p.X`, where null
+  means *either* "no row" *or* "row with no cap". A reference-type projection has no such collision.
+  **The drift guard's regex correctly never flagged this file** — the guard was right and my hand-written
+  survey was wrong, which is a decent argument for the guard.
+  Its fail-open behaviour is also *deliberate and documented*: the in-code comment explains that a null flag
+  set means "unknown ⇒ fail open" because failing closed would **lock a paying tenant out of their own
+  branding**. That is the correct trade for an entitlement gate, and the opposite of the quota case. No
+  sibling helper was built — an unnecessary abstraction would have been worse than none.
+- **Net: the migration is 9 sites, not 10.**
 
 **PROGRESS 2026-08-21 — 6 of 10 sites migrated.** `EmployeeService` (#536) plus `UserManagementService`,
 `BulkEmployeeImportService`, `EmployeeDocumentService`, `RoleService` and `WorkflowService`.

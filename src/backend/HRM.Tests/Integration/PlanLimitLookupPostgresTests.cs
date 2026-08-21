@@ -272,4 +272,46 @@ public sealed class PlanLimitLookupPostgresTests : IAsyncLifetime
             await db.SaveChangesAsync();
         }
     }
+
+    // ── ISSUE-388: the fallback for call sites with no failure channel ───────
+
+    /// <summary>
+    /// THE ARM THAT MATTERS FOR THE FALLBACK. Three call sites return a bare int/long/void, so "fail closed"
+    /// cannot mean "return an error" — it means return the strictest value any configured plan actually
+    /// defines. `starter` caps employees at 25, `enterprise` is NULL (unlimited), so the answer must be 25.
+    ///
+    /// A NULL plan limit means UNLIMITED, i.e. the OPPOSITE of restrictive. If the helper treated null as a
+    /// candidate minimum it would return "unlimited" as the strictest value and reinstate the fail-open in a
+    /// new disguise.
+    /// </summary>
+    [Fact]
+    public async Task StrictestConfigured_IgnoresUnlimitedPlans_AndReturnsTheTightestRealCap_ISSUE388()
+    {
+        await using var db = Db();
+
+        var strictest = await PlanLimitLookup.StrictestConfiguredAsync(db, p => p.MaxEmployees);
+
+        strictest.Should().Be(25,
+            "starter caps at 25 and enterprise is NULL (unlimited); a null limit is the opposite of "
+            + "restrictive, so treating it as a candidate minimum would return 'unlimited' as the strictest "
+            + "value and reinstate the fail-open in a new disguise");
+    }
+
+    /// <summary>
+    /// With no plan defining the limit at all there is nothing to fall back TO, so the helper returns null and
+    /// the caller keeps its own hard default. Returning 0 here would silently block the feature — for the
+    /// email dispatcher, that is a total outbound-mail outage caused by a config typo.
+    /// </summary>
+    [Fact]
+    public async Task StrictestConfigured_ReturnsNull_WhenNoPlanDefinesTheLimit_ISSUE388()
+    {
+        await using var db = Db();
+
+        // Neither seeded plan defines MaxCustomRoles in this fixture.
+        var strictest = await PlanLimitLookup.StrictestConfiguredAsync(db, p => p.MaxCustomRoles);
+
+        strictest.Should().BeNull(
+            "with nothing to fall back to, the caller must use its own documented default rather than have "
+            + "this helper invent a cap — and it must NOT be 0, which would block the feature outright");
+    }
 }
