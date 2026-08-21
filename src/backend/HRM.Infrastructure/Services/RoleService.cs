@@ -106,20 +106,26 @@ public sealed class RoleService : IRoleService
             .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId, cancellationToken);
         if (tenant is not null)
         {
-            var planValue = await _dbContext.SubscriptionPlans
-                .AsNoTracking()
-                .Where(p => p.Code == tenant.PlanId)
-                .Select(p => (long?)p.MaxCustomRoles)
-                .FirstOrDefaultAsync(cancellationToken);
-            var overrides = await _dbContext.PlanLimitOverrides
-                .AsNoTracking()
-                .Where(o => o.TenantId == tenant.Id)
-                .ToListAsync(cancellationToken);
-            var resolved = PlanLimitResolver.Resolve(
-                PlanLimitKeys.MaxCustomRoles, planValue, overrides, DateTime.UtcNow);
-            long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
-                ? resolved.Value    // override wins (null = unlimited)
-                : planValue;        // else plan value (null = unlimited); no snapshot column for this key
+            // BUG-307 / ISSUE-388: one shared lookup that keeps the distinction the old inline query destroyed --
+            // "plan_id matches no plan" and "plan says no cap" both used to arrive here as a bare null.
+            var effective = await PlanLimitLookup.ResolveAsync(
+                _dbContext, tenant, PlanLimitKeys.MaxCustomRoles, p => p.MaxCustomRoles, DateTime.UtcNow, cancellationToken);
+            
+            if (effective.IsConfigurationError)
+            {
+                // FAIL CLOSED. An unresolvable plan_id is a misconfiguration, not an unlimited allowance.
+                _logger.LogError(
+                    "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; refusing to "
+                    + "treat the {LimitKey} cap as unlimited (BUG-307).",
+                    tenant.Id, tenant.PlanId, PlanLimitKeys.MaxCustomRoles);
+                return Result<RoleDto>.Failure(
+                    "Your subscription plan could not be resolved. Please contact your administrator.",
+                    403, "plan_unresolvable");
+            }
+
+            long? limit = effective.Source == PlanLimitResolver.LimitSource.Override
+                ? effective.Value   // override wins (null = unlimited)
+                : effective.Value;  // else plan value (null = unlimited); no snapshot column for this key
 
             if (limit is { } cap)
             {

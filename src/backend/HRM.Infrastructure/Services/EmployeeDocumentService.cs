@@ -209,19 +209,24 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
         if (tenant is null)
             return (null, null);
 
-        var planValue = await _dbContext.SubscriptionPlans
-            .AsNoTracking()
-            .Where(p => p.Code == tenant.PlanId)
-            .Select(p => (long?)p.MaxStorageGb)
-            .FirstOrDefaultAsync(cancellationToken);
-        var overrides = await _dbContext.PlanLimitOverrides
-            .AsNoTracking()
-            .Where(o => o.TenantId == tenant.Id)
-            .ToListAsync(cancellationToken);
+        // BUG-307 / ISSUE-388: one shared lookup that keeps the distinction the old inline query destroyed --
+        // "plan_id matches no plan" and "plan says no cap" both used to arrive here as a bare null.
+        var effective = await PlanLimitLookup.ResolveAsync(
+            _dbContext, tenant, PlanLimitKeys.MaxStorageGb, p => p.MaxStorageGb, DateTime.UtcNow, cancellationToken);
+        
+        if (effective.IsConfigurationError)
+        {
+            // FAIL CLOSED. An unresolvable plan_id is a misconfiguration, not an unlimited allowance.
+            _logger.LogError(
+                "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; refusing to "
+                + "treat the {LimitKey} cap as unlimited (BUG-307).",
+                tenant.Id, tenant.PlanId, PlanLimitKeys.MaxStorageGb);
+            return (Result<EmployeeDocumentDto>.Failure(
+                "Your subscription plan could not be resolved. Please contact your administrator.", 403),
+                null);
+        }
 
-        var resolved = PlanLimitResolver.Resolve(
-            PlanLimitKeys.MaxStorageGb, planValue, overrides, DateTime.UtcNow);
-        if (resolved.Value is not { } limitGb)
+        if (effective.Value is not { } limitGb)
             return (null, null); // unlimited
 
         var limitBytes = limitGb * 1024L * 1024L * 1024L;

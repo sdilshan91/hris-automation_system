@@ -72,13 +72,39 @@ public static class PlanLimitLookup
     /// An applicable non-expired override WINS even when the plan is missing: an override is a deliberate,
     /// per-tenant decision, so it is a valid answer regardless of whether the plan row resolves.
     /// </remarks>
-    public static async Task<EffectivePlanLimit> ResolveAsync(
+    /// <summary>
+    /// Overload for callers that hold a tenant's id and plan code WITHOUT the full <see cref="Tenant"/>
+    /// entity — several project only the columns they need (e.g. <c>new { t.PlanId, t.MaxWorkflows }</c>).
+    /// Forcing them to materialise the whole entity just to reach this method would trade a real query cost
+    /// for nothing; the lookup only ever needed these two values.
+    /// </summary>
+    public static Task<EffectivePlanLimit> ResolveAsync(
+        AppDbContext db,
+        Guid tenantId,
+        string? planId,
+        string limitKey,
+        Func<SubscriptionPlan, long?> planSelector,
+        DateTime nowUtc,
+        CancellationToken cancellationToken = default)
+        => ResolveCoreAsync(db, tenantId, planId, limitKey, planSelector, nowUtc, cancellationToken);
+
+    public static Task<EffectivePlanLimit> ResolveAsync(
         AppDbContext db,
         Tenant tenant,
         string limitKey,
         Func<SubscriptionPlan, long?> planSelector,
         DateTime nowUtc,
         CancellationToken cancellationToken = default)
+        => ResolveCoreAsync(db, tenant.Id, tenant.PlanId, limitKey, planSelector, nowUtc, cancellationToken);
+
+    private static async Task<EffectivePlanLimit> ResolveCoreAsync(
+        AppDbContext db,
+        Guid tenantId,
+        string? planId,
+        string limitKey,
+        Func<SubscriptionPlan, long?> planSelector,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
     {
         // Load the ROW, then apply the selector in memory. Selecting the limit column alone is exactly what
         // collapsed "no row" and "row with NULL" into one indistinguishable null — the bug itself.
@@ -86,7 +112,7 @@ public static class PlanLimitLookup
         // the cleverness required to keep the distinction inside SQL.
         var planRow = await db.SubscriptionPlans
             .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Code == tenant.PlanId, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Code == planId, cancellationToken);
 
         // A deployment with NO plans at all is not misconfigured -- it simply is not using plan-based
         // limiting, so there is no cap to enforce and no revenue rule to protect. The bug is narrower than
@@ -100,7 +126,7 @@ public static class PlanLimitLookup
 
         var overrides = await db.PlanLimitOverrides
             .AsNoTracking()
-            .Where(o => o.TenantId == tenant.Id)
+            .Where(o => o.TenantId == tenantId)
             .ToListAsync(cancellationToken);
 
         long? planValue = planRow is null ? null : planSelector(planRow);
