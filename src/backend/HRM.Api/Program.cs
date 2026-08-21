@@ -1,7 +1,9 @@
+using System.Net;
 using FluentValidation;
 using Hangfire;
 using Hangfire.PostgreSql;
 using HRM.Api.Auth;
+using HRM.Api.Configuration;
 using HRM.Api.Filters;
 using HRM.Api.Middleware;
 using HRM.Api.Observability;
@@ -14,6 +16,7 @@ using HRM.Infrastructure.Persistence;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -624,20 +627,61 @@ try
     var app = builder.Build();
 
     // ===== Middleware Pipeline =====
-    app.UseSerilogRequestLogging();
 
-    if (app.Environment.IsDevelopment())
+    // BUG-308: honour X-Forwarded-* from the reverse proxy -- but ONLY from a proxy we know.
+    //
+    // TLS terminates at the reverse-proxy nginx (docker-compose.tls.yml), which forwards to backend:5000
+    // over PLAIN HTTP with X-Forwarded-Proto: https. Without this middleware ctx.Request.IsHttps is FALSE
+    // inside the API in the only deployment that has TLS at all, which made the §23.4 HSTS branch dead
+    // code. It also silently mis-built the four absolute URLs that ARE scheme-derived -- the branding-asset
+    // base URLs in AuthController.ToServableLogos (:339), TenantContextController (:41) and
+    // TenantSettingsController (:255, :295). Behind TLS those emitted http:// logo URLs on an https:// page,
+    // which browsers block as mixed content.
+    //
+    // (Reset links, invite links, portal links and the SSO redirect URI are NOT affected -- they are built
+    // from Platform:BaseDomain / Platform:FrontendBaseUrl with a hardcoded https://, never from
+    // Request.Scheme. An earlier draft of this comment claimed otherwise; verified false.)
+    //
+    // ---------------------------------------------------------------------------------------------------
+    // THE SCOPING IS THE SECURITY CONTROL, NOT A DETAIL.
+    // X-Forwarded-Proto is a plain request header: ANY caller can send it. An UNSCOPED ForwardedHeaders
+    // middleware therefore lets an attacker forge Request.IsHttps == true (and, via X-Forwarded-For, forge
+    // the client IP that rate limiting partitions on). ASP.NET Core ships KnownNetworks/KnownProxies
+    // pre-populated with loopback, so we CLEAR them and add back only what configuration names.
+    //
+    // FAIL-SAFE DEFAULT: base appsettings.json leaves both lists EMPTY. Empty means the middleware trusts
+    // nobody and strips the headers -- i.e. exactly today's behaviour, no new attack surface. A deployment
+    // behind a proxy must OPT IN by naming its proxy network. Getting that wrong fails CLOSED (HSTS stays
+    // absent, which is visible) rather than OPEN (spoofable scheme, which is not).
+    // ---------------------------------------------------------------------------------------------------
+    //
+    // Registered FIRST so everything downstream -- Serilog's request log, the §23.4 headers, and the
+    // rate-limit partition key -- sees the corrected scheme and client IP rather than the proxy's.
+    // Returns null when no proxy is configured -- and then the middleware is NOT registered.
+    //
+    // That null case is the whole point. ASP.NET Core only performs its known-proxy check when
+    // KnownNetworks or KnownProxies is non-empty, so registering the middleware with BOTH lists empty --
+    // the natural way to write "trust nobody" -- actually trusts EVERYONE and lets any caller forge
+    // Request.IsHttps. Verified against the running pipeline, not assumed. See ProxyTrustOptions.
+    var forwardedOptions = ProxyTrustOptions.Build(builder.Configuration);
+    if (forwardedOptions is not null)
     {
-        app.UseSwagger();
-        app.UseSwaggerUI(options =>
-        {
-            options.SwaggerEndpoint("/swagger/v1/swagger.json", "HRM API v1");
-            options.RoutePrefix = "swagger";
-        });
+        app.UseForwardedHeaders(forwardedOptions);
+    }
+    else
+    {
+        Log.Information(
+            "No Proxy:KnownNetworks/KnownProxies configured -- X-Forwarded-* headers are ignored and "
+            + "Request.Scheme reflects the direct socket peer. Correct with no reverse proxy in front; "
+            + "a TLS-terminating proxy deployment MUST configure them or HSTS and every absolute URL "
+            + "will report http (BUG-308).");
     }
 
-    // Exception handling (outermost)
+    app.UseSerilogRequestLogging();
+
     // §23.4 security headers on API responses (GAP-033a).
+    // ISSUE-383: above the dev-gated Swagger block, which would otherwise short-circuit /swagger* before
+    // the headers were written. Dev-only, but the ordering was simply wrong.
     //
     // Registered BEFORE ExceptionHandlingMiddleware, so it WRAPS the exception handler rather than sitting
     // inside it. That ordering is the whole point: the headers are written on the way IN, before anything
@@ -664,6 +708,18 @@ try
         await next();
     });
 
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "HRM API v1");
+            options.RoutePrefix = "swagger";
+        });
+    }
+
+    // Exception handling (outermost)
     app.UseMiddleware<ExceptionHandlingMiddleware>();
 
     // Tenant resolution (before auth)
@@ -1021,9 +1077,35 @@ finally
 }
 
 // ===== Rate-limit partition key =====
-// Resolves the client IP for rate-limit partitioning. No ForwardedHeaders/UseForwardedHeaders middleware is
-// configured in this app, so Connection.RemoteIpAddress is the direct socket peer (correct behind no proxy).
-// If a reverse proxy is introduced later, add ForwardedHeaders middleware so this reflects the real client.
+// Resolves the client IP for rate-limit partitioning.
+//
+// BUG-308 CHANGED WHAT THIS SEES, AND THAT IS A FIX -- but know that it changed.
+// This comment used to say no ForwardedHeaders middleware was configured. One now is (when, and only when,
+// Proxy:KnownNetworks/KnownProxies name a trusted proxy), and ForwardedHeadersMiddleware REWRITES
+// Connection.RemoteIpAddress from X-Forwarded-For. So:
+//   * unconfigured / no proxy -> the direct socket peer, exactly as before. Unchanged.
+//   * behind a CONFIGURED proxy -> the real client IP instead of the proxy's.
+// The second case fixes a quiet bug: every request through the proxy previously presented the SAME address,
+// so all tenants and users shared ONE rate-limit bucket and a single noisy client could exhaust the limit
+// for everyone. Per-client partitioning is what the limiter was always meant to do.
+// Not a spoofing vector: X-Forwarded-For is honoured ONLY from an address inside the configured trusted set,
+// and discarded from everyone else. What is actually PROVEN by test, precisely -- an earlier version of this
+// comment cited the suite as proving more than it did:
+//   * REJECTION from an untrusted peer is proven end-to-end
+//     (SpoofedForwardedFor_FromUntrustedPeer_IsRejectedWithTheWholeSet_BUG308). The middleware makes one
+//     trust decision per request and applies or abandons the whole forwarded set together, so an unapplied
+//     proto from that peer means its XFF was discarded too.
+//   * The ACCEPTED case -- that a trusted proxy's XFF actually rewrites RemoteIpAddress -- is NOT asserted
+//     end-to-end, because no endpoint echoes the resolved client IP. Tracked as ISSUE-385. Do not cite this
+//     suite as covering it.
+//
+// WIDER THAN RATE LIMITING: every consumer of RemoteIpAddress now records the real client. That includes the
+// audit/security trail -- AuditInterceptor, AuditCaptureInterceptor, AuditLogService, PayrollAuditLogger, and
+// the controllers that stamp a client IP on login, attendance punches, review sign-off, payroll approval and
+// applicant-portal token issuance. The stored value is MORE correct, but its MEANING changes the day a proxy
+// is configured: rows written before that point hold the proxy's address. Anyone comparing audit IPs across
+// that boundary needs to know.
+//
 // Fall back to a single shared bucket when the IP is unavailable, so the limit still applies (fail-closed).
 static string ResolveClientIp(HttpContext httpContext)
     => httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";

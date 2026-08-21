@@ -4,6 +4,7 @@ using System.Text.Json;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -47,8 +48,49 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         await base.DisposeAsync();
     }
 
+    /// <summary>
+    /// Sets <c>Connection.RemoteIpAddress</c> from an <c>X-Test-Peer-Ip</c> request header, BEFORE any
+    /// application middleware runs.
+    ///
+    /// WHY THIS IS NECESSARY AND NOT A CHEAT. TestServer never populates a socket peer address — it leaves
+    /// <c>RemoteIpAddress</c> null. ForwardedHeadersMiddleware only performs its known-proxy trust check
+    /// when it HAS a peer address, so under a null peer it applies X-Forwarded-Proto unconditionally.
+    /// Measured, not assumed: a spoofed <c>X-Forwarded-Proto: https</c> against the unmodified harness
+    /// produced <c>Strict-Transport-Security</c> in the response.
+    ///
+    /// That means a spoof-rejection test written against the bare harness would pass while proving
+    /// NOTHING — it would be green for the wrong reason, in the same family as this repo's
+    /// InMemory-masks-Postgres trap. This filter supplies the one input TestServer omits (who the socket
+    /// peer is); it does not stub, bypass, or weaken the control under test.
+    ///
+    /// Inert unless a test sends the header, so it cannot affect any other suite.
+    /// </summary>
+    private sealed class TestPeerIpStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (ctx, nextMw) =>
+            {
+                if (ctx.Request.Headers.TryGetValue("X-Test-Peer-Ip", out var raw)
+                    && System.Net.IPAddress.TryParse(raw.ToString(), out var peer))
+                {
+                    ctx.Connection.RemoteIpAddress = peer;
+                }
+
+                await nextMw();
+            });
+
+            next(app);
+        };
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // BUG-308: see TestPeerIpStartupFilter — TestServer supplies no socket peer, which silently
+        // disables ForwardedHeaders' trust check.
+        builder.ConfigureServices(services =>
+            services.AddSingleton<IStartupFilter, TestPeerIpStartupFilter>());
+
         // Development so: (1) DbInitializer migrate/seed failures don't fail-fast, (2) the DEV-only
         // E2E seed runs, (3) the dev X-Tenant-Subdomain header fallback in TenantResolutionMiddleware
         // is honoured (subdomain-based resolution can't work against the in-memory test server host).
@@ -72,6 +114,14 @@ public sealed class ApiTestFactory : WebApplicationFactory<Program>, IAsyncLifet
         // On a developer machine it LOOKED fine only because user-secrets supplied a working
         // DefaultConnection — which means Hangfire was quietly writing to the developer's real dev database
         // instead of this throwaway container. The harness was never as isolated as it claimed.
+        // BUG-308: PIN the proxy trust boundary here rather than inheriting it from
+        // appsettings.Development.json. That file exists for docker-bridge convenience and its own comment
+        // invites developers to widen the range -- so a security assertion that silently depends on it can
+        // be loosened by an unrelated dev-ergonomics edit, with no test turning red to say so. The suite
+        // must own the boundary it asserts on.
+        builder.UseSetting("Proxy:KnownNetworks:0", "172.18.0.0/16");
+        builder.UseSetting("Proxy:ForwardLimit", "1");
+
         builder.UseSetting("ConnectionStrings:DefaultConnection", _postgres.GetConnectionString());
         builder.UseSetting("ConnectionStrings:PrivilegedConnection", string.Empty);
 

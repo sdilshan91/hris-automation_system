@@ -182,6 +182,27 @@ load balancer* and matched **zero**.
       Guid.Empty`, which no `user_tenants` row can match, so **nobody can authenticate there**
       (`SystemEndpointHostGuardMiddleware.cs:27-33` explains why). Platform admins are users of the real
       `platform` tenant. **Do not point production DNS or the admin console at `admin.*`** — see GAP-038.
+- [ ] **Configure `Proxy:KnownNetworks` (or `KnownProxies`) for the real terminating proxy — BUG-308.**
+      Leaving this section empty is safe but INERT: the app skips the ForwardedHeaders middleware entirely,
+      so `Request.IsHttps` reflects the direct socket peer. Behind a TLS-terminating proxy that means **no
+      HSTS from the API, and the four scheme-derived branding URLs emit `http://` logo links on an `https://`
+      page — mixed content the browser blocks.** (Reset, invite and SSO links are NOT affected: they hardcode
+      `https://` from config.) Name the proxy's network and verify with
+      `curl -skI https://<host>/api/v1/health | grep -i strict-transport`.
+      **Do NOT "simplify" this to an always-on middleware with empty lists.** ASP.NET Core only performs its
+      known-proxy check when one of those lists is non-empty, so empty-but-registered honours
+      `X-Forwarded-Proto` from *any* caller and lets anyone forge `Request.IsHttps`. Verified, not assumed.
+- [ ] **Know that stored audit IPs change meaning once the proxy is configured (BUG-308).** Every
+      `RemoteIpAddress` consumer — `AuditInterceptor`, `AuditCaptureInterceptor`, `AuditLogService`,
+      `PayrollAuditLogger`, and the controllers stamping client IP on login, attendance, review sign-off,
+      payroll approval and portal-token issuance — begins recording the **real client** instead of the proxy.
+      The new value is the correct one, but rows written before the cutover hold the proxy's address. Note the
+      cutover date somewhere an auditor comparing IPs across it will find.
+- [ ] **Know that rate-limit partitioning changes once the proxy is configured (BUG-308).** With
+      `X-Forwarded-For` honoured, the limiter partitions by the **real client IP** instead of the proxy's.
+      This is the intended behaviour — previously every request through the proxy shared one bucket, so one
+      noisy client could exhaust the limit for every tenant. Re-check limit thresholds against per-client
+      traffic rather than aggregate, since the effective limit per user goes UP.
 - [ ] **Decide where the security headers live — they are now set in TWO places.** `src/frontend/nginx.conf`
       and the API pipeline both emit them as of GAP-033a. **If the terminating proxy also sets them, remove
       the duplicate rather than shipping both**: browsers take the FIRST `Strict-Transport-Security` and
