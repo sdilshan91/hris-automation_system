@@ -8685,7 +8685,7 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ### ISSUE-386
 
-- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN (deferred by decision) · **Layer:** Backend
+- **Type:** ISSUE · **Severity:** LOW (was MED) · **Status:** RESOLVED — WON'T SEED (decided 2026-08-21) · **Layer:** Backend
 - **Module:** Admin Console / Recruitment / Attendance · **US:** US-ADM-011, GAP-029
 - **Found:** 2026-08-21, while implementing the C1 default-workflow seed.
 - **Summary:** `WorkflowRuntimeService.CreateInstanceOnSubmitAsync` is wired for **three** entity types — `Leave` (`LeaveRequestService:299`), `Offer` (`OfferService:227`) and `Overtime` (`OvertimeService:261`) — but C1 seeds a default definition for **Leave only**. Offer and Overtime therefore still fall through the AC-11 legacy branch for every tenant, and the US-ADM-011 engine remains dormant for both.
@@ -8695,6 +8695,51 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   2. Add an equivalence arm modelled on `SeededWorkflow_RoutesToTheRequestersLineManager_SameAsLegacy_GAP029`, asserting the seeded route activates a step assigned to that same person.
   3. Only then extend `DefaultLeaveWorkflow` (or add a sibling builder) and the `DbInitializer` backfill.
 - **Note on effort:** the seeding machinery is already built and shared — `DefaultLeaveWorkflow.Build` plus `DbInitializer.EnsureDefaultLeaveWorkflowAsync`. The remaining cost is almost entirely the *verification*, which is the part that must not be skipped.
+- **★ VERIFIED 2026-08-21 — and the premise of this finding was wrong for BOTH entity types. Neither can be
+  seeded the way Leave was.** The whole point of this finding was that the legacy approver must be verified
+  rather than assumed; doing that verification changed the answer.
+
+  **Offer — there is no legacy approval path to reproduce.** `ApproveOfferAsync` refuses outright unless
+  `offer.WorkflowInstanceId` is set (`offer_not_workflow_driven`), and the submit path's own comment states
+  the AC-11 fallback plainly: *"no definition → WorkflowInstanceId stays null and the offer can be sent
+  freely."* **Legacy behaviour for offers is NO APPROVAL GATE AT ALL.** Seeding a definition would therefore
+  not "make the engine live without changing outcomes" — it would **introduce a mandatory approval step into
+  a flow that currently has none.** That is a product decision about whether offers should require approval,
+  not a defect fix. *(Checked before filing anything alarming: offers are not broken today — they are
+  approval-free by design.)*
+
+  **Overtime — legacy is BROADER than a line manager.** `LoadForDecisionAsync` authorises anyone holding
+  `Attendance.Approve.Team` — *"granted to managers AND HR"* — in addition to the manager-of-record path for
+  direct reports. A seeded `LineManager` step would be **narrower than legacy**: it would strip HR's existing
+  ability to approve overtime. That is a restriction, not equivalence. The closest workflow analogue would be
+  a `Role`-type step keyed to the permission holder set, which is a different construction from Leave's.
+
+- **CONSEQUENCE:** the "seed a 1-step LineManager definition" recipe that worked for Leave is **wrong for
+  both**. Leave was seedable precisely because its legacy path already was single-level line-manager
+  approval; neither of these is.
+**DECIDED 2026-08-21 — DO NOT SEED EITHER. This finding is resolved by verification, not by code.**
+
+- **Offer:** leave offers approval-free. Introducing a gate would block every offer send on an approver that
+  tenants never configured and were never told about, and recruitment is time-sensitive — an offer sitting
+  Pending because nobody knows they are the approver is a worse outcome than no gate. If a tenant wants
+  offer approval, an admin can author the workflow deliberately; the engine already supports it.
+- **Overtime:** leave the permission-based path alone. It is intentionally BROADER than a line manager
+  (`Attendance.Approve.Team`, held by managers *and* HR), and any seeded `LineManager` step would silently
+  strip HR's existing ability to approve. A `Role`-type step keyed to that permission was considered and
+  rejected for now: the permission is *grantable per tenant*, not fixed to a role, so the mapping would have
+  to be verified per tenant and could still drift — reproducing "broader" exactly is harder than leaving the
+  broader thing in place.
+
+**The engine being "dormant" for these two is therefore NOT a defect.** Downgraded MED → LOW and closed. The
+original framing — "the engine is dormant, so seed it" — treated dormancy as the problem. For Leave that was
+right, because legacy already *was* single-level line-manager approval. For these two the legacy behaviour is
+deliberately different, and seeding would have changed real outcomes under the banner of a fix.
+
+**What this finding actually bought:** it forced the legacy approver to be *verified rather than assumed*, and
+that verification reversed the conclusion for both entity types. Had the original recipe been applied — "seed
+a 1-step LineManager definition", which is what worked for Leave — it would have added an approval gate to
+offers that have none, and removed HR's overtime approval rights. Both silently.
+
 - **Severity rationale:** MED because two shipped subsystems silently run a legacy path while the documentation and the admin UI imply the workflow engine governs them; not HIGH because approvals still work correctly via the legacy route — the loss is capability, not correctness.
 
 
