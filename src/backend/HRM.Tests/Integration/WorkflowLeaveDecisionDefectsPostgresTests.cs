@@ -326,4 +326,77 @@ public sealed class WorkflowLeaveDecisionDefectsPostgresTests : IAsyncLifetime
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlySet<DateOnly>>(new HashSet<DateOnly>());
     }
+
+    // ── ISSUE-387 ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// ISSUE-387: a workflow-driven approval must still write the SEMANTIC <c>Leave.Approved</c> audit row.
+    ///
+    /// The engine already writes <c>workflow.instance.approved</c> with ResourceType "WorkflowInstance".
+    /// That records a workflow STEP being approved; ISSUE-037/FR-7 is about a LEAVE REQUEST being approved
+    /// and requires the trail to be queryable BY ACTION. Before C1 every tenant used the legacy path so that
+    /// query was complete — C1 made the engine live for everyone, which would have silently dropped every
+    /// workflow-driven decision out of it.
+    ///
+    /// Asserts the ROW EXISTS IN THE DATABASE, not that a method was called: the staging methods do not save,
+    /// so the row only survives if the workflow runtime's commit actually carries it.
+    /// </summary>
+    [Fact]
+    public async Task WorkflowApproval_WritesTheSemanticLeaveApprovedAuditRow_ISSUE387()
+    {
+        var notifications = Substitute.For<ILeaveNotificationService>();
+        var leaveRequestId = BaseEntity.NewUuidV7();
+
+        await using (var db = Db(User(_requesterUserId)))
+        {
+            db.LeaveRequests.Add(new LeaveRequest
+            {
+                Id = leaveRequestId,
+                TenantId = _tenantId,
+                EmployeeId = _requesterEmployeeId,
+                LeaveTypeId = _leaveTypeId,
+                StartDate = new DateOnly(2026, 10, 1),
+                EndDate = new DateOnly(2026, 10, 2),
+                TotalDays = 2m,
+                Status = LeaveRequestStatus.Pending,
+            });
+            await db.SaveChangesAsync();
+
+            var created = await Runtime(db, User(_requesterUserId)).CreateInstanceOnSubmitAsync(
+                WorkflowEntityType.Leave, leaveRequestId, _requesterEmployeeId, Data());
+            created.InstanceCreated.Should().BeTrue();
+
+            var lr = await db.LeaveRequests.FirstAsync(r => r.Id == leaveRequestId);
+            lr.WorkflowInstanceId = created.InstanceId;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = Db(User(_managerUserId)))
+        {
+            var service = new LeaveRequestService(
+                db, _tc, User(_managerUserId),
+                new NoOpHolidayProvider(),
+                notifications,
+                NullLogger<LeaveRequestService>.Instance,
+                new TenantLeaveYearResolver(db, _tc),
+                holidayService: null,
+                leaveTypeService: null,
+                workflowRuntime: Runtime(db, User(_managerUserId)));
+
+            (await service.ApproveAsync(leaveRequestId, "ok")).IsSuccess.Should().BeTrue();
+        }
+
+        await using (var verify = Db(User(_managerUserId)))
+        {
+            var semantic = await verify.AuditLogs.IgnoreQueryFilters().AsNoTracking()
+                .Where(a => a.Action == "Leave.Approved"
+                            && a.ResourceType == "LeaveRequest"
+                            && a.ResourceId == leaveRequestId.ToString())
+                .ToListAsync();
+
+            semantic.Should().ContainSingle(
+                "an auditor filtering the leave trail BY ACTION must find workflow-driven approvals too — "
+                + "workflow.instance.approved records a workflow step, not a leave request");
+        }
+    }
 }
