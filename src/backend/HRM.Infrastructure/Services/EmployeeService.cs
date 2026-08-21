@@ -1119,21 +1119,27 @@ public sealed class EmployeeService : IEmployeeService
 
         // BUG-008: resolve the effective cap with precedence override > plan > snapshot, instead of
         // reading only the Tenant.MaxEmployees snapshot (which ignored plan changes + per-tenant overrides).
-        var planValue = await _dbContext.SubscriptionPlans
-            .AsNoTracking()
-            .Where(p => p.Code == tenant.PlanId)
-            .Select(p => (long?)p.MaxEmployees)
-            .FirstOrDefaultAsync(cancellationToken);
-        var overrides = await _dbContext.PlanLimitOverrides
-            .AsNoTracking()
-            .Where(o => o.TenantId == tenant.Id)
-            .ToListAsync(cancellationToken);
+        // BUG-307: one shared lookup, and it keeps the distinction the old inline query destroyed --
+        // "plan_id matches no plan" vs "plan says no cap" both used to arrive here as a bare null.
+        var effective = await PlanLimitLookup.ResolveAsync(
+            _dbContext, tenant, PlanLimitKeys.MaxEmployees, p => p.MaxEmployees, DateTime.UtcNow,
+            cancellationToken);
 
-        var resolved = PlanLimitResolver.Resolve(
-            PlanLimitKeys.MaxEmployees, planValue, overrides, DateTime.UtcNow);
-        long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
-            ? resolved.Value                                   // override wins (null = unlimited)
-            : planValue ?? (long?)tenant.MaxEmployees;         // else plan value, else snapshot
+        if (effective.IsConfigurationError)
+        {
+            // FAIL CLOSED. An unresolvable plan_id is a misconfiguration, not an unlimited allowance --
+            // treating it as unlimited is precisely how a paid cap silently stopped existing.
+            _logger.LogError(
+                "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; refusing to "
+                + "treat the {LimitKey} cap as unlimited (BUG-307).",
+                tenant.Id, tenant.PlanId, PlanLimitKeys.MaxEmployees);
+            return Result.Failure(
+                "Your subscription plan could not be resolved. Please contact your administrator.", 403);
+        }
+
+        long? limit = effective.Source == PlanLimitResolver.LimitSource.Override
+            ? effective.Value                                  // override wins (null = unlimited)
+            : effective.Value ?? (long?)tenant.MaxEmployees;   // else plan value, else snapshot
 
         if (limit is null)
             return Result.Success(); // unlimited

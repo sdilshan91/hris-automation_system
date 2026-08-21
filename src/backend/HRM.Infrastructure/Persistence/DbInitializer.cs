@@ -32,6 +32,22 @@ public static class DbInitializer
     // US-ADM-003 (BR-1/AC-6): the platform read-only support role. Uses the catalog's "System Support" name.
     private static readonly string SystemSupportRoleName = PermissionCatalog.SystemRoles.SystemSupport;
 
+    /// <summary>
+    /// BUG-307 — the plan code seeded tenants are given.
+    /// </summary>
+    /// <remarks>
+    /// This used to be the literal <c>"default"</c>, which matches NO row in <c>subscription_plans</c> (whose
+    /// codes are starter/professional/enterprise). Every plan-limit lookup therefore resolved to null and was
+    /// read as "unlimited" — so the seeder itself manufactured the fail-open on every fresh deployment. It was
+    /// not stale data; it was generated, three times in this file.
+    ///
+    /// <para><b>Why <c>enterprise</c> specifically.</b> Its <c>MaxEmployees</c> is NULL, i.e. genuinely
+    /// unlimited. Repointing to it PRESERVES the effective behaviour these tenants already had (uncapped)
+    /// while making it explicit and resolvable, instead of silently imposing a cap on a tenant that never had
+    /// one. Behaviour-preserving is the right property for a migration that runs unattended at startup.</para>
+    /// </remarks>
+    private const string DefaultSeededPlanCode = "enterprise";
+
     public static async Task RunAsync(IServiceProvider services, CancellationToken cancellationToken = default)
     {
         using var scope = services.CreateScope();
@@ -442,7 +458,7 @@ public static class DbInitializer
                 Subdomain = DefaultTenantSubdomain,
                 Name = DefaultTenantName,
                 Status = TenantStatus.Active,
-                PlanId = "default",
+                PlanId = DefaultSeededPlanCode,
                 EnabledModules = defaultEnabledModules,
                 ContactEmail = DefaultAdminEmail,
                 CreatedAt = DateTime.UtcNow,
@@ -455,7 +471,7 @@ public static class DbInitializer
         {
             if (string.IsNullOrWhiteSpace(tenant.PlanId))
             {
-                tenant.PlanId = "default";
+                tenant.PlanId = DefaultSeededPlanCode;
             }
 
             if (tenant.EnabledModules.Count == 0)
@@ -692,7 +708,52 @@ public static class DbInitializer
             await BackfillCustomRoleReportScopeAsync(db, tenantId, logger, ct);
             await EnsureDefaultShiftAsync(db, tenantId, logger, ct);
             await EnsureDefaultLeaveWorkflowAsync(db, tenantId, logger, ct);
+            await EnsureResolvablePlanIdAsync(db, tenantId, logger, ct);
         }
+    }
+
+    /// <summary>
+    /// BUG-307 — repoints a tenant whose <c>plan_id</c> matches no subscription plan, loudly.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An unresolvable <c>plan_id</c> made every plan limit resolve to null, which the call sites read as
+    /// "unlimited" — a revenue rule failing OPEN with no error and no log. Measured before the fix: 2 of 3
+    /// tenants were in this state, seeded that way by this very file.
+    /// </para>
+    /// <para>
+    /// <b>Repoints to <see cref="DefaultSeededPlanCode"/> (enterprise, MaxEmployees = NULL), which PRESERVES
+    /// the uncapped behaviour these tenants already had.</b> Capping them here would be a silent, unattended
+    /// downgrade of a live tenant — the opposite mistake, and a worse one. The goal is to make the existing
+    /// state explicit and enforceable, not to make a pricing decision at startup.
+    /// </para>
+    /// <para>
+    /// WARNING, not Information: reaching this branch means something upstream wrote a plan code that does not
+    /// exist, and that cause is worth seeing rather than silently repaired.
+    /// </para>
+    /// </remarks>
+    public static async Task EnsureResolvablePlanIdAsync(
+        AppDbContext db, Guid tenantId, ILogger logger, CancellationToken ct)
+    {
+        var tenant = await db.Tenants.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, ct);
+        if (tenant is null)
+            return;
+
+        var resolves = await db.SubscriptionPlans.AsNoTracking()
+            .AnyAsync(p => p.Code == tenant.PlanId, ct);
+        if (resolves)
+            return;
+
+        var previous = tenant.PlanId;
+        tenant.PlanId = DefaultSeededPlanCode;
+        await db.SaveChangesAsync(ct);
+
+        logger.LogWarning(
+            "Tenant {TenantId} had plan_id '{PreviousPlanId}', which matches no subscription plan — every "
+            + "plan limit was silently resolving to unlimited (BUG-307). Repointed to '{NewPlanId}', which "
+            + "preserves the uncapped behaviour it already had while making it explicit and enforceable.",
+            tenantId, previous, DefaultSeededPlanCode);
     }
 
     /// <summary>
@@ -1001,7 +1062,7 @@ public static class DbInitializer
                 Subdomain = E2ETenantSubdomain,
                 Name = E2ETenantName,
                 Status = TenantStatus.Active,
-                PlanId = "default",
+                PlanId = DefaultSeededPlanCode,
                 EnabledModules = enabledModules,
                 ContactEmail = E2EOwnerEmail,
                 CreatedAt = DateTime.UtcNow,
