@@ -8719,7 +8719,10 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Summary:** The workflow-driven decision path never emits the semantic `Leave.Approved` / `Leave.Rejected` `audit_logs` rows. Legacy writes them via `AddDecisionAudit`; `StageLeaveApprovalAsync`/`StageLeaveRejectionAsync` do not. The engine instead writes generic `workflow.instance.approved`/`.rejected` rows with `ResourceType = "WorkflowInstance"`.
 - **Consequence:** an auditor filtering the leave trail **by action** finds every workflow-driven approval missing. ISSUE-037/FR-7 exists precisely to make that trail queryable by action.
 - **Why it is escalating now:** same as BUG-309 — C1 makes the workflow path universal, so the by-action leave audit trail would go from complete to systematically incomplete.
-- **Needs a decision:** is `workflow.instance.approved` an acceptable substitute for compliance, or must the semantic row be staged too? **Recommendation: stage it.** The generic row records that *a workflow step* was approved; it does not record that *a leave request* was approved, and the requirement is about the latter.
+- **DECIDED + FIXED (2026-08-21):** stage it. The generic row records that *a workflow step* was approved; it does not record that *a leave request* was approved, and the requirement is about the latter.
+- **Fix:** `StageLeaveApprovalAsync` and `StageLeaveRejectionAsync` now call `AddDecisionAudit` with the **identical shape the legacy path uses** (`Leave.Approved`/`Leave.Rejected`, `ResourceType = "LeaveRequest"`, before/after status transition). Staged rather than saved, so the row lands in the **same transaction** as the decision the workflow runtime commits — an audit row that could be committed separately from the decision it describes would be worse than none.
+- **Verified by** `WorkflowApproval_WritesTheSemanticLeaveApprovedAuditRow_ISSUE387`, which asserts the row **exists in the database** rather than that a method was called — the staging methods do not save, so the row only survives if the runtime's commit actually carries it. **Mutation-verified:** removing the staged row turns that arm, and only that arm, RED.
+- Status stays OPEN until `/verify-fix` closes it.
 
 ### BUG-310
 

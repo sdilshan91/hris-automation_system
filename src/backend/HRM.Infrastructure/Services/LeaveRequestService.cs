@@ -1188,11 +1188,24 @@ public sealed class LeaveRequestService : ILeaveRequestService
             $"Leave approved via workflow ({leaveType.Name}): {request.TotalDays} day(s)",
             DateTime.UtcNow, cancellationToken);
 
+        // ISSUE-387: capture BEFORE the flip -- the audit row records the transition, not the end state.
+        var priorStatus = request.Status;
         request.Status = LeaveRequestStatus.Approved;
 
         var approverEmployeeId = await ResolveActingEmployeeIdAsync(cancellationToken);
         _dbContext.LeaveApprovalHistories.Add(NewHistory(
             request.Id, approverEmployeeId, LeaveApprovalAction.Approved, comment));
+
+        // ISSUE-387: the SEMANTIC audit row, identical in shape to the legacy path's.
+        //
+        // The engine already writes workflow.instance.approved with ResourceType "WorkflowInstance". That
+        // records that a workflow STEP was approved; ISSUE-037/FR-7 is about a LEAVE REQUEST being approved,
+        // and requires the trail to be queryable BY ACTION. Before C1 every tenant used the legacy path, so
+        // the by-action trail was complete; C1 made the engine the live path for everyone, which would have
+        // silently dropped every workflow-driven decision out of that query. Staged (not saved) -- the
+        // workflow runtime owns the commit, so the audit row lands in the same transaction as the decision.
+        AddDecisionAudit(
+            "Leave.Approved", request, approverEmployeeId, priorStatus, request.Status, comment);
 
         return Result<(Guid, decimal)>.Success((ledgerEntry.Id, projected));
     }
@@ -1208,10 +1221,17 @@ public sealed class LeaveRequestService : ILeaveRequestService
         if (request is null)
             return;
 
+        // ISSUE-387: capture BEFORE the flip.
+        var priorStatus = request.Status;
         request.Status = LeaveRequestStatus.Rejected;
         var approverEmployeeId = await ResolveActingEmployeeIdAsync(cancellationToken);
         _dbContext.LeaveApprovalHistories.Add(NewHistory(
             request.Id, approverEmployeeId, LeaveApprovalAction.Rejected, reason));
+
+        // ISSUE-387: the semantic audit row -- see StageLeaveApprovalAsync for why the engine's own
+        // workflow.instance.rejected row is not a substitute.
+        AddDecisionAudit(
+            "Leave.Rejected", request, approverEmployeeId, priorStatus, request.Status, reason);
     }
 
     /// <summary>Resolves the acting user's employee id for approval-history (Guid.Empty if none is linked).</summary>
