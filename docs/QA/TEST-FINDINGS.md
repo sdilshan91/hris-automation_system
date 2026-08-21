@@ -8672,6 +8672,40 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Note on why my own session could not prove it:** the two sub-agents run here were `@test-authenticator` and `@integration-enforcer`, both **read-only auditors, which the hook deliberately excludes from scope**. So their completion is not evidence either way. Proof requires a *writing* agent (`backend-dev`/`frontend-dev`/`qa-engineer`/`business-analyst`) finishing a run that touches =3 files under `src/`, `docs/BA/` or `docs/QA/` without writing to the vault.
 - **Close this only when** a line actually lands in `.claude/hooks/vault-compliance.log` after such a run.
 
+**VERIFIED 2026-08-21 — the hook's LOGIC works. Its INVOCATION by Claude Code still is not proven, and that
+distinction is the whole point of this finding.**
+
+Driven directly with synthetic `SubagentStop` payloads (a fake subagent transcript plus its `.meta.json`
+sidecar), all four branches behave correctly:
+
+| case | expected | observed |
+|---|---|---|
+| `backend-dev`, 3 substantive writes, nothing to the vault | note + log line | **note emitted, log line written** |
+| `test-authenticator` (read-only auditor) | silent — out of scope by design | silent |
+| `backend-dev` that DID write to `docs/vault/` | silent — compliant | silent |
+| `backend-dev` with 1 write (below the 3 threshold) | silent | silent |
+
+That is the **first observed execution** of this hook since it was written, and it disproves the plausible
+failure modes the finding worried about — a wrong script path, a bad exit code, an unexpanded
+`$CLAUDE_PROJECT_DIR`, a log write that silently fails.
+
+**WHAT IS STILL NOT PROVEN, precisely:** that *Claude Code itself* invokes the script on `SubagentStop` with
+a payload of this shape. That cannot be established from inside a session — the hook runs in Claude Code's
+process with Claude Code's environment, so `CLAUDE_VAULT_HOOK_DEBUG=1` cannot be set from here, and no debug
+trail exists retroactively. The two read-only auditors run in this session are **correctly out of scope**, so
+their completion is not evidence either way.
+
+**What would prove it:** the next `/implement-all` run, or any `@backend-dev`/`@frontend-dev`/`@qa-engineer`/
+`@business-analyst` invocation that touches ≥3 files under `src/`, `docs/BA/` or `docs/QA/` without writing to
+the vault. A line in the log after that is the real closure.
+
+**The synthetic log line was deleted after the check.** Leaving it would have looked like a genuine
+`backend-dev` run to whoever read that log next — manufactured evidence indistinguishable from the real
+thing is worse than no evidence, and this ledger already records four cases of exactly that failure mode.
+
+Severity stays LOW; status stays PARTIALLY-RESOLVED, because the residual is unchanged in kind: registered
+and demonstrably functional, but never yet observed firing *in situ*.
+
 ### ISSUE-385
 
 - **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** Backend / test coverage
