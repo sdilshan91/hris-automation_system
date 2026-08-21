@@ -1104,8 +1104,14 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 });
 
             case WorkflowDecisionOutcome.InstanceApproved:
+                // BUG-309: this parameter is approverEmployeeId -- an EMPLOYEE id. It used to be passed
+                // _currentUser.UserId, a USER id, so every workflow-driven approval notification recorded the
+                // wrong identity type. The legacy path passes manager.Id correctly, and StageLeaveApprovalAsync
+                // forty lines below already resolves an employee id for the LeaveApprovalHistory row -- the
+                // method was inconsistent with itself, which is what makes this a defect and not a convention.
                 await _notificationService.NotifyLeaveApprovedAsync(
-                    leaveRequestId, peek.EmployeeId, _currentUser.UserId, cancellationToken);
+                    leaveRequestId, peek.EmployeeId,
+                    await ResolveActingEmployeeIdAsync(cancellationToken), cancellationToken);
                 return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
                 {
                     RequestId = leaveRequestId,
@@ -1119,8 +1125,11 @@ public sealed class LeaveRequestService : ILeaveRequestService
 
             case WorkflowDecisionOutcome.InstanceRejected:
             default:
+                // BUG-309: same wrong-identity-type defect as the approve branch above.
                 await _notificationService.NotifyLeaveRejectedAsync(
-                    leaveRequestId, peek.EmployeeId, _currentUser.UserId, comment ?? string.Empty, cancellationToken);
+                    leaveRequestId, peek.EmployeeId,
+                    await ResolveActingEmployeeIdAsync(cancellationToken),
+                    comment ?? string.Empty, cancellationToken);
                 return Result<LeaveApprovalResultDto>.Success(new LeaveApprovalResultDto
                 {
                     RequestId = leaveRequestId,

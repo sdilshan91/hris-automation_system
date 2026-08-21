@@ -8632,3 +8632,35 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **★ How it was found is the point.** `Program.cs` carried a comment citing `ForwardedHeadersTrustTests` as proof that XFF spoofing is prevented, at a time when **no arm sent an `X-Forwarded-For` header at all**. That is the **fifth** instance in this repo of a comment describing coverage or behaviour that does not exist — after `RealNotificationDispatcher.cs:32`, `TenantProvisioningService.cs:31-34`, `ApplicantConversionService.cs:478`, and the unregistered `vault-compliance-advisor` hook (ISSUE-384). The comment has been corrected to state exactly what is and is not proven, rather than deleted.
 - **Suggested fix:** the honest options are (a) assert it through an observable that already exists — e.g. drive the rate limiter and show two different forwarded clients get independent buckets, or read back a persisted audit row's `ip_address` after an authenticated action; or (b) accept the gap explicitly. **Do not** add a production endpoint that echoes the client IP purely to make this testable.
 - **Deliberately not fixed in the BUG-308 PR:** every available route to a real observable (rate limiter, audit row) is materially more complex than the change under test, and inventing a test-only echo endpoint would be coverage theatre. Filed rather than faked.
+
+### BUG-309
+
+- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** Backend
+- **Module:** Leave Management · **US:** US-ADM-011 / US-LV-005 · **TC:** (none — the path is untested)
+- **Found:** 2026-08-21, by `@test-authenticator` auditing the C1 workflow seed; mechanism verified in code.
+- **Summary:** On the **workflow-driven** leave decision path, `TryWorkflowDecisionAsync` passes `_currentUser.UserId` into `NotifyLeaveApprovedAsync`/`NotifyLeaveRejectedAsync`'s **`approverEmployeeId`** parameter (`ILeaveNotificationService.cs:29-33`). That slot expects an **employee** id; the legacy path correctly passes `manager.Id`. Every workflow-driven approval/rejection notification therefore records the wrong identity type.
+- **★ Self-inconsistent within the same method**, which is what makes it clearly a defect rather than a convention: the `LeaveApprovalHistory` row written a few lines away correctly resolves an employee id via `ResolveActingEmployeeIdAsync`. The notification does not.
+- **Why it is escalating now:** today this only affects tenants that hand-authored a workflow — a set that is currently **empty**, which is why nobody hit it. The C1 seed makes the workflow path the default for **every** tenant, converting a dormant defect into a universal one.
+- **Suggested fix:** use `ResolveActingEmployeeIdAsync`, exactly as the history row does, and add the approve/reject arm that would have caught it.
+- **FIX (2026-08-21), branch `fix/BUG-309-310-workflow-leave-decision`:** done exactly as suggested. Verified by `WorkflowApproval_NotifiesTheApproversEMPLOYEEId_NotTheirUserId_BUG309`, which drives a real approval through `LeaveRequestService` on Postgres and asserts the notified value is the manager's **employee** id **and explicitly is not their user id** — the two are distinct Guids in the fixture precisely so the confusion is observable. **Mutation-verified:** reverting to `_currentUser.UserId` turns that arm, and only that arm, RED. Stays OPEN until `/verify-fix` closes it.
+
+### ISSUE-387
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** Backend / audit compliance
+- **Module:** Leave Management · **US:** ISSUE-037 / FR-7
+- **Found:** 2026-08-21, by `@test-authenticator` auditing the C1 workflow seed.
+- **Summary:** The workflow-driven decision path never emits the semantic `Leave.Approved` / `Leave.Rejected` `audit_logs` rows. Legacy writes them via `AddDecisionAudit`; `StageLeaveApprovalAsync`/`StageLeaveRejectionAsync` do not. The engine instead writes generic `workflow.instance.approved`/`.rejected` rows with `ResourceType = "WorkflowInstance"`.
+- **Consequence:** an auditor filtering the leave trail **by action** finds every workflow-driven approval missing. ISSUE-037/FR-7 exists precisely to make that trail queryable by action.
+- **Why it is escalating now:** same as BUG-309 — C1 makes the workflow path universal, so the by-action leave audit trail would go from complete to systematically incomplete.
+- **Needs a decision:** is `workflow.instance.approved` an acceptable substitute for compliance, or must the semantic row be staged too? **Recommendation: stage it.** The generic row records that *a workflow step* was approved; it does not record that *a leave request* was approved, and the requirement is about the latter.
+
+### BUG-310
+
+- **Type:** BUG · **Severity:** MED · **Status:** OPEN · **Layer:** Backend
+- **Module:** Leave Management · **US:** US-ADM-011
+- **Found:** 2026-08-21, by `@test-authenticator` auditing the C1 workflow seed; snapshot mechanism verified in code.
+- **Summary:** When `LineManager` resolves to nothing — the requester has no `ReportsToEmployeeId`, or the manager employee has a **null `UserId`** (`Employee.UserId` is `Guid?`) — `ResolveApproverSpecAsync` returns null, yet the workflow instance is **still created** with `AssignedApproverUserId = null`. `IsAuthorizedApproverAsync` then matches nobody, and there is no legacy fallback because `WorkflowInstanceId` is now set.
+- **★ The precise regression is the SNAPSHOT, not the stranding.** Under legacy, such a request sits plain-pending and becomes approvable the moment an admin assigns the manager. Under the engine the approver is resolved **once, at activation**, so assigning the manager afterwards does **not** re-resolve the step — the request is stuck permanently and the only remedy is data surgery.
+- **Why it is escalating now:** C1 makes the engine the default for every tenant, so every managerless employee's leave request becomes permanently unapprovable rather than temporarily unassigned.
+- **Suggested fix:** when the primary approver of a single-step definition resolves to null, fall back to `Legacy()` rather than creating an unapprovable instance — this preserves the self-healing behaviour legacy had. Alternative (needs a product decision): route to a Tenant Admin.
+- **FIX (2026-08-21), same branch:** the `Legacy()` fallback, guarded by `StepHasAReachableApproverAsync`. A `Role` step is deliberately **not** treated as unresolved — it assigns no user by design and authorization checks role membership at decision time, so treating its null assignment as a failure would disable role-based approval entirely. Verified by 4 arms including one proving **no instance row is written** (a half-created instance would still mark the request workflow-driven). **Mutation-verified in BOTH directions:** removing the guard turns 3 arms RED; making it over-trigger turns the "a resolvable manager still routes through the engine" arm RED — so it cannot silently degrade into "always fall back". Stays OPEN until `/verify-fix` closes it.

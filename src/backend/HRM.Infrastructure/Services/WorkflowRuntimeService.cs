@@ -112,11 +112,40 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
             RequesterEmployeeId = requesterEmployeeId,
             CreatedAt = DateTime.UtcNow,
         };
+        var orderedSteps = definition.Steps.OrderBy(s => s.StepOrder).ToList();
+
+        // BUG-310: refuse to create an instance nobody could ever approve.
+        //
+        // If the first applicable step's approver cannot be resolved -- the requester has no
+        // ReportsToEmployeeId, or their manager's Employee.UserId is null (it is Guid?) -- then every step
+        // instance is written with AssignedApproverUserId = null, IsAuthorizedApproverAsync matches nobody,
+        // and the request is unapprovable forever. There is no legacy escape either, because the caller sets
+        // LeaveRequest.WorkflowInstanceId as soon as an instance exists.
+        //
+        // THE REAL REGRESSION IS THE SNAPSHOT, NOT THE STRANDING. Under the legacy path such a request simply
+        // sat pending and became approvable the moment an admin assigned the manager. The engine resolves the
+        // approver ONCE, at activation, and never re-resolves -- so assigning the manager afterwards does not
+        // help and the only remedy is data surgery. Falling back to Legacy() preserves the self-healing
+        // behaviour rather than trading it for a permanently stuck row.
+        //
+        // A Role step is deliberately NOT treated as unresolved: it assigns no user by design (any holder of
+        // the role may decide, checked at authorization time), so a null assignment there is correct.
+        var firstApplicable = orderedSteps.FirstOrDefault(st => applicableOrders.Contains(st.StepOrder));
+        if (firstApplicable is not null
+            && !await StepHasAReachableApproverAsync(firstApplicable, instance, cancellationToken))
+        {
+            _logger.LogWarning(
+                "Active {EntityType} workflow for tenant {TenantId} resolves NO approver for entity {EntityId} "
+                + "at step {StepOrder} (approver type {ApproverType}); using the legacy path rather than "
+                + "creating an instance nobody can approve (BUG-310).",
+                entityType, tenantId, entityId, firstApplicable.StepOrder, firstApplicable.ApproverType);
+            return WorkflowInstanceCreationResult.Legacy();
+        }
+
         _db.WorkflowInstances.Add(instance);
 
         // §13 Q4: materialize the FULL skip chain up front (every condition-unmet step as a Skipped row) so the
         // chain/history is complete immediately, then activate the first applicable step.
-        var orderedSteps = definition.Steps.OrderBy(s => s.StepOrder).ToList();
         MaterializeSkippedSteps(instance, orderedSteps, applicableOrders);
         await ActivateNextAsync(instance, orderedSteps, applicableOrders, fromOrderExclusive: int.MinValue, cancellationToken);
 
@@ -474,6 +503,30 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
     }
 
     /// <summary>
+    /// <summary>
+    /// BUG-310: can ANYONE decide this step? True when at least one of its approver specs resolves to a real
+    /// user, or is a <see cref="WorkflowApproverType.Role"/> spec (which intentionally assigns no user --
+    /// authorization checks role membership at decision time instead).
+    /// </summary>
+    private async Task<bool> StepHasAReachableApproverAsync(
+        WorkflowStep step, WorkflowInstance instance, CancellationToken cancellationToken)
+    {
+        var specs = new List<(WorkflowApproverType Type, Guid? Id)> { (step.ApproverType, step.ApproverIdentifier) };
+        if (step.IsParallel)
+            specs.AddRange(step.Approvers.Select(a => (a.ApproverType, a.ApproverIdentifier)));
+
+        foreach (var (type, id) in specs)
+        {
+            if (type == WorkflowApproverType.Role)
+                return true;
+
+            if (await ResolveApproverSpecAsync(type, id, instance, cancellationToken) is not null)
+                return true;
+        }
+
+        return false;
+    }
+
     /// FR-5: resolves a step's approver TYPE to a concrete user id at activation. LineManager → the requester's
     /// reporting manager's user; DepartmentHead → the requester's department manager's user; NamedUser → the
     /// identifier directly; Role → null (any holder of the role may decide — authorization checks membership).
