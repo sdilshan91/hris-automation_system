@@ -209,9 +209,22 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ### Tier C — activation gaps (the "cheapest large win", 0 of 6 closed in 35 commits)
 
-- [ ] **C1 · GAP-029 workflow seed** — seed one 1-step manager-approval Leave definition at provisioning. Flips the
-  **entire US-ADM-011 runtime engine** from dormant to live for every new tenant. **Needs one arm proving the
-  seeded route approves identically** — it is a behaviour change for new tenants, not a pure fix.
+- [x] **C1 · GAP-029 workflow seed** — **DONE, PR #534 (merged 2026-08-21).** The equivalence arm this entry
+  asked for exists and is mutation-verified (`LineManager` → `DepartmentHead` reddens it, and nothing else).
+  **Two corrections to this entry's own framing:**
+  1. *"at provisioning"* was too narrow — provisioning alone would have split tenants into two populations with
+     different approval mechanics, told apart only by signup date. It now **backfills existing tenants too**,
+     via the reconciler that already existed for the default shift.
+  2. *"a behaviour change for new tenants"* understated it. Because the workflow path was dead code for
+     **every** tenant, turning it on would have activated three dormant defects at once. C1 was **parked** and
+     shipped only after **BUG-309** (a user id passed into an `approverEmployeeId` slot) and **BUG-310** (an
+     unreachable line manager still created an instance nobody could approve — and the engine snapshots the
+     approver, so unlike legacy it never self-healed) were fixed and merged in #532. **ISSUE-387** (no semantic
+     `Leave.Approved`/`Rejected` audit rows on the workflow path) remains OPEN pending a compliance call.
+  Also closed a tenant-scoping hole the arms could not kill: dropping the backfill's `TenantId` predicate
+  passed every single-tenant arm. 7 arms, 3/3 mutations RED, gate 5470/5470.
+  **Spawned:** ISSUE-386 (Offer + Overtime still fall through to legacy; each needs its own equivalence arm
+  before seeding, because their legacy approver is *not* verified to be the line manager).
 - [ ] **C2 · GAP-027 dead download URL** — 5 consumers emit `/files/…`, which no route serves; plus the
   `downloadUrl`/`signedUrl` FE mismatch. Point them at the existing authenticated `/download` route.
 - [ ] **C3 · GAP-025 audit pairing** — 3 unpaired call sites, and `employee_field_audit_logs` has **4 writers,
