@@ -214,6 +214,41 @@
 > as an unhandled 500; pollutes GlitchTip). Still open from before: the `lint` script (`ng lint` with no ESLint
 > config), `@axe-core/playwright` with zero `AxeBuilder` usages, a real secrets vault, and the US-PLT-002 AC text.
 
+## 🔁 [NEW] Loop-discovered items — auto-healed 2026-08-21
+
+> **Filed under CLAUDE.md rule #6**, which names *this* file as the fold target. My first heal folded into
+> `GAP-CLOSURE-QUEUE.md` and skipped the COMPLETION-PLAN entirely; corrected here.
+>
+> Source: the D-migration slices (performance ×3, leave ×2, core-hr ×2) plus P1. ~28 out-of-lane discoveries,
+> grouped into six findings rather than 28 IDs.
+
+| finding | sev | disposition | rank |
+|---|---|---|---|
+| **[[BUG-306]]** — 7 FE calls to routes absent from the contract | HIGH | 3 of 9 **fixed** (P1); #4-#7 **decision-gated**; #8 delete; #9 = B6 build | gated / B6 at #5 |
+| **[[BUG-307]]** — tenant plan limits **fail open** (`plan_id` matching no plan → unlimited) | MED↑ | **build** a guard + fix the data. *Re-rated up from LOW: the original described the cause (seed data), not the effect (a paid cap that silently does not exist).* | verify blast-radius first |
+| **[[ISSUE-379]]** — 11 backend DTO gaps; 4 blank a whole feature surface | HIGH | **decision-gated** — add the fields, or remove the UI rendering them | gated |
+| **[[ISSUE-380]]** — 5 dead FE items incl. a no-op Active toggle | MED | remove-dead-control; `isActive` is **decision-gated** | #7 |
+| **[[ISSUE-381]]** — accrual-exposure emits no response schema | MED | fix-in-backend (Swashbuckle annotation) — *a hole in the contract gate itself* | #8 |
+| **[[ISSUE-382]]** — 3 late-filed items (uploadImport union, ReleasedBy fallback, stale docstring) | MED/LOW | 1 decision, 2 cleanup | #7 |
+
+**Re-sorted order** (severity × blast-radius × unblocks-others − gated): **E2 ArchitectureTests → E1 security
+headers → C1 workflow seed → B6 lookups → remaining migration → cleanup**. Note E2 and E1 rank *above* the
+half-finished migration: a guard's value compounds across the six modules still to come, and zero of the six
+required §23.4 headers exist anywhere.
+
+**★ The measurement that reframes the remaining work:** roughly **one field in five** of the hand-written FE
+interfaces describes an endpoint that was never built. These were not an accurate API description that
+drifted — they were written from what the UI wanted and never reconciled. **"Finish the migration" is not a
+mechanical task and should not be estimated as one**; the remaining ~570 interfaces should be expected to
+surface their own DTO gaps and absent routes.
+
+**Two process failures recorded, because both will recur:**
+1. **A heal must enumerate its sources, not recall them.** My first pass reconciled the recent slices and
+   remembered the rest; four earlier findings were missed until the user asked.
+2. **Auto-heal is a reflex, not a request.** Rule #6 and [[auto-heal-session-todo]] both say to do it every run,
+   proactively, and to mirror items into the **live session TODO** — a ledger row the user has to dig for is
+   not "tracked". The user has now had to point this out three times.
+
 ## 🗓 Changelog (rollover history)
 
 | Date | Event | Full snapshot |

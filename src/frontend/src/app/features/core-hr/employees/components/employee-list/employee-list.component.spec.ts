@@ -23,7 +23,7 @@ import { environment } from '../../../../../../environments/environment';
 import {
   IEmployee,
   EmployeeWire,
-  EmployeeListWire,
+  EmployeeDirectoryWire,
 } from '../../models/employee.models';
 
 describe('EmployeeListComponent', () => {
@@ -34,6 +34,9 @@ describe('EmployeeListComponent', () => {
   let toastrSpy: jasmine.SpyObj<ToastrService>;
 
   const baseUrl = `${environment.apiBaseUrl}/tenant/employees`;
+  // The directory screen loads via `/employees/directory` (the ONLY endpoint that honours its filters),
+  // not the bare list route. Every directory-query assertion targets this URL.
+  const directoryUrl = `${baseUrl}/directory`;
 
   // Real wire shape (`EmployeesEmployeeDto`): `id` (not employeeId), no tenantId. Flushed through the
   // real service so `mapEmployee` runs — the id→employeeId bridge is exercised, not bypassed.
@@ -65,26 +68,48 @@ describe('EmployeeListComponent', () => {
     updatedAt: '2026-06-01T00:00:00Z',
   };
 
+  // Project the full `EmployeeWire` a test declares onto the leaner 13-field directory item the
+  // `/directory` endpoint actually returns. Only the fields `EmployeeDirectoryItemDto` carries are kept —
+  // no fabricated columns. `id` is preserved so the mapper's id→employeeId bridge is exercised honestly.
+  function toDirectoryItem(w: EmployeeWire): NonNullable<EmployeeDirectoryWire['data']>[number] {
+    return {
+      id: w.id,
+      employeeNo: w.employeeNo,
+      firstName: w.firstName,
+      lastName: w.lastName,
+      email: w.email,
+      phone: w.phone,
+      departmentName: w.departmentName,
+      jobTitleName: w.jobTitleName,
+      location: w.locationName,
+      employmentType: w.employmentType,
+      dateOfJoining: w.dateOfJoining,
+      profilePhotoUrl: w.profilePhotoUrl,
+      status: w.status,
+    };
+  }
+
+  // The DIRECTORY envelope: `{data,total,page,pageSize}` — NOT the list's `{items,totalCount}`.
   function buildPaginatedResponse(
     employees: EmployeeWire[],
     total?: number,
     page?: number,
     pageSize?: number
-  ): EmployeeListWire {
+  ): EmployeeDirectoryWire {
     return {
-      items: employees,
-      totalCount: total ?? employees.length,
+      data: employees.map(toDirectoryItem),
+      total: total ?? employees.length,
       page: page ?? 1,
       pageSize: pageSize ?? 20,
     };
   }
 
-  /** Flush the initial directory load request */
+  /** Flush the initial directory load request (hits `/employees/directory`, not the bare list route). */
   function flushInitialLoad(
     employees: EmployeeWire[] = [],
     total?: number
   ): void {
-    const req = httpMock.expectOne((r) => r.url === baseUrl && r.method === 'GET');
+    const req = httpMock.expectOne((r) => r.url === directoryUrl && r.method === 'GET');
     req.flush(buildPaginatedResponse(employees, total));
   }
 
@@ -150,7 +175,7 @@ describe('EmployeeListComponent', () => {
   it('should load directory on init with default pagination', () => {
     fixture.detectChanges();
     const req = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.method === 'GET'
+      (r) => r.url === directoryUrl && r.method === 'GET'
     );
     expect(req.request.params.get('page')).toBe('1');
     expect(req.request.params.get('pageSize')).toBe('20');
@@ -174,18 +199,23 @@ describe('EmployeeListComponent', () => {
   });
 
   // ─── BUG-099 regression: real backend paginated contract ──
-  // The backend (after apiEnvelopeInterceptor unwraps the envelope) returns
-  // PagedResult<T> = { items, totalCount, page, pageSize } — NOT { data, total }.
+  // The `/employees/directory` endpoint returns `EmployeeDirectoryResult` =
+  // { data, total, page, pageSize } — NOT the list's { items, totalCount }.
   // Reading the wrong field set employees() to undefined and the template
   // crashed on `employees().length`. These pin the real field names + guard.
 
-  it('BUG-099: populates the list from the real { items, totalCount } contract', () => {
+  it('BUG-099: populates the list from the real { data, total } directory contract', () => {
     fixture.detectChanges();
     const req = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.method === 'GET'
+      (r) => r.url === directoryUrl && r.method === 'GET'
     );
-    // Flush the ACTUAL post-interceptor backend shape (items/totalCount).
-    req.flush({ items: [mockEmployee, mockEmployee], totalCount: 34, page: 1, pageSize: 20 });
+    // Flush the ACTUAL directory envelope (data/total) with leaner directory items.
+    req.flush({
+      data: [toDirectoryItem(mockEmployee), toDirectoryItem(mockEmployee)],
+      total: 34,
+      page: 1,
+      pageSize: 20,
+    });
     fixture.detectChanges();
 
     // Items are mapped view-models now (wire `id` → `employeeId`), not the raw wire objects.
@@ -195,12 +225,12 @@ describe('EmployeeListComponent', () => {
     expect(component.totalCount()).toBe(34);
   });
 
-  it('BUG-099: does not crash when the response omits items (defaults to [])', () => {
+  it('BUG-099: does not crash when the response omits data (defaults to [])', () => {
     fixture.detectChanges();
     const req = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.method === 'GET'
+      (r) => r.url === directoryUrl && r.method === 'GET'
     );
-    // A malformed/partial page (no items) must NOT set employees() to undefined.
+    // A malformed/partial page (no data) must NOT set employees() to undefined.
     req.flush({ page: 1, pageSize: 20 });
 
     expect(() => fixture.detectChanges()).not.toThrow();
@@ -230,12 +260,12 @@ describe('EmployeeListComponent', () => {
     component.onSearchInput('John');
     tick(100);
     // Not triggered yet
-    httpMock.expectNone((r) => r.url === baseUrl && r.params.has('search'));
+    httpMock.expectNone((r) => r.url === directoryUrl && r.params.has('search'));
 
     tick(200); // Total 300ms
     // Now the debounced search should fire
     const req = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('search') === 'John'
+      (r) => r.url === directoryUrl && r.params.get('search') === 'John'
     );
     req.flush(buildPaginatedResponse([mockEmployee], 1));
 
@@ -250,7 +280,7 @@ describe('EmployeeListComponent', () => {
     component.onSearchInput('test');
     tick(300);
     const req1 = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('search') === 'test'
+      (r) => r.url === directoryUrl && r.params.get('search') === 'test'
     );
     req1.flush(buildPaginatedResponse([]));
 
@@ -258,7 +288,7 @@ describe('EmployeeListComponent', () => {
     component.onSearchInput('test');
     tick(300);
     httpMock.expectNone(
-      (r) => r.url === baseUrl && r.params.get('search') === 'test'
+      (r) => r.url === directoryUrl && r.params.get('search') === 'test'
     );
   }));
 
@@ -269,7 +299,7 @@ describe('EmployeeListComponent', () => {
     // Go to page 2 first
     component.goToPage(2);
     const pageReq = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('page') === '2'
+      (r) => r.url === directoryUrl && r.params.get('page') === '2'
     );
     pageReq.flush(buildPaginatedResponse([mockEmployee], 50, 2));
 
@@ -279,7 +309,7 @@ describe('EmployeeListComponent', () => {
     component.onSearchInput('Jane');
     tick(300);
     const searchReq = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('search') === 'Jane'
+      (r) => r.url === directoryUrl && r.params.get('search') === 'Jane'
     );
     expect(searchReq.request.params.get('page')).toBe('1');
     searchReq.flush(buildPaginatedResponse([], 0));
@@ -298,12 +328,17 @@ describe('EmployeeListComponent', () => {
     component.filterStatuses.set(['Active']);
     component.applyFilters();
 
+    // Repeated contract params: ?departmentIds=Engineering&statuses=Active. Pre-fix the component sent
+    // comma-joined `departments`/`statuses` to the list route, silently ignored server-side.
     const req = httpMock.expectOne(
       (r) =>
-        r.url === baseUrl &&
-        r.params.get('departments') === 'Engineering' &&
-        r.params.get('statuses') === 'Active'
+        r.url === directoryUrl &&
+        r.params.getAll('departmentIds')?.join('|') === 'Engineering' &&
+        r.params.getAll('statuses')?.join('|') === 'Active'
     );
+    expect(req.request.params.getAll('departmentIds')).toEqual(['Engineering']);
+    expect(req.request.params.getAll('statuses')).toEqual(['Active']);
+    expect(req.request.params.has('departments')).toBeFalse();
     req.flush(buildPaginatedResponse([mockEmployee], 1));
 
     // Verify chips
@@ -321,7 +356,7 @@ describe('EmployeeListComponent', () => {
 
     component.filterDepartments.set(['Engineering', 'Sales']);
     component.applyFilters();
-    const req1 = httpMock.expectOne((r) => r.url === baseUrl);
+    const req1 = httpMock.expectOne((r) => r.url === directoryUrl);
     req1.flush(buildPaginatedResponse([mockEmployee], 1));
 
     // Remove "Engineering" chip
@@ -333,8 +368,11 @@ describe('EmployeeListComponent', () => {
     });
 
     const req2 = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('departments') === 'Sales'
+      (r) =>
+        r.url === directoryUrl &&
+        r.params.getAll('departmentIds')?.join('|') === 'Sales'
     );
+    expect(req2.request.params.getAll('departmentIds')).toEqual(['Sales']);
     req2.flush(buildPaginatedResponse([mockEmployee], 1));
 
     expect(component.filterDepartments()).toEqual(['Sales']);
@@ -349,7 +387,7 @@ describe('EmployeeListComponent', () => {
     component.filterLocation.set('NYC');
     component.clearFilters();
 
-    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    const req = httpMock.expectOne((r) => r.url === directoryUrl);
     req.flush(buildPaginatedResponse([], 0));
 
     expect(component.filterDepartments().length).toBe(0);
@@ -398,7 +436,7 @@ describe('EmployeeListComponent', () => {
 
   it('should calculate pagination correctly', () => {
     fixture.detectChanges();
-    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    const req = httpMock.expectOne((r) => r.url === directoryUrl);
     req.flush(buildPaginatedResponse([mockEmployee], 55, 1, 20));
     fixture.detectChanges();
 
@@ -414,7 +452,7 @@ describe('EmployeeListComponent', () => {
 
     component.goToPage(2);
     const req = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('page') === '2'
+      (r) => r.url === directoryUrl && r.params.get('page') === '2'
     );
     req.flush(buildPaginatedResponse([mockEmployee], 50, 2, 20));
 
@@ -445,7 +483,7 @@ describe('EmployeeListComponent', () => {
     component.onPageSizeChange(50);
     const sizeReq = httpMock.expectOne(
       (r) =>
-        r.url === baseUrl &&
+        r.url === directoryUrl &&
         r.params.get('pageSize') === '50' &&
         r.params.get('page') === '1'
     );
@@ -462,7 +500,7 @@ describe('EmployeeListComponent', () => {
     // Navigate to page 5 so we're mid-range
     component.goToPage(5);
     const req = httpMock.expectOne(
-      (r) => r.url === baseUrl && r.params.get('page') === '5'
+      (r) => r.url === directoryUrl && r.params.get('page') === '5'
     );
     req.flush(buildPaginatedResponse([mockEmployee], 200, 5, 20));
     fixture.detectChanges();
@@ -485,7 +523,7 @@ describe('EmployeeListComponent', () => {
     component.filterDepartments.set(['Engineering']);
     component.applyFilters();
 
-    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    const req = httpMock.expectOne((r) => r.url === directoryUrl);
     req.flush(buildPaginatedResponse([mockEmployee], 1));
 
     expect(router.navigate).toHaveBeenCalledWith(
@@ -536,7 +574,7 @@ describe('EmployeeListComponent', () => {
 
     const req = httpMock.expectOne(
       (r) =>
-        r.url === `${baseUrl}/export` &&
+        r.url === `${baseUrl}/directory/export` &&
         r.params.get('format') === 'csv'
     );
     expect(req.request.responseType).toBe('blob');
@@ -556,7 +594,7 @@ describe('EmployeeListComponent', () => {
 
     const req = httpMock.expectOne(
       (r) =>
-        r.url === `${baseUrl}/export` &&
+        r.url === `${baseUrl}/directory/export` &&
         r.params.get('format') === 'excel'
     );
     req.flush(
@@ -577,7 +615,7 @@ describe('EmployeeListComponent', () => {
     component.exportDirectory('csv');
 
     const req = httpMock.expectOne(
-      (r) => r.url === `${baseUrl}/export`
+      (r) => r.url === `${baseUrl}/directory/export`
     );
     req.error(new ProgressEvent('error'), { status: 500 });
 
@@ -608,7 +646,7 @@ describe('EmployeeListComponent', () => {
 
     const req = httpMock.expectOne(
       (r) =>
-        r.url === baseUrl &&
+        r.url === directoryUrl &&
         r.params.get('sort') === 'date_of_joining' &&
         r.params.get('sortDirection') === 'desc'
     );
@@ -723,11 +761,15 @@ describe('EmployeeListComponent', () => {
     component.onBulkManagerSearch('Al');
     tick(350);
 
+    // The manager typeahead uses searchActiveEmployees, which hits the LIST endpoint (baseUrl) with
+    // activeOnly=true — NOT the directory route, and NOT the ignored `statuses` param. This is the arm
+    // that would have caught terminated employees leaking into the picker.
     const searchReq = httpMock.expectOne(
       (r) => r.url === baseUrl &&
         r.params.get('search') === 'Al' &&
-        r.params.get('statuses') === 'Active'
+        r.params.get('activeOnly') === 'true'
     );
+    expect(searchReq.request.params.has('statuses')).toBeFalse();
     searchReq.flush({
       items: [{ ...mockEmployee, id: 'mgr-1', firstName: 'Alice', lastName: 'Boss' }],
       totalCount: 1,
@@ -880,7 +922,7 @@ describe('EmployeeListComponent', () => {
 
   it('should handle API errors gracefully', () => {
     fixture.detectChanges();
-    const req = httpMock.expectOne((r) => r.url === baseUrl);
+    const req = httpMock.expectOne((r) => r.url === directoryUrl);
     req.error(new ProgressEvent('error'), { status: 500 });
     fixture.detectChanges();
 

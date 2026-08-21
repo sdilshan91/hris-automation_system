@@ -8450,6 +8450,139 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 ---
 
+### BUG-306 — seven frontend calls target routes that do not exist in the contract
+- **ID:** BUG-306
+- **Type:** BUG (FE↔BE contract — nonexistent or wrong routes)
+- **Severity:** **HIGH** — each one is a feature that cannot work; four are user-facing screens that fail silently or 404.
+- **Status:** `OPEN` (3 of the 10 originally found are already FIXED — see the table)
+- **Layer:** FE (the calls) / BE (two need an endpoint that was never built)
+- **Module / US / TC:** cross-module — core-hr, leave, onboarding, performance — surfaced 2026-08-18..21 by the D-migration slices
+- **Title:** The generated contract has no path matching these calls. Hand-written FE interfaces could not detect it; typing the responses against `Schema<'…'>` made every one visible.
+
+| # | call | reality | status |
+|---|---|---|---|
+| 1 | `GET /employees/export` | route absent; real one is `/employees/directory/export` | ✅ **FIXED** (P1) |
+| 2 | `GET /employees` for the directory | wrong endpoint — the list route ignores every filter; `/employees/directory` accepts them | ✅ **FIXED** (P1) |
+| 3 | `searchActiveEmployees` sends `statuses=Active` | the list route has no `statuses` param — active-only was dropped | ✅ **FIXED** (P1) |
+| 4 | `GET /leave-entitlements/compute-effective` | **absent.** Real: `/effective`, requires `employeeId`+`leaveTypeId`+`leaveYear`, returns a **single** DTO not an array | OPEN |
+| 5 | `POST /leave-entitlements/bulk` | **absent.** Only `/rules/bulk` exists — bulk-create-**rules**, a different feature with different shapes | OPEN |
+| 6 | `GET /leaves/reports/summary` | **absent.** `summary` is not in the backend `LeaveReportType` enum and no metrics DTO exists anywhere | OPEN |
+| 7 | `GET /import/jobs/{id}` + `/import/jobs/{id}/error-report` | **both absent.** Real: `/import/{id}/status` and `/import/{id}/errors`, with a restructured DTO | OPEN |
+| 8 | `GET /org-tree/search` | **absent** — and the method is dead (no component calls it) | OPEN (LOW) |
+| 9 | `GET /onboarding/templates/lookups` | **absent** — every template-builder load loses its dept/title/user pickers | OPEN (= queue B6) |
+
+- **Why none of these were caught:** every one had a green test suite over it. The specs mocked the FE's own invented response shape, so the request URL was never compared against anything real. **A hand-written interface cannot fail** — it is an assertion, not a check.
+- **Severity rationale:** HIGH rather than CRIT because no data is corrupted and no isolation boundary is crossed; but each is a whole feature that silently does nothing, and three of them (directory filters, bulk-import status, leave reports) are daily-use HR surfaces.
+- **Suggested direction:** items 4-7 each need a **decision** (re-point the FE, or build the endpoint the FE assumes) — they are parked at the decision gate, not auto-scheduled. Item 8 is dead code: delete it. Item 9 is already queued as B6.
+- **Confidence:** 100% — each verified against the generated `paths` block, not inferred.
+
+---
+
+### ISSUE-379 — the migration surfaced 11 backend DTO gaps: fields the UI renders that the API has never sent
+- **ID:** ISSUE-379
+- **Type:** ISSUE (backend contract gap — unbuilt fields, not drift)
+- **Severity:** **HIGH** for the four that blank a whole feature surface; MED for the rest.
+- **Status:** `OPEN` — **all are decision-gated** (add the field, or remove the UI that renders it)
+- **Layer:** BE (DTOs) with FE symptoms
+- **Module / US / TC:** performance, leave, core-hr — surfaced 2026-08-18..21 by the D-migration slices
+- **Title:** ~35 view-model fields across three modules have **no wire source at all.** These 11 are the ones something actually renders.
+
+| # | field(s) | rendered by | sev |
+|---|---|---|---|
+| 1 | dashboard `filterOptions`, `scopeLabel`, `teamRanking`, `availableExportFormats` | the FR-4 filter panel, manager team-ranking, export buttons — **a whole feature surface** | **HIGH** |
+| 2 | `/my-goals` window envelope (`windowOpen`, `cycleName`) | the BR-1 closed-window gate. **Defaulted `true`** — verified fail-SAFE, since `GoalProgressService.cs:100` enforces BR-1 server-side | **HIGH** |
+| 3 | sign-off notes: `goals[]`, `ratingScaleMax`, `managerName`, `cycleName`, `finalScore` | the entire US-PRF-006 sign-off screen | **HIGH** |
+| 4 | 360 reviewer-config: `candidatePool`, per-category `minimums`, `editable` | reviewer nomination — search-to-add is empty | **HIGH** |
+| 5 | trend + drilldown `scoreScaleMax` | polyline and bar scaling; FE falls back to a constant 5 | MED |
+| 6 | `authorName` on progress updates; `employeeName` on the drilldown list | timeline attribution and the drill-down header | MED |
+| 7 | performer/drilldown `trend`, `grade` | trend glyph (always rendered) and grade label | MED |
+| 8 | PIP `checkpointsRecorded` split; checkpoint `overdue` | the "N of M" hint shows "0 of M"; the overdue badge never renders | MED |
+| 9 | recommendation summary per-dept `promotionCount`/`bonusCount` | shows "0 promo · 0 bonus · N increment" | MED |
+| 10 | `IBudgetTracker.enabled` | gates the whole budget card; derived from object presence | MED |
+| 11 | per-competency `byCategory` split | the self/manager/peer/report chips under each competency bar | MED |
+
+- **★ What this measures:** roughly **one field in five** of the hand-written interfaces describes an endpoint that was never built. These interfaces were not an accurate API description that drifted — they were **written from what the UI wanted and never reconciled with the API**. That reframes the remaining ~570 interfaces: the migration is not mechanical renaming, and each remaining module should be expected to surface its own set.
+- **What was done:** every one is **defaulted at the single mapper seam and marked inline**, never fabricated. Two that nothing rendered were **deleted**. Several are **derived** where the wire holds the information in another shape (PIP outcome from terminal status; `deducted` = assigned − lop).
+- **Suggested direction:** **decision-gated.** For each: add the field to the DTO, or remove the UI that renders it. Grouped so the decision can be taken once per feature rather than per field.
+- **Confidence:** 100% that the fields are absent from the contract; the *disposition* is a product call.
+
+---
+
+### ISSUE-380 — dead FE surface and controls that silently do nothing
+- **ID:** ISSUE-380
+- **Type:** ISSUE (dead code / no-op controls)
+- **Severity:** **MED** — one is a control that lies to the user; the rest are unreferenced surface.
+- **Status:** `OPEN`
+- **Layer:** FE
+- **Module / US / TC:** core-hr, leave, performance — surfaced by the D-migration slices
+- **Title:** Five items that exist in the FE and do nothing.
+
+| item | detail | disposition |
+|---|---|---|
+| **salary-grade `isActive`** | The Active toggle is sent on create/update, but **neither request record has an `isActive` member** — the API discards it. The toggle silently does nothing on save. A spec *asserted* the discarded field was present (corrected). | **decision**: honour it server-side, or remove the toggle |
+| `IStatusTransition.sideEffects` | The endpoint returns only status strings; the side-effects preview is always empty. A spec had been flushing **fabricated** side-effects (corrected). | decision: add to the DTO, or drop the preview |
+| `IChangeStatusResponse.profile` / `IAssignManagerResponse.profile` | Still declare a `profile` the wire never sends; their service specs flush a fabricated `{profile}` and assert it truthy — passing, but certifying a shape the API does not return. | fix-in-frontend: migrate both to generated types |
+| `ILeaveRequest.tenantId`, `IEmployee.tenantId` | No wire source, read nowhere. | remove-dead-control |
+| `org-tree.searchNodes()` | Calls an absent route **and** has no component caller. | remove-dead-control |
+
+- **Confidence:** 100% on all five (each verified against the generated contract and grepped for consumers).
+
+---
+
+### ISSUE-381 — the accrual-exposure endpoint emits no response schema, so its envelope cannot be contract-checked
+- **ID:** ISSUE-381
+- **Type:** ISSUE (OpenAPI codegen gap)
+- **Severity:** **MED** — a hole in the contract gate itself, not a runtime defect.
+- **Status:** `OPEN`
+- **Layer:** BE (Swashbuckle annotation)
+- **Module / US / TC:** leave — `tenant/leave-entitlements/accrual-over-credit-exposure`
+- **Title:** The action returns `IActionResult` (JSON-or-file), so Swashbuckle emitted `content?: never` for the 200 and **no `AccrualOverCreditExposureReportDto` schema exists** in the generated types.
+- **Why it matters:** the migration could anchor the per-row type but had to read the envelope scalars (`asOfDate`, `leaveYear`) defensively. **A field can drift here without the compiler noticing** — which is the one thing this whole migration exists to prevent, so the gap is worth closing even though nothing is broken today.
+- **Suggested direction:** split the JSON and file endpoints, or annotate with `ProducesResponseType` so codegen emits the JSON 200 schema.
+- **Confidence:** 100% — verified in the generated file.
+
+---
+
+### BUG-307 — tenant plan limits are silently unenforced: `tenants.plan_id` values match no `subscription_plans` row
+- **ID:** BUG-307
+- **Type:** BUG (seed/config data — a business rule that silently does not apply)
+- **Severity:** **MED**, and arguably HIGH depending on how plan limits are sold. **Not the LOW it was first flagged as.**
+- **Status:** `OPEN`
+- **Layer:** Data / BE
+- **Module / US / TC:** Admin Console / plan limits, BR-3 (US-REC-010 TC-010-10 exercised it) — found 2026-08-18 during the A1c test run, **filed late 2026-08-21**
+- **Title:** The `e2e` tenant's `plan_id` is `'default'`, which matches **no row** in `subscription_plans` (whose codes are `starter`/`professional`/`enterprise`). Plan-based `MaxEmployees` therefore resolves to `NULL` = **unlimited**.
+- **Consequence:** BR-3's employee cap only engages via the per-tenant snapshot or an explicit `PlanLimitOverride`. **For any tenant whose `plan_id` does not match a real plan code, the cap silently does not exist.** The limit test only passed because the QA run set a reversible `max_employees` snapshot by hand.
+- **Why the severity was raised:** it was flagged LOW as "seed data". But a paid-plan employee cap that silently resolves to unlimited is a **revenue-affecting rule that fails open**, and the failure is invisible — no error, no log, just no limit. The original rating described the *cause* (seed data) rather than the *effect*.
+- **Reproduction:** `SELECT t.subdomain, t.plan_id, p.code FROM tenants t LEFT JOIN subscription_plans p ON p.code = t.plan_id;` → rows where `p.code IS NULL` have no plan-derived cap.
+- **Suggested direction:** either seed a `default` plan row, or repoint tenants at real plan codes; **and** add a guard so a tenant whose `plan_id` resolves to nothing fails loudly rather than becoming unlimited. Check how many tenants are affected before choosing.
+- **Confidence:** 95% on the mechanism (observed directly during the A1c run); the blast radius depends on how many real tenants carry an unmatched `plan_id`.
+
+---
+
+### ISSUE-382 — three smaller out-of-lane items from earlier in the session, filed late
+- **ID:** ISSUE-382
+- **Type:** ISSUE (bundle — three unrelated small findings, grouped to avoid three near-empty IDs)
+- **Severity:** **MED** (the bulk-import one) / LOW (the other two)
+- **Status:** `OPEN`
+- **Layer:** FE / BE
+- **Module / US / TC:** core-hr, performance — surfaced 2026-08-17..21, **filed late 2026-08-21**
+- **Title:** Three findings that were reported in agent hand-backs and PR bodies but never reached this ledger.
+
+| # | finding | sev | disposition |
+|---|---|---|---|
+| 1 | **`uploadImport` is typed as a discriminated union** (`IImportResult \| IImportJobRef`) while the wire returns a **single unified** `BulkImportResult` with an `isComplete`/`jobId` flag. The component's `'total' in resp` sync-vs-async guard is **unreliable — the wire always sends `total`.** Separate from [[BUG-306]] #7, which covers the two absent `/import/jobs/*` routes. | **MED** | needs-decision: map wire→union at the seam, or branch on `isComplete` |
+| 2 | **`Feedback360Release.ReleasedByEmployeeId` is `Guid.Empty`** when the releasing user has no linked employee record. Documented in the entity's XML doc at the time, but never filed. **Not an audit hole** — `BaseEntity.CreatedBy` is stamped with the acting user id by `AuditInterceptor`, so "who released this" is durably answerable; this field answers the narrower "which *employee*". | LOW | leave as-is, or make it nullable |
+| 3 | **`feedback-360.models.ts` header docstring is stale** — still describes an "(ASSUMED)" contract and lists routes that were superseded by the cycle-keyed ones. | LOW | doc fix; this repo has **four** recorded cases of a comment outliving its code and causing real damage |
+
+- **Why these were missed:** the 2026-08-21 auto-heal pass reconciled the **recent migration slices** and did not sweep the **whole session**. That is the same evaporation the protocol exists to prevent, one level up — a heal that only heals what it happens to remember. **A sweep must enumerate its sources, not recall them.**
+- **Confidence:** 100% on all three (each observed directly in an agent hand-back with file:line).
+
+---
+
+### ✅ ISSUE-232 — ledger flip owed (verified resolved 2026-08-18, never flipped)
+- **Status update:** `TC-REC-010-05` **passed** during the A1c run, confirming the applicant read path now carries `convertedToEmployeeId`/`isConverted`/`convertedAt` — the exact projection gap ISSUE-232 recorded. The finding above should be marked **RESOLVED**; it was verified three days ago and the flip was never made.
+- **Why this is recorded rather than silently flipped:** flipping a finding without a `/verify-fix` run is how this repo produced ISSUE-371 and ISSUE-377. The evidence here is a real executed TC, so the flip is justified — but it is stated explicitly rather than done quietly, so the next reader can see what earned it.
+
 ### BUG-308
 
 - **Type:** BUG · **Severity:** MED · **Status:** OPEN · **Layer:** Backend / deployment topology

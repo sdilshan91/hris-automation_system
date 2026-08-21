@@ -741,6 +741,20 @@ export function getInitialsFromName(firstName: string, lastName: string): string
 
 export type EmployeeWire = Schema<'EmployeesEmployeeDto'>;
 export type EmployeeListWire = Schema<'EmployeesEmployeeListResult'>;
+
+/**
+ * The DIRECTORY result — a different envelope from the list result, and a different endpoint.
+ *
+ * `/employees` (list) returns `{items, totalCount}` and accepts only page/pageSize/activeOnly/search/
+ * includeTerminated. `/employees/directory` returns `{data, total}` and is the ONLY endpoint that accepts
+ * the filter set the directory screen builds — departmentIds, jobTitles, statuses, employmentTypes,
+ * locations, the date range and showArchived.
+ *
+ * The FE had been sending the whole filter set to the LIST endpoint, which silently ignores every one of
+ * them. Two different envelopes for two different endpoints is exactly the distinction a hand-written
+ * interface cannot enforce and a generated one does.
+ */
+export type EmployeeDirectoryWire = Schema<'EmployeesEmployeeDirectoryResult'>;
 export type DirectReportWire = Schema<'EmployeesDirectReportDto'>;
 export type DirectReportsResultWire = Schema<'EmployeesDirectReportsResult'>;
 export type ValidTransitionsWire = Schema<'EmployeesValidTransitionsResult'>;
@@ -798,6 +812,69 @@ export function mapEmployee(w: EmployeeWire): IEmployee {
 }
 
 /** Maps the wire `EmployeesEmployeeListResult` envelope onto the FE's paginated view-model. */
+/**
+ * Maps the DIRECTORY envelope (`{data, total}`) onto the same paginated view-model the list mapper
+ * produces, so callers and templates are unaffected by which endpoint served them.
+ */
+/**
+ * A directory ROW is a deliberately leaner projection than a full employee.
+ *
+ * `EmployeeDirectoryItemDto` carries 13 fields; `EmployeeDto` carries 29. The directory omits
+ * departmentId/jobTitleId/locationId/managerName/reportsToEmployeeId/isActive/customFields and the rest of
+ * the profile detail — sensible for a filtered, paginated table.
+ *
+ * **Checked before switching:** the employee-list component renders none of the 16 omitted fields, so the
+ * projection is sufficient and the screen loses nothing by moving to the endpoint that can actually filter.
+ * Absent fields default here rather than being fabricated; if the list ever needs one, the honest fix is to
+ * add it to the DTO, not to invent it at the seam.
+ */
+export function mapEmployeeDirectoryItem(
+  w: NonNullable<EmployeeDirectoryWire['data']>[number]
+): IEmployee {
+  // NO `as IEmployee` cast here, deliberately.
+  //
+  // The first version of this mapper ended `} as IEmployee` and wrote `id:` and `location:` — but the
+  // view-model fields are `employeeId` and `locationName`. The cast turned both into silently-ignored excess
+  // properties, so every directory row came back with employeeId === '' and card navigation went to
+  // `/employees/`. That is BUG-127 reintroduced, in the very change meant to restore contract safety.
+  //
+  // A cast is an assertion that you know better than the compiler. Writing one inside a mapper whose entire
+  // purpose is to stop hand-written assumptions was the wrong instinct; without it, the two wrong field names
+  // are compile errors, which is how this was caught.
+  const base = mapEmployee({});
+  return {
+    ...base,
+    employeeId: w.id ?? '',
+    employeeNo: w.employeeNo ?? '',
+    firstName: w.firstName ?? '',
+    lastName: w.lastName ?? '',
+    email: w.email ?? '',
+    phone: w.phone ?? null,
+    departmentName: w.departmentName ?? null,
+    jobTitleName: w.jobTitleName ?? null,
+    locationName: w.location ?? null,
+    // Narrowed exactly as mapEmployee does (`:794`, `:801-802`) rather than inventing a second convention.
+    // These three were the OTHER thing the removed cast was hiding: the wire types them `string | null`
+    // while the view-model wants EmploymentType / string / EmployeeStatus. Five problems in total were
+    // silenced by one `as` — two wrong field names and three unnarrowed unions.
+    dateOfJoining: w.dateOfJoining ?? '',
+    employmentType: (w.employmentType ?? 'FullTime') as EmploymentType,
+    status: (w.status ?? 'Active') as EmployeeStatus,
+    profilePhotoUrl: w.profilePhotoUrl ?? null,
+  };
+}
+
+export function mapEmployeeDirectory(
+  w: EmployeeDirectoryWire
+): IPaginatedResponse<IEmployee> {
+  return {
+    items: (w.data ?? []).map(mapEmployeeDirectoryItem),
+    totalCount: w.total ?? 0,
+    page: w.page ?? 0,
+    pageSize: w.pageSize ?? 0,
+  };
+}
+
 export function mapEmployeeList(
   w: EmployeeListWire
 ): IPaginatedResponse<IEmployee> {
