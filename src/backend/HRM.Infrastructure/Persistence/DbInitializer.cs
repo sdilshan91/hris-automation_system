@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using HRM.Infrastructure.Persistence.Seed;
 
 namespace HRM.Infrastructure.Persistence;
 
@@ -690,7 +691,55 @@ public static class DbInitializer
             await ReconcileBuiltInRolePermissionsAsync(db, tenantId, logger, ct);
             await BackfillCustomRoleReportScopeAsync(db, tenantId, logger, ct);
             await EnsureDefaultShiftAsync(db, tenantId, logger, ct);
+            await EnsureDefaultLeaveWorkflowAsync(db, tenantId, logger, ct);
         }
+    }
+
+    /// <summary>
+    /// GAP-029 / C1 — backfills the default leave-approval workflow onto a tenant that has none.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Seeding only at provisioning would split tenants into two populations with different approval
+    /// mechanics, distinguishable solely by signup date and with nothing in the UI to explain it. This runs
+    /// for every existing tenant so there is ONE behaviour everywhere.
+    /// </para>
+    /// <para>
+    /// <b>Safe for in-flight work.</b> <c>LeaveRequest.WorkflowInstanceId</c> is assigned at SUBMIT time, so
+    /// requests already pending keep it null and continue down the legacy path untouched. Only submissions
+    /// made after this runs route through the engine.
+    /// </para>
+    /// <para>
+    /// <b>Public</b> so the backfill is directly testable, matching this file's existing convention for
+    /// reconcilers (<see cref="ReconcileRowLevelSecurityAsync"/>, <see cref="BackfillLegacyMfaSecretsAsync"/>).
+    /// A backfill that can only be reached through full startup is a backfill nobody tests.
+    /// </para>
+    /// <para>
+    /// <b>Skips on ANY existing Leave definition, not just an Active one.</b> A tenant whose admin is
+    /// part-way through authoring a Draft has expressed intent; dropping a seeded Active definition beside
+    /// it would silently win the runtime lookup and route approvals through config the admin never
+    /// finished. Absence of a definition is the only safe signal to act on.
+    /// </para>
+    /// </remarks>
+    public static async Task EnsureDefaultLeaveWorkflowAsync(
+        AppDbContext db, Guid tenantId, ILogger logger, CancellationToken ct)
+    {
+        var hasAnyLeaveWorkflow = await db.WorkflowDefinitions
+            .IgnoreQueryFilters()
+            .AnyAsync(w => w.TenantId == tenantId
+                           && w.EntityType == WorkflowEntityType.Leave
+                           && !w.IsDeleted, ct);
+        if (hasAnyLeaveWorkflow)
+            return;
+
+        var definition = DefaultLeaveWorkflow.Build(tenantId, DateTime.UtcNow, "system-seed");
+        db.WorkflowDefinitions.Add(definition);
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Seeded the default leave-approval workflow for tenant {TenantId} (GAP-029): leave approvals now "
+            + "route through the US-ADM-011 engine instead of the legacy single-level path.",
+            tenantId);
     }
 
     /// <summary>
