@@ -17,9 +17,29 @@ deployment that actually has TLS.
 Found by `@integration-enforcer` while auditing the GAP-033a security-headers change: the
 `if (ctx.Request.IsHttps)` HSTS branch is **dead code** behind the proxy. Filed as [[BUG-308]].
 
-The blast radius is wider than HSTS. Every `Request.Scheme` / `IsHttps` read has the same blind
-spot — password-reset links, invite links, OAuth redirect URIs, `RequireHttpsMetadata`. They all
-believe they are on `http` behind the proxy.
+The blast radius is wider than HSTS — though **not in the way this ADR first claimed.** The original
+draft asserted that password-reset links, invite links and OAuth redirect URIs shared the blind spot.
+**That was wrong, and verified wrong:** those are built from `Platform:BaseDomain` /
+`Platform:FrontendBaseUrl` with a hardcoded `https://`, never from `Request.Scheme`.
+
+The genuinely affected readers, enumerated rather than assumed:
+
+- **Four scheme-derived branding URLs** — `AuthController.ToServableLogos` (:339),
+  `TenantContextController` (:41), `TenantSettingsController` (:255, :295). Behind TLS these emitted
+  `http://` logo URLs on an `https://` page, which browsers block as mixed content. A real,
+  user-visible bug that nobody had connected to this cause.
+- **Rate-limit partitioning** (`ResolveClientIp`) — every request through the proxy previously
+  presented the same address, so all tenants shared **one** bucket and a single noisy client could
+  exhaust the limit for everyone.
+- **The whole audit/security IP trail** — `AuditInterceptor`, `AuditCaptureInterceptor`,
+  `AuditLogService`, `PayrollAuditLogger`, plus the controllers stamping client IP on login,
+  attendance, review sign-off, payroll approval and portal-token issuance. These now store the real
+  client instead of the proxy. More correct, but the *meaning* of the stored column changes on the
+  day a proxy is configured.
+
+**Lesson worth keeping:** the first draft named plausible-sounding consumers from memory instead of
+grepping for `Request.Scheme`. Three of the four named were wrong and the largest affected surface
+(the audit trail) was missed entirely. Enumerate, don't recall.
 
 ## Decision
 
@@ -47,6 +67,39 @@ lets any caller forge `Request.IsHttps == true`, which is a spoofing vector, not
 This is why the fix was NOT folded into the GAP-033a headers PR: it is a pipeline-wide change with
 its own test surface, and burying it inside a header PR would have hidden exactly the arm that
 matters.
+
+## What implementing it actually taught us (added 2026-08-21, post-implementation)
+
+**The "fail-safe default" I first wrote was fail-OPEN.** The first cut put empty
+`KnownNetworks`/`KnownProxies` in `appsettings.json` and documented empty as "trusts nobody, strips
+the headers, identical to today". That is the opposite of the truth.
+
+ASP.NET Core decides whether to run the known-proxy check with
+`KnownNetworks.Count > 0 || KnownProxies.Count > 0`. With **both lists empty there is no check at
+all**, and `X-Forwarded-*` is honoured from every caller. Clearing both lists — the obvious way to
+write "trust nobody" — is precisely how you write "trust the entire internet".
+
+Caught by running it, not reading it: with both lists emptied, a forged `X-Forwarded-Proto: https`
+from `203.0.113.9` produced a `Strict-Transport-Security` response header. The spoof succeeded.
+
+**Correction:** when nothing is configured the middleware is **not registered at all**
+(`ProxyTrustOptions.Build` returns `null`). That is the only construction where "unconfigured"
+genuinely equals "unchanged behaviour".
+
+**Second trap, same family.** `IPNetwork.TryParse` **accepts** host bits and silently normalises:
+`10.1.2.3/16` parses happily to `10.1.0.0/16`. On a *trust list* that silence is dangerous — someone
+meaning a single proxy host who typos the prefix length would widen trust to 65k addresses with no
+warning. Now rejected explicitly.
+
+**Third, a harness trap worth remembering.** `TestServer` never populates a socket peer address, and
+ForwardedHeadersMiddleware only runs its trust check when it *has* one. A spoof-rejection test
+written against the bare harness passes while proving nothing — it is green because the check never
+ran. Same family as this repo's InMemory-masks-Postgres class. The test factory now supplies the
+peer address explicitly.
+
+**The through-line:** all three are cases where *absence of configuration* or *absence of input*
+reads as safe and behaves as permissive. Worth checking for that shape in any other security control
+that has an "unconfigured" state.
 
 ## Consequences
 
