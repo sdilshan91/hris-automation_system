@@ -380,20 +380,26 @@ public sealed class UserManagementService : IUserManagementService
         // Reading the raw snapshot ignored per-tenant overrides and live plan edits, so the invite path and the
         // direct-create path gave contradictory answers for the same limit (a purchased override that RAISES the
         // ceiling was silently ignored here).
-        var planValue = await _db.SubscriptionPlans
-            .AsNoTracking()
-            .Where(p => p.Code == tenant.PlanId)
-            .Select(p => (long?)p.MaxEmployees)
-            .FirstOrDefaultAsync(cancellationToken);
-        var overrides = await _db.PlanLimitOverrides
-            .AsNoTracking()
-            .Where(o => o.TenantId == tenant.Id)
-            .ToListAsync(cancellationToken);
-        var resolved = PlanLimitResolver.Resolve(
-            PlanLimitKeys.MaxEmployees, planValue, overrides, DateTime.UtcNow);
-        long? effectiveCap = resolved.Source == PlanLimitResolver.LimitSource.Override
-            ? resolved.Value                                   // override wins (null = unlimited)
-            : planValue ?? (long?)tenant.MaxEmployees;         // else plan value, else snapshot
+        // BUG-307 / ISSUE-388: one shared lookup that keeps the distinction the old inline query destroyed --
+        // "plan_id matches no plan" and "plan says no cap" both used to arrive here as a bare null.
+        var effective = await PlanLimitLookup.ResolveAsync(
+            _db, tenant, PlanLimitKeys.MaxEmployees, p => p.MaxEmployees, DateTime.UtcNow, cancellationToken);
+
+        if (effective.IsConfigurationError)
+        {
+            // FAIL CLOSED. An unresolvable plan_id is a misconfiguration, not an unlimited allowance.
+            _logger.LogError(
+                "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; refusing to "
+                + "treat the {LimitKey} cap as unlimited (BUG-307).",
+                tenant.Id, tenant.PlanId, PlanLimitKeys.MaxEmployees);
+            return InviteOneOutcome.Fail(
+                "Your subscription plan could not be resolved. Please contact your administrator.",
+                403, "plan_unresolvable");
+        }
+
+        long? effectiveCap = effective.Source == PlanLimitResolver.LimitSource.Override
+            ? effective.Value                                  // override wins (null = unlimited)
+            : effective.Value ?? (long?)tenant.MaxEmployees;   // else plan value, else snapshot
 
         if (effectiveCap is { } cap)
         {

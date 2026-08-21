@@ -1198,21 +1198,25 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
         // the ISSUE-342 plan-write sweep. The user-visible effect: a tenant who PURCHASED a limit override, or
         // whose plan was upgraded, could create employees one-by-one and invite users, but was still refused on
         // bulk import — three paths, three different answers about one limit.
-        var planValue = await _dbContext.SubscriptionPlans
-            .AsNoTracking()
-            .Where(p => p.Code == tenant.PlanId)
-            .Select(p => (long?)p.MaxEmployees)
-            .FirstOrDefaultAsync(cancellationToken);
-        var overrides = await _dbContext.PlanLimitOverrides
-            .AsNoTracking()
-            .Where(o => o.TenantId == tenant.Id)
-            .ToListAsync(cancellationToken);
+        // BUG-307 / ISSUE-388: one shared lookup that keeps the distinction the old inline query destroyed --
+        // "plan_id matches no plan" and "plan says no cap" both used to arrive here as a bare null.
+        var effective = await PlanLimitLookup.ResolveAsync(
+            _dbContext, tenant, PlanLimitKeys.MaxEmployees, p => p.MaxEmployees, DateTime.UtcNow, cancellationToken);
+        
+        if (effective.IsConfigurationError)
+        {
+            // FAIL CLOSED. An unresolvable plan_id is a misconfiguration, not an unlimited allowance.
+            _logger.LogError(
+                "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; refusing to "
+                + "treat the {LimitKey} cap as unlimited (BUG-307).",
+                tenant.Id, tenant.PlanId, PlanLimitKeys.MaxEmployees);
+            return Result<int>.Failure(
+                "Your subscription plan could not be resolved. Please contact your administrator.", 403);
+        }
 
-        var resolved = PlanLimitResolver.Resolve(
-            PlanLimitKeys.MaxEmployees, planValue, overrides, DateTime.UtcNow);
-        long? effectiveCap = resolved.Source == PlanLimitResolver.LimitSource.Override
-            ? resolved.Value                                   // override wins (null = unlimited)
-            : planValue ?? (long?)tenant.MaxEmployees;         // else plan value, else snapshot
+        long? effectiveCap = effective.Source == PlanLimitResolver.LimitSource.Override
+            ? effective.Value                                  // override wins (null = unlimited)
+            : effective.Value ?? (long?)tenant.MaxEmployees;   // else plan value, else snapshot
 
         if (effectiveCap is not { } cap)
             return Result<int>.Success(requestedCount); // No limit

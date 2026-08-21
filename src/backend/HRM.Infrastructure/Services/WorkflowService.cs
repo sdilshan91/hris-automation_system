@@ -590,21 +590,29 @@ public sealed class WorkflowService : IWorkflowService
 
         // ISSUE-227/BUG-008: resolve the effective cap with precedence override > plan > snapshot, rather
         // than reading only the Tenant.MaxWorkflows snapshot (which ignored plan changes + overrides).
-        var planValue = await _db.SubscriptionPlans
-            .AsNoTracking()
-            .Where(p => p.Code == tenant.PlanId)
-            .Select(p => (long?)p.MaxWorkflows)
-            .FirstOrDefaultAsync(cancellationToken);
-        var overrides = await _db.PlanLimitOverrides
-            .AsNoTracking()
-            .Where(o => o.TenantId == tenantId)
-            .ToListAsync(cancellationToken);
+        // BUG-307 / ISSUE-388: one shared lookup that keeps the distinction the old inline query destroyed --
+        // "plan_id matches no plan" and "plan says no cap" both used to arrive here as a bare null.
+        // `tenant` here is a projection (new { PlanId, MaxWorkflows }), not the entity -- so this uses the
+        // (tenantId, planId) overload rather than materialising a whole Tenant just to read two columns.
+        var effective = await PlanLimitLookup.ResolveAsync(
+            _db, tenantId, tenant.PlanId, PlanLimitKeys.MaxWorkflows, p => p.MaxWorkflows, DateTime.UtcNow,
+            cancellationToken);
+        
+        if (effective.IsConfigurationError)
+        {
+            // FAIL CLOSED. An unresolvable plan_id is a misconfiguration, not an unlimited allowance.
+            _logger.LogError(
+                "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; refusing to "
+                + "treat the {LimitKey} cap as unlimited (BUG-307).",
+                tenantId, tenant.PlanId, PlanLimitKeys.MaxWorkflows);
+            return Result.Failure(
+                "Your subscription plan could not be resolved. Please contact your administrator.",
+                403, "plan_unresolvable");
+        }
 
-        var resolved = PlanLimitResolver.Resolve(
-            PlanLimitKeys.MaxWorkflows, planValue, overrides, DateTime.UtcNow);
-        long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
-            ? resolved.Value
-            : planValue ?? (long?)tenant.MaxWorkflows;
+        long? limit = effective.Source == PlanLimitResolver.LimitSource.Override
+            ? effective.Value
+            : effective.Value ?? (long?)tenant.MaxWorkflows;
 
         if (limit is null)
             return Result.Success();

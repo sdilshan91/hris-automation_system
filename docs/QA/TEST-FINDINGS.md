@@ -8765,6 +8765,35 @@ recurrences noted by reference.** No data writes; acme seed untouched.
   2. **Data repoint** — `e2e` and `platform` still carry `plan_id = 'default'`. Until this is done, `EmployeeService` now **denies** employee creation for those two tenants (fail-closed, by design and by decision) rather than silently allowing unlimited. **This is a deliberate, visible behaviour change and is the reason the data fix should not lag far behind.**
 - **Suggested order:** data repoint first (clears the only tenants currently affected), then the startup guard, then the nine sites. *(The repoint and startup guard both landed in #536; only the nine sites remain.)*
 
+**DECIDED 2026-08-21 — what "fail closed" means where there is no failure channel.**
+
+- **The three bare-return sites** (`CustomFieldService` → `Task<int>`, `NotificationTemplateService` →
+  `Task<long>`, `RealNotificationDispatcher` → `Task`): fall back to **the most restrictive configured
+  plan's value** for that limit, and log ERROR. It enforces *a real cap* instead of none, and degrades
+  gracefully instead of bricking the feature. Returning **zero** was rejected — for
+  `RealNotificationDispatcher` that would silently stop **all** outbound email, turning a config typo into
+  an incident of its own. Refactoring the three signatures to gain a `Result` channel was rejected for this
+  pass as a change rippling into callers with nothing to do with plan limits. Because #536's startup
+  reconciler repoints unresolvable `plan_id`s, this fallback should never actually fire — it is a backstop,
+  like the fail-closed branch on the other six.
+- **`TenantSettingsService` (FeatureFlags):** gets a **sibling helper**, `ResolveFeatureFlagsAsync`, sharing
+  the same plan-exists distinction rather than contorting the numeric API. Feature gating carries the same
+  fail-open risk — an unresolvable plan silently granting or denying features — and deserves the same guard.
+  (Defaulting flags to *off* might already be fail-closed, but that needs verifying, not assuming.)
+
+**PROGRESS 2026-08-21 — 6 of 10 sites migrated.** `EmployeeService` (#536) plus `UserManagementService`,
+`BulkEmployeeImportService`, `EmployeeDocumentService`, `RoleService` and `WorkflowService`.
+`WorkflowService` needed a new `(tenantId, planId)` overload because its `tenant` is an anonymous projection,
+not the entity — materialising a whole `Tenant` to read two columns would have traded a real query cost for
+nothing.
+
+**A DRIFT GUARD NOW BLOCKS THE ELEVENTH COPY.** `PlanLimitLookupUsageGuardTests` statically scans production
+sources and fails if any file resolves a plan limit with the ambiguous `(long?)p.X` projection. It ships with
+an explicit **shrinking allowlist** of the three still-unmigrated files, so it blocks *new* offenders today
+rather than waiting for the decisions above — plus a staleness arm asserting every allowlist entry is *still*
+an offender, because an allowlist that outlives its debt is how a guard quietly becomes decoration. Static by
+design: no DB, no container, so it cannot become the slow flaky test people learn to skip.
+
 **PER-SITE RETURN TYPES — surveyed 2026-08-21, and they are why a blanket script cannot do this.**
 
 | site | limit | enclosing method returns | has a failure channel? |
