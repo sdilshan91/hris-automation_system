@@ -1095,9 +1095,10 @@ finally
 //     (SpoofedForwardedFor_FromUntrustedPeer_IsRejectedWithTheWholeSet_BUG308). The middleware makes one
 //     trust decision per request and applies or abandons the whole forwarded set together, so an unapplied
 //     proto from that peer means its XFF was discarded too.
-//   * The ACCEPTED case -- that a trusted proxy's XFF actually rewrites RemoteIpAddress -- is NOT asserted
-//     end-to-end, because no endpoint echoes the resolved client IP. Tracked as ISSUE-385. Do not cite this
-//     suite as covering it.
+//   * The ACCEPTED case -- that a trusted proxy's XFF actually rewrites RemoteIpAddress -- is NOW proven
+//     end-to-end too (ForwardedForClientIpApiTests, ISSUE-385). No echo endpoint was added for it: a
+//     successful login already persists the resolved client IP on the refresh token, so the assertion reads
+//     a real production observable rather than one invented for the test.
 //
 // WIDER THAN RATE LIMITING: every consumer of RemoteIpAddress now records the real client. That includes the
 // audit/security trail -- AuditInterceptor, AuditCaptureInterceptor, AuditLogService, PayrollAuditLogger, and
