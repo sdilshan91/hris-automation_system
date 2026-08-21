@@ -8557,6 +8557,56 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction:** either seed a `default` plan row, or repoint tenants at real plan codes; **and** add a guard so a tenant whose `plan_id` resolves to nothing fails loudly rather than becoming unlimited. Check how many tenants are affected before choosing.
 - **Confidence:** 95% on the mechanism (observed directly during the A1c run); the blast radius depends on how many real tenants carry an unmatched `plan_id`.
 
+**MEASURED AND WIDENED 2026-08-21 — this finding understated its own scope in two ways.**
+
+1. **Blast radius (measured against the running DB, not estimated).**
+   `SELECT t.subdomain, t.plan_id, p.code FROM tenants t LEFT JOIN subscription_plans p ON p.code = t.plan_id`
+   → **2 of 3 tenants** (`e2e`, `platform`) carry `plan_id = 'default'`, which matches no plan. Their
+   `tenants.max_employees` snapshot is **also NULL**, so both fall all the way through to "unlimited".
+   The third (`techoneglobal`) is on `enterprise`, whose `max_employees` is NULL **by design**.
+   **Net: no tenant currently has an enforced employee cap, and two of them are uncapped by accident.**
+
+2. **★ It is NOT just `MaxEmployees`. The same fail-open is duplicated across 10 call sites in 10 files,
+   covering 7 distinct plan limits.** `grep -rn "p.Code == tenant.PlanId"` →
+   `EmployeeService`, `UserManagementService`, `BulkEmployeeImportService` (MaxEmployees ×3),
+   `EmployeeDocumentService` (MaxStorageGb), `RealNotificationDispatcher` (MaxEmailSendsPerMonth),
+   `WorkflowService` (MaxWorkflows), `RoleService` (MaxCustomRoles),
+   `CustomFieldService` (MaxCustomFieldsPerEntity),
+   `NotificationTemplateService` (MaxTemplateLanguageVariants), and `TenantSettingsService` (FeatureFlags).
+
+   **Every one uses `FirstOrDefaultAsync`, so "no plan row" and "plan row with a NULL limit" return the
+   same `null` and are indistinguishable.** That ambiguity *is* the bug — `enterprise` proves NULL is a
+   legitimate "unlimited", so no call site can tell a deliberate unlimited from a broken `plan_id`.
+   **Every paid limit in the product fails open the same way**, not only the employee cap.
+
+- **This is the S-1 shape again:** ten hand-written copies of one rule, with nothing checking they agree.
+  `BulkEmployeeImportService`'s own comment records that these paths already drifted once — *"three paths,
+  three different answers about one limit."* Fixing this in a tenth copy would repeat the mistake.
+- **★ ROOT CAUSE FOUND — it was never stale data, the SEEDER generates it.** `DbInitializer` assigns
+  `PlanId = "default"` in **three** places (the default admin tenant, a repair branch for a blank plan, and
+  the E2E tenant), while the plans it seeds are `starter`/`professional`/`enterprise`. **Every fresh
+  deployment therefore manufactures the fail-open from scratch.** The original "seed data" framing was right
+  about the mechanism and wrong about its lifetime: repointing the two live rows would have fixed nothing,
+  because the next `DbInitializer.RunAsync` recreates the condition. This is why the fix had to change the
+  seeder, not the data.
+- **Repoint target is `enterprise`, chosen to PRESERVE behaviour.** Its `MaxEmployees` is NULL, i.e.
+  genuinely unlimited — which is exactly what these tenants already had. Repointing to a *capped* plan would
+  have silently imposed a limit on live tenants during an unattended startup migration: the opposite mistake,
+  and a worse one than the bug being fixed.
+- **★ THE GUARD HAD TO BE NARROWED, and the tests are what taught me.** The first fix reported a
+  configuration error whenever the plan failed to resolve. That **broke 83 tests**: only 16 of 181
+  integration fixtures seed `subscription_plans` at all, so the guard was flagging deployments that had
+  deliberately configured *nothing* as misconfigured. Denying those would have been a **far broader
+  behaviour change than the fail-open it was fixing**.
+  The correct rule is narrower than "the plan did not resolve": it is **"plans EXIST and this tenant points
+  at one that does not."** An empty `subscription_plans` table means plan-based limiting is simply not in
+  use — nothing to enforce, nothing broken. Pinned by `NoPlansConfiguredAtAll_IsNotAConfigurationError_BUG307`.
+- **DECIDED (2026-08-21):** three layers — repoint the two tenants to real plan codes so nobody sits in the
+  bad state; a startup check that flags any tenant whose `plan_id` matches no plan; and **one shared
+  resolver** that distinguishes *plan-not-found* (deny — a configuration error) from *plan-found-with-NULL*
+  (unlimited, by design). Because the data is fixed first, the fail-closed path is a backstop that does not
+  fire in practice.
+
 ---
 
 ### ISSUE-382 — three smaller out-of-lane items from earlier in the session, filed late
@@ -8683,3 +8733,31 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 
 
 - **FIX (2026-08-21), same branch:** the `Legacy()` fallback, guarded by `StepHasAReachableApproverAsync`. A `Role` step is deliberately **not** treated as unresolved — it assigns no user by design and authorization checks role membership at decision time, so treating its null assignment as a failure would disable role-based approval entirely. Verified by 4 arms including one proving **no instance row is written** (a half-created instance would still mark the request workflow-driven). **Mutation-verified in BOTH directions:** removing the guard turns 3 arms RED; making it over-trigger turns the "a resolvable manager still routes through the engine" arm RED — so it cannot silently degrade into "always fall back". Stays OPEN until `/verify-fix` closes it.
+
+### ISSUE-388
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** Backend
+- **Module:** Platform (cross-cutting) · **US:** BUG-307 follow-through · **TC:** PlanLimitLookupPostgresTests
+- **Found:** 2026-08-21, while fixing BUG-307. **This is the explicitly-tracked remainder of a deliberately partial fix — not a discovery.**
+- **Summary:** `PlanLimitLookup` (the shared lookup that distinguishes *plan-not-found* from *plan-says-no-cap*) exists and is mutation-verified, and **`EmployeeService` is migrated to it with a fail-closed branch**. **Nine of the ten call sites are not yet migrated and still fail open.**
+- **Remaining sites, with the exact recipe:**
+
+  | file | limit |
+  |---|---|
+  | `UserManagementService` | MaxEmployees |
+  | `BulkEmployeeImportService` | MaxEmployees |
+  | `EmployeeDocumentService` | MaxStorageGb |
+  | `RoleService` | MaxCustomRoles |
+  | `CustomFieldService` | MaxCustomFieldsPerEntity |
+  | `WorkflowService` | MaxWorkflows *(variant shape)* |
+  | `NotificationTemplateService` | MaxTemplateLanguageVariants *(variant shape)* |
+  | `RealNotificationDispatcher` | MaxEmailSendsPerMonth *(variant shape)* |
+  | `TenantSettingsService` | FeatureFlags *(variant shape — not a `long?` limit)* |
+
+  Per site: call `PlanLimitLookup.ResolveAsync`, return the enclosing method's failure type when `IsConfigurationError`, then **delete the now-redundant `PlanLimitOverrides` fetch and `PlanLimitResolver.Resolve` call** — the shared lookup already does both. `EmployeeService.CheckPlanLimitAsync` is the worked template.
+
+- **★ Why this is filed rather than half-done.** A scripted migration of five of these sites was written and then **reverted**, because it swapped the lookup but never branched on `IsConfigurationError`. The result compiled, looked like a fix, added a redundant double-resolve, and **still failed open**. That is the same "change that reads as done and isn't" class this ledger keeps recording — so it was backed out rather than shipped. Nine sites failing open *visibly and tracked* is a better state than five sites failing open while appearing fixed.
+- **Also still outstanding from the BUG-307 decision (3-layer fix, 2 layers not yet built):**
+  1. **Startup guard** — flag any tenant whose `plan_id` matches no plan, so the condition cannot recur silently.
+  2. **Data repoint** — `e2e` and `platform` still carry `plan_id = 'default'`. Until this is done, `EmployeeService` now **denies** employee creation for those two tenants (fail-closed, by design and by decision) rather than silently allowing unlimited. **This is a deliberate, visible behaviour change and is the reason the data fix should not lag far behind.**
+- **Suggested order:** data repoint first (clears the only tenants currently affected), then the startup guard, then the nine sites.
