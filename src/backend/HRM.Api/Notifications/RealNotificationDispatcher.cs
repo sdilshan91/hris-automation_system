@@ -184,20 +184,38 @@ public sealed class RealNotificationDispatcher : INotificationDispatcher
             {
                 var now = DateTime.UtcNow;
                 var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-                var planValue = await db.SubscriptionPlans
-                    .AsNoTracking()
-                    .Where(p => p.Code == tenant.PlanId)
-                    .Select(p => (long?)p.MaxEmailSendsPerMonth)
-                    .FirstOrDefaultAsync(ct);
-                var overrides = await db.PlanLimitOverrides
-                    .AsNoTracking()
-                    .Where(o => o.TenantId == tenantId)
-                    .ToListAsync(ct);
-                var resolvedLimit = PlanLimitResolver.Resolve(
-                    PlanLimitKeys.MaxEmailSendsPerMonth, planValue, overrides, now);
-                long? emailCap = resolvedLimit.Source == PlanLimitResolver.LimitSource.Override
-                    ? resolvedLimit.Value
-                    : planValue;
+                // BUG-307 / ISSUE-388: the shared lookup keeps the distinction the old inline query
+                // destroyed -- "plan_id matches no plan" and "plan says no cap" both used to arrive here as
+                // a bare null, which this code read as "unlimited email".
+                var effective = await PlanLimitLookup.ResolveAsync(
+                    db, tenantId, tenant.PlanId, PlanLimitKeys.MaxEmailSendsPerMonth,
+                    p => p.MaxEmailSendsPerMonth, now, ct);
+
+                long? emailCap;
+                if (effective.IsConfigurationError)
+                {
+                    // This method returns void, so "fail closed" cannot mean "return an error".
+                    //
+                    // IT ALSO MUST NOT MEAN ZERO. A zero cap here would suppress EVERY non-mandatory email
+                    // for the tenant -- a mis-set plan_id would become a silent, total outbound-mail outage,
+                    // which is a worse incident than the unenforced quota it replaces. Mandatory security
+                    // mail already bypasses the cap above, but everything else would simply stop.
+                    //
+                    // So: fall back to the strictest quota any configured plan actually sells. A real cap
+                    // applies, and the tenant keeps working.
+                    _logger.LogError(
+                        "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; "
+                        + "falling back to the strictest configured {LimitKey} rather than treating email "
+                        + "sends as unlimited (BUG-307).",
+                        tenantId, tenant.PlanId, PlanLimitKeys.MaxEmailSendsPerMonth);
+
+                    emailCap = await PlanLimitLookup.StrictestConfiguredAsync(
+                        db, p => p.MaxEmailSendsPerMonth, ct);
+                }
+                else
+                {
+                    emailCap = effective.Value;
+                }
 
                 if (emailCap is { } cap)
                 {

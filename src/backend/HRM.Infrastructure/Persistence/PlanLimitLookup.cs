@@ -73,6 +73,49 @@ public static class PlanLimitLookup
     /// per-tenant decision, so it is a valid answer regardless of whether the plan row resolves.
     /// </remarks>
     /// <summary>
+    /// ISSUE-388 — the strictest value any configured plan defines for a limit, or <see langword="null"/> if
+    /// no plan defines one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For the call sites whose method returns a bare <c>int</c>/<c>long</c>/<c>void</c>, "fail closed" cannot
+    /// mean "return an error" — there is no channel to return one on. It has to mean <b>return the most
+    /// restrictive defensible value</b>, which is what this supplies.
+    /// </para>
+    /// <para>
+    /// <b>Why not zero.</b> Zero is the strictest reading, and it was rejected deliberately: for the email
+    /// dispatcher it would silently stop ALL outbound mail, turning a mis-set <c>plan_id</c> into an incident
+    /// of its own. Falling back to the tightest plan a deployment actually sells enforces a REAL cap instead
+    /// of none, without bricking the feature.
+    /// </para>
+    /// <para>
+    /// This is a backstop that should never fire: <c>DbInitializer.EnsureResolvablePlanIdAsync</c> repoints
+    /// unresolvable plan ids at startup. It exists because "should never happen" is not a guarantee.
+    /// </para>
+    /// </remarks>
+    public static async Task<long?> StrictestConfiguredAsync(
+        AppDbContext db,
+        Func<SubscriptionPlan, long?> planSelector,
+        CancellationToken cancellationToken = default)
+    {
+        // subscription_plans is a tiny lookup table, so materialising it keeps the selector usable in memory
+        // rather than forcing every caller to hand-write a translatable projection.
+        var plans = await db.SubscriptionPlans.AsNoTracking().ToListAsync(cancellationToken);
+
+        long? strictest = null;
+        foreach (var plan in plans)
+        {
+            // A null limit means UNLIMITED for that plan, so it is the opposite of restrictive — skip it.
+            if (planSelector(plan) is not { } value)
+                continue;
+            if (strictest is null || value < strictest)
+                strictest = value;
+        }
+
+        return strictest;
+    }
+
+    /// <summary>
     /// Overload for callers that hold a tenant's id and plan code WITHOUT the full <see cref="Tenant"/>
     /// entity — several project only the columns they need (e.g. <c>new { t.PlanId, t.MaxWorkflows }</c>).
     /// Forcing them to materialise the whole entity just to reach this method would trade a real query cost

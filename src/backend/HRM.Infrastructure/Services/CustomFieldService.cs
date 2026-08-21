@@ -789,21 +789,30 @@ public sealed class CustomFieldService : ICustomFieldService
         if (tenant is null)
             return DefaultMaxCustomFields;
 
-        var planValue = await _dbContext.SubscriptionPlans
-            .AsNoTracking()
-            .Where(p => p.Code == tenant.PlanId)
-            .Select(p => (long?)p.MaxCustomFieldsPerEntity)
-            .FirstOrDefaultAsync(cancellationToken);
-        var overrides = await _dbContext.PlanLimitOverrides
-            .AsNoTracking()
-            .Where(o => o.TenantId == tenant.Id)
-            .ToListAsync(cancellationToken);
+        // BUG-307 / ISSUE-388: the shared lookup keeps the distinction the old inline query destroyed --
+        // "plan_id matches no plan" and "plan says no cap" both used to arrive here as a bare null.
+        var effective = await PlanLimitLookup.ResolveAsync(
+            _dbContext, tenant, PlanLimitKeys.MaxCustomFieldsPerEntity, p => p.MaxCustomFieldsPerEntity,
+            DateTime.UtcNow, cancellationToken);
 
-        var resolved = PlanLimitResolver.Resolve(
-            PlanLimitKeys.MaxCustomFieldsPerEntity, planValue, overrides, DateTime.UtcNow);
-        long? limit = resolved.Source == PlanLimitResolver.LimitSource.Override
-            ? resolved.Value                                    // override wins
-            : planValue ?? (long?)tenant.MaxCustomFields;       // else plan value, else snapshot
+        if (effective.IsConfigurationError)
+        {
+            // This method returns a bare int, so "fail closed" cannot mean "return an error" -- it means
+            // return the most restrictive value any configured plan actually defines. Enforcing a REAL cap
+            // beats enforcing none; zero would have blocked custom fields entirely over a config typo.
+            _logger.LogError(
+                "Tenant {TenantId} has plan_id '{PlanId}', which matches no subscription plan; falling back "
+                + "to the strictest configured {LimitKey} rather than treating it as unlimited (BUG-307).",
+                tenant.Id, tenant.PlanId, PlanLimitKeys.MaxCustomFieldsPerEntity);
+
+            var strictest = await PlanLimitLookup.StrictestConfiguredAsync(
+                _dbContext, p => p.MaxCustomFieldsPerEntity, cancellationToken);
+            return strictest is { } s ? (int)s : DefaultMaxCustomFields;
+        }
+
+        long? limit = effective.Source == PlanLimitResolver.LimitSource.Override
+            ? effective.Value                                   // override wins
+            : effective.Value ?? (long?)tenant.MaxCustomFields; // else plan value, else snapshot
         return limit is { } v ? (int)v : DefaultMaxCustomFields; // final hard fallback: 20
     }
 
