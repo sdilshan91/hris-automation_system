@@ -8763,4 +8763,24 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Also still outstanding from the BUG-307 decision (3-layer fix, 2 layers not yet built):**
   1. **Startup guard** — flag any tenant whose `plan_id` matches no plan, so the condition cannot recur silently.
   2. **Data repoint** — `e2e` and `platform` still carry `plan_id = 'default'`. Until this is done, `EmployeeService` now **denies** employee creation for those two tenants (fail-closed, by design and by decision) rather than silently allowing unlimited. **This is a deliberate, visible behaviour change and is the reason the data fix should not lag far behind.**
-- **Suggested order:** data repoint first (clears the only tenants currently affected), then the startup guard, then the nine sites.
+- **Suggested order:** data repoint first (clears the only tenants currently affected), then the startup guard, then the nine sites. *(The repoint and startup guard both landed in #536; only the nine sites remain.)*
+
+**PER-SITE RETURN TYPES — surveyed 2026-08-21, and they are why a blanket script cannot do this.**
+
+| site | limit | enclosing method returns | has a failure channel? |
+|---|---|---|---|
+| `UserManagementService.InviteOneAsync` | MaxEmployees | `Task<InviteOneOutcome>` | custom type — needs its own refusal shape |
+| `BulkEmployeeImportService.CheckPlanLimitForImportAsync` | MaxEmployees | `Task<Result<int>>` | **yes** |
+| `EmployeeDocumentService.EnforceStorageQuotaAsync` | MaxStorageGb | `Task<(Result<..>? block, string? warning)>` | **yes**, via the `block` slot |
+| `RoleService.CreateRoleAsync` | MaxCustomRoles | `Task<Result<RoleDto>>` | **yes** |
+| `WorkflowService.EnsureWithinPlanLimitAsync` | MaxWorkflows | `Task<Result>` | **yes** |
+| `CustomFieldService.GetMaxCustomFieldsAsync` | MaxCustomFieldsPerEntity | `Task<int>` | **NO** |
+| `NotificationTemplateService.ResolveMaxLanguageVariantsAsync` | MaxTemplateLanguageVariants | `Task<long>` | **NO** |
+| `RealNotificationDispatcher.SendEmailAsync` | MaxEmailSendsPerMonth | `Task` | **NO** |
+| `TenantSettingsService.ResolvePlanGatingAsync` | FeatureFlags | `Task<PlanGatingDto?>` | not a `long?` limit at all |
+
+**★ Four of the nine have NO failure channel.** They return a bare `int`/`long`/`void`, so "fail closed" cannot mean "return an error" — it has to mean *return the most restrictive defensible value*, and **that is a per-limit product judgement**, not a mechanical edit. What is the right answer when a tenant's custom-field cap cannot be resolved: zero (block all), the starter-plan value, or refuse at a higher layer? Each needs deciding, not guessing.
+
+`TenantSettingsService` is different again — it gates on `FeatureFlags`, not a numeric cap, so `PlanLimitLookup` (which resolves `long?`) does not fit it as-is.
+
+**This survey is the reason the scripted 5-site migration failed.** It assumed a uniform shape that does not exist. The five sites WITH a `Result`-style channel are mechanical; the other four each need a decision first.
