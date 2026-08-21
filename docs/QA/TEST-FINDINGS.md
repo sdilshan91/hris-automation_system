@@ -8557,6 +8557,37 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested direction:** either seed a `default` plan row, or repoint tenants at real plan codes; **and** add a guard so a tenant whose `plan_id` resolves to nothing fails loudly rather than becoming unlimited. Check how many tenants are affected before choosing.
 - **Confidence:** 95% on the mechanism (observed directly during the A1c run); the blast radius depends on how many real tenants carry an unmatched `plan_id`.
 
+**MEASURED AND WIDENED 2026-08-21 — this finding understated its own scope in two ways.**
+
+1. **Blast radius (measured against the running DB, not estimated).**
+   `SELECT t.subdomain, t.plan_id, p.code FROM tenants t LEFT JOIN subscription_plans p ON p.code = t.plan_id`
+   → **2 of 3 tenants** (`e2e`, `platform`) carry `plan_id = 'default'`, which matches no plan. Their
+   `tenants.max_employees` snapshot is **also NULL**, so both fall all the way through to "unlimited".
+   The third (`techoneglobal`) is on `enterprise`, whose `max_employees` is NULL **by design**.
+   **Net: no tenant currently has an enforced employee cap, and two of them are uncapped by accident.**
+
+2. **★ It is NOT just `MaxEmployees`. The same fail-open is duplicated across 10 call sites in 10 files,
+   covering 7 distinct plan limits.** `grep -rn "p.Code == tenant.PlanId"` →
+   `EmployeeService`, `UserManagementService`, `BulkEmployeeImportService` (MaxEmployees ×3),
+   `EmployeeDocumentService` (MaxStorageGb), `RealNotificationDispatcher` (MaxEmailSendsPerMonth),
+   `WorkflowService` (MaxWorkflows), `RoleService` (MaxCustomRoles),
+   `CustomFieldService` (MaxCustomFieldsPerEntity),
+   `NotificationTemplateService` (MaxTemplateLanguageVariants), and `TenantSettingsService` (FeatureFlags).
+
+   **Every one uses `FirstOrDefaultAsync`, so "no plan row" and "plan row with a NULL limit" return the
+   same `null` and are indistinguishable.** That ambiguity *is* the bug — `enterprise` proves NULL is a
+   legitimate "unlimited", so no call site can tell a deliberate unlimited from a broken `plan_id`.
+   **Every paid limit in the product fails open the same way**, not only the employee cap.
+
+- **This is the S-1 shape again:** ten hand-written copies of one rule, with nothing checking they agree.
+  `BulkEmployeeImportService`'s own comment records that these paths already drifted once — *"three paths,
+  three different answers about one limit."* Fixing this in a tenth copy would repeat the mistake.
+- **DECIDED (2026-08-21):** three layers — repoint the two tenants to real plan codes so nobody sits in the
+  bad state; a startup check that flags any tenant whose `plan_id` matches no plan; and **one shared
+  resolver** that distinguishes *plan-not-found* (deny — a configuration error) from *plan-found-with-NULL*
+  (unlimited, by design). Because the data is fixed first, the fail-closed path is a backstop that does not
+  fire in practice.
+
 ---
 
 ### ISSUE-382 — three smaller out-of-lane items from earlier in the session, filed late
