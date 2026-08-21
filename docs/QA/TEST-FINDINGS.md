@@ -8633,6 +8633,21 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **Suggested fix:** the honest options are (a) assert it through an observable that already exists — e.g. drive the rate limiter and show two different forwarded clients get independent buckets, or read back a persisted audit row's `ip_address` after an authenticated action; or (b) accept the gap explicitly. **Do not** add a production endpoint that echoes the client IP purely to make this testable.
 - **Deliberately not fixed in the BUG-308 PR:** every available route to a real observable (rate limiter, audit row) is materially more complex than the change under test, and inventing a test-only echo endpoint would be coverage theatre. Filed rather than faked.
 
+### ISSUE-386
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN (deferred by decision) · **Layer:** Backend
+- **Module:** Admin Console / Recruitment / Attendance · **US:** US-ADM-011, GAP-029
+- **Found:** 2026-08-21, while implementing the C1 default-workflow seed.
+- **Summary:** `WorkflowRuntimeService.CreateInstanceOnSubmitAsync` is wired for **three** entity types — `Leave` (`LeaveRequestService:299`), `Offer` (`OfferService:227`) and `Overtime` (`OvertimeService:261`) — but C1 seeds a default definition for **Leave only**. Offer and Overtime therefore still fall through the AC-11 legacy branch for every tenant, and the US-ADM-011 engine remains dormant for both.
+- **Why deferred rather than done in the same PR (deliberate):** the seeded step must reproduce the legacy approver *exactly*, or the seed silently reroutes real approvals to the wrong person. For Leave that equivalence is established and asserted — legacy routes to `employee.ReportsToEmployeeId` and `WorkflowApproverType.LineManager` resolves to the same user, pinned by `SeededWorkflow_RoutesToTheRequestersLineManager_SameAsLegacy_GAP029`. **For Offer and Overtime the legacy approver has not been verified to be the line manager.** Seeding a `LineManager` step for them on the assumption that it matches would be exactly the "plausible-sounding, unverified" mistake that this session already produced once (the false `Request.Scheme` consumer list in BUG-308).
+- **What closing this requires — per entity type, not in bulk:**
+  1. Read the legacy approval path (`OfferService` / `OvertimeService`) and identify who actually decides today.
+  2. Add an equivalence arm modelled on `SeededWorkflow_RoutesToTheRequestersLineManager_SameAsLegacy_GAP029`, asserting the seeded route activates a step assigned to that same person.
+  3. Only then extend `DefaultLeaveWorkflow` (or add a sibling builder) and the `DbInitializer` backfill.
+- **Note on effort:** the seeding machinery is already built and shared — `DefaultLeaveWorkflow.Build` plus `DbInitializer.EnsureDefaultLeaveWorkflowAsync`. The remaining cost is almost entirely the *verification*, which is the part that must not be skipped.
+- **Severity rationale:** MED because two shipped subsystems silently run a legacy path while the documentation and the admin UI imply the workflow engine governs them; not HIGH because approvals still work correctly via the legacy route — the loss is capability, not correctness.
+
+
 ### BUG-309
 
 - **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** Backend
@@ -8642,6 +8657,8 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **★ Self-inconsistent within the same method**, which is what makes it clearly a defect rather than a convention: the `LeaveApprovalHistory` row written a few lines away correctly resolves an employee id via `ResolveActingEmployeeIdAsync`. The notification does not.
 - **Why it is escalating now:** today this only affects tenants that hand-authored a workflow — a set that is currently **empty**, which is why nobody hit it. The C1 seed makes the workflow path the default for **every** tenant, converting a dormant defect into a universal one.
 - **Suggested fix:** use `ResolveActingEmployeeIdAsync`, exactly as the history row does, and add the approve/reject arm that would have caught it.
+
+
 - **FIX (2026-08-21), branch `fix/BUG-309-310-workflow-leave-decision`:** done exactly as suggested. Verified by `WorkflowApproval_NotifiesTheApproversEMPLOYEEId_NotTheirUserId_BUG309`, which drives a real approval through `LeaveRequestService` on Postgres and asserts the notified value is the manager's **employee** id **and explicitly is not their user id** — the two are distinct Guids in the fixture precisely so the confusion is observable. **Mutation-verified:** reverting to `_currentUser.UserId` turns that arm, and only that arm, RED. Stays OPEN until `/verify-fix` closes it.
 
 ### ISSUE-387
@@ -8663,4 +8680,6 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 - **★ The precise regression is the SNAPSHOT, not the stranding.** Under legacy, such a request sits plain-pending and becomes approvable the moment an admin assigns the manager. Under the engine the approver is resolved **once, at activation**, so assigning the manager afterwards does **not** re-resolve the step — the request is stuck permanently and the only remedy is data surgery.
 - **Why it is escalating now:** C1 makes the engine the default for every tenant, so every managerless employee's leave request becomes permanently unapprovable rather than temporarily unassigned.
 - **Suggested fix:** when the primary approver of a single-step definition resolves to null, fall back to `Legacy()` rather than creating an unapprovable instance — this preserves the self-healing behaviour legacy had. Alternative (needs a product decision): route to a Tenant Admin.
+
+
 - **FIX (2026-08-21), same branch:** the `Legacy()` fallback, guarded by `StepHasAReachableApproverAsync`. A `Role` step is deliberately **not** treated as unresolved — it assigns no user by design and authorization checks role membership at decision time, so treating its null assignment as a failure would disable role-based approval entirely. Verified by 4 arms including one proving **no instance row is written** (a half-created instance would still mark the request workflow-driven). **Mutation-verified in BOTH directions:** removing the guard turns 3 arms RED; making it over-trigger turns the "a resolvable manager still routes through the engine" arm RED — so it cannot silently degrade into "always fall back". Stays OPEN until `/verify-fix` closes it.

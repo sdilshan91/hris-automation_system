@@ -10,6 +10,7 @@ using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using HRM.Infrastructure.Persistence.Seed;
 
 namespace HRM.Infrastructure.Services;
 
@@ -215,6 +216,13 @@ public sealed class TenantProvisioningService : ITenantProvisioningService
         // types (subdomain uniqueness is enforced above), so there is no double-seed risk.
         _db.LeaveTypes.AddRange(LeaveTypeService.GetDefaultLeaveTypes(tenant.Id));
         SeedDefaultShift(tenant.Id, now, actor);
+
+        // GAP-029 / C1: seed the default leave-approval workflow so the US-ADM-011 engine is the live path
+        // for this tenant from day one. Without it WorkflowRuntimeService finds no Active definition and
+        // returns Legacy(), which is why the engine sat dormant for every tenant since it shipped.
+        // Built by the SAME builder the DbInitializer backfill uses, so a newly-provisioned tenant and a
+        // backfilled one cannot drift apart -- unlike the default shift above, which is seeded twice.
+        _db.WorkflowDefinitions.Add(DefaultLeaveWorkflow.Build(tenant.Id, now, actor));
 
         // ── Lifecycle event (AC-4) + structured audit (NFR-3) ───────────────
         var detail = new

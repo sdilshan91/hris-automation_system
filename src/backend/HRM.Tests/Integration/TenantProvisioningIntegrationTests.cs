@@ -143,6 +143,51 @@ public sealed class TenantProvisioningIntegrationTests
             Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// GAP-029 / C1 — provisioning must seed the default leave-approval workflow, INSIDE the same unit of
+    /// work as everything else it writes.
+    ///
+    /// WHY THIS ARM EXISTS. The seed is a single `_db.WorkflowDefinitions.Add(...)` before the method's one
+    /// `SaveChangesAsync`. That placement is load-bearing and invisible: a refactor that moved the Add below
+    /// the save, or that introduced an early return between them, would silently drop the seed — the tenant
+    /// would provision successfully, look correct, and quietly run the legacy approval path forever, which is
+    /// exactly the dormancy GAP-029 is about. Nothing else would turn red.
+    ///
+    /// It also pins the STEP, not just the definition: a definition with no steps makes WorkflowEvaluator
+    /// return zero applicable steps, and the runtime falls back to Legacy() — a seed that exists in the
+    /// database and does nothing at all.
+    /// </summary>
+    [Fact]
+    public async Task Provision_SeedsTheDefaultLeaveWorkflow_WithItsStep_GAP029()
+    {
+        var planId = await SeedPlanAsync(trialDays: 14);
+        var (service, _) = Service();
+
+        (await service.ProvisionAsync(Input(planId))).IsSuccess.Should().BeTrue();
+
+        using var db = Db();
+        var tenant = await db.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == "acme");
+
+        var definition = await db.WorkflowDefinitions.IgnoreQueryFilters()
+            .SingleAsync(w => w.TenantId == tenant.Id && w.EntityType == WorkflowEntityType.Leave);
+
+        definition.Status.Should().Be(WorkflowStatus.Active,
+            "a Draft definition is invisible to WorkflowRuntimeService, which matches on Status == Active — "
+            + "seeding a Draft would leave the engine exactly as dormant as seeding nothing");
+        definition.IsDefault.Should().BeTrue();
+
+        var steps = await db.WorkflowSteps.IgnoreQueryFilters()
+            .Where(st => st.WorkflowDefinitionId == definition.Id).ToListAsync();
+
+        steps.Should().ContainSingle("legacy leave approval is single-level, so the seeded route must be too");
+        steps[0].ApproverType.Should().Be(WorkflowApproverType.LineManager,
+            "legacy routes to the requester's reporting manager; any other approver type silently reroutes "
+            + "every new tenant's leave approvals to someone who never received them");
+        steps[0].SlaHours.Should().Be(0,
+            "SlaHours > 0 gives the step an SLA due date and starts escalating leave requests — behaviour "
+            + "the legacy path never had");
+    }
+
     // ── AC-3: existing global user is linked, not duplicated ────────────────
 
     [Fact]
