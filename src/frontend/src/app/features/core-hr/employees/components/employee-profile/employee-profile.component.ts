@@ -64,6 +64,7 @@ import {
   IJobTitle,
   IEmploymentTypeOption,
 } from '../../../job-titles/models/job-title.models';
+import { EmployeePhotoDirective } from '../../directives/employee-photo.directive';
 
 /**
  * US-CHR-002: Comprehensive Employee Profile view + edit component.
@@ -77,7 +78,8 @@ import {
 @Component({
   selector: 'app-employee-profile',
   standalone: true,
-  imports: [CommonModule, A11yModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent, EmployeeLeaveOverridesComponent, EmployeeCompensationComponent],
+  imports: [
+    EmployeePhotoDirective,CommonModule, A11yModule, ReactiveFormsModule, FormsModule, EmployeeDocumentsComponent, EmployeeLeaveOverridesComponent, EmployeeCompensationComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -1417,7 +1419,7 @@ import {
                     >
                       <div class="manager-avatar">
                         @if (emp.profilePhotoUrl) {
-                          <img [src]="emp.profilePhotoUrl" [alt]="emp.firstName + ' ' + emp.lastName" class="w-full h-full object-cover" />
+                          <img [appEmployeePhoto]="emp.employeeId" [alt]="emp.firstName + ' ' + emp.lastName" class="w-full h-full object-cover" />
                         } @else {
                           <span class="text-xs">{{ getInitialsFor(emp.firstName, emp.lastName) }}</span>
                         }

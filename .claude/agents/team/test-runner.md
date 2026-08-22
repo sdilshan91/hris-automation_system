@@ -37,7 +37,6 @@ tools:
   - mcp__github__create_issue
   - Write
   - Edit
-model: claude-opus-4-8
 maxTurns: 60
 permissionMode: acceptEdits
 memory: project
@@ -91,7 +90,10 @@ still fails, append the re-test evidence to the existing finding and leave it `O
 ## What you execute (by layer)
 
 1. **Automated suites already in the repo** (preferred when a TC is bound):
-   - Backend: `dotnet test src/backend/HRM.sln` (xUnit + Testcontainers + `WebApplicationFactory`). Filter
+   - Backend: `bash scripts/run-backend-tests.sh src/backend/HRM.sln` (xUnit + Testcontainers +
+     `WebApplicationFactory`). **Never raw `dotnet test`** — ISSUE-312: it can exit 0 on an ABORTED run,
+     so a partial run is indistinguishable from a green suite and you would file a false `pass` verdict
+     into TEST-STATUS.md. The wrapper forces a non-zero exit on any abort marker. Filter
      by trait/name to scope: `--filter "TC=TC-XXX-NNN"` or by FQN. *(Backend HTTP-integration needs Docker
      for Testcontainers — if Docker is down, mark those `blocked: docker`.)*
    - Frontend unit: `npx ng test --watch=false --browsers=ChromeHeadless` (Karma + Jasmine), scope with `--include`.

@@ -489,6 +489,33 @@ public sealed class EmployeesController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/tenant/employees/{employeeId}/photo
+    /// GAP-027: streams the profile photo. Avatars were broken images — the stored ProfilePhotoUrl is
+    /// `/{tenantId}/{path}` and the upload handed back `/files/{tenantId}/{path}`, neither of which any
+    /// route serves.
+    /// </summary>
+    /// <remarks>
+    /// Streamed rather than linked because <c>&lt;img src&gt;</c> cannot carry a Bearer token, and in this
+    /// app the access token IS a Bearer header — only the refresh token is a cookie. The frontend fetches
+    /// this through the auth interceptor and binds an object URL.
+    /// </remarks>
+    [HttpGet("{employeeId:guid}/photo")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetProfilePhoto(
+        Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new GetProfilePhotoQuery(employeeId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        var file = result.Value!;
+        return File(file.Content, file.ContentType, file.FileName);
+    }
+
+    /// <summary>
     /// GET /api/v1/tenant/employees/{employeeId}/documents/{documentId}/download
     /// Generates a short-lived signed URL for downloading a document (US-CHR-008 FR-6, AC-4).
     /// </summary>

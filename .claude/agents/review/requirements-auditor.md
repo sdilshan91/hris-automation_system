@@ -6,6 +6,7 @@ tools:
   - Glob
   - Grep
   - Bash
+  - Agent
 maxTurns: 140
 memory: project
 ---

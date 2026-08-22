@@ -6,7 +6,6 @@ tools:
   - Glob
   - Grep
   - Bash
-model: claude-opus-4-8
 maxTurns: 30
 memory: project
 ---
@@ -34,7 +33,7 @@ is the distinction **"tests pass" ≠ "the system works."**
 - **Frontend (`src/frontend`, Angular 20):** Karma + Jasmine (`*.spec.ts`), Playwright E2E,
   `@axe-core/playwright` for a11y.
 - **Run a single spec** to confirm a suspicion (read-only execution is fine):
-  `dotnet test --filter <Name>` · `ng test --include='**/<x>.spec.ts' --watch=false --browsers=ChromeHeadless`.
+  `bash scripts/run-backend-tests.sh --filter <Name>` (not raw `dotnet test` — ISSUE-312) · `ng test --include='**/<x>.spec.ts' --watch=false --browsers=ChromeHeadless`.
 
 ## Fake-test patterns (detect and flag ALL of these)
 1. **Mock everything.** The system under test is itself mocked; >2 mocks in one test; DB, HTTP, and

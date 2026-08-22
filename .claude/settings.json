@@ -1,6 +1,5 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions",
     "allow": [
       "Read",
       "Glob",
@@ -21,7 +20,17 @@
       "mcp__playwright__*",
       "mcp__chrome-devtools__*"
     ],
-    "deny": [],
+    "deny": [
+      "Read(./src/backend/HRM.Api/uploads/**)",
+      "Write(./src/backend/HRM.Api/uploads/**)",
+      "Edit(./src/backend/HRM.Api/uploads/**)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Write(./.env)",
+      "Write(./.env.*)",
+      "Edit(./.env)",
+      "Edit(./.env.*)"
+    ],
     "ask": [
       "Bash(rm *)",
       "Bash(rmdir *)",
@@ -53,75 +62,9 @@
       "PowerShell(Remove-Item *)",
       "PowerShell(Stop-Process *)"
     ],
+    "defaultMode": "bypassPermissions",
     "additionalDirectories": [
       "C:\\HRIS\\.claude"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/secret-guard.py\"", "timeout": 5 },
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/test-integrity-guard.py\"", "timeout": 5 },
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/freeze-guard.py\"", "timeout": 5 },
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/config-protection-guard.py\"", "timeout": 5 },
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/antipattern-advisor.py\"", "timeout": 5 }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/careful-guard.py\"", "timeout": 5 },
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/no-verify-guard.py\"", "timeout": 5 }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/post-user-story-commit.sh",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/post-dev-commit.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          { "type": "command", "command": "python .claude/hooks/scripts/hooks.py", "timeout": 5 },
-          { "type": "command", "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/vault-compliance-advisor.py\"", "timeout": 5 }
-        ]
-      }
     ]
   },
   "skillOverrides": {
@@ -146,6 +89,137 @@
     "skills-index-snippets": "off",
     "slopwatch": "off"
   },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/secret-guard.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/test-integrity-guard.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/freeze-guard.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/config-protection-guard.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/antipattern-advisor.py\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/careful-guard.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/no-verify-guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-user-story-commit.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/post-dev-commit.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/scripts/hooks.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/scripts/hooks.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/scripts/hooks.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/scripts/hooks.py",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/scripts/vault-compliance-advisor.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "claude-code-setup@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "csharp-lsp@claude-plugins-official": true,
+    "dotnet-skills@dotnet-skills": true,
+    "feature-dev@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "hookify@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true
+  },
   "extraKnownMarketplaces": {
     "dotnet-skills": {
       "source": {
@@ -153,9 +227,5 @@
         "repo": "Aaronontheweb/dotnet-skills"
       }
     }
-  },
-  "enabledPlugins": {
-    "frontend-design@claude-plugins-official": true,
-    "dotnet-skills@dotnet-skills": true
   }
 }

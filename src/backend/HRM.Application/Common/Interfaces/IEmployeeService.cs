@@ -9,6 +9,21 @@ namespace HRM.Application.Common.Interfaces;
 /// </summary>
 public interface IEmployeeService
 {
+    /// <summary>
+    /// GAP-027: streams an employee's profile photo from an authenticated endpoint.
+    /// </summary>
+    /// <remarks>
+    /// Photos were DOUBLY broken: the stored <c>ProfilePhotoUrl</c> is <c>/{tenantId}/{path}</c> (what
+    /// <c>UploadAsync</c> returns) and the value handed back on upload was <c>/files/{tenantId}/{path}</c>.
+    /// Neither is served by any route, so every avatar was a broken image.
+    ///
+    /// <para>Streamed rather than URL-linked because <c>&lt;img src&gt;</c> cannot carry a Bearer token —
+    /// and in this app the access token IS a Bearer header (only the refresh token is a cookie). The
+    /// frontend fetches the bytes through the authenticating interceptor and binds an object URL.</para>
+    /// </remarks>
+    Task<Result<StoredFileResult>> GetProfilePhotoAsync(
+        Guid employeeId, CancellationToken cancellationToken = default);
+
     Task<Result<EmployeeDto>> CreateAsync(
         CreateEmployeeRequest request,
         CancellationToken cancellationToken = default);

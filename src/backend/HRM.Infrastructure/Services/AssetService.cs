@@ -376,9 +376,14 @@ public sealed class AssetService : IAssetService
 
     private AssetDto ToDto(Asset a)
     {
+        // GAP-027: this used to call GetSignedUrl(...), which fabricates `/files/{tenantId}/{path}` — a
+        // scheme no route serves. NOTHING in the frontend reads this field (verified by grep across the app),
+        // so no download endpoint was built for it: an endpoint with no consumer is speculative work, and a
+        // fabricated URL sitting on a DTO invites someone to render it and inherit the 404.
+        //
+        // The key itself is still on the row. If this ever needs to be downloadable, add a streaming endpoint
+        // the way EmployeesController and OnboardingChecklistsController now do — do not reinstate a URL.
         string? ackUrl = null;
-        if (!string.IsNullOrEmpty(a.AcknowledgmentDocKey))
-            ackUrl = _fileStorage.GetSignedUrl(_tenantContext.TenantId, a.AcknowledgmentDocKey, TimeSpan.FromMinutes(5));
 
         return new AssetDto
         {

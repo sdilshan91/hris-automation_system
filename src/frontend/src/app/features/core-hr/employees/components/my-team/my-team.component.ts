@@ -16,6 +16,7 @@ import {
   getStatusBadgeClasses,
   getInitialsFromName,
 } from '../../models/employee.models';
+import { EmployeePhotoDirective } from '../../directives/employee-photo.directive';
 
 /**
  * US-CHR-011 AC-4 / FR-5: "My Team" direct reports view for managers.
@@ -29,7 +30,8 @@ import {
 @Component({
   selector: 'app-my-team',
   standalone: true,
-  imports: [CommonModule],
+  imports: [
+    EmployeePhotoDirective,CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeIn', [
@@ -124,7 +126,7 @@ import {
                 <div class="avatar-circle">
                   @if (report.profilePhotoUrl) {
                     <img
-                      [src]="report.profilePhotoUrl"
+                      [appEmployeePhoto]="report.employeeId"
                       [alt]="report.firstName + ' ' + report.lastName"
                       class="w-full h-full object-cover"
                     />

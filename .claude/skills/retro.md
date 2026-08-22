@@ -95,6 +95,42 @@ exact before/after text — ranked, at most three. It does **not** edit `.claude
 three proposals means you are below the two-occurrence bar. Same contract as `@principal-advisor` and
 `/gap-analysis`: the agent reports, the human decides.
 
+## Setup-drift pass (does the documented setup still exist?)
+
+The skill-friction pass asks *are the instructions good*. This one asks the cheaper, prior question:
+**are they still true?** It exists because on 2026-08-22 a setup scan found CLAUDE.md — the file loaded
+into every agent run, which states its instructions override default behaviour — asserting "there is
+currently no backend test project" while `HRM.Tests` held 575 test files, and documenting `npm run lint`
+as a working command when `angular.json` had no lint target and ESLint had never been installed. Neither
+was a bad instruction. Both were instructions describing a repo that no longer existed.
+
+**Run the mechanical checks first, and only report what they fail on.** Most of this is now guarded by
+[ClaudeMdAccuracyTests](../../src/backend/HRM.Tests/Unit/ClaudeMdAccuracyTests.cs) in CI, so a green
+suite means these four are already clean — start from what the guard *cannot* see:
+
+| Check | How | Guarded in CI? |
+|---|---|---|
+| Documented `npm run X` resolves | vs `src/frontend/package.json` scripts | ✅ yes |
+| Documented `scripts/*.sh` exists | filesystem | ✅ yes |
+| Relative markdown links in CLAUDE.md resolve | filesystem | ✅ yes |
+| `dotnet test` never documented bare (ISSUE-312) | line scan | ✅ yes |
+| **Hook `command:` paths in `.claude/settings.json` exist** | filesystem | ❌ **no — check by hand** |
+| **Agents/skills named in CLAUDE.md's tables exist in `.claude/`** (and the reverse: files present but undocumented) | filesystem, both directions | ❌ **no** |
+| **`.mcp.json` servers vs what CLAUDE.md claims is wired** | read both | ❌ **no** |
+| **`skillOverrides` mute list vs the plugin's current skill set** | plugin cache | ❌ **no — drifts silently when a plugin gains skills** |
+| **Lint/format gates still wired** (`lint` target present, `.editorconfig` present, neither newly bypassed) | `angular.json`, repo root | ❌ **no** |
+
+**Prose accuracy is not mechanically checkable — say so rather than guessing.** The guard test catches
+dead links and missing scripts; it cannot tell that a paragraph describing the architecture went stale.
+Where a claim looks doubtful but you cannot verify it from the filesystem, flag it as *unverified* and
+name the check a human would run. Do not assert drift you have not demonstrated — this repo already
+carries 36+ ledger contradictions from confident prose, and the pessimistic direction (declaring
+something broken that works) has cost the most.
+
+**Same contract as every other pass: report-only, ≤3 proposals, the human applies them.** Drift found
+here that is a *product* defect (not a docs defect) goes to `docs/QA/TEST-FINDINGS.md` via
+[`/auto-heal`](auto-heal.md), not into the retro note.
+
 ## Output
 
 Write to `docs/vault/retros/{YYYY-MM-DD}.md` (create the folder if absent) with vault frontmatter,
@@ -130,6 +166,12 @@ window: {start} → {today}
 - **{friction}** — seen in {occurrence 1}, {occurrence 2}.
   **Proposed:** `{file}` § {section} — {change}. Why structural, not prose: {reason}.
 - _(or: nothing cleared the two-occurrence bar this window.)_
+
+## Setup drift
+- **{claim}** — CLAUDE.md/skill says `{documented}`, reality is `{actual}` ({file:line evidence}).
+  **Proposed:** {fix}. **Blast radius:** {who reads this and acts on it}.
+- **Unverified:** {claim that looks stale but could not be checked from the filesystem} — a human should {check}.
+- _(or: `ClaudeMdAccuracyTests` green and the un-guarded checks above all clean.)_
 
 ## Action items
 - [ ] {owned, concrete}

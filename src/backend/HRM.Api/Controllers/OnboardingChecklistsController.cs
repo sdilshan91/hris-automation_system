@@ -29,6 +29,27 @@ public sealed class OnboardingChecklistsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/onboarding/checklists/tasks/{taskInstanceId}/attachment
+    /// GAP-027: streams a task's attachment. my-checklist rendered the old value as an anchor href, and it
+    /// pointed at `/files/{tenantId}/{path}` — a scheme no route serves — so the link opened a 404.
+    /// </summary>
+    [HttpGet("tasks/{taskInstanceId:guid}/attachment")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DownloadTaskAttachment(
+        Guid taskInstanceId, CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new DownloadTaskAttachmentQuery(taskInstanceId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
+
+        var file = result.Value!;
+        return File(file.Content, file.ContentType, file.FileName);
+    }
+
+    /// <summary>
     /// GET /api/v1/onboarding/checklists/applicable-templates?employeeId={id}
     /// AC-1/FR-1: lists active templates applicable to an employee (dept + job title + universal).
     /// </summary>

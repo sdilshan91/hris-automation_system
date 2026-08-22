@@ -93,6 +93,16 @@ public interface IOnboardingChecklistService
     /// </summary>
     Task<Result<MyChecklistDto>> GetMyChecklistAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// GAP-027: streams a task's attachment from an authenticated endpoint.
+    /// </summary>
+    /// <remarks>
+    /// The DTO used to carry a <c>/files/{tenantId}/{path}</c> URL, rendered by my-checklist as
+    /// <c>&lt;a [href]&gt;</c>. No route served it, so the link opened a 404 in a new tab.
+    /// </remarks>
+    Task<Result<StoredFileResult>> DownloadTaskAttachmentAsync(
+        Guid taskInstanceId, CancellationToken cancellationToken = default);
+
     /// <summary>US-ONB-003 AC-1/FR-4: the cheap progress summary for the dashboard widget.</summary>
     Task<Result<MyChecklistProgressDto>> GetMyChecklistProgressAsync(CancellationToken cancellationToken = default);
 

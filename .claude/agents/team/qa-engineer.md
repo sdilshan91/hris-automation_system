@@ -7,11 +7,11 @@ tools:
   - Glob
   - Grep
   - Bash
+  - Agent
   - mcp__github__create_branch
   - mcp__github__push_files
   - mcp__github__create_pull_request
   - mcp__github__create_issue
-model: claude-opus-4-8
 maxTurns: 40
 permissionMode: acceptEdits
 memory: project

@@ -49,7 +49,9 @@ before the next — do not stack colliding branches.)
      is not done.
 6. **Anti-theater audit** — `@test-authenticator` confirms the new regression TC actually exercises
    the bug (not a tautology / happy-path-only). If it flags theater, send it back to `@qa-engineer`.
-7. **Verify gate** — `dotnet build src/backend/HRM.sln` → `dotnet test src/backend/HRM.sln --no-build`
+7. **Verify gate** — `dotnet build src/backend/HRM.sln` →
+   `bash scripts/run-backend-tests.sh src/backend/HRM.sln --no-build` (**never raw `dotnet test`** —
+   ISSUE-312: it can exit 0 on an ABORTED run, so a partial run reads as a full pass)
    → (FE) `ng build` + `ng test --watch=false`. Any failure enters the `/error-recovery` remediation
    loop: **max 3 attempts**, hand the verbatim errors back to the owning agent, re-run the whole gate.
    **Never weaken/skip/delete a test to go green.** If it can't be fixed cleanly in 3 attempts, revert

@@ -22,7 +22,9 @@
             "outputPath": "dist/hris-frontend",
             "index": "src/index.html",
             "browser": "src/main.ts",
-            "polyfills": ["zone.js"],
+            "polyfills": [
+              "zone.js"
+            ],
             "tsConfig": "tsconfig.app.json",
             "assets": [
               {
@@ -73,7 +75,9 @@
           "options": {
             "host": "127.0.0.1",
             "proxyConfig": "proxy.conf.json",
-            "allowedHosts": [".myhrm.org"]
+            "allowedHosts": [
+              ".myhrm.org"
+            ]
           },
           "configurations": {
             "production": {
@@ -89,7 +93,10 @@
           "builder": "@angular-devkit/build-angular:karma",
           "options": {
             "karmaConfig": "karma.conf.js",
-            "polyfills": ["zone.js", "zone.js/testing"],
+            "polyfills": [
+              "zone.js",
+              "zone.js/testing"
+            ],
             "tsConfig": "tsconfig.spec.json",
             "assets": [
               {
@@ -104,11 +111,23 @@
             ],
             "scripts": []
           }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
+          }
         }
       }
     }
   },
   "cli": {
-    "analytics": "0c943386-4c01-4d54-8f35-8be9c8b5f724"
+    "analytics": "0c943386-4c01-4d54-8f35-8be9c8b5f724",
+    "schematicCollections": [
+      "angular-eslint"
+    ]
   }
 }
