@@ -8,7 +8,6 @@ import { HttpEventType } from '@angular/common/http';
 import { DocumentService } from './document.service';
 import {
   IEmployeeDocument,
-  IDocumentDownloadResponse,
   IUploadDocumentRequest,
 } from '../models/document.models';
 import { environment } from '../../../../../environments/environment';
@@ -148,41 +147,45 @@ describe('DocumentService', () => {
     });
   });
 
-  describe('getDownloadUrl', () => {
-    it('maps the wire `signedUrl` onto the view-model `downloadUrl` (fixes the dead download link)', () => {
-      // REAL wire shape — EmployeesDocumentDownloadResult { signedUrl, expiresAt, fileName, mimeType }.
-      // The API never sends `downloadUrl`. The previous fixture invented `downloadUrl` and only asserted it
-      // *contained* 'signed-url', which certified a field that does not exist and hid the fact that the page's
-      // `a.href = response.downloadUrl` resolved to `undefined`. This arm flushes the true shape, so it FAILS
-      // against the un-migrated raw cast (downloadUrl === undefined) and passes once the mapper renames it.
-      const wire = {
-        signedUrl: 'https://storage.example.com/signed-url?token=abc',
-        expiresAt: '2026-06-12T10:05:00Z',
-        fileName: 'contract.pdf',
-        mimeType: 'application/pdf',
-      };
+  describe('downloadDocument (GAP-027)', () => {
+    // The old specs mocked `signedUrl: 'https://storage.example.com/signed-url?token=abc'` — an S3-looking
+    // URL the API has NEVER produced. The real value was `/files/{tenantId}/{path}`, a relative path no
+    // route serves, which the page set as an anchor href. The fixture's plausibility is precisely what hid
+    // the dead link; the endpoint now streams the file instead.
 
-      let received: IDocumentDownloadResponse | undefined;
-      service.getDownloadUrl(employeeId, 'doc-1').subscribe((resp) => (received = resp));
+    it('requests the file as a Blob, authenticated', () => {
+      let received: Blob | undefined;
+      service.downloadDocument(employeeId, 'doc-1').subscribe((b) => (received = b));
 
       const req = httpMock.expectOne(`${docUrl}/doc-1/download`);
       expect(req.request.method).toBe('GET');
-      expect(req.request.withCredentials).toBeTrue();
-      req.flush(wire);
+      expect(req.request.withCredentials)
+        .withContext('a bare /files/... navigation could not carry credentials; this can')
+        .toBeTrue();
+      expect(req.request.responseType)
+        .withContext('the endpoint streams bytes, not JSON')
+        .toBe('blob');
 
-      expect(received!.downloadUrl).toBe('https://storage.example.com/signed-url?token=abc');
-      expect(received!.expiresAt).toBe('2026-06-12T10:05:00Z');
+      const blob = new Blob(['%PDF-1.4'], { type: 'application/pdf' });
+      req.flush(blob);
+
+      expect(received).toBeTruthy();
+      expect(received!.type).toBe('application/pdf');
     });
 
-    it('defaults `downloadUrl` to empty string when the wire omits `signedUrl`', () => {
-      // Every generated field is optional; the mapper must not leak `undefined` into `a.href`.
-      let received: IDocumentDownloadResponse | undefined;
-      service.getDownloadUrl(employeeId, 'doc-2').subscribe((resp) => (received = resp));
+    it('surfaces a 404 when the stored file is gone', () => {
+      // The row can outlive its blob (failed upload, manual deletion). That must be an error, not a
+      // silently empty file that looks like a successful download of nothing.
+      let status: number | undefined;
+      service.downloadDocument(employeeId, 'doc-2').subscribe({
+        error: (e: { status: number }) => (status = e.status),
+      });
 
-      const req = httpMock.expectOne(`${docUrl}/doc-2/download`);
-      req.flush({ expiresAt: '2026-06-12T10:05:00Z' });
+      httpMock
+        .expectOne(`${docUrl}/doc-2/download`)
+        .flush(null, { status: 404, statusText: 'Not Found' });
 
-      expect(received!.downloadUrl).toBe('');
+      expect(status).toBe(404);
     });
   });
 

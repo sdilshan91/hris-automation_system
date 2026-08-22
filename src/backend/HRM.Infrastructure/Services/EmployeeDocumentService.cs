@@ -305,6 +305,51 @@ public sealed class EmployeeDocumentService : IEmployeeDocumentService
     }
 
     /// <inheritdoc />
+    /// <inheritdoc />
+    public async Task<Result<DocumentContentResult>> DownloadAsync(
+        Guid employeeId, Guid documentId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<DocumentContentResult>.Failure("Tenant context is not resolved.", 400);
+
+        // Tenant-scoped by the global query filter; the employeeId predicate stops a document being read
+        // through the wrong employee's route.
+        var document = await _dbContext.EmployeeDocuments
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.Id == documentId && d.EmployeeId == employeeId, cancellationToken);
+
+        if (document is null)
+            return Result<DocumentContentResult>.Failure("Document not found.", 404);
+
+        await using var stream = await _fileStorage.OpenReadAsync(
+            _tenantContext.TenantId, document.StorageKey, cancellationToken);
+
+        if (stream is null)
+        {
+            // The row exists but the blob does not — a real state (failed upload, manual deletion). Say so
+            // rather than returning an empty file, which would look like a successful download of nothing.
+            _logger.LogWarning(
+                "Document {DocumentId} for employee {EmployeeId} has no stored file at {StorageKey} "
+                + "(tenant {TenantId}).",
+                document.Id, employeeId, document.StorageKey, _tenantContext.TenantId);
+            return Result<DocumentContentResult>.Failure("The stored file is no longer available.", 404);
+        }
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        // ISSUE-024 (FR-7): the PII access-audit belongs HERE. This is the call that actually discloses the
+        // bytes; the old signed-URL call only promised them, and the URL it promised never worked.
+        AddDocumentAudit("EmployeeDocument.Downloaded", document.Id, employeeId, before: null, after: null,
+            $"Document '{document.FileName}' downloaded for employee {employeeId}.");
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<DocumentContentResult>.Success(new DocumentContentResult(
+            buffer.ToArray(),
+            string.IsNullOrWhiteSpace(document.MimeType) ? "application/octet-stream" : document.MimeType,
+            document.FileName));
+    }
+
     public async Task<Result<DocumentDownloadResult>> GetDownloadUrlAsync(
         Guid employeeId,
         Guid documentId,

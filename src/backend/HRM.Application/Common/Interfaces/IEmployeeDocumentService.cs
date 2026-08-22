@@ -34,6 +34,17 @@ public interface IEmployeeDocumentService
     /// Generates a short-lived signed download URL for a document (FR-6, AC-4).
     /// Enforces authorization: HR Officer any, Employee own-record only, Manager blocked.
     /// </summary>
+    /// <summary>
+    /// GAP-027: streams the document's bytes from an authenticated endpoint.
+    /// </summary>
+    /// <remarks>
+    /// Supersedes <see cref="GetDownloadUrlAsync"/> for delivery — that returned a
+    /// <c>/files/{tenantId}/{path}</c> URL no route serves, so the download link 404'd. The audit row
+    /// (ISSUE-024/FR-7) moves here, because THIS is the call that actually discloses the file.
+    /// </remarks>
+    Task<Result<DocumentContentResult>> DownloadAsync(
+        Guid employeeId, Guid documentId, CancellationToken cancellationToken = default);
+
     Task<Result<DocumentDownloadResult>> GetDownloadUrlAsync(
         Guid employeeId,
         Guid documentId,

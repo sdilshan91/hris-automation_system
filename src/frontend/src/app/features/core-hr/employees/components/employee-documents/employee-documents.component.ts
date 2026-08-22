@@ -923,19 +923,23 @@ export class EmployeeDocumentsComponent implements OnInit, OnDestroy {
     this.downloadingId.set(doc.documentId);
 
     this.documentService
-      .getDownloadUrl(this.employeeId(), doc.documentId)
+      .downloadDocument(this.employeeId(), doc.documentId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
+        next: (blob) => {
           this.downloadingId.set(null);
-          // Open signed URL in a hidden link to trigger download
+          // GAP-027: the endpoint streams the file now. This used to set `a.href` to a signed URL of the
+          // form `/files/{tenantId}/{path}` — which no route served — so the click 404'd every time.
+          const objectUrl = URL.createObjectURL(blob);
           const a = document.createElement('a');
-          a.href = response.downloadUrl;
+          a.href = objectUrl;
           a.download = doc.fileName;
           a.rel = 'noopener';
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
+          // Release the object URL, or every download leaks its blob for the life of the page.
+          URL.revokeObjectURL(objectUrl);
         },
         error: (err: HttpErrorResponse) => {
           this.downloadingId.set(null);

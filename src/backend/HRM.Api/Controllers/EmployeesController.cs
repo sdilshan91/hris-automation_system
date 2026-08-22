@@ -494,7 +494,7 @@ public sealed class EmployeesController : ControllerBase
     /// </summary>
     [HttpGet("{employeeId:guid}/documents/{documentId:guid}/download")]
     [Authorize] // Permission check at service level
-    [ProducesResponseType(typeof(ApiResponse<DocumentDownloadResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DownloadDocument(
@@ -502,13 +502,19 @@ public sealed class EmployeesController : ControllerBase
         Guid documentId,
         CancellationToken cancellationToken = default)
     {
-        var query = new GetDocumentDownloadQuery(employeeId, documentId);
-        var result = await _mediator.Send(query, cancellationToken);
+        // GAP-027: STREAM the bytes. This used to return a signed URL of the form
+        // `/files/{tenantId}/{path}` — a scheme no route has ever served — which the frontend set as an
+        // anchor href, so every Download click navigated to a 404. Streaming matches what payslips, data
+        // exports and HR report exports already do, and is genuinely authenticated: a bare `/files/...`
+        // navigation cannot carry a bearer token.
+        var result = await _mediator.Send(
+            new DownloadEmployeeDocumentQuery(employeeId, documentId), cancellationToken);
 
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 404, ApiResponse.Fail(result.Error!));
 
-        return Ok(ApiResponse<DocumentDownloadResult>.Ok(result.Value!));
+        var file = result.Value!;
+        return File(file.Content, file.ContentType, file.FileName);
     }
 
     /// <summary>

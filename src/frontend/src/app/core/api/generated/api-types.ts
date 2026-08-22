@@ -20201,11 +20201,7 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": components["schemas"]["ApiResponseOfEmployeesDocumentDownloadResult"];
-                        "text/json": components["schemas"]["ApiResponseOfEmployeesDocumentDownloadResult"];
-                        "text/plain": components["schemas"]["ApiResponseOfEmployeesDocumentDownloadResult"];
-                    };
+                    content?: never;
                 };
                 /** @description Forbidden */
                 403: {
@@ -31726,15 +31722,6 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
-        ApiResponseOfEmployeesDocumentDownloadResult: {
-            code?: string | null;
-            data?: components["schemas"]["EmployeesDocumentDownloadResult"];
-            errors?: string[] | null;
-            message?: string | null;
-            success?: boolean;
-            /** Format: date-time */
-            timestamp?: string;
-        };
         ApiResponseOfEmployeesEmployeeDirectoryResult: {
             code?: string | null;
             data?: components["schemas"]["EmployeesEmployeeDirectoryResult"];
@@ -35575,13 +35562,6 @@ export interface components {
             /** Format: uuid */
             managerId?: string;
             managerName?: string | null;
-        };
-        EmployeesDocumentDownloadResult: {
-            /** Format: date-time */
-            expiresAt?: string;
-            fileName?: string | null;
-            mimeType?: string | null;
-            signedUrl?: string | null;
         };
         EmployeesEducationDto: {
             degree?: string | null;
