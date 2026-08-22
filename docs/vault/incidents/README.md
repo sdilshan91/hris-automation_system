@@ -1,3 +1,8 @@
+---
+type: index
+description: Bug and incident post-mortems
+---
+
 # Incidents
 
 Bugs, production incidents, post-mortems. The goal is to capture the *why* and the *lesson*, not to re-document the fix (the commit does that).

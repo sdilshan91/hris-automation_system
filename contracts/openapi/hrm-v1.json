@@ -19440,6 +19440,9 @@
       "OnboardingOffboardingInstanceDto": {
         "additionalProperties": false,
         "properties": {
+          "canComplete": {
+            "type": "boolean"
+          },
           "clearanceSummary": {
             "$ref": "#/components/schemas/OnboardingClearanceSummaryDto"
           },
@@ -19487,6 +19490,13 @@
           "notes": {
             "nullable": true,
             "type": "string"
+          },
+          "pendingMandatoryItems": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingPendingMandatoryItemDto"
+            },
+            "nullable": true,
+            "type": "array"
           },
           "progressPercent": {
             "format": "int32",

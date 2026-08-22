@@ -1,0 +1,19 @@
+---
+name: project-performance-tc-conventions
+description: Numbering and matrix conventions for the Performance Management module IEEE 829 test cases (TC-PRF-{NNN}-XX per-story + TC-PRF-ISO-NNN running counter), established by US-PRF-001
+metadata:
+  type: project
+---
+
+Performance Management test cases (`test-cases/performance/`) were established by US-PRF-001 (first Performance story; created the dir + TEST-MATRIX + the root Performance Management section in TRACEABILITY-MATRIX). The module ADOPTS the Recruitment/Payroll per-story-suffix scheme (see [[project-payroll-tc-conventions]], [[project-recruitment-tc-conventions]]), NOT the Leave/Attendance single-running-counter scheme.
+
+- **Functional ID scheme:** `TC-PRF-{NNN}-XX` (zero-padded story + two-digit suffix). US-PRF-001 used TC-PRF-001-01..12. Next story = TC-PRF-002-01..NN (do NOT continue a global counter).
+- **ISO ID scheme is a separate running counter:** `TC-PRF-ISO-NNN`. US-PRF-001 used ISO-001..004, US-PRF-002 ISO-005..008, US-PRF-003 ISO-009..012, US-PRF-004 ISO-013..016 (the standard 4 per story: cross-tenant read incl. by-direct-ID, no/invalid/mismatched tenant-context rejection + IDOR, cross-tenant write block + server-derived tenant_id + foreign FK rejected, tenant-scoped jobs/caches/notifications). Next story starts at ISO-017. Continue this counter; glob existing `TC-PRF-ISO-*` for the highest before adding; add ONE new ISO TC only per genuinely distinct new mutation/table.
+- **Three artifacts per story:** per-TC `.md`, `test-cases/performance/TEST-MATRIX.md`, and the root `test-cases/TRACEABILITY-MATRIX.md` (forward + backward tables, per-story Detailed Requirements Traceability, per-story Coverage Summary, the Cross-Module table row + TOTAL, and the closing-note paragraph). US-PRF-001 sized at 16 TCs.
+- **Tenant isolation mechanism:** EF Core global query filters + TenantInterceptor, NOT Postgres RLS. US-PRF-001 NFR-2 (and S7 data req) say "PostgreSQL RLS policies on the Goals table (`tenant_id = current_setting('app.current_tenant_id')`)" -- ISO TCs describe the EF mechanism and note RLS as an extension point. Same caveat as all prior modules.
+- **Performance-specific recurring deferrals written CONDITIONAL (not gaps):** US-PRF-001 DEPENDS ON US-PRF-004 (HR creates/manages appraisal cycles) for the active cycle + goal-setting window dates -- assume seeded; window-state branches (open/closed/not-yet-open) asserted against those dates. FR-7 notification delivery (in-app + email) CONDITIONAL on Notification System S25 (enqueue asserted). Team goal-list cache (NFR-1) CONDITIONAL on a cache layer (S10) -- if on-demand, assert tenant-filtered queries + no shared/global key. FR-4 goal cascading, FR-5 clone/template library, FR-6 audit logging (S24), BR-5 acknowledged-goals-need-HR-approval DEFERRED to later Performance stories. NFR-1 50-member 400ms P95 needs a seeded perf env.
+- **Domain edge cases worth carrying forward:** goal weights must sum to EXACTLY 100% (AC-3 error text verbatim: "Goal weights must total 100%") AND be in 5% increments (BR-3) -- these are two independent rules, test both (a 100%-summing set with non-5% weights still fails). Goal count bounds [1,10] per employee per cycle (BR-2). Title max 200 / description max 2000 (FR-2). Category enum {KPI, Competency, Project}, weight 1-100. Authz: direct reporting manager (Performance.SetGoal.Team) OR HR (Performance.SetGoal.All) only (BR-4). NFR-4 optimistic concurrency (rowversion/ETag) -- two-session lost-update test.
+
+**Why:** Reviewers/orchestrator rely on consistent IDs + the three-matrix structure; Performance deliberately follows the Recruitment/Payroll per-story-suffix scheme, not the Leave/Attendance running counter.
+
+**How to apply:** Before writing the next Performance story's TCs, use `TC-PRF-{NNN}-XX` for functional/security/perf/a11y and continue the `TC-PRF-ISO-NNN` counter. No vault `docs/vault/modules/performance.md` note existed at bootstrap.

@@ -1,0 +1,31 @@
+# Memory Index
+
+- [Two integration test conventions: InMemory + real-Postgres Testcontainers](feedback-integration-tests-inmemory.md) — Docker IS available now; use *PostgresTests for jsonb/RLS/isolation/concurrency
+- [Per-tenant SSO settings (US-AUTH-012)](reference-sso-settings.md) — SSO config lives on Tenant (no TenantAuthSettings entity); entitlement/break-glass/cache seams; FR-8 gap: US-AUTH-013 still reads config not DB
+- [SSO enforcement + break-glass + admin-consent (US-AUTH-016)](reference-sso-enforcement-breakglass.md) — login gate reads cached snapshot; designation guard replaces 012's; consent-state carries subdomain not tid; MFA-break-glass audit gap
+- [Attendance module reference](reference-attendance-module.md) — where US-ATT domain rules live + key scaffold decisions
+- [Recruitment module reference](reference-recruitment-module.md) — US-REC-001 vacancy + US-REC-002 applicant scaffold, routes, seams reused
+- [Payroll payslip-PDF reference](reference-payroll-payslip-pdf.md) — US-PAY-004: QuestPDF already referenced, reuse IFileStorage, 3-seam split, YTD/branding deferred
+- [Payroll reports reference](reference-payroll-reports.md) — US-PAY-009: reused leave-module export (ClosedXML/CsvHelper/QuestPDF), Payroll.Export gate, report-type IDs, bank-fields gap
+- [Reports module reference](reference-reports-module.md) — US-RPT-001: generic HrReportResult envelope, 6 report types, Reports.View gate, optional Redis cache, BR-3/4/5 static helpers, turnover denominator approximation
+- [Reports export reference](reference-reports-export.md) — US-RPT-004: HrReportExport entity, HrReportRenderer (reuses PayrollReportRenderer), 1000-row sync/async threshold, 3/user limit, tenant+owner download isolation, charts-PNG/signed-URLs deferred
+- [Flaky PortalMagicLink signature test](project-flaky-portal-magiclink-test.md) — known non-deterministic flake; not a backend/payroll regression, re-run isolated
+- [InMemory required-nav projection returns empty](feedback-inmemory-required-nav-projection.md) — projecting through a filtered required navigation empties the list on InMemory; resolve names via separate lookups
+- [FluentValidation nested-selector property path](feedback-fluentvalidation-nested-selector-path.md) — rules built via `selector(x).Prop` report the bare leaf name, not `Parent.Prop`, in TestValidate
+- [Guard raw SQL/transactions behind IsRelational()](feedback-relational-guard-for-raw-sql-transactions.md) — InMemory throws on tx/raw SQL/FOR UPDATE; gate + in-memory fallback (BUG-045 pattern)
+- [Validation-cluster seams + blockers](reference-validation-cluster-seams.md) — graceDays=TenantLifecycle not employee; no Grade entity (ISSUE-021 blocked + contradictory JobTitle tests); goal-weight has no submit seam; localization FE contract
+- [Feedback360 config authz + trio](reference-feedback360-config-authz.md) — BUG-244 #1/#2/#3 routes; AllowManagerReviewerConfig tenant flag; AuthorizeConfigureAsync 4-outcome team-manager gate; ReviewerAssignmentService ctor is test-fragile
+- [Notification delivery infra (US-NTF-006 Phase 1)](reference-notification-delivery-infra.md) — RealNotificationDispatcher default; SmtpEmailSender behind blank Smtp:Host; NotificationDelivery entity+job; MapType string→category bridge; 12 seams unwired (Phase 2)
+- [RLS increment 2a (dormant policies + fixture)](reference-rls-increment-2a.md) — DO-block migration=112 dormant policies; NULLIF('') GUC gotcha; users shadow tenant_id excluded; hrm_app non-superuser Testcontainers pattern
+- [RLS increment 3a (reconciler + e2e + SendEmailJob)](reference-rls-increment-3a.md) — flag-gated ENABLE/DISABLE reconciler in DbInitializer; ALTER TABLE needs table ownership; SendEmailJob read→send→persist→rethrow under RLS
+- [Benefits module (US-TRN-002)](reference-benefits-module.md) — BenefitPlan single-entity CRUD, status state machine, tenant-default-currency=Tenant.Currency, archive-only + TRN-003 delete-guard seam
+- [Fresh-scope DB writes under RLS (ISSUE-268)](reference-fresh-scope-rls-writes.md) — new-scope SaveChanges → 42501 fail-closed; wrap in ITenantJobRunner same-scope; RLS-test must hardwire hrm_app (routing masks repro)
+- [Shift schedule resolver (BUG-125)](reference-shift-schedule-resolver.md) — shared batched shift/working-days resolver reused by attendance payroll + dashboard (kills the per-employee N+1); 3 queries flat
+- [Goals bulk SaveGoals (BUG-243)](reference-goals-savegoals-bulk.md) — full-replace PUT endpoint; reuses GoalService authz/window/count/weight seams; one aggregate notification; SnapshotGoal escapes `&`
+- [Payroll audit BUG-080 (US-PAY-012)](reference-payroll-audit-bug080.md) — 7 IPayrollAuditLogger.Log emitters (staged/atomic); assign-vs-revise via currentRows; audit_log has NO RLS policy (R1) → exclude it from RLS-sim force-enable
+- [JWT denylist / session revocation (P3-2)](reference-jwt-denylist-session-revocation.md) — per-(tenant,user) revoked-before cutoff in Redis, 16min TTL; FAIL-OPEN everywhere; explicit iat claim; StringSetAsync overload gotcha
+- [Payroll shift-aware pro-ration (ISSUE-156/157/180)](reference-payroll-proration-shift-aware.md) — no-double-pro-ration invariants: attendance doesn't start-bound joiners, leaver=EmploymentHistory not Employee.Status; both reuse ShiftScheduleResolver as-of monthStart
+- [REC-010 auto-create user on hire (ISSUE-140)](reference-rec010-autocreate-user.md) — Model-A passwordless User+UserTenant+Employee-role provisioning gated on Tenant.AutoCreateUserOnHire; credential delivery still US-NTF-006; the seam NTF-006 hangs off
+- [GlitchTip error tracking (US-PLT-006)](reference-glitchtip-error-tracking.md) — Sentry 6.7.0 SDK; IsEnabled DSN inert-guard; scrubber (Sentry only auto-scrubs Authorization); scoped tenant-tag processor; InitializeSdk=false
+- [MFA secret protection (US-PLT-005)](reference-mfa-secret-protection.md) — mfa_secret=DataProtection NOT AES-GCM registry (tenant_id landmine); IsProtected seam + legacy back-fill + report count
+- [Leave pool allocation (DF-19/ISSUE-045)](reference-leave-pool-allocation.md) — persisted FIFO: LeaveLedger.Pool+CarryForwardTrackingId, tracking.ConsumedDays; deduction split, per-pool cancel restore (preserve expiry), expiry reads counter; 1µs tiebreak; legacy fallback

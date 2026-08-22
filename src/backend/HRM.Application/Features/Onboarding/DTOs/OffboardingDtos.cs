@@ -85,6 +85,25 @@ public sealed record OffboardingInstanceDto
     /// <summary>Tasks grouped by clearance department, with per-department status (AC-3 dashboard data).</summary>
     public List<DepartmentClearanceDto> Departments { get; init; } = [];
 
+    /// <summary>
+    /// AC-5 / BR-2: every mandatory item that currently blocks completion, in display order. Empty means
+    /// nothing blocks.
+    ///
+    /// <para>
+    /// Projected from <c>OffboardingCompletionGate</c> — the same code the completion endpoint enforces with
+    /// — so the dashboard can disable the Complete button and say exactly why <i>without re-deriving the
+    /// rule</i>. It used to re-derive it, and the copy was wrong: it compared a task's clearance against
+    /// "cleared", a department-level token no task ever carries, so the button never enabled.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<PendingMandatoryItemDto> PendingMandatoryItems { get; init; } = [];
+
+    /// <summary>
+    /// AC-5: whether completion would succeed right now — no blocking mandatory items, and not already
+    /// completed (BR-6 makes completion irreversible).
+    /// </summary>
+    public bool CanComplete { get; init; }
+
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
 }

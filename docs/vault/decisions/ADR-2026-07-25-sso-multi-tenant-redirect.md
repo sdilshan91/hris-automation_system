@@ -16,7 +16,7 @@ question: **how do we handle the OAuth redirect URI across many tenants** — a 
 tenant? a wildcard (`*.myhrm.org`)? the subdomain in the redirect URL?
 
 This ADR records the decision and — importantly — confirms it is **already implemented** (US-AUTH-011
-/013/015). It exists so the approach isn't re-litigated. See also [[../modules/authentication-sso]].
+/013/015). It exists so the approach isn't re-litigated. See also [[authentication-sso]].
 
 ## Decision
 
@@ -49,7 +49,7 @@ Microsoft warns the `state`-carrying approach risks the **open-redirector threat
 `state` is **encrypted or verified**, and that raw URLs/secrets shouldn't sit in `state`. Our impl:
 - `state` is **encrypted + time-limited** (attacker can't forge/tamper it) and carries a **subdomain**, not an arbitrary URL; the return origin is server-issued, not attacker-supplied.
 - **`tid`/domain allow-list, fail-closed** — a valid Entra user from a non-allow-listed directory is rejected (US-AUTH-013), so the `organizations` authority can't be abused for cross-tenant entry.
-- **PKCE (S256)** + **nonce ↔ id_token** binding; the OAuth **authorization code is single-use** (Entra), so a replayed callback fails code exchange (`sso_token_validation_failed`, audited — [[ISSUE-328]]).
+- **PKCE (S256)** + **nonce ↔ id_token** binding; the OAuth **authorization code is single-use** (Entra), so a replayed callback fails code exchange (`sso_token_validation_failed`, audited — [[TEST-FINDINGS#ISSUE-328|ISSUE-328]]).
 - **No tokens in the redirect URL** — session handed back via httpOnly refresh cookie + `/auth/refresh`.
 
 ## Consequences / notes
@@ -60,5 +60,5 @@ Microsoft warns the `state`-carrying approach risks the **open-redirector threat
 
 ## References
 
-- Code: `src/backend/HRM.Infrastructure/Identity/EntraSsoService.cs`, `src/backend/HRM.Api/Controllers/SsoController.cs`; stories US-AUTH-011 / -013 / -015; complements [[ADR-2026-07-10-tenant-isolation-model]] and [[../modules/authentication-sso]].
+- Code: `src/backend/HRM.Infrastructure/Identity/EntraSsoService.cs`, `src/backend/HRM.Api/Controllers/SsoController.cs`; stories US-AUTH-011 / -013 / -015; complements [[ADR-2026-07-10-tenant-isolation-model]] and [[authentication-sso]].
 - Microsoft: [Redirect URI restrictions + "Use a state parameter"](https://learn.microsoft.com/entra/identity-platform/reply-url) · [Dynamic redirect URIs forbidden — use `state`](https://learn.microsoft.com/entra/identity-platform/reference-breaking-changes) · [Single central redirect URI for multitenant ISVs](https://learn.microsoft.com/entra/architecture/establish-applications) · [Pass custom state (MSAL)](https://learn.microsoft.com/entra/identity-platform/msal-js-pass-custom-state-authentication-request) · [OIDC `state` round-trip](https://learn.microsoft.com/entra/identity-platform/v2-protocols-oidc)

@@ -1,5 +1,6 @@
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Features.Onboarding;
 using HRM.Application.Features.Onboarding.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -335,22 +336,9 @@ public sealed class OffboardingService : IOffboardingService
                 "This offboarding is already completed.", 409, "offboarding_completed");
 
         // AC-5 / BR-2: every mandatory task must be complete AND (where it is a clearance) approved.
-        var pending = instance.Tasks
-            .Where(t => !t.IsDeleted && t.IsMandatory)
-            .Where(t => t.Status != OnboardingTaskStatus.Completed
-                        || t.ClearanceStatus == ClearanceStatus.PendingIssues)
-            .OrderBy(t => t.SortOrder)
-            .Select(t => new PendingMandatoryItemDto
-            {
-                TaskId = t.Id,
-                Title = t.Title,
-                ClearanceCategory = t.ClearanceCategory,
-                ClearanceCategoryName = t.ClearanceCategory.ToString(),
-                Reason = t.ClearanceStatus == ClearanceStatus.PendingIssues
-                    ? "clearance_not_approved"
-                    : "not_completed",
-            })
-            .ToList();
+        // The rule itself lives in OffboardingCompletionGate so the projection the dashboard renders
+        // (OffboardingInstanceDto.PendingMandatoryItems) cannot disagree with what this endpoint enforces.
+        var pending = OffboardingCompletionGate.PendingMandatoryItems(instance.Tasks);
 
         if (pending.Count > 0)
         {
@@ -542,6 +530,12 @@ public sealed class OffboardingService : IOffboardingService
         var clearedDepartments = departments.Count(d => d.Status == "cleared");
         var fullyCleared = departments.Count > 0 && departments.All(d => d.Status == "cleared");
 
+        // AC-5: the SAME gate the completion endpoint enforces with, projected so the dashboard renders the
+        // answer rather than predicting it. Note this is deliberately NOT `fullyCleared`: a department is
+        // "cleared" only when every one of its tasks is decided and done, whereas completion only requires
+        // the MANDATORY ones — so an outstanding optional task blocks the traffic light but not the button.
+        var pendingMandatory = OffboardingCompletionGate.PendingMandatoryItems(instance.Tasks);
+
         return new OffboardingInstanceDto
         {
             Id = instance.Id,
@@ -568,6 +562,8 @@ public sealed class OffboardingService : IOffboardingService
                 PendingDepartments = departments.Count - clearedDepartments,
             },
             Departments = departments,
+            PendingMandatoryItems = pendingMandatory,
+            CanComplete = instance.Status != OffboardingStatus.Completed && pendingMandatory.Count == 0,
             CreatedAt = instance.CreatedAt,
             UpdatedAt = instance.UpdatedAt,
         };

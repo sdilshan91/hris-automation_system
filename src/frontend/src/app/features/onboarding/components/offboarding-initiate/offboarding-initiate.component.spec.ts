@@ -23,7 +23,9 @@ describe('OffboardingInitiateComponent', () => {
     employeeName: 'Jane Doe',
     lastWorkingDay: '2026-12-31',
     reason: 'Resignation',
-    status: 'in_progress',
+    status: 'InProgress',
+    pendingMandatory: [],
+    canComplete: false,
     overallClearance: 'pending',
     progressPercent: 0,
     departments: [],
@@ -108,6 +110,50 @@ describe('OffboardingInitiateComponent', () => {
     expect(toastrSpy.success).toHaveBeenCalled();
     expect(navigateSpy).toHaveBeenCalledWith(['/offboarding', 'off-9']);
     expect(component.submitting()).toBeFalse();
+  });
+
+  /**
+   * THE ARM FOR THE REASON BUG. The dropdown used to render and post the SAME string, and the display
+   * form of contract end carried a space: `'Contract End'`. The API parses reasons with `Enum.TryParse`
+   * after stripping underscores — not spaces — so that option always came back 400 `invalid_reason`, and
+   * the only reason nobody filed it is that three of the four options happened to be single words.
+   *
+   * The option value must stay the space-free wire token; the space belongs in the visible label only.
+   */
+  it('renders reason LABELS while carrying wire TOKENS as the option values', async () => {
+    await setup({ employeeName: 'Jane Doe' });
+
+    // The bug lived in the template: `<option [value]="reason">{{ reason }}</option>` used one string for
+    // both, so the visible "Contract End" WAS the posted value — and the API's Enum.TryParse strips
+    // underscores, not spaces, so it came back 400 `invalid_reason`. Asserting on the component alone
+    // cannot see this: patching the form with a token and reading it back proves only that submit()
+    // doesn't rewrite the field. It has to be read off the rendered options.
+    const options = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('#reason option'),
+    ) as HTMLOptionElement[];
+    expect(options.length).toBeGreaterThan(1);
+
+    for (const option of options) {
+      expect(option.value)
+        .withContext(`option value "${option.value}" must be parseable — no whitespace`)
+        .not.toMatch(/\s/);
+    }
+
+    const contractEnd = options.find((o) => o.value === 'ContractEnd');
+    expect(contractEnd)
+      .withContext('the token, not the label, must be the value')
+      .toBeTruthy();
+    expect(contractEnd!.textContent?.trim())
+      .withContext('...while the human-readable form is what the user reads')
+      .toBe('Contract end');
+  });
+
+  it('posts the wire token for contract end', async () => {
+    await setup({ employeeName: 'Jane Doe' });
+    component.form.patchValue({ reason: 'ContractEnd', lastWorkingDay: '2026-12-31' });
+    component.submit();
+
+    expect(serviceSpy.initiate.calls.mostRecent().args[0].reason).toBe('ContractEnd');
   });
 
   it('sends null for blank optional fields', async () => {

@@ -45,7 +45,7 @@ public sealed class ClaudeMdAccuracyTests
     public void EveryDocumentedNpmScript_ExistsInPackageJson()
     {
         var documented = Regex
-            .Matches(ClaudeMd(), @"npm run ([a-z0-9:_-]+)", RegexOptions.IgnoreCase)
+            .Matches(InstructionCorpus(), @"npm run ([a-z0-9:_-]+)", RegexOptions.IgnoreCase)
             .Select(m => m.Groups[1].Value)
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -76,7 +76,7 @@ public sealed class ClaudeMdAccuracyTests
     public void EveryDocumentedShellScript_ExistsOnDisk()
     {
         var referenced = Regex
-            .Matches(ClaudeMd(), @"scripts/([A-Za-z0-9._-]+\.sh)")
+            .Matches(InstructionCorpus(), @"scripts/([A-Za-z0-9._-]+\.sh)")
             .Select(m => m.Groups[1].Value)
             .Distinct(StringComparer.Ordinal)
             .ToList();
@@ -133,7 +133,7 @@ public sealed class ClaudeMdAccuracyTests
         Directory.Exists(Path.Combine(RepoRoot(), "src", "backend", "HRM.Tests"))
             .Should().BeTrue("this guard assumes HRM.Tests exists; if it was removed, retire the guard deliberately");
 
-        var claudeMd = ClaudeMd();
+        var claudeMd = InstructionCorpus();
 
         claudeMd.Should().Contain("HRM.Tests",
             "the backend test project is the thing agents must extend rather than re-invent, so "
@@ -152,16 +152,15 @@ public sealed class ClaudeMdAccuracyTests
     [Fact]
     public void RawDotnetTest_IsNeverPresentedAsTheBackendTestCommand()
     {
-        var offending = ClaudeMd()
-            .Split('\n')
-            .Select((line, i) => (line, no: i + 1))
+        var offending = InstructionFiles()
+            .SelectMany(f => File.ReadAllLines(f).Select((line, i) => (line, no: $"{Path.GetFileName(f)}:{i + 1}")))
             .Where(x => x.line.Contains("dotnet test", StringComparison.Ordinal))
             // A line is fine when it names the wrapper or explicitly warns against the raw command.
             .Where(x => !x.line.Contains("run-backend-tests", StringComparison.Ordinal)
                      && !x.line.Contains("never", StringComparison.OrdinalIgnoreCase)
                      && !x.line.Contains("Never", StringComparison.Ordinal)
                      && !x.line.Contains("ISSUE-312", StringComparison.Ordinal))
-            .Select(x => $"line {x.no}: {x.line.Trim()}")
+            .Select(x => $"{x.no}: {x.line.Trim()}")
             .ToList();
 
         offending.Should().BeEmpty(
@@ -172,6 +171,39 @@ public sealed class ClaudeMdAccuracyTests
     }
 
     private static string ClaudeMd() => Read("CLAUDE.md");
+
+    /// <summary>
+    /// CLAUDE.md is no longer the whole instruction surface. As of 2026-08-23 the module-specific
+    /// content lives in path-scoped rules under <c>.claude/rules/</c>, which Claude Code loads when a
+    /// matching file enters context. These guards assert against the UNION, so moving a command from
+    /// CLAUDE.md into a rule keeps it covered — and so that a command documented ONLY in a rule is
+    /// still checked.
+    /// </summary>
+    private static string InstructionCorpus()
+    {
+        var parts = new List<string> { ClaudeMd() };
+        var rulesDir = Path.Combine(RepoRoot(), ".claude", "rules");
+        if (Directory.Exists(rulesDir))
+        {
+            parts.AddRange(Directory.EnumerateFiles(rulesDir, "*.md", SearchOption.AllDirectories)
+                .OrderBy(f => f, StringComparer.Ordinal)
+                .Select(File.ReadAllText));
+        }
+
+        return string.Join("\n", parts);
+    }
+
+    private static IEnumerable<string> InstructionFiles()
+    {
+        yield return Path.Combine(RepoRoot(), "CLAUDE.md");
+        var rulesDir = Path.Combine(RepoRoot(), ".claude", "rules");
+        if (!Directory.Exists(rulesDir)) yield break;
+        foreach (var f in Directory.EnumerateFiles(rulesDir, "*.md", SearchOption.AllDirectories)
+                     .OrderBy(f => f, StringComparer.Ordinal))
+        {
+            yield return f;
+        }
+    }
 
     private static string Read(params string[] parts)
     {
