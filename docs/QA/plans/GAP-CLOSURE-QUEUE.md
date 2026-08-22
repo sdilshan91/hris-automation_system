@@ -229,14 +229,52 @@ instances**, so probes 3–5 could not be observed end-to-end.
   `downloadUrl`/`signedUrl` FE mismatch. Point them at the existing authenticated `/download` route.
 - [ ] **C3 · GAP-025 audit pairing** — 3 unpaired call sites, and `employee_field_audit_logs` has **4 writers,
   0 readers**. Decide explicitly whether it gains a reader or is a forensic side-table; record in the vault.
-- [ ] **C4 · GAP-026 terminated-employee enrollment** — add the `Status == Active` guard. *Carries an open
-  decision: should an existing enrollment auto-terminate? Recommendation is no — AC-7 makes it manual.*
+- [ ] **C4 · GAP-026 terminated-employee enrollment** — add the `Status == Active` guard.
+  **DECIDED 2026-08-21: guard NEW enrollments only; existing enrollments are left untouched.** AC-7 makes
+  termination manual, and a validation guard must not silently mutate live benefit/training records as a
+  side effect of a deploy. The open decision this entry carried is now closed.
 - [ ] **C5 · GAP-028 export bundle** — fix the emailed link first (**S**, a route already exists); documents ZIP +
   schema PDF are the M–L remainder.
 
 ### Tier D — the structural item (the only one whose cost grows)
 
-- [ ] **D1 · S-1 migration**, module by module, worst-first. **669 hand-written interfaces vs 11 `Schema<>` uses.**
+> ### ★ RE-STRUCTURED 2026-08-21 — three decisions, and a measurement that forced them
+>
+> **The D1 metric was measuring the wrong thing.** Measured consistently at two points in git history
+> (same grep, both commits): `Schema<>` uses went **10 → 109**, while hand-written interfaces went
+> **695 → 692**. Ninety-nine call sites migrated moved the interface count by three. In core-hr — a
+> "migrated" module — **68 of 71 interfaces are still live**. The migration has been typing the *wire calls*;
+> the hand-written *view-model* interfaces stay.
+>
+> Splitting them shows why that is fine: **450** interfaces are referenced by a `.service.ts` (they describe
+> wire payloads — real FE↔BE drift risk); **232** are never referenced by a service at all (pure view models
+> that never cross the wire, and therefore *cannot* drift).
+>
+> **DECIDED — D1 targets the 450 wire-adjacent interfaces, plus a drift guard.** The 232 pure view-model ones
+> are out of scope: converting them reduces no risk. A guard modelled on `PlanLimitLookupUsageGuardTests`
+> blocks *new* hand-written wire interfaces — without it D1 never finishes, which is exactly what the
+> 99-migrations-for-3-removed number demonstrates.
+>
+> **DECIDED — contract-complete before any further FE migration.** Every backend change that alters
+> `api-types.ts` (the ISSUE-379 exposure adds, B6's missing endpoint, `/leaves/reports/summary`, C2's dead
+> route) lands FIRST. Migrating a module against a contract that is about to change guarantees rework — the
+> duplication this queue exists to avoid.
+>
+> **DECIDED — C4 guards new enrollments only** (below).
+>
+> **Phase order:**
+> 1. **Ledger truth** — correct the rows that overstate (done: ISSUE-379 corrected, [[BUG-311]] filed).
+> 2. **Contract completion** — ISSUE-379 exposure adds · B6 · `/reports/summary` · C2. One final regen.
+> 3. **FE per module** against the settled contract — B3/B4/B5 first slice, D1 finishes each.
+> 4. **Behaviour gaps** — C3 · C4 · C5 · E5.
+> 5. **Infra, tests, docs** — E2 · E3 · E4 · F1–F4 · A3.
+>
+> **B3/B4/B5 are NOT duplicates of D1** — this queue already says "Tier B items already migrate their own
+> module's files; D1 finishes each module." Checked before "fixing" a non-problem.
+
+- [ ] **D1 · S-1 migration** — **RE-SCOPED (see above): the 450 wire-adjacent interfaces + a drift guard.**
+  Original text: module by module, worst-first. **669 hand-written interfaces vs 11 `Schema<>` uses** —
+  *both figures now stale; measured 692 and 109 on 2026-08-21.*
   Order by where it hurts: **performance (102) → admin-console (88) → leave (79) → payroll (75) → core-hr (71) →
   attendance (70) → recruitment (59) → auth (26)**.
   - *Cheapest wins:* attendance (drift is latent) and recruitment (adapters already exist).
