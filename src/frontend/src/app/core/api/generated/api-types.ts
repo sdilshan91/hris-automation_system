@@ -39267,6 +39267,7 @@ export interface components {
             scopeType?: components["schemas"]["ParticipantScopeType"];
         };
         PerformancePerformanceDashboardDto: {
+            availableExportFormats?: string[] | null;
             /** Format: double */
             averageScore?: number;
             bottomPerformers?: components["schemas"]["PerformancePerformerDto"][] | null;

@@ -139,6 +139,13 @@ public sealed record CycleProgressDto
 /// <summary>The full performance dashboard overview payload (AC-1/AC-2/FR-1..FR-3/FR-6).</summary>
 public sealed record PerformanceDashboardDto
 {
+    /// <summary>
+    /// ISSUE-379: which export buttons the dashboard should offer. Sourced from
+    /// <see cref="HRM.Application.Common.Helpers.ExportFormatNormalizer.Supported"/> so the advertised
+    /// list cannot drift from the list the export endpoint actually accepts.
+    /// </summary>
+    public IReadOnlyList<string> AvailableExportFormats { get; init; } = [];
+
     /// <summary>The cycle this dashboard reports on.</summary>
     public Guid CycleId { get; init; }
 
