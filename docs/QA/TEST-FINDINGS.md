@@ -8490,6 +8490,29 @@ recurrences noted by reference.** No data writes; acme seed untouched.
 | # | field(s) | rendered by | sev |
 |---|---|---|---|
 | 1 | dashboard `filterOptions`, `scopeLabel`, `teamRanking`, `availableExportFormats` | the FR-4 filter panel, manager team-ranking, export buttons — **a whole feature surface** | **HIGH** |
+
+**★ CORRECTED 2026-08-21 — this finding OVERSTATES its own gaps. Verified against the code, per-field.**
+Most of the 11 are **exposure** gaps (the backend already has the data; the DTO just does not carry it), not
+build gaps. Three are **not gaps at all** and the finding is simply wrong about them:
+
+- **`teamRanking` — ALREADY SENT.** In Team scope the top-N list *is* the team ranking, by design
+  (`PerformanceDashboardService.cs:667-681`, `PerformanceDashboardDtos.cs:166-170`). The **FE mapper discards
+  it** (`dashboard.models.ts:317` defaults to `[]`). No backend change is needed; this is an FE-only fix.
+- **drilldown `employeeName` — ALREADY SENT AND ALREADY READ.** `DepartmentEmployeeScoreDto.EmployeeName`
+  exists (`PerformanceDashboardDtos.cs:176`) and `dashboard.models.ts:366` reads it. The genuinely missing
+  field on that payload is **`cycleLabel`** (`:387`). This row carried a stated "confidence: 100%" and was
+  wrong.
+- **`IBudgetTracker.enabled` — NOT A GAP.** `Budget` is nullable by design
+  (`RecommendationDtos.cs:163,211`); deriving "enabled" from its presence is the correct pattern.
+
+**Only two items are real build work:** per-category minimums for non-Peer categories (needs a product
+question first — do non-Peer categories *have* minimums? if not it is FE overspec to delete, not a backend
+story) and per-employee `trend` (needs a prior-cycle score fetch that nothing currently does).
+
+**Why this matters more than the individual corrections:** the register was about to drive backend work for
+fields the backend already sends. Verifying first turned a "whole feature surface" into three FE mapper
+lines plus a handful of free DTO additions. See also [[BUG-311]] — the export-format precedent this audit
+identified is itself defective, so it must be fixed before it is copied.
 | 2 | `/my-goals` window envelope (`windowOpen`, `cycleName`) | the BR-1 closed-window gate. **Defaulted `true`** — verified fail-SAFE, since `GoalProgressService.cs:100` enforces BR-1 server-side | **HIGH** |
 | 3 | sign-off notes: `goals[]`, `ratingScaleMax`, `managerName`, `cycleName`, `finalScore` | the entire US-PRF-006 sign-off screen | **HIGH** |
 | 4 | 360 reviewer-config: `candidatePool`, per-category `minimums`, `editable` | reviewer nomination — search-to-add is empty | **HIGH** |
@@ -8903,3 +8926,17 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 `TenantSettingsService` is different again — it gates on `FeatureFlags`, not a numeric cap, so `PlanLimitLookup` (which resolves `long?`) does not fit it as-is.
 
 **This survey is the reason the scripted 5-site migration failed.** It assumed a uniform shape that does not exist. The five sites WITH a `Result`-style channel are mechanical; the other four each need a decision first.
+
+---
+
+### BUG-311
+
+- **Type:** BUG · **Severity:** MED · **Status:** OPEN · **Layer:** FE (contract cast) + test integrity
+- **Module:** Performance / recommendation workspace · **US:** US-PRF-00x · **TC:** recommendation-workspace.component.spec
+- **Found:** 2026-08-21, by `@requirements-auditor` while verifying ISSUE-379; **independently re-verified** before filing.
+- **Summary:** `RecommendationExportFormat` is declared `'Excel' | 'Pdf'` (`recommendation.models.ts:94`), but the API sends `["csv", "xlsx"]` (`RecommendationService.cs:45` `SupportedExportFormats`). The mapper hides the mismatch with a blind cast — `(w.availableExportFormats ?? []) as RecommendationExportFormat[]` (`:375-376`).
+- **Consequence:** the workspace renders one export button per wire token (`recommendation-workspace.component.ts:120`), so the buttons are labelled with the raw tokens, and **any code branching on `'Excel'`/`'Pdf'` is unreachable** — no value the API sends can ever equal either.
+- **★ Same class as BUG-127.** An `as` cast is not a conversion; it is an instruction to stop checking. This session already produced one of these — an `as IEmployee` cast that silenced two wrong field names and three unnarrowed unions. The lesson is identical: **when a mapper needs a cast to compile, the cast is usually hiding the bug, not solving it.**
+- **The test certifies the wrong shape.** `recommendation-workspace.component.spec.ts:62` mocks `availableExportFormats: ['Excel']` — a value the API has never sent. The spec is green *because* it agrees with the wrong type rather than with the wire, which is precisely the test-theatre pattern `@test-authenticator` exists to catch.
+- **★ It also blocks ISSUE-379 item 1b.** The audit identified this file as the *precedent to copy* for the dashboard's `availableExportFormats`. Copying it as-is would propagate the defect to a second surface. **Fix this first, then copy.**
+- **Suggested fix:** widen the union to the real wire tokens (`'csv' | 'xlsx'`), or normalise in the mapper with an explicit, exhaustive map — not a cast. Then correct the spec to the real tokens. Removing the cast should make the compiler point at the problem, which is the test that the fix is right.
