@@ -13,6 +13,18 @@ namespace HRM.Application.Common.Helpers;
 public static class ExportFormatNormalizer
 {
     /// <summary>
+    /// The canonical formats <see cref="Normalize"/> accepts, in display order.
+    /// </summary>
+    /// <remarks>
+    /// ISSUE-379: the dashboard payload has to tell the FE which export buttons to render. Hardcoding that
+    /// list at the call site would create a SECOND description of what this class already decides — the
+    /// same S-1 shape that produced BUG-307 (ten copies of one rule) and BUG-311 (a union describing
+    /// formats the wire never sent). The advertised list and the accepted list are one list, and
+    /// <c>ExportFormatNormalizerTests</c> fails if they ever diverge.
+    /// </remarks>
+    public static readonly IReadOnlyList<string> Supported = ["csv", "xlsx", "pdf"];
+
+    /// <summary>
     /// Returns the canonical export-format token (<c>csv</c>/<c>xlsx</c>/<c>pdf</c>) for
     /// <paramref name="format"/>, or <c>null</c> when the input is null/blank/unrecognized.
     /// </summary>

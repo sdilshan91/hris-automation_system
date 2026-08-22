@@ -25557,6 +25557,13 @@
       "PerformancePerformanceDashboardDto": {
         "additionalProperties": false,
         "properties": {
+          "availableExportFormats": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "averageScore": {
             "format": "double",
             "type": "number"

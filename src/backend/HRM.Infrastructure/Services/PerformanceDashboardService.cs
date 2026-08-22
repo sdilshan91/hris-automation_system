@@ -107,6 +107,9 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
 
         var dto = new PerformanceDashboardDto
         {
+            // ISSUE-379: advertised straight from the normalizer that GATES the export endpoint, so the
+            // buttons offered and the formats accepted are the same list by construction.
+            AvailableExportFormats = ExportFormatNormalizer.Supported,
             CycleId = cycle.Id,
             CycleName = cycle.Name,
             Scope = scope.Kind.ToString(),
