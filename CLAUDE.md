@@ -96,69 +96,19 @@ reporting risks, not by narrating confidence on every line).
 > editing `.mcp.json`, fully restart the Claude Code session (a plain "Reload Window" may not
 > reconnect) and approve the project-MCP trust prompt.
 
-### GitHub MCP Server
-Connected via `https://api.githubcopilot.com/mcp/` (defined in `.mcp.json`)
+All four are defined in [.mcp.json](.mcp.json) (project scope) — the file Claude Code actually loads.
+Setup steps, capability flags and the plugin-collision history: [docs/DEV/mcp-servers.md](docs/DEV/mcp-servers.md).
 
-Enables agents to directly:
-- Create feature branches per agent per module
-- Push code directly to branches
-- Open PRs with story/test references
-- Create GitHub Issues for tracking and integration review
+| Server | Purpose | Driven by |
+|---|---|---|
+| **github** | branches, PRs, issues (`${GITHUB_TOKEN}`) | all writing agents |
+| **playwright** | functional UI, a11y (axe), DOM/console/network | `@browser-debugger`, `@test-runner` |
+| **chrome-devtools** | Lighthouse, perf traces, heap snapshots | `@browser-debugger`, `@test-runner` |
+| **microsoft-learn** | grounded .NET/Azure docs | `@principal-advisor`, `@backend-dev` |
 
-**Setup:** `GITHUB_TOKEN` env var from `.env` file (PAT with `repo`, `workflow`, `issues`, `pull_requests` scopes)
-
-### Playwright MCP Server (Browser Debugging)
-Local stdio server (`npx @playwright/mcp@latest`) that gives agents a **real Chrome browser** for
-runtime investigation of the Angular UI and its calls to the .NET API. Defined in `.mcp.json`
-with `--browser chrome --caps vision,pdf,devtools --save-session --output-dir .playwright-artifacts`.
-(Note: `--save-session`, not the older `--save-trace`, which current `@playwright/mcp` rejects and
-which crashes the server on launch.)
-
-Enables agents to:
-- Navigate the running app and reproduce user flows (click, type, fill forms)
-- Read **browser console** messages — JS/Angular errors (`browser_console_messages`)
-- Inspect **network requests** — status, headers, payloads, CORS (`browser_network_requests`)
-- Capture the accessibility snapshot, run page JS (`browser_evaluate`), take screenshots
-- Diagnose auth / **multi-tenant** routing issues from real traffic
-
-**Activation:** the server connects at Claude Code session startup from `.mcp.json`. After first
-adding/changing it, **fully restart the Claude Code session** (a plain VS Code "Reload Window" on an
-already-running session may not reconnect) and **approve the project-MCP trust prompt**, then confirm
-`playwright` is connected (e.g. via `/mcp` where available). Artifacts (session/screenshots) save to
-`.playwright-artifacts/` (gitignored). It is **read-only on the codebase** — used to investigate, not
-to edit code. Driven by the `@browser-debugger` agent and the `/debug-ui` skill.
-
-### Microsoft Learn MCP Server (official .NET/Azure docs)
-Remote HTTP server (`https://learn.microsoft.com/api/mcp`, defined in `.mcp.json`) giving agents grounded
-access to official Microsoft documentation instead of recalling it: `microsoft_docs_search` (breadth),
-`microsoft_code_sample_search` (working snippets), `microsoft_docs_fetch` (full page depth). Used by
-`@principal-advisor` for the `/advisor` dependency-currency pass and available to `@backend-dev` for
-.NET 10 / EF Core / ASP.NET Core APIs that post-date the model's training data.
-
-> **Note — three plugins were UNINSTALLED (2026-08-22) for colliding with this file.** The official
-> `github`, `playwright` and `microsoft-docs` plugins each ship a `.mcp.json` declaring a server with the
-> **same name** as ours but a **worse config**: `github` reads `${GITHUB_PERSONAL_ACCESS_TOKEN}` (we use
-> `${GITHUB_TOKEN}`), and `playwright` is a bare `npx @playwright/mcp@latest` with **no**
-> `--caps vision,pdf,devtools`, **no** `--save-session` and **no** `--output-dir`. Had the plugin's
-> definition ever won resolution, `@browser-debugger` would have silently lost vision/PDF/devtools and
-> stopped writing `.playwright-artifacts/` — presenting as *"the tool can't do that"*, not as a config
-> error. **`.mcp.json` is the single source for MCP servers here**; it is committed, so the team and CI
-> get the tuned flags. Do not re-install those three.
-
-### Chrome DevTools MCP Server (performance / Lighthouse / memory)
-Local stdio server (`npx chrome-devtools-mcp@latest --isolated`, defined in `.mcp.json`) that exposes the
-**Chrome DevTools Protocol** — the front-end performance + audit layer Playwright doesn't cover. It launches
-its **own isolated Chrome** (separate from the Playwright instance). Enables agents to:
-- Run a one-shot **`lighthouse_audit`** (performance + accessibility + best-practices) — a second a11y signal alongside `@axe-core/playwright`.
-- Record runtime **performance traces** (`performance_start_trace` → `performance_stop_trace` → `performance_analyze_insight`) for Core Web Vitals (LCP/CLS/TBT).
-- **Throttle** CPU / network (`emulate`) to reproduce slow conditions; **`take_heapsnapshot`** for memory leaks.
-- Inspect network/console under CDP (`list_network_requests`, `get_network_request`, `list_console_messages`).
-
-**Division of labour:** **Playwright MCP** = functional UI, a11y (axe), cross-browser, DOM/console/network;
-**Chrome DevTools MCP** = *why is it slow / leaking / failing a Lighthouse audit*; **k6** = server/load perf.
-Same activation rules as Playwright (attaches at session startup from `.mcp.json`; needs a full restart +
-trust-prompt approval). Used by `@test-runner` (perf/a11y TC execution) and `@browser-debugger` (deep
-diagnosis). **Read-only on the codebase.**
+> Do **not** install the official `github`, `playwright` or `microsoft-docs` plugins — each declares a
+> server with the **same name** but a worse config, and `playwright`'s would silently drop
+> `--caps vision,pdf,devtools` and `--save-session`. Uninstalled 2026-08-22; see the doc above.
 
 ## Agent Team
 
@@ -212,7 +162,27 @@ diagnosis). **Read-only on the codebase.**
 > not pipeline drivers; invoke them explicitly or let them fire on bug/stuck-loop triggers. They defer to
 > the `test-integrity-guard` hook and the `/implement-all` remediation loop rather than competing with them.
 
-> **Optional — .NET reference skills.** Installing the third-party MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) plugin (`/plugin marketplace add Aaronontheweb/dotnet-skills`) gives `@backend-dev` battle-tested C#/EF Core reference knowledge. Lean on **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test approach), `database-performance`, `csharp-api-design`/`-coding-standards`, and the `microsoft-extensions-*` DI/config skills. Also on-stack (promoted from unclassified — not muted): `project-structure`, `package-management`, `serialization` (System.Text.Json path), `snapshot-testing` (Verify, for API-response/contract tests), `opentelementry-dotnet-instrumentation` (dir name misspelled upstream — reference by exact path), `csharp-type-design-performance`, `csharp-concurrency-patterns` (its async/await + Channels guidance; the Akka tail is off-stack), and `crap-analysis` (stack-neutral coverage/risk tooling). Off-stack skills (`akka-*`, `aspire-*`, `playwright-blazor`/`-ci-caching`, `mjml-email-templates`, `verify-email-snapshots`, `r3-reactive-extensions`, `ilspy-decompile`, `dotnet-devcert-trust`, `local-tools`, `marketplace-publishing`, `skills-index-snippets`, `slopwatch`) are muted via `skillOverrides` in [.claude/settings.json](.claude/settings.json). As of **v1.5.0** the plugin ships **36 skills + 6 agents**; keep the mute list in sync when it grows (verify with `/retro`'s setup-drift pass). v1.5.0 added **`csharp-nullable-reference-types`**, left **active** — every project sets `<Nullable>enable</Nullable>` and the build currently emits CS8602/CS8604 warnings, so it is squarely on-stack. **Installed 2026-08-22** — before that date the plugin was declared in `enabledPlugins` and described here but had **never actually been installed** (its marketplace was absent from `known_marketplaces.json`), so none of these skills reached `@backend-dev` and all 20 `skillOverrides` entries muted nothing. Installed as a **project-scoped** plugin that auto-updates — its `extraKnownMarketplaces` + `enabledPlugins` live in the project [.claude/settings.json](.claude/settings.json) (not global), so it activates in this repo and travels with it. Not vendored.
+> **.NET reference skills — VENDORED, not a plugin (changed 2026-08-23).** 16 on-stack skills from the
+> MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) v1.5.0 now live directly in
+> [.claude/skills/](.claude/skills/): **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only
+> migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test
+> approach), `database-performance`, `csharp-api-design`/`-coding-standards`, `csharp-nullable-reference-types`
+> (every project sets `<Nullable>enable</Nullable>` and the build emits CS8602/CS8604), the
+> `microsoft-extensions-*` DI/config pair, `project-structure`, `package-management`, `serialization`,
+> `snapshot-testing` (Verify), `opentelementry-dotnet-instrumentation` (dir name misspelled upstream),
+> `csharp-type-design-performance`, `csharp-concurrency-patterns`, and `crap-analysis`.
+>
+> **Why it stopped being a plugin.** The 20 off-stack skills (`akka-*`, `aspire-*`, `playwright-blazor`,
+> `mjml-email-templates`, `slopwatch`…) were listed `"off"` in `skillOverrides` for months. That never worked
+> and never could — the docs are explicit: **"Plugin skills are not affected by `skillOverrides`. Manage those
+> through `/plugin` instead."** Once the plugin was genuinely installed (2026-08-22, after months of being
+> declared-but-absent) all 20 went live, and `@backend-dev` was being offered Akka.NET actor-system guidance
+> and Blazor Playwright patterns on an Angular + ASP.NET Core project. Vendored loose skills are **not** plugin
+> skills, so what sits in `.claude/skills/` is exactly what agents are offered. `skillOverrides` and the
+> `dotnet-skills` marketplace entry are both **removed** — they were dead config.
+>
+> **Trade-off:** frozen at v1.5.0, no auto-update. Refresh instructions and the full skipped-skill list are in
+> [.claude/skills/_vendor/README.md](.claude/skills/_vendor/README.md); upstream LICENSE preserved alongside.
 
 > ⚠️ **`enabledPlugins` is a declaration, not an installer.** Adding a key there does **not** fetch the
 > plugin — you must also `claude plugin install <name>@<marketplace> --scope project`. This repo has hit
@@ -325,74 +295,7 @@ main
 
 ## Directory Structure
 
-```
-├── .env                           # API keys (gitignored, local only)
-├── .env.example                   # Template for .env
-├── .mcp.json                      # MCP servers (github, playwright, chrome-devtools, microsoft-learn) — loaded by Claude Code
-├── .gitignore
-├── docs/                          # Discipline-based documentation (source of truth)
-│   ├── Architecture/              # System design, tech-radar, ADR index, tech doc, security reviews
-│   │   ├── radar/                 #   tech-radar (moved from docs/radar/)
-│   │   ├── advisory-reports/      #   /advisor output
-│   │   ├── security-reviews/      #   /security-audit output
-│   │   ├── hrm_technical_document_v4.0.md
-│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
-│   ├── BA/                        # IEEE 830 user stories (by module) — was user-stories/
-│   │   ├── {module-name}/US-{MOD}-001.md
-│   │   ├── INDEX.md · STATUS.md   #   STATUS.md = implement-all source of truth
-│   │   └── {README,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
-│   ├── QA/                        # IEEE 829 test cases + findings/plans — was test-cases/
-│   │   ├── {module-name}/TC-{MOD}-001.md
-│   │   ├── TEST-STATUS.md · TEST-FINDINGS.md · BUG-STATUS.md · TRACEABILITY-MATRIX.md
-│   │   ├── plans/                 #   COMPLETION-PLAN.md = the ONE living plan (dated changelog, rolls over in place)
-│   │   │   └── archive/           #   superseded dated plans (full snapshots)
-│   │   ├── reports-archive/       #   dated QA reports/snapshots (bug-report, coverage, triage, decisions-needed)
-│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
-│   ├── DEV/                       # Build/run/CI conventions, tooling adoption
-│   │   ├── TOOLING-ADOPTION-PLAN.md
-│   │   ├── references/            #   vendored 3rd-party .NET reference docs (antipatterns, MediatR→Mediator)
-│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md   # links local-dev/, ops/, perf/
-│   ├── Frontend/                  # Angular 20 conventions + FE findings
-│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
-│   ├── Design/                    # Visual/UX; /design-review output
-│   │   ├── design-reports/
-│   │   └── {README,STATUS,PLANS,BLOCKERS,DECISIONS,INSTRUCTIONS}.md
-│   ├── vault/                     # Obsidian vault — shared agent memory (UNCHANGED; see Shared Memory)
-│   └── superpowers/               # brainstorming/writing-plans specs+plans (UNCHANGED)
-├── local-dev/ · ops/ · perf/      # Operational config/scripts (NOT docs — stay top-level)
-├── src/
-│   ├── frontend/                  # Angular 20 SPA
-│   └── backend/                   # ASP.NET Core 10 API
-├── .claude/
-│   ├── agents/team/               # Agent definitions (with MCP tools)
-│   │   ├── business-analyst.md
-│   │   ├── frontend-dev.md
-│   │   ├── backend-dev.md
-│   │   ├── qa-engineer.md
-│   │   └── browser-debugger.md    # Playwright-driven UI debugger (read-only)
-│   ├── agents/review/             # Auxiliary read-only review agents (local, adapted)
-│   │   ├── test-authenticator.md  # Flags fake/theatrical tests (report-only)
-│   │   ├── integration-enforcer.md # Flags orphaned/unwired code (report-only)
-│   │   └── principal-advisor.md   # Read-only technical-consultant synthesizer
-│   ├── skills/                    # Slash command skills
-│   │   ├── orchestrate.md         # Local + MCP pipeline
-│   │   ├── analyze-module.md
-│   │   ├── implement-story.md
-│   │   ├── debug-ui.md            # Browser debugging via Playwright MCP
-│   │   ├── design-review.md       # Designer's-eye visual + UX audit (report-only)
-│   │   ├── fault-diagnosis.md     # Root-cause-before-fix discipline (local)
-│   │   ├── error-recovery.md      # Stuck-loop breaker / failure-counter (local)
-│   │   ├── retro.md               # Engineering retrospective from git + ledgers (local)
-│   │   ├── advisor.md             # Technical-consultant advisory (report-only); + advisor/currency-scan.py
-│   │   └── github-pipeline.md     # Remote pipeline (needs credits)
-│   ├── hooks/                     # Automation hooks
-│   │   ├── post-user-story-commit.sh
-│   │   └── post-dev-commit.sh
-│   └── settings.json              # hooks, permissions, skill overrides (NOT MCP servers — see .mcp.json)
-└── .github/
-    └── workflows/
-        └── claude-agent-pipeline.yml  # GitHub Actions (future, needs credits)
-```
+The full annotated tree lives in [docs/DEV/repo-map.md](docs/DEV/repo-map.md). The parts that matter every session: `.mcp.json` (MCP servers) and `CLAUDE.md` at the repo root; `.claude/{agents,skills,rules,hooks,agent-memory}/`; `docs/{Architecture,BA,QA,DEV,Frontend,Design,vault}/`; `src/{frontend,backend}/`; and `local-dev/ · ops/ · perf/` which are operational config, NOT docs, and stay top-level.
 
 ## Shared Memory (Obsidian Vault)
 
@@ -469,39 +372,21 @@ built-in store is fine. Never duplicate the same fact into both. Secrets/logs go
 
 # Application Development
 
-> The sections above describe the **agent-orchestration meta-system**. The sections below describe the **actual HRM application** in `src/` — how to build, run, and test it, and how its architecture fits together.
-
-## Commands
-
-### Backend (`src/backend`, .NET 10)
-```bash
-dotnet restore HRM.sln
-dotnet build HRM.sln
-dotnet run --project HRM.Api          # serves API + Swagger UI at /swagger, Hangfire dashboard at /hangfire (dev only)
-
-# Tests — ALWAYS via the wrapper, never raw `dotnet test` (see below)
-bash scripts/run-backend-tests.sh src/backend/HRM.sln
-COVERAGE=1 bash scripts/run-backend-tests.sh src/backend/HRM.sln   # line coverage (slower; CI turns this on)
-
-# EF Core migrations (run from src/backend; --startup-project supplies config/connection string)
-dotnet ef migrations add <Name> --project HRM.Infrastructure --startup-project HRM.Api
-dotnet ef database update --project HRM.Infrastructure --startup-project HRM.Api
-```
-Migrations are **applied automatically on startup** via `DbInitializer.RunAsync` (`Program.cs`), which also seeds a default admin tenant, roles, and admin user.
-
-**Backend tests live in `src/backend/HRM.Tests`** (xUnit + FluentAssertions + NSubstitute) — 360 unit and 215 integration test files. Integration tests run against a **real PostgreSQL via Testcontainers**; `Microsoft.EntityFrameworkCore.InMemory` is also referenced but is a known root-cause class for false greens (InMemory masks Postgres behaviour — see `/fault-diagnosis`), so prefer the Testcontainers path for anything touching SQL, query filters, or migrations.
-
-> **Never invoke `dotnet test` directly.** `dotnet test` can exit **0 even when the run ABORTS** (test-host crash, killed process, resource contention), so a partial run is indistinguishable from a green suite to CI, `/implement-all`, or an agent — this has already hidden a real regression (ISSUE-312). Always go through [scripts/run-backend-tests.sh](scripts/run-backend-tests.sh), which forces a non-zero exit on any VSTest abort marker. Coverage is **measure-only** (`COVERAGE=1`); no threshold is enforced yet, deliberately — setting a gate before anyone has seen the number is how the gate ends up lowered.
-
-### Frontend (`src/frontend`, Angular 20)
-```bash
-npm install
-npm start            # ng serve — dev server
-npm run build        # ng build
-npm test             # ng test — Karma + Jasmine (single project, headful Chrome)
-npm run lint         # ng lint
-ng test --include='**/auth.service.spec.ts'   # run a single spec
-```
+> The sections above describe the **agent-orchestration meta-system**. The application itself — how to
+> build, run and test it, and how its architecture fits together — lives in **path-scoped rules** under
+> [.claude/rules/](.claude/rules/), which load automatically when Claude opens a matching file:
+>
+> | Rule | Loads when you touch | Covers |
+> |---|---|---|
+> | [backend.md](.claude/rules/backend.md) | `src/backend/**` | commands, `HRM.Tests` + the ISSUE-312 wrapper, EF/migrations, Clean Architecture + CQRS, the three tenant-isolation layers, Serilog/Hangfire/JWT |
+> | [frontend.md](.claude/rules/frontend.md) | `src/frontend/**` | commands incl. `npm run lint`, standalone Angular 20 layout, generated-types rule, a11y debt |
+> | [ledgers.md](.claude/rules/ledgers.md) | `docs/QA/**`, `docs/BA/**` | IEEE 829/830, traceability, finding schema, report-only boundary |
+> | [vault.md](.claude/rules/vault.md) | `docs/vault/**` | wikilink rules, the three memory stores |
+>
+> **Why split:** CLAUDE.md loads in full every session, and the official guidance targets **under 200
+> lines** — longer files still load but adherence drops. Path-scoped rules keep module detail out of
+> every session while guaranteeing it is present the moment it is relevant. Rules are *guidance*, not
+> enforcement: for guaranteed behaviour use hooks or permissions, both of which this repo already has.
 
 ## Local Configuration (required to run)
 `appsettings.json` ships with **blank secrets** — the app will not start until these are set, ideally via .NET user-secrets (`UserSecretsId` is already in `HRM.Api.csproj`), not by editing the committed file:
@@ -509,36 +394,5 @@ ng test --include='**/auth.service.spec.ts'   # run a single spec
 - `Jwt:PrivateKey` — signing key for JWT validation
 - A running **PostgreSQL** instance (also backs Hangfire job storage)
 
-## Architecture
-
-### Backend: Clean Architecture + CQRS
-Four projects, dependencies point inward (`Api → Application → Domain`; `Infrastructure → Application`):
-- **HRM.Domain** — entities, value objects (e.g. `Email`), repository interfaces. No framework dependencies.
-- **HRM.Application** — CQRS handlers organized by feature (`Features/{Feature}/Commands|Queries|DTOs|Validators`), MediatR pipeline behaviors (`ValidationBehavior`, `LoggingBehavior`), and `Common/Interfaces` abstractions (`ITenantContext`, `ICurrentUser`, `IJwtService`, `IAuthService`).
-- **HRM.Infrastructure** — EF Core `AppDbContext`, entity configurations, interceptors, and interface implementations. Wired up in `DependencyInjection.AddInfrastructure`.
-- **HRM.Api** — controllers (thin; dispatch via MediatR), middleware, filters, Hangfire jobs. Composition root is `Program.cs`.
-
-Request flow: validation runs both via the MVC `ValidationFilter` and the MediatR `ValidationBehavior`; `ExceptionHandlingMiddleware` is the outermost layer and normalizes errors.
-
-### Multi-Tenancy (the central architectural concern)
-Tenant isolation is enforced in **three coordinated layers** — when adding entities or queries, all three matter:
-1. **Resolution** (`TenantResolutionMiddleware`, runs before auth): extracts tenant from the request **subdomain** (`acme.yourhrm.com` → `acme`; `admin.*` → system context; reserved subdomains skip resolution). Looks up the tenant and populates the scoped `ITenantContext`. Dev fallback: the SPA sends an `X-Tenant-Subdomain` header (set by the frontend `tenantInterceptor`) so `*.localhost` hosts-file entries aren't needed.
-2. **Write isolation** (`TenantInterceptor`, a `SaveChanges` interceptor): auto-stamps `TenantId` on any new `BaseEntity` when a tenant is resolved.
-3. **Read isolation** (global query filters in `AppDbContext.OnModelCreating`): every tenant-scoped entity is filtered by `TenantId == _tenantContext.TenantId`. Use `IgnoreQueryFilters()` only deliberately (e.g. the tenant lookup in the resolution middleware itself).
-
-`AuditInterceptor` similarly stamps audit fields. EF uses PostgreSQL with **snake_case** naming convention (`EFCore.NamingConventions`).
-
-### Cross-cutting backend infrastructure
-- **Auth**: JWT bearer; `JwtService` is registered as a singleton and also supplies `TokenValidationParameters`. BCrypt for password hashing. Refresh tokens are cleaned up by the `TokenCleanupJob` Hangfire recurring job (daily).
-- **Background jobs**: Hangfire on PostgreSQL storage; dashboard at `/hangfire` (dev only).
-- **Resilience**: a named `ResilientClient` HttpClient with Polly retry + circuit-breaker for outbound calls.
-- **Logging**: Serilog; `TenantId`/`TenantSubdomain`/`RequestId` are pushed into the log context per request. Writes a daily rolling **structured file** at `src/backend/HRM.Api/Logs/hrm-<YYYYMMDD>.log` (console + file sinks; exception + stack included). In **Development** (`appsettings.Development.json`) the level is raised for root-causing: `HRM.*` at **Debug** and **EF Core SQL** (`Microsoft.EntityFrameworkCore.Database.Command`) at Information — base `appsettings.json` stays Information-only for prod. **QA/debug practice:** `@test-runner` and `@browser-debugger` read this log (correlating by `RequestId`) to pull the real exception/stack/SQL behind a failing TC — never infer root cause from the HTTP body alone when a log line exists. Requires a backend restart after changing the logging config.
-
-### Frontend: standalone Angular 20
-- `core/` holds singletons: `auth/` (service, guard, interceptor, models), `interceptors/` (`error`, `tenant`), `tenant/` (subdomain resolution mirroring the backend rules, using signals).
-- `features/` holds route-lazy feature components (e.g. `auth/login`, `dashboard`); `layouts/` holds `auth-layout` / `main-layout`.
-- HTTP interceptors are functional (`HttpInterceptorFn`). The `tenantInterceptor` injects `X-Tenant-Subdomain` from `environment.tenantSubdomain` for local dev.
-- UI stack: Angular Material + Tailwind CSS, ngx-translate (i18n), ngx-toastr (notifications).
-
-### Traceability convention
+## Traceability convention
 Code, user stories (`docs/BA/`, IEEE 830), and test cases (`docs/QA/`, IEEE 829) are cross-referenced by ID — e.g. `US-AUTH-007` appears in both `TenantService` comments and `docs/QA/authentication/`. Preserve these references when modifying related code.
