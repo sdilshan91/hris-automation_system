@@ -48,6 +48,40 @@ export type PayrollRunStatus =
   | 'Cancelled';
 
 /**
+ * The run states in which payslip PDFs may be generated or regenerated (US-PAY-004 BR-1).
+ *
+ * **Mirrors the server exactly** — `PayslipGenerationService.GenerateAsync` rejects anything else with
+ * 400 `run_not_ready_for_payslips`. It is listed here once because the UI previously carried its own
+ * version of the rule (`status !== 'Finalized'`), which was wrong in BOTH directions: it enabled the
+ * button on a Draft/Queued run where the call always 400s, and disabled it on a Finalized run where the
+ * backend explicitly allows regeneration after a template change. The component's own comments disagreed
+ * with each other about which was intended.
+ */
+export const PAYSLIP_GENERATION_STATUSES: readonly PayrollRunStatus[] = [
+  'ReviewPending',
+  'Approved',
+  'Finalized',
+] as const;
+
+/** Whether payslip generation would be accepted for a run in this state (BR-1). */
+export function canGeneratePayslipsFor(
+  status: PayrollRunStatus | null | undefined,
+): boolean {
+  return status != null && PAYSLIP_GENERATION_STATUSES.includes(status);
+}
+
+/**
+ * Whether generating would OVERWRITE payslips that may already have been distributed. Regeneration on a
+ * finalized run is supported by the backend and is the after-a-template-change use case, but the PDFs may
+ * already be in employees' inboxes — so the UI confirms rather than doing it on one click.
+ */
+export function payslipRegenerationNeedsConfirmation(
+  status: PayrollRunStatus | null | undefined,
+): boolean {
+  return status === 'Finalized';
+}
+
+/**
  * Tailwind badge classes per status (§8 color-coded badge). Single source of truth.
  *
  * ISSUE-317 / DF-12: the backend tolerates a corrupt enum row by returning the

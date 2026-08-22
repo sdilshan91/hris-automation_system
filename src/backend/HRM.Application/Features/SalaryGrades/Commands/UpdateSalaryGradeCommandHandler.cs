@@ -27,6 +27,7 @@ public sealed class UpdateSalaryGradeCommandHandler
             MaxAmount = request.MaxAmount,
             Currency = request.Currency,
             Description = request.Description,
+            IsActive = request.IsActive,
         };
 
         return _salaryGradeService.UpdateAsync(request.SalaryGradeId, updateRequest, cancellationToken);

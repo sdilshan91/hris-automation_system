@@ -26,6 +26,7 @@ describe('SalaryGradeListComponent', () => {
       currency: 'USD',
       description: 'Entry level',
       isActive: true,
+      referencingJobTitleCount: 0,
     },
     {
       id: 'sg-2',
@@ -37,6 +38,7 @@ describe('SalaryGradeListComponent', () => {
       currency: 'USD',
       description: null,
       isActive: true,
+      referencingJobTitleCount: 0,
     },
   ];
 
@@ -131,6 +133,37 @@ describe('SalaryGradeListComponent', () => {
     expect(gradeServiceSpy.deactivate).toHaveBeenCalledWith('sg-1');
     expect(toastrSpy.success).toHaveBeenCalled();
     expect(component.gradeToDeactivate()).toBeNull();
+  });
+
+  // ── B5: the DELETE route warns too ────────────────────────────────────────────────────────────
+  //
+  // The edit form's toggle warns before deactivating a grade job titles reference. This dialog is the
+  // other, arguably more-used route to the same outcome, and it was silent — even though the count is
+  // already loaded on the very object it displays.
+
+  it('warns in the deactivate dialog when job titles reference the grade', () => {
+    fixture.detectChanges();
+    component.confirmDeactivate({ ...mockGrades[0], referencingJobTitleCount: 2 });
+    fixture.detectChanges();
+
+    expect(component.deactivationWarning()).toContain('2 job titles');
+    const el = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="list-deactivate-warning"]',
+    );
+    expect(el?.textContent)
+      .withContext('the count is in hand; a silent dialog wastes it and leaves the user blind')
+      .toContain('2 job titles');
+  });
+
+  it('stays silent when nothing references the grade', () => {
+    fixture.detectChanges();
+    component.confirmDeactivate({ ...mockGrades[0], referencingJobTitleCount: 0 });
+    fixture.detectChanges();
+
+    expect(component.deactivationWarning()).toBeNull();
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('[data-testid="list-deactivate-warning"]'),
+    ).toBeNull();
   });
 
   it('should surface a deactivation error via toast', () => {

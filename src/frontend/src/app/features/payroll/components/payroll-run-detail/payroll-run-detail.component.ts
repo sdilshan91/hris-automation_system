@@ -30,6 +30,7 @@ import {
   RUN_STATUS_LABELS,
   RUN_STEPPER,
   runActionErrorMessage,
+  canGeneratePayslipsFor,
 } from '../../models/payroll-run.models';
 import {
   APPROVAL_ACTION_BADGE,
@@ -60,10 +61,12 @@ type CommentAction = 'reject' | 'return' | null;
  *   searchable payslip table, the Generate/Regenerate action + status bar, the PDF
  *   preview modal, and per-employee / bulk-ZIP downloads.
  *
- * `canGeneratePayslips` (BR-1/AC-5): payslips may be generated on a ReviewPending,
- * Approved, or Finalized run, but REGENERATED only on a non-finalized run — the
- * child handles the generate-vs-regenerate label; here we just gate the action on
- * non-Finalized so finalized runs are view/download only.
+ * `canGeneratePayslips` (BR-1/AC-5): payslips may be generated OR regenerated on a ReviewPending,
+ * Approved, or Finalized run — `canGeneratePayslipsFor` is the single description of that rule and it
+ * mirrors `PayslipGenerationService.GenerateAsync`. This block previously said one thing and the code did
+ * another (`status !== 'Finalized'`), which both enabled a button that always 400d on a Draft/Queued run
+ * and hid one that works on a Finalized run. The child confirms before regenerating a finalized run,
+ * because those PDFs may already have been emailed.
  *
  * Mobile (§8): individual payslip view + download are supported; the bulk ZIP
  * download is hidden on mobile by the child component.
@@ -486,6 +489,7 @@ type CommentAction = 'reject' | 'return' | null;
               <app-payslip-list
                 [runId]="r.id"
                 [canGenerate]="canGeneratePayslips()"
+                [runStatus]="status()"
               />
             }
 
@@ -780,12 +784,12 @@ export class PayrollRunDetailComponent implements OnInit, OnDestroy {
   });
 
   /**
-   * Generation is allowed on a ReviewPending/Approved/Finalized run (BR-1), but the
-   * child only offers "Regenerate" on a non-finalized run (AC-5). We pass
-   * `canGenerate = run is NOT Finalized` so a finalized run is view/download only;
-   * the child still shows downloads regardless.
+   * Mirrors the server's BR-1 states exactly (`canGeneratePayslipsFor`) — generation and REGENERATION are
+   * both allowed on a ReviewPending, Approved or Finalized run. The child offers Regenerate on a finalized
+   * run too, behind a confirmation, because those PDFs may already have been emailed. Downloads are shown
+   * by the child regardless of this flag.
    */
-  readonly canGeneratePayslips = computed(() => this.status() !== 'Finalized');
+  readonly canGeneratePayslips = computed(() => canGeneratePayslipsFor(this.status()));
 
   /** 0-based index of the current step in RUN_STEPPER (Cancelled/Rejected → -1). */
   readonly stepIndex = computed(() => {

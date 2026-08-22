@@ -122,13 +122,32 @@ public sealed class SalaryGradeService : ISalaryGradeService
         salaryGrade.Currency = request.Currency.Trim().ToUpperInvariant();
         salaryGrade.Description = request.Description?.Trim();
 
+        // B5: the Active flag is now part of the update. Before this it was absent from the request DTO, so
+        // the edit form's toggle changed nothing on save — and because DELETE was the only writer of the
+        // flag, a deactivated grade could never be brought back.
+        // null = leave unchanged; see UpdateSalaryGradeRequest.IsActive for why absent must not mean true.
+        var wasActive = salaryGrade.IsActive;
+        if (request.IsActive is bool active)
+        {
+            salaryGrade.IsActive = active;
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (wasActive != salaryGrade.IsActive)
+        {
+            _logger.LogInformation(
+                "Salary grade {Transition}. Id={SalaryGradeId}, Code={Code}, TenantId={TenantId}, By={User}",
+                salaryGrade.IsActive ? "reactivated" : "deactivated",
+                salaryGrade.Id, salaryGrade.Code, _tenantContext.TenantId, _currentUser.Email);
+        }
 
         _logger.LogInformation(
             "Salary grade updated. Id={SalaryGradeId}, Code={Code}, TenantId={TenantId}, By={User}",
             salaryGrade.Id, salaryGrade.Code, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result<SalaryGradeDto>.Success(ToDto(salaryGrade));
+        return Result<SalaryGradeDto>.Success(
+            await ToDtoAsync(salaryGrade, cancellationToken));
     }
 
     /// <summary>
@@ -175,7 +194,8 @@ public sealed class SalaryGradeService : ISalaryGradeService
         if (salaryGrade is null)
             return Result<SalaryGradeDto>.Failure("Salary grade not found.", 404);
 
-        return Result<SalaryGradeDto>.Success(ToDto(salaryGrade));
+        return Result<SalaryGradeDto>.Success(
+            await ToDtoAsync(salaryGrade, cancellationToken));
     }
 
     public async Task<Result<IReadOnlyList<SalaryGradeDto>>> GetAllAsync(
@@ -195,7 +215,23 @@ public sealed class SalaryGradeService : ISalaryGradeService
             .ThenBy(g => g.Name)
             .ToListAsync(cancellationToken);
 
-        var dtos = salaryGrades.Select(ToDto).ToList();
+        // B5: one GROUPED count for the whole page rather than a count per row — the field has to be
+        // truthful on the list too (a hard-coded 0 would read as "nothing references this grade"), but not
+        // at the cost of an N+1.
+        var gradeIds = salaryGrades.Select(g => g.Id).ToList();
+        var referenceCounts = await _dbContext.JobTitles
+            .AsNoTracking()
+            .Where(t => t.GradeId != null && gradeIds.Contains(t.GradeId.Value))
+            .GroupBy(t => t.GradeId!.Value)
+            .Select(grp => new { GradeId = grp.Key, Count = grp.Count() })
+            .ToDictionaryAsync(x => x.GradeId, x => x.Count, cancellationToken);
+
+        var dtos = salaryGrades
+            .Select(g => ToDto(g) with
+            {
+                ReferencingJobTitleCount = referenceCounts.GetValueOrDefault(g.Id),
+            })
+            .ToList();
         return Result<IReadOnlyList<SalaryGradeDto>>.Success(dtos);
     }
 
@@ -214,6 +250,18 @@ public sealed class SalaryGradeService : ISalaryGradeService
 
         return null;
     }
+
+    /// <summary>
+    /// Projects a grade plus the number of job titles pointing at it (B5), so the UI can warn before a
+    /// deactivation that would break those titles' next save.
+    /// </summary>
+    private async Task<SalaryGradeDto> ToDtoAsync(SalaryGrade g, CancellationToken cancellationToken) =>
+        ToDto(g) with
+        {
+            ReferencingJobTitleCount = await _dbContext.JobTitles
+                .AsNoTracking()
+                .CountAsync(t => t.GradeId == g.Id, cancellationToken),
+        };
 
     private static SalaryGradeDto ToDto(SalaryGrade g) => new()
     {

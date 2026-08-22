@@ -15,5 +15,6 @@ public sealed record UpdateSalaryGradeCommand(
     decimal? MidAmount,
     decimal MaxAmount,
     string Currency,
-    string? Description
+    string? Description,
+    bool? IsActive
 ) : IRequest<Result<SalaryGradeDto>>;

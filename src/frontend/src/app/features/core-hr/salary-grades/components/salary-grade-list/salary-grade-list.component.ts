@@ -268,6 +268,14 @@ import { SalaryGradeFormComponent } from '../salary-grade-form/salary-grade-form
             <p class="text-xs text-neutral-400 mt-2">
               Deactivated grades are hidden from job-title grade pickers but remain in admin views.
             </p>
+            <!-- B5: this is the OTHER route to deactivation. The form's toggle warns when job titles
+                 reference the grade; this dialog was silent even though the count is already loaded on
+                 the very object it is showing, so the more-used route stayed blind. -->
+            @if (deactivationWarning(); as warning) {
+              <p class="text-xs text-amber-600 mt-2" data-testid="list-deactivate-warning" role="status">
+                {{ warning }}
+              </p>
+            }
             <div class="flex justify-end gap-3 mt-6">
               <button type="button" class="btn-secondary" (click)="cancelDeactivate()">
                 Cancel
@@ -425,6 +433,20 @@ export class SalaryGradeListComponent implements OnInit {
   }
 
   // --- Deactivation ------------------------------------------
+
+  /**
+   * Same warning the edit form shows, on the DELETE-based route (B5). Job titles must resolve to an ACTIVE
+   * grade, so deactivating a referenced one makes those titles fail their next save.
+   */
+  deactivationWarning(): string | null {
+    const g = this.gradeToDeactivate();
+    if (!g) return null;
+    const count = g.referencingJobTitleCount;
+    if (count <= 0) return null;
+    return count === 1
+      ? '1 job title uses this grade and will fail validation on its next save.'
+      : `${count} job titles use this grade and will fail validation on their next save.`;
+  }
 
   confirmDeactivate(grade: ISalaryGrade, event?: Event): void {
     event?.stopPropagation();

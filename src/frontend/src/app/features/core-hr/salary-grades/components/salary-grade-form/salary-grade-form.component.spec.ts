@@ -27,6 +27,7 @@ describe('SalaryGradeFormComponent', () => {
     currency: 'USD',
     description: 'Entry level',
     isActive: true,
+    referencingJobTitleCount: 0,
   };
 
   beforeEach(async () => {
@@ -136,11 +137,9 @@ describe('SalaryGradeFormComponent', () => {
 
       component.onSubmit();
 
-      // NOTE (D-core-hr slice 1): the create/update REQUEST DTOs have NO `isActive` member — the API
-      // discards it, so the form's Active toggle is a save-time no-op. This assertion used to require
-      // `isActive: true` in the payload, certifying a field the backend ignores; that lie is removed.
-      // `objectContaining` asserts every field that IS in the contract while no longer pinning the
-      // discarded one. (Removing `isActive` from the payload/toggle needs a product decision — reported.)
+      // CREATE still has no `isActive` on the wire — a new grade is always active — so this arm asserts
+      // only the fields the create contract carries. UPDATE is the one that gained the flag (B5); its arms
+      // are below.
       expect(gradeServiceSpy.create).toHaveBeenCalledWith(
         jasmine.objectContaining({
           code: 'G3',
@@ -253,6 +252,100 @@ describe('SalaryGradeFormComponent', () => {
         jasmine.objectContaining({ name: 'Grade 1 (revised)', code: 'G1' })
       );
       expect(toastrSpy.success).toHaveBeenCalled();
+    });
+
+    // ── B5: the Active toggle actually does something now ─────────────────────────────────────────
+
+    /**
+     * THE ARM B5 EXISTS FOR. The update request DTO had no `isActive` member, so the toggle was a silent
+     * no-op: the user flipped it, saved, and got a success toast while nothing changed. The old spec was
+     * complicit — it had been edited to STOP asserting the field precisely because the backend discarded
+     * it, which recorded the bug as intended behaviour.
+     */
+    it('sends the Active flag on update', () => {
+      spyOn(window, 'confirm').and.returnValue(true);
+      component.form.patchValue({ isActive: false });
+      component.form.markAsDirty();
+
+      component.onSubmit();
+
+      expect(gradeServiceSpy.update).toHaveBeenCalledWith(
+        'sg-1',
+        jasmine.objectContaining({ isActive: false })
+      );
+    });
+
+    it('sends isActive true when the grade is left active', () => {
+      component.form.patchValue({ name: 'Still active' });
+      component.onSubmit();
+
+      expect(gradeServiceSpy.update).toHaveBeenCalledWith(
+        'sg-1',
+        jasmine.objectContaining({ isActive: true })
+      );
+    });
+
+    // ── B5: warn before deactivating a grade job titles still point at ────────────────────────────
+
+    it('does not warn when nothing references the grade', () => {
+      component.form.patchValue({ isActive: false });
+      fixture.detectChanges();
+
+      expect(component.deactivationWarning()).toBeNull();
+    });
+
+    it('warns, and counts, when job titles reference the grade being deactivated', () => {
+      componentRef.setInput('grade', { ...mockGrade, referencingJobTitleCount: 3 });
+      fixture.detectChanges();
+      component.form.patchValue({ isActive: false });
+      fixture.detectChanges();
+
+      const warning = component.deactivationWarning();
+      expect(warning).toContain('3 job titles');
+      const el = (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="deactivate-warning"]',
+      );
+      expect(el?.textContent).toContain('3 job titles');
+    });
+
+    it('uses the singular for exactly one referencing job title', () => {
+      componentRef.setInput('grade', { ...mockGrade, referencingJobTitleCount: 1 });
+      fixture.detectChanges();
+      component.form.patchValue({ isActive: false });
+
+      expect(component.deactivationWarning()).toContain('1 job title uses');
+    });
+
+    /**
+     * The warning must be about DEACTIVATION, not about the grade merely being referenced — otherwise it
+     * would shout on every ordinary edit of a grade that job titles use.
+     */
+    it('does not warn while the grade stays active', () => {
+      componentRef.setInput('grade', { ...mockGrade, referencingJobTitleCount: 3 });
+      fixture.detectChanges();
+      component.form.patchValue({ name: 'Renamed but still active' });
+      fixture.detectChanges();
+
+      expect(component.deactivationWarning()).toBeNull();
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('[data-testid="deactivate-warning"]'),
+      ).toBeNull();
+    });
+
+    it('abandons the save when the deactivation confirm is refused', () => {
+      componentRef.setInput('grade', { ...mockGrade, referencingJobTitleCount: 2 });
+      fixture.detectChanges();
+      const confirmSpy = spyOn(window, 'confirm').and.returnValue(false);
+      component.form.patchValue({ isActive: false });
+      component.form.markAsDirty();
+
+      component.onSubmit();
+
+      expect(confirmSpy).toHaveBeenCalled();
+      expect(gradeServiceSpy.update)
+        .withContext('refusing the confirm must not break the job titles anyway')
+        .not.toHaveBeenCalled();
+      expect(component.isSaving()).toBeFalse();
     });
   });
 });

@@ -45,6 +45,21 @@ public sealed class PayslipGenerationService : IPayslipGenerationService
         _jobScheduler = jobScheduler;
     }
 
+    /// <summary>
+    /// US-PAY-004 BR-1 — the run states in which payslip PDFs may be generated, regenerated, or retried.
+    ///
+    /// <para>
+    /// Written once because it was written twice: the generate path and the retry path each spelled the
+    /// triple out as a literal, and the Angular client carried a third, DIFFERENT version of it
+    /// (<c>status !== 'Finalized'</c>) that was wrong in both directions. They happened to agree here; the
+    /// client did not. Same S-1 class as BUG-307 and B4's completion gate.
+    /// </para>
+    /// </summary>
+    private static bool AllowsPayslipGeneration(PayrollRunStatus status) =>
+        status is PayrollRunStatus.ReviewPending
+            or PayrollRunStatus.Approved
+            or PayrollRunStatus.Finalized;
+
     public async Task<Result<PayslipGenerationAcceptedDto>> GenerateAsync(Guid runId, CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -55,7 +70,7 @@ public sealed class PayslipGenerationService : IPayslipGenerationService
             return Result<PayslipGenerationAcceptedDto>.Failure("Payroll run not found.", 404, "run_not_found");
 
         // BR-1: payslips only for ReviewPending / Approved / Finalized runs.
-        if (run.Status is not (PayrollRunStatus.ReviewPending or PayrollRunStatus.Approved or PayrollRunStatus.Finalized))
+        if (!AllowsPayslipGeneration(run.Status))
             return Result<PayslipGenerationAcceptedDto>.Failure(
                 "Payslips can only be generated for runs that are ReviewPending, Approved, or Finalized.",
                 400, "run_not_ready_for_payslips");
@@ -110,7 +125,7 @@ public sealed class PayslipGenerationService : IPayslipGenerationService
 
         // BR-1 (unchanged): payslips only for ReviewPending / Approved / Finalized runs. Retrying a failed slip on a
         // Finalized run is the primary FR-8 use case, so Finalized is explicitly allowed (not restricted).
-        if (run.Status is not (PayrollRunStatus.ReviewPending or PayrollRunStatus.Approved or PayrollRunStatus.Finalized))
+        if (!AllowsPayslipGeneration(run.Status))
             return Result<PayslipGenerationAcceptedDto>.Failure(
                 "Payslips can only be generated for runs that are ReviewPending, Approved, or Finalized.",
                 400, "run_not_ready_for_payslips");
