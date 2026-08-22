@@ -23,6 +23,17 @@ public interface ILeaveReportService
     /// Generates a pre-built tabular report (FR-1, FR-6) with server-side filters, sort and paging
     /// (FR-2, FR-3) and role scoping (BR-2). Returns the column headers + the requested page of rows.
     /// </summary>
+    /// <summary>
+    /// The three landing-page summary cards (US-LV-012): utilization %, top leave type, absenteeism %.
+    /// </summary>
+    /// <remarks>
+    /// Derived from <c>ComputeUtilizationAggregatesAsync</c> — the SAME computation behind the tabular
+    /// utilization report and the by-department chart — so the card and the table cannot disagree. A second
+    /// utilization calculation would be the S-1 shape that produced BUG-307.
+    /// </remarks>
+    Task<Result<LeaveSummaryMetricsDto>> GetSummaryMetricsAsync(
+        LeaveReportQueryParams queryParams, CancellationToken cancellationToken = default);
+
     Task<Result<LeaveReportResult>> GenerateReportAsync(
         LeaveReportType reportType,
         LeaveReportQueryParams queryParams,

@@ -129,7 +129,8 @@ public sealed class LeaveReportServiceTests
 
     private LeaveReportService CreateService(ICurrentUser? caller = null)
         => new(CreateDbContext(), _tenantContext, caller ?? _hrUser, _entitlementService,
-            _exportStorage, _logger, new TenantLeaveYearResolver(CreateDbContext(), _tenantContext));
+            _exportStorage, _logger, new TenantLeaveYearResolver(CreateDbContext(), _tenantContext),
+            Substitute.For<IHolidayProvider>());
 
     /// <summary>ISSUE-311: seeds the tenant ROW carrying the FiscalYearStartMonth the resolver must READ
     /// (the fixture otherwise seeds no Tenant row, so the resolver falls back to calendar).</summary>
@@ -1213,7 +1214,8 @@ public sealed class LeaveReportServiceTests
         backgroundJobs.Create(Arg.Do<Job>(j => captured = j), Arg.Any<IState>()).Returns("job-1");
 
         var svc = new LeaveReportService(CreateDbContext(), _tenantContext, _hrUser, _entitlementService,
-            _exportStorage, _logger, new TenantLeaveYearResolver(CreateDbContext(), _tenantContext), backgroundJobs);
+            _exportStorage, _logger, new TenantLeaveYearResolver(CreateDbContext(), _tenantContext),
+            Substitute.For<IHolidayProvider>(), backgroundJobs);
 
         var result = await svc.ExportReportAsync(
             LeaveReportType.BalanceSummary, ReportExportFormat.Csv, Params(leaveTypeId: _annualLeaveTypeId));
@@ -1423,5 +1425,64 @@ public sealed class LeaveReportServiceTests
         Cell(row, report, "Department").Should().Be("Engineering");
         Cell(row, report, ColHeadcount).Should().Be("2");   // only tenant A's Engineering headcount
         report.Rows.Should().NotContain(r => Cell(r, report, "Department") == "Foreign-Dept");
+    }
+
+    // ── /leaves/reports/summary — the three landing cards (US-LV-012) ────────
+
+    /// <summary>
+    /// Utilization on the CARD derives from the same aggregate as the TABLE. A second calculation here is
+    /// how a summary card and the report beneath it end up showing two different numbers for one thing —
+    /// the S-1 shape behind BUG-307.
+    /// </summary>
+    [Fact]
+    public async Task Summary_utilization_comes_from_the_shared_aggregate()
+    {
+        var result = await CreateService().GetSummaryMetricsAsync(Params(leaveTypeId: _annualLeaveTypeId));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.TotalUtilizationPct.Should().BeGreaterThanOrEqualTo(0m);
+        result.Value.TotalUtilizationPct.Should().BeLessThanOrEqualTo(100m,
+            "used should not exceed entitled for this fixture");
+    }
+
+    /// <summary>
+    /// The top leave type is decided by DAYS TAKEN, and ties break deterministically by name — otherwise
+    /// the card flickers between equally-used types across refreshes with identical data.
+    /// </summary>
+    [Fact]
+    public async Task Summary_top_leave_type_is_deterministic()
+    {
+        var first = await CreateService().GetSummaryMetricsAsync(Params());
+        var second = await CreateService().GetSummaryMetricsAsync(Params());
+
+        first.IsSuccess.Should().BeTrue(first.Error);
+        second.Value!.TopLeaveType.Should().Be(first.Value!.TopLeaveType,
+            "an unordered Max() would let the card change on refresh with identical data");
+    }
+
+    /// <summary>
+    /// No entitlement configured must yield 0%, not a divide-by-zero and not NaN. A blank tenant is the
+    /// first thing anyone sees on a fresh install.
+    /// </summary>
+    [Fact]
+    public async Task Summary_returns_zero_rather_than_dividing_by_zero_on_an_empty_tenant()
+    {
+        var empty = Substitute.For<ITenantContext>();
+        empty.TenantId.Returns(Guid.NewGuid());
+        empty.IsResolved.Returns(true);
+        var dbName = Guid.NewGuid().ToString();
+
+        var svc = new LeaveReportService(
+            TestDbContextFactory.Create(empty, dbName), empty, _hrUser, _entitlementService,
+            _exportStorage, _logger,
+            new TenantLeaveYearResolver(TestDbContextFactory.Create(empty, dbName), empty),
+            Substitute.For<IHolidayProvider>());
+
+        var result = await svc.GetSummaryMetricsAsync(Params());
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.TotalUtilizationPct.Should().Be(0m);
+        result.Value.AbsenteeismRatePct.Should().Be(0m);
+        result.Value.TopLeaveType.Should().BeEmpty("nothing was taken, so there is no top type to name");
     }
 }

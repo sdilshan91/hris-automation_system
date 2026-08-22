@@ -131,6 +131,8 @@ public sealed class HrLeaveAttendanceReportIntegrationTests
         if (sharedCache is not null)
             services.AddSingleton(sharedCache); // exercises HrReportService._cache (the scoped cache-key path)
         services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>(); // ISSUE-311: report now reads the fiscal leave year.
+        // LeaveReportService now REQUIRES IHolidayProvider (the summary card divides by WORKING days).
+        services.AddScoped<IHolidayProvider, NoOpHolidayProvider>();
         services.AddScoped<ILeaveReportService, LeaveReportService>();
         services.AddScoped<IHrReportService, HrReportService>();
         services.AddMediatR(cfg =>

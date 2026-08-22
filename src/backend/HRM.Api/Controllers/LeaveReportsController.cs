@@ -30,6 +30,31 @@ public sealed class LeaveReportsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/leaves/reports/summary
+    /// The three landing-page summary cards (US-LV-012): utilization %, top leave type, absenteeism %.
+    /// </summary>
+    /// <remarks>
+    /// Declared BEFORE <c>reports/{reportType}</c>, and that ordering is load-bearing: <c>{reportType}</c> is
+    /// an UNCONSTRAINED string route, so it would otherwise capture "summary", fail to parse it as a
+    /// <see cref="LeaveReportType"/>, and return 400 "Unknown report type 'summary'". That is exactly what
+    /// the frontend has been getting since the dashboard shipped.
+    /// </remarks>
+    [HttpGet("reports/summary")]
+    [RequirePermission("Leave.Reports")]
+    [ProducesResponseType(typeof(ApiResponse<LeaveSummaryMetricsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetSummaryMetrics(
+        [FromQuery] LeaveReportQueryParams queryParams,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetLeaveSummaryMetricsQuery(queryParams), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return Ok(ApiResponse<LeaveSummaryMetricsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/leaves/reports/{reportType}
     /// Generates a pre-built tabular leave report (FR-1, FR-6) with filters (FR-2), server-side sort +
     /// pagination (FR-3). {reportType} is one of: BalanceSummary, Utilization, Absenteeism,

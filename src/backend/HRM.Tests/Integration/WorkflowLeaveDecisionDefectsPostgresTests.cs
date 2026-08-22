@@ -319,13 +319,6 @@ public sealed class WorkflowLeaveDecisionDefectsPostgresTests : IAsyncLifetime
             Arg.Any<Guid>(), Arg.Any<Guid>(), _managerUserId, Arg.Any<CancellationToken>());
     }
 
-    private sealed class NoOpHolidayProvider : IHolidayProvider
-    {
-        public Task<IReadOnlySet<DateOnly>> GetHolidaysAsync(
-            DateOnly startInclusive, DateOnly endInclusive, Guid? locationId = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlySet<DateOnly>>(new HashSet<DateOnly>());
-    }
 
     // ── ISSUE-387 ────────────────────────────────────────────────────────────
 
