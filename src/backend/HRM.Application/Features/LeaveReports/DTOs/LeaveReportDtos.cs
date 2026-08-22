@@ -6,6 +6,30 @@ namespace HRM.Application.Features.LeaveReports.DTOs;
 /// FR-1 thin wrappers (CarryForwardSummary, LopSummary) and DepartmentCalendarCoverage are implemented;
 /// LeaveTrend is exposed via the analytics endpoint (it is chart-shaped, AC-4).
 /// </summary>
+/// <summary>
+/// The three landing-page summary cards (US-LV-012). A distinct shape from <c>LeaveReportResult</c>:
+/// the cards are scalars, not a table.
+/// </summary>
+/// <remarks>
+/// The FE has called <c>GET /leaves/reports/summary</c> since the dashboard shipped. `summary` is not a
+/// <see cref="LeaveReportType"/>, so that request bound "summary" to the enum and failed — the cards were
+/// blank. This is the endpoint it was always asking for.
+/// </remarks>
+public sealed record LeaveSummaryMetricsDto
+{
+    /// <summary>Used days over entitled days for the period, as a percentage.</summary>
+    public decimal TotalUtilizationPct { get; init; }
+
+    /// <summary>The leave type with the most days taken. Empty when nothing was taken.</summary>
+    public string TopLeaveType { get; init; } = string.Empty;
+
+    /// <summary>
+    /// LOP days as a percentage of available WORKING days (headcount x working days in range),
+    /// excluding weekends and tenant holidays.
+    /// </summary>
+    public decimal AbsenteeismRatePct { get; init; }
+}
+
 public enum LeaveReportType
 {
     BalanceSummary,

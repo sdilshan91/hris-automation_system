@@ -5189,6 +5189,37 @@
         },
         "type": "object"
       },
+      "ApiResponseOfLeaveReportsLeaveSummaryMetricsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LeaveReportsLeaveSummaryMetricsDto"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseOfLeaveRequestsAssignLopResultDto": {
         "additionalProperties": false,
         "properties": {
@@ -16735,6 +16766,24 @@
             },
             "nullable": true,
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "LeaveReportsLeaveSummaryMetricsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "absenteeismRatePct": {
+            "format": "double",
+            "type": "number"
+          },
+          "topLeaveType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "totalUtilizationPct": {
+            "format": "double",
+            "type": "number"
           }
         },
         "type": "object"
@@ -40889,6 +40938,129 @@
         },
         "tags": [
           "LeaveRequests"
+        ]
+      }
+    },
+    "/api/v1/leaves/reports/summary": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "From",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "To",
+            "schema": {
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "Year",
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "DepartmentId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "JobTitleId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "EmploymentType",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "LeaveTypeId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "EmployeeSearch",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "SortBy",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "SortAscending",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "Page",
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "PageSize",
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfLeaveReportsLeaveSummaryMetricsDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfLeaveReportsLeaveSummaryMetricsDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfLeaveReportsLeaveSummaryMetricsDto"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "tags": [
+          "LeaveReports"
         ]
       }
     },

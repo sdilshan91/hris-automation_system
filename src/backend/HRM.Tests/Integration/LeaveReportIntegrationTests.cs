@@ -121,6 +121,8 @@ public sealed class LeaveReportIntegrationTests
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
         services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
         services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>(); // ISSUE-311: report now reads the fiscal leave year.
+        // LeaveReportService now REQUIRES IHolidayProvider (the summary card divides by WORKING days).
+        services.AddScoped<IHolidayProvider, NoOpHolidayProvider>();
         services.AddScoped<ILeaveReportService, LeaveReportService>();
         services.AddMediatR(cfg =>
             cfg.RegisterServicesFromAssembly(typeof(GetLeaveReportQuery).Assembly));

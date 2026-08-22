@@ -50,6 +50,8 @@ public sealed class LeaveReportService : ILeaveReportService
     private const int MaxPageSize = 500;
     private const int TrendMonths = 12;
 
+    private readonly IHolidayProvider _holidayProvider;
+
     public LeaveReportService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
@@ -58,9 +60,15 @@ public sealed class LeaveReportService : ILeaveReportService
         IReportExportStorage exportStorage,
         ILogger<LeaveReportService> logger,
         ITenantLeaveYearResolver leaveYearResolver,
+        // REQUIRED, and deliberately placed before the trailing optional — same reasoning as ISSUE-305 in
+        // LeaveRequestService. The summary card's absenteeism rate divides by WORKING days; with a null
+        // provider the count would silently include public holidays, inflating the denominator and
+        // UNDERSTATING the rate. A metric that is quietly wrong is worse than one that fails to build.
+        IHolidayProvider holidayProvider,
         IBackgroundJobClient? backgroundJobs = null)
     {
         _dbContext = dbContext;
+        _holidayProvider = holidayProvider;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _entitlementService = entitlementService;
@@ -82,6 +90,105 @@ public sealed class LeaveReportService : ILeaveReportService
     // ══════════════════════════════════════════════════════════════
     //  Public API
     // ══════════════════════════════════════════════════════════════
+
+    /// <inheritdoc />
+    public async Task<Result<LeaveSummaryMetricsDto>> GetSummaryMetricsAsync(
+        LeaveReportQueryParams queryParams, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<LeaveSummaryMetricsDto>.Failure("Tenant context is not resolved.", 400);
+
+        var scope = await ResolveScopeAsync(cancellationToken);
+
+        // DERIVED FROM THE SAME AGGREGATE THE TABLE AND CHART USE. Computing utilization a second way here
+        // is how a summary card and the report beneath it end up showing two different numbers for one
+        // thing — the S-1 shape behind BUG-307.
+        var aggregates = await ComputeUtilizationAggregatesAsync(queryParams, scope, cancellationToken);
+
+        decimal entitled = aggregates.Sum(a => a.Entitlement);
+        decimal used = aggregates.Sum(a => a.Used);
+
+        // Guard the divide: a tenant with no entitlement configured yet is 0%, not a crash and not NaN.
+        decimal utilizationPct = entitled > 0m ? Math.Round(used / entitled * 100m, 1) : 0m;
+
+        var topLeaveType = aggregates
+            .GroupBy(a => a.LeaveTypeName)
+            .Select(g => new { Type = g.Key, Days = g.Sum(x => x.Used) })
+            .Where(x => x.Days > 0m)
+            .OrderByDescending(x => x.Days)
+            .ThenBy(x => x.Type, StringComparer.OrdinalIgnoreCase) // deterministic on ties
+            .Select(x => x.Type)
+            .FirstOrDefault() ?? string.Empty;
+
+        var absenteeismPct = await ComputeAbsenteeismRateAsync(queryParams, scope, cancellationToken);
+
+        return Result<LeaveSummaryMetricsDto>.Success(new LeaveSummaryMetricsDto
+        {
+            TotalUtilizationPct = utilizationPct,
+            TopLeaveType = topLeaveType,
+            AbsenteeismRatePct = absenteeismPct,
+        });
+    }
+
+    /// <summary>
+    /// LOP days as a share of AVAILABLE WORKING TIME: headcount x working days in range, excluding weekends
+    /// and tenant holidays.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Dividing by working days — rather than by entitlement, which was the cheaper option — is what makes
+    /// this answer the question the card asks. Entitlement would make a generous tenant look less absent for
+    /// the same lost time.
+    /// </para>
+    /// <para>
+    /// LOP is the unplanned-absence signal, consistent with <c>BuildAbsenteeismAsync</c>, which documents
+    /// that there is no attendance module to draw a richer signal from.
+    /// </para>
+    /// <para>
+    /// ASSUMPTION, stated because it is not free: the working week is Mon-Fri. That matches the seeded
+    /// default shift. A tenant on a non-standard week (e.g. Sun-Thu) would need the shift's WorkingDays
+    /// threaded through here, and this figure would be wrong for them until that happens.
+    /// </para>
+    /// </remarks>
+    private async Task<decimal> ComputeAbsenteeismRateAsync(
+        LeaveReportQueryParams qp, ReportScope scope, CancellationToken ct)
+    {
+        var (from, to) = await ResolveRangeAsync(qp, ct);
+        if (to < from)
+            return 0m;
+
+        var headcount = await ScopedEmployeesQuery(qp, scope).CountAsync(ct);
+        if (headcount == 0)
+            return 0m;
+
+        var holidays = await _holidayProvider.GetHolidaysAsync(from, to, null, ct);
+
+        int workingDays = 0;
+        for (var d = from; d <= to; d = d.AddDays(1))
+        {
+            if (d.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday)
+                continue;
+            if (holidays.Contains(d))
+                continue;
+            workingDays++;
+        }
+
+        decimal availableDays = (decimal)workingDays * headcount;
+        if (availableDays <= 0m)
+            return 0m;
+
+        var employeeIds = await ScopedEmployeesQuery(qp, scope).Select(e => e.Id).ToListAsync(ct);
+
+        decimal lopDays = await _dbContext.LeaveRequests
+            .AsNoTracking()
+            .Where(lr => employeeIds.Contains(lr.EmployeeId)
+                         && lr.IsLop
+                         && lr.Status == LeaveRequestStatus.Approved
+                         && lr.StartDate <= to && lr.EndDate >= from)
+            .SumAsync(lr => (decimal?)lr.TotalDays, ct) ?? 0m;
+
+        return Math.Round(lopDays / availableDays * 100m, 1);
+    }
 
     public async Task<Result<LeaveReportResult>> GenerateReportAsync(
         LeaveReportType reportType,

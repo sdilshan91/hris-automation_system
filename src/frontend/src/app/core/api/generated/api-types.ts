@@ -5863,6 +5863,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/leaves/reports/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    From?: string;
+                    To?: string;
+                    Year?: number;
+                    DepartmentId?: string;
+                    JobTitleId?: string;
+                    EmploymentType?: string;
+                    LeaveTypeId?: string;
+                    EmployeeSearch?: string;
+                    SortBy?: string;
+                    SortAscending?: boolean;
+                    Page?: number;
+                    PageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfLeaveReportsLeaveSummaryMetricsDto"];
+                        "text/json": components["schemas"]["ApiResponseOfLeaveReportsLeaveSummaryMetricsDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfLeaveReportsLeaveSummaryMetricsDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leaves/reports/{reportType}": {
         parameters: {
             query?: never;
@@ -32577,6 +32627,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfLeaveReportsLeaveSummaryMetricsDto: {
+            code?: string | null;
+            data?: components["schemas"]["LeaveReportsLeaveSummaryMetricsDto"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfLeaveRequestsAssignLopResultDto: {
             code?: string | null;
             data?: components["schemas"]["LeaveRequestsAssignLopResultDto"];
@@ -36240,6 +36299,13 @@ export interface components {
         };
         LeaveReportsLeaveReportRow: {
             cells?: string[] | null;
+        };
+        LeaveReportsLeaveSummaryMetricsDto: {
+            /** Format: double */
+            absenteeismRatePct?: number;
+            topLeaveType?: string | null;
+            /** Format: double */
+            totalUtilizationPct?: number;
         };
         LeaveRequestsApproveLeaveRequestRequest: {
             comment?: string | null;

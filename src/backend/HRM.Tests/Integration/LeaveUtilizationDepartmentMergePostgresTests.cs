@@ -108,7 +108,8 @@ public sealed class LeaveUtilizationDepartmentMergePostgresTests : IAsyncLifetim
             db, tc, cu, entitlements,
             Substitute.For<IReportExportStorage>(),
             NullLogger<LeaveReportService>.Instance,
-            new TenantLeaveYearResolver(db, tc));
+            new TenantLeaveYearResolver(db, tc),
+            Substitute.For<IHolidayProvider>());
     }
 
     [Fact]
