@@ -284,12 +284,20 @@ export function mapPerformer(w: PerformerWire): IPerformerRow {
 /**
  * Maps the whole overview wire payload onto `IDashboardOverview`.
  *
- * NOTE (findings): four rendered fields have NO wire source and are defaulted +
- * reported here, not invented:
- *   • `scopeLabel`        → '' (the scope subtitle renders blank)
- *   • `filterOptions`     → empty lists (the FR-4 filter panel has no options to show)
- *   • `teamRanking`       → [] (the manager-scope ranking list is empty)
- *   • `availableExportFormats` → [] (no export buttons render)
+ * NOTE (findings): fields that have no wire source are defaulted + reported here, not invented.
+ * This list was WRONG about one of them, so it is worth stating precisely which is which:
+ *   • `teamRanking`       → NOT a wire gap. FIXED (ISSUE-379). The API sends it: in Team scope the
+ *                           server's `topPerformers` IS the ranking (BR-3 leaves `bottomPerformers`
+ *                           empty for a manager). This mapper was discarding it, which is why the
+ *                           widget rendered blank — a FRONTEND bug filed for four weeks as a missing
+ *                           backend field.
+ *   • `scopeLabel`        → '' (the scope subtitle renders blank) — genuinely absent from the wire.
+ *   • `filterOptions`     → empty lists (the FR-4 filter panel has no options) — genuinely absent.
+ *   • `availableExportFormats` → [] (no export buttons render) — genuinely absent from THIS payload,
+ *                           though the export endpoint itself exists and accepts csv/xlsx/pdf.
+ *
+ * The lesson worth keeping: "the API never sends it" is a claim about the API, and it needs checking
+ * against the API. Three of the four here were right; one was a mapper bug wearing a backend label.
  * The renames that WERE broken (`ratingScaleMax`/`scoredEmployeeCount`/
  * `scoreDistribution`/`progress`, nested `completionRate`) are fixed below.
  */
@@ -314,7 +322,16 @@ export function mapDashboardOverview(
     departmentAverages: (w.departmentAverages ?? []).map(mapDepartmentAverage),
     topPerformers: (w.topPerformers ?? []).map(mapPerformer),
     bottomPerformers: (w.bottomPerformers ?? []).map(mapPerformer),
-    teamRanking: [],
+    // ISSUE-379: this was hardcoded `[]`, and the ledger recorded it as a BACKEND gap — a field the API
+    // "has never sent". It sends it. In Team scope the server's topPerformers IS the team ranking, and
+    // BR-3 deliberately leaves bottomPerformers empty for a manager
+    // (`PerformanceDashboardService.cs:670-672`). The data was on the wire the whole time; the MAPPER
+    // discarded it, so the Team-ranking widget rendered blank.
+    //
+    // Derived from the server's own `scope` rather than recomputed: the FE reflects scope, it does not
+    // decide it (AC-5/BR-1), and the template gates this widget on the same value.
+    teamRanking:
+      (w.scope ?? 'Organization') === 'Team' ? (w.topPerformers ?? []).map(mapPerformer) : [],
     cycleProgress: mapCycleProgress(w.progress),
     availableExportFormats: [],
   };
