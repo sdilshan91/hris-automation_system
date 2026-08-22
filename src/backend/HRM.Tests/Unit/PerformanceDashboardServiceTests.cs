@@ -581,4 +581,70 @@ public sealed class PerformanceDashboardServiceTests
         await db.SaveChangesAsync();
     }
 
+    // ── ISSUE-379: the score-scale denominator on trend + drill-down ─────────
+
+    /// <summary>
+    /// ISSUE-379: the drill-down payload carried scores with no scale, so the FE defaulted to 0 and could
+    /// not render "4.2 / 5". The cycle is already resolved in that path, so this is exposure.
+    ///
+    /// Also pins <c>CycleName</c>, which is the field the register's row 6 ACTUALLY got wrong — it named
+    /// `employeeName` (present and already read) at a stated 100% confidence, while this one was missing.
+    /// </summary>
+    [Fact]
+    public async Task Drilldown_Exposes_RatingScaleMax_AndCycleName_ISSUE379()
+    {
+        var d = (await CreateService(HrUser())
+            .GetDepartmentDrilldownAsync(_deptSales, Filter(_cycleId))).Value!;
+
+        d.RatingScaleMax.Should().Be(5, "a score without its denominator cannot be rendered");
+        d.CycleName.Should().NotBeNullOrWhiteSpace(
+            "the breadcrumb prints the cycle; only the id was on the wire");
+    }
+
+    /// <summary>
+    /// THE JUDGEMENT CALL, pinned. A trend spans MULTIPLE cycles, each with its own RatingScaleMax, but the
+    /// chart has ONE y-axis. This takes the MAXIMUM across the plotted cycles because it is the only choice
+    /// under which no plotted point can overflow the axis — taking the latest cycle's scale would silently
+    /// clip a historic point scored on a wider one.
+    ///
+    /// Asserted with genuinely mixed scales, because with equal scales every candidate rule agrees and the
+    /// test would prove nothing about the rule actually chosen.
+    /// </summary>
+    [Fact]
+    public async Task Trend_UsesTheWidestScale_AcrossMixedCycles_SoNoPointOverflows_ISSUE379()
+    {
+        Guid wideCycleId;
+        // Synchronous EF, matching this file's existing pattern (see the Probation arm above).
+        using (var db = CreateDbContext())
+        {
+            var baseline = db.AppraisalCycles.Single(c => c.Id == _cycleId);
+            wideCycleId = Guid.NewGuid();
+            db.AppraisalCycles.Add(new AppraisalCycle
+            {
+                Id = wideCycleId,
+                TenantId = baseline.TenantId,
+                Name = "FY2025 (10-point)",
+                Status = baseline.Status,
+                GoalSettingStart = baseline.GoalSettingStart,
+                GoalSettingEnd = baseline.GoalSettingEnd,
+                SelfAssessmentStart = baseline.SelfAssessmentStart,
+                SelfAssessmentEnd = baseline.SelfAssessmentEnd,
+                ManagerReviewStart = baseline.ManagerReviewStart,
+                ManagerReviewEnd = baseline.ManagerReviewEnd,
+                StartDate = baseline.StartDate.AddDays(-365),
+                EndDate = baseline.EndDate.AddDays(-365),
+                RatingScaleMax = 10,
+                SelfWeightPercent = baseline.SelfWeightPercent,
+                IsDeleted = false,
+            });
+            db.SaveChanges();
+        }
+
+        var trend = await CreateService(HrUser())
+            .GetTrendAsync(new[] { _cycleId, wideCycleId }, Filter(), includeDepartmentSeries: false);
+
+        trend.Value!.RatingScaleMax.Should().Be(10,
+            "the widest scale is the only axis on which every plotted point fits; using the latest cycle's "
+            + "scale of 5 would clip a historic score of, say, 8/10 down onto a 5-point axis");
+    }
 }
