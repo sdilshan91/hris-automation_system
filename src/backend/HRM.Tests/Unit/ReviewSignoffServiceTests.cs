@@ -547,4 +547,56 @@ public sealed class ReviewSignoffServiceTests
         result.Value!.Signoffs.Select(s => s.Action)
             .Should().ContainInOrder(SignoffAction.RequestedSignOff, SignoffAction.Acknowledged);
     }
+
+    // ── ISSUE-379: the sign-off screen's cycle/scale/score fields ────────────
+
+    /// <summary>
+    /// ISSUE-379 rated the US-PRF-006 sign-off screen HIGH: `cycleName`, `ratingScaleMax` and `finalScore`
+    /// were absent from the notes payload, so that surface rendered blank.
+    ///
+    /// They were never new data — <c>BuildNotesDtoFrom</c> already receives the cycle and the review, and
+    /// the export path 250 lines away already reads the identical expressions. This arm pins that they come
+    /// from the REAL objects rather than defaults: the fixture's cycle is "FY2026" with a scale of 5, so a
+    /// stubbed or defaulted implementation would return "" and 0 and fail here.
+    /// </summary>
+    [Fact]
+    public async Task GetNotes_Exposes_CycleName_RatingScale_AndFinalScore_ISSUE379()
+    {
+        Seed(reviewStatus: ManagerReviewStatus.Submitted);
+
+        await using (var db = CreateDbContext())
+        {
+            var review = await db.ManagerReviews.FirstAsync(r => r.EmployeeId == _reportEmpId);
+            review.FinalScore = 4.25m;
+            await db.SaveChangesAsync();
+        }
+
+        var result = await CreateService(ManagerUser()).GetNotesAsync(_reportEmpId, _cycleId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.CycleName.Should().Be("FY2026",
+            "the screen prints the cycle name; an empty string is what made it look blank");
+        result.Value.RatingScaleMax.Should().Be(5,
+            "the score is meaningless without its denominator — 4.25 out of what?");
+        result.Value.FinalScore.Should().Be(4.25m,
+            "read off the ManagerReview already in hand, not recomputed");
+    }
+
+    /// <summary>
+    /// The nullable half. A review that has not been scored yet must report a null final score rather than
+    /// 0 — a 0 would render as a real, very bad score on a screen the employee signs.
+    /// </summary>
+    [Fact]
+    public async Task GetNotes_ReportsNullFinalScore_WhenTheReviewIsUnscored_ISSUE379()
+    {
+        Seed(reviewStatus: ManagerReviewStatus.Submitted);
+
+        var result = await CreateService(ManagerUser()).GetNotesAsync(_reportEmpId, _cycleId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.FinalScore.Should().BeNull(
+            "an unscored review has no final score; 0 would display as a real and very bad rating on a "
+            + "screen the employee is asked to acknowledge and sign");
+        result.Value.CycleName.Should().Be("FY2026", "the cycle context is available regardless of scoring");
+    }
 }

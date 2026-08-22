@@ -22,6 +22,23 @@ public sealed record ReviewMeetingNotesDto
     public string EmployeeNo { get; init; } = string.Empty;
     public Guid CycleId { get; init; }
 
+    /// <summary>
+    /// ISSUE-379: the US-PRF-006 sign-off screen renders the cycle name, the rating scale and the final
+    /// score. None were on this payload, so that surface blanked.
+    ///
+    /// <para>These are EXPOSURE, not new work: <c>BuildNotesDtoFrom</c> already receives the
+    /// <see cref="AppraisalCycle"/> and <see cref="ManagerReview"/> they come from, and the export path
+    /// 250 lines away already reads the identical expressions
+    /// (<c>ReviewSignoffService.cs:400,409,412</c>). Zero additional queries.</para>
+    /// </summary>
+    public string CycleName { get; init; } = string.Empty;
+
+    /// <summary>Denominator for the score display (e.g. 5). Read off the cycle, like the export path.</summary>
+    public int RatingScaleMax { get; init; }
+
+    /// <summary>Nullable by design: a review that has not been scored yet has no final score.</summary>
+    public decimal? FinalScore { get; init; }
+
     /// <summary>Sanitized-HTML discussion body (FR-1). When notes do not exist yet, the template default.</summary>
     public string? Body { get; init; }
     public string? Strengths { get; init; }

@@ -26753,6 +26753,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "cycleName": {
+            "nullable": true,
+            "type": "string"
+          },
           "developmentAreas": {
             "nullable": true,
             "type": "string"
@@ -26768,6 +26772,11 @@
           "employeeNo": {
             "nullable": true,
             "type": "string"
+          },
+          "finalScore": {
+            "format": "double",
+            "nullable": true,
+            "type": "number"
           },
           "isLocked": {
             "type": "boolean"
@@ -26788,6 +26797,10 @@
             "format": "date-time",
             "nullable": true,
             "type": "string"
+          },
+          "ratingScaleMax": {
+            "format": "int32",
+            "type": "integer"
           },
           "signoffCompletedAt": {
             "format": "date-time",
