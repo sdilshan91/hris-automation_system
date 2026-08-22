@@ -59,7 +59,9 @@ function workspace(
       ...budget,
     },
     compensationVisible: true,
-    availableExportFormats: ['Excel'],
+    // BUG-311: the API sends csv/xlsx. This used to mock 'Excel' — a value the wire has never
+    // carried — so the spec was green by agreeing with a wrong type instead of with the API.
+    availableExportFormats: ['csv', 'xlsx'],
   };
 }
 
@@ -140,10 +142,31 @@ describe('RecommendationWorkspaceComponent (US-PRF-010)', () => {
   });
 
   it('only shows export buttons for backend-reported formats (FR-6)', async () => {
-    await setup(workspace([row()])); // availableExportFormats: ['Excel']
+    // BUG-311: this used to assert on 'Excel'/'Pdf' — values the API has NEVER sent. It passed because
+    // it agreed with a wrong union, not because the component was right, and it would have stayed green
+    // if the export buttons had stopped rendering entirely. It now asserts the real wire tokens.
+    const ws = workspace([row()]);
+    ws.availableExportFormats = ['csv']; // the backend reports ONE format for this run
+    await setup(ws);
+
     const el = fixture.nativeElement as HTMLElement;
-    expect(el.querySelector('[data-testid="export-Excel"]')).toBeTruthy();
-    expect(el.querySelector('[data-testid="export-Pdf"]')).toBeFalsy();
+    expect(el.querySelector('[data-testid="export-csv"]'))
+      .withContext('the reported format must render a button')
+      .toBeTruthy();
+    expect(el.querySelector('[data-testid="export-xlsx"]'))
+      .withContext('a format the backend did NOT report must not render — that is what FR-6 claims')
+      .toBeFalsy();
+  });
+
+  it('labels export buttons with display copy, not raw wire tokens (BUG-311)', async () => {
+    const ws = workspace([row()]);
+    ws.availableExportFormats = ['xlsx'];
+    await setup(ws);
+
+    const btn = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="export-xlsx"]');
+    expect(btn?.textContent?.trim())
+      .withContext('"Export xlsx" is a wire token leaking into user-facing copy')
+      .toBe('Export Excel (XLSX)');
   });
 
   // ── budget tracker thresholds (FR-8/BR-4) ──
