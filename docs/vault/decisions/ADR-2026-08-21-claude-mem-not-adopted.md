@@ -55,7 +55,7 @@ rate, and then re-measure with the same method before adopting anything.
 4. **Silent-failure class we have already been bitten by.** The top open issue at evaluation time is
    *"observations and session_summaries silently stopped being generated (since 2026-05-28)."* A memory
    system that silently stops remembering is worse than none, because the team stops writing to the vault
-   while trusting it. Same lesson as [[read-the-running-log]] and [[verify-code-not-ledger]].
+   while trusting it. Same lesson as `memory:read-the-running-log` and `memory:verify-code-not-ledger`.
 5. **Unscanned durable copy of tenant data.** `secret-guard` fences secrets at Write/Edit time in `src/`.
    claude-mem persists *tool output* — `@test-runner` curl probes carrying JWTs, EF SQL results, tenant
    rows — to `~/.claude-mem`, outside secret-guard and outside our gitignore discipline. Local-only, so a
@@ -94,5 +94,5 @@ rate, and then re-measure with the same method before adopting anything.
 ## Links
 - Upstream: https://github.com/thedotmack/claude-mem
 - Sibling rejection: [[ADR-2026-08-21-headroom-not-adopted]]
-- Related: [[verify-code-not-ledger]], [[read-the-running-log]]
+- Related: `memory:verify-code-not-ledger`, `memory:read-the-running-log`
 - Hook: `.claude/hooks/scripts/vault-compliance-advisor.py` · contract: CLAUDE.md "Shared Memory"

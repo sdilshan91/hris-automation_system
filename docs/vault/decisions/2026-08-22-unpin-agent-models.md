@@ -48,7 +48,7 @@ whatever the human picks for the session applies uniformly to everything that se
   version is by role — a cheap tier for mechanical agents, the top tier for the read-only
   auditors whose whole value is judgement — not one ID copy-pasted nine times.
 - **Inert until the session restarts.** Agent definitions load at startup; see
-  [[claude-agents-load-at-startup]].
+  `memory:claude-agents-load-at-startup`.
 
 ## Why this is written down
 

@@ -7,8 +7,8 @@ tags: [compensation, payroll, leave, entitlement, adr-lite]
 
 # Three architecture decisions — offer compensation, LOP ownership, entitlement seams
 
-Taken 2026-07-31 after the deferred-AC verification sweep surfaced [[BUG-292]], [[ISSUE-357]] and
-[[ISSUE-358]]. In each case the **larger, architecturally-correct** option was chosen over the cheaper
+Taken 2026-07-31 after the deferred-AC verification sweep surfaced [[TEST-FINDINGS#BUG-292|BUG-292]], [[TEST-FINDINGS#ISSUE-357|ISSUE-357]] and
+[[TEST-FINDINGS#ISSUE-358|ISSUE-358]]. In each case the **larger, architecturally-correct** option was chosen over the cheaper
 one, deliberately.
 
 ## D1 — The salary STRUCTURE is decided at OFFER time (BUG-292)
@@ -55,7 +55,7 @@ double-deduction. This is a money path; it gets real-Postgres arms and mutation 
 
 **Why not simply pull them from the plan editor.** That removes the mis-selling risk and nothing else —
 it leaves no obstacle to the eventual feature shipping unenforced, which is precisely the hole
-[[ISSUE-356]] was filed for. Pre-registering is the only option where a future implementer *cannot*
+[[TEST-FINDINGS#ISSUE-356|ISSUE-356]] was filed for. Pre-registering is the only option where a future implementer *cannot*
 accidentally ship an unenforced paid feature.
 
 **Standing rule this establishes:** a flag may not become sellable in the plan editor until its
@@ -78,7 +78,7 @@ summing to exactly 3.5 — and every category is deducted exactly once. Re-plumb
 working deductions around buys internal consistency at the cost of real money-path risk and no user-visible
 gain. Reopening a correct money path for tidiness is how it stops being correct.
 
-**Consequence:** [[ISSUE-357]] closes as *decided-not-built* rather than outstanding, and US-LV-011's auto-LOP
+**Consequence:** [[TEST-FINDINGS#ISSUE-357|ISSUE-357]] closes as *decided-not-built* rather than outstanding, and US-LV-011's auto-LOP
 AC is superseded — the outcome it wanted (unpaid absence reduces pay) is delivered, by a different route.
 Revisit only if a third LOP source appears.
 

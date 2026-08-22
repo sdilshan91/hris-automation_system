@@ -67,7 +67,14 @@ SCOPED_AGENTS = {
 SUBSTANTIVE_PREFIXES = ("src/", "docs/BA/", "docs/QA/")
 
 # A write here counts as "you wrote it down".
-MEMORY_MARKERS = ("docs/vault/", ".claude/agent-memory/")
+# The two stores are NOT interchangeable, and treating them as one is why the shared vault
+# starved. CLAUDE.md: "if it's worth sharing, it goes in the vault; if it's just one agent's
+# working memory, the built-in store is fine." Measured 2026-08-22: every "compliant" run in a
+# 10-transcript replay satisfied this hook via the PRIVATE store, and docs/vault/ fell from 70
+# commits in June to 5 in August. A contract that accepts the cheaper path teaches the cheaper path.
+VAULT_MARKER = "docs/vault/"
+PRIVATE_MARKER = ".claude/agent-memory/"
+MEMORY_MARKERS = (VAULT_MARKER, PRIVATE_MARKER)
 
 WRITE_TOOLS = {"Write", "Edit", "NotebookEdit", "MultiEdit"}
 
@@ -115,12 +122,12 @@ def _agent_type(transcript_path):
 
 
 def _scan_writes(transcript_path, cwd):
-    """-> (substantive_write_paths, memory_write_paths) from the subagent's own transcript."""
-    substantive, memory = [], []
+    """-> (substantive, vault_writes, private_writes) from the subagent's own transcript."""
+    substantive, vault, private = [], [], []
     try:
         fh = open(transcript_path, encoding="utf-8", errors="replace")
     except OSError:
-        return substantive, memory
+        return substantive, vault, private
     with fh:
         for line in fh:
             line = line.strip()
@@ -145,19 +152,21 @@ def _scan_writes(transcript_path, cwd):
                 fp = _rel(inp.get("file_path") or inp.get("filePath"), cwd)
                 if not fp:
                     continue
-                if any(marker in fp for marker in MEMORY_MARKERS):
-                    memory.append(fp)
+                if VAULT_MARKER in fp:
+                    vault.append(fp)
+                elif PRIVATE_MARKER in fp:
+                    private.append(fp)
                 elif fp.startswith(SUBSTANTIVE_PREFIXES):
                     substantive.append(fp)
-    return substantive, memory
+    return substantive, vault, private
 
 
-def _log(cwd, agent, n_writes, sample):
+def _log(cwd, agent, n_writes, sample, kind):
     stamp = datetime.datetime.now().isoformat(timespec="seconds")
     try:
         with open(os.path.join(cwd, LOG_RELPATH), "a", encoding="utf-8") as fh:
-            fh.write("%s  %-16s %3d substantive write(s), 0 memory writes  e.g. %s\n"
-                     % (stamp, agent, n_writes, ", ".join(sample)))
+            fh.write("%s  %-16s %-14s %3d substantive write(s)  e.g. %s\n"
+                     % (stamp, agent, kind, n_writes, ", ".join(sample)))
     except OSError:
         pass
 
@@ -187,9 +196,10 @@ def main():
         _debug("agentType %r not in scope" % agent, cwd)
         _quiet()
 
-    substantive, memory = _scan_writes(transcript, cwd)
-    if memory:
-        _debug("%s recorded memory: %s" % (agent, memory[:3]), cwd)
+    substantive, vault, private = _scan_writes(transcript, cwd)
+    if vault:
+        # Wrote to the SHARED store -- fully compliant, say nothing.
+        _debug("%s recorded to the vault: %s" % (agent, vault[:3]), cwd)
         _quiet()
 
     try:
@@ -201,19 +211,34 @@ def main():
         _quiet()
 
     sample = sorted(set(substantive))[:3]
-    _log(cwd, agent, len(substantive), sample)
+    kind = "private-only" if private else "no-memory"
+    _log(cwd, agent, len(substantive), sample, kind)
 
-    note = (
-        "vault-compliance: @%s changed %d file(s) (e.g. %s) but wrote nothing to "
-        "docs/vault/ or .claude/agent-memory/.\n"
-        "CLAUDE.md's agent contract asks for a note when a run produced a non-obvious "
-        "decision or domain rule -- shared knowledge belongs in docs/vault/modules/ or "
-        "docs/vault/decisions/; one agent's own operational notes belong in "
-        ".claude/agent-memory/%s/. If this run genuinely learned nothing worth keeping, "
-        "ignore this. Advisory only; logged to %s. Silence with "
-        "CLAUDE_DISABLE_VAULT_ADVISOR=1."
-        % (agent, len(substantive), ", ".join(sample), agent, LOG_RELPATH)
-    )
+    if private:
+        # The run DID record something -- but only to its own private store. This is the case that
+        # quietly starved docs/vault/: a private note satisfies the letter of the contract while
+        # nothing reaches the store other agents and humans can actually read.
+        note = (
+            "vault-compliance: @%s changed %d file(s) (e.g. %s) and recorded %d note(s) to its "
+            "PRIVATE store (.claude/agent-memory/%s/) -- but nothing to the SHARED vault.\n"
+            "That is fine for your own operational notes. But if this run learned a DOMAIN RULE, "
+            "an EDGE CASE, or made a NON-OBVIOUS DECISION, it belongs in docs/vault/modules/ or "
+            "docs/vault/decisions/ where the other agents and a human will actually find it -- a "
+            "private note is invisible to everyone but you. Advisory only; logged to %s."
+            % (agent, len(substantive), ", ".join(sample), len(private), agent, LOG_RELPATH)
+        )
+    else:
+        note = (
+            "vault-compliance: @%s changed %d file(s) (e.g. %s) but wrote nothing to "
+            "docs/vault/ or .claude/agent-memory/.\n"
+            "CLAUDE.md's agent contract asks for a note when a run produced a non-obvious "
+            "decision or domain rule -- shared knowledge belongs in docs/vault/modules/ or "
+            "docs/vault/decisions/; one agent's own operational notes belong in "
+            ".claude/agent-memory/%s/. If this run genuinely learned nothing worth keeping, "
+            "ignore this. Advisory only; logged to %s. Silence with "
+            "CLAUDE_DISABLE_VAULT_ADVISOR=1."
+            % (agent, len(substantive), ", ".join(sample), agent, LOG_RELPATH)
+        )
 
     if os.environ.get("CLAUDE_VAULT_ENFORCE") == "1":
         # Opt-in: hand the subagent back control so it can write the note itself.

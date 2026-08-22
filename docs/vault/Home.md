@@ -1,3 +1,8 @@
+---
+type: index
+description: Vault entry point / map of content
+---
+
 # Home
 
 Top-level index for the HRM project vault. Obsidian opens this by default.
@@ -6,38 +11,38 @@ Top-level index for the HRM project vault. Obsidian opens this by default.
 
 - Repo: `sdilshan91/hris-automation_system`
 - Tech: Angular 20 + ASP.NET Core 10 + PostgreSQL
-- Reference doc: [[../hrm_technical_document_v4.0|Technical Document v4.0]]
-- CLAUDE.md (project instructions): [[../../CLAUDE]]
+- Reference doc: [[hrm_technical_document_v4.0|Technical Document v4.0]]
+- CLAUDE.md (project instructions): [CLAUDE.md](../../CLAUDE.md)
 
 ## Modules
 
 Core HR domain — each gets its own note as it grows.
 
-- [[modules/auth|Authentication & Authorization]]
-- [[modules/core-hr|Core HR (Employees, Departments, Org Tree)]]
-- [[modules/leave|Leave Management]]
-- [[modules/attendance|Attendance]]
-- [[modules/recruitment|Recruitment]]
-- [[modules/payroll|Payroll]]
-- [[modules/performance|Performance Management]]
-- [[modules/admin-console|Admin Console]]
-- [[modules/onboarding|Onboarding/Offboarding]]
-- [[modules/training-benefits|Training & Benefits]]
-- [[modules/reports|Reports & Analytics]]
-- [[modules/notifications-audit|Notifications & Audit]]
+- [[auth|Authentication & Authorization]]
+- [[core-hr|Core HR (Employees, Departments, Org Tree)]]
+- [[leave|Leave Management]]
+- [[attendance|Attendance]]
+- [[recruitment|Recruitment]]
+- [[payroll|Payroll]]
+- [[performance|Performance Management]]
+- [[admin-console|Admin Console]]
+- [[onboarding|Onboarding/Offboarding]]
+- [[training-benefits|Training & Benefits]]
+- [[reports|Reports & Analytics]]
+- [[notifications-audit|Notifications & Audit]]
 
 ## Agents
 
-- [[agents/business-analyst|@business-analyst]]
-- [[agents/frontend-dev|@frontend-dev]]
-- [[agents/backend-dev|@backend-dev]]
-- [[agents/qa-engineer|@qa-engineer]]
+- [[business-analyst|@business-analyst]]
+- [[frontend-dev|@frontend-dev]]
+- [[backend-dev|@backend-dev]]
+- [[qa-engineer|@qa-engineer]]
 
 ## Knowledge
 
-- [[decisions/README|Decisions]] — architecture & design choices
-- [[handoffs/README|Handoffs]] — agent-to-agent context drops
-- [[incidents/README|Incidents]] — bugs & post-mortems
+- [[README|Decisions]] — architecture & design choices
+- [[README|Handoffs]] — agent-to-agent context drops
+- [[README|Incidents]] — bugs & post-mortems
 
 ## Conventions
 

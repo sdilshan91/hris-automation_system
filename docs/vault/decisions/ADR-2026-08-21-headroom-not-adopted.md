@@ -42,7 +42,7 @@ become the binding constraint on the autonomous loops, and then only after it re
    *verbatim* errors to the owning dev agent; `@test-runner` correlates Serilog by `RequestId` to pull the
    real exception/stack/SQL; `/gap-analysis` and `@requirements-auditor` require `file:line` evidence.
    Lossy compression of logs and code is the failure class we have already been bitten by — see
-   [[verify-code-not-ledger]] and the "read the running log" lesson.
+   `memory:verify-code-not-ledger` and the "read the running log" lesson.
 5. **Reliability under unattended loops.** At v0.36.0 with ~506 open issues. A fix merged 2026-08-20:
    *"return 502, not 200, when upstream connect retries are exhausted"* — i.e. until then an exhausted
    upstream returned **HTTP 200**. Under an overnight `/loop /implement-all` that is silent garbage, not a
@@ -79,5 +79,5 @@ become the binding constraint on the autonomous loops, and then only after it re
 
 ## Links
 - Upstream: https://github.com/headroomlabs-ai/headroom · docs: https://headroom-docs.vercel.app/docs
-- Related: [[verify-code-not-ledger]], [[ADR-2026-07-29-tenant-secrets-are-platform-level]]
+- Related: `memory:verify-code-not-ledger`, [[ADR-2026-07-29-tenant-secrets-are-platform-level]]
 - Adoption context: `docs/DEV/TOOLING-ADOPTION-PLAN.md`

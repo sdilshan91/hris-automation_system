@@ -37,8 +37,15 @@ obj/
 # Playwright MCP (browser debugging artifacts: traces, screenshots, sessions)
 .playwright-artifacts/
 
-# Private per-agent working memory (auto-loaded locally; not shared config — excluded from agnix lint)
-.claude/agent-memory/
+# Per-agent working memory. TRACKED as of 2026-08-22 — it used to be ignored, and that put 107 of
+# the project's 141 accumulated agent notes (76%) on a single NTFS drive: never reviewed, never
+# shared, gone with the machine. `frontend-dev` alone had 41. Meanwhile docs/vault/ — the store that
+# DOES travel — fell from 70 commits in June to 5 in August. The ignore rule was quietly deciding
+# where knowledge went. Secret-scanned before tracking (no credentials found); secret-guard exempts
+# ignored files, so nothing had ever checked these.
+# Only the volatile bits stay ignored:
+.claude/agent-memory/**/*.tmp
+.claude/agent-memory/**/.cache/
 
 # test result artifacts
 TestResults/
@@ -75,3 +82,8 @@ ops/glitchtip/.env
 # Platform DB backups (ISSUE-330) — never commit dumps
 ops/backup/dumps/
 ops/backup/*.log
+
+# Obsidian: share the vault config, never the per-machine window layout (it churns every session)
+docs/.obsidian/workspace.json
+docs/.obsidian/workspace-mobile.json
+docs/.obsidian/cache

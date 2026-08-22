@@ -1,3 +1,8 @@
+---
+type: index
+description: Short-lived agent-to-agent context drops
+---
+
 # Handoffs
 
 Short-lived context drops between agents during a pipeline run. This is how `@business-analyst` tells `@frontend-dev` and `@backend-dev` "watch out for X" without it needing to live in the user story itself.
@@ -12,7 +17,7 @@ Short-lived context drops between agents during a pipeline run. This is how `@bu
 
 - If the info belongs in the user story → put it in the story
 - If the info belongs in a module note → put it in the module note
-- If it's a permanent decision → use [[../decisions/README|decisions/]]
+- If it's a permanent decision → use [[README|decisions/]]
 
 Handoffs are **transient**. Delete or archive them after the relevant PRs merge.
 

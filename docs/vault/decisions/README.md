@@ -1,3 +1,8 @@
+---
+type: index
+description: ADR-lite decision records
+---
+
 # Decisions
 
 Architecture and design decision records, ADR-lite style.

@@ -20,7 +20,7 @@ One-line description.
 - `US-<MOD>-002` — short title
 
 ## Related decisions
-- [[../decisions/<decision-file>]]
+- `[[../decisions/<decision-file>]]`
 
 ## Open questions
 *(unresolved — link to the handoff or issue tracking it)*

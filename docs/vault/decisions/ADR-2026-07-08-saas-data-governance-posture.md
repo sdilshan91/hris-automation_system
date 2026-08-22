@@ -14,7 +14,7 @@ HRM is going to production **as a hosted SaaS**: we operate the platform and are
 sensitive PII by definition, often regulated). This changes the risk calculus for several tooling and
 architecture decisions that were previously "wait / skip / decision-gate": the compliance driver they
 were waiting for now exists. This ADR records the decisions triggered by that frame. It refines
-[[../../TOOLING-ADOPTION-PLAN]] (Wave 4) and connects to the BUG-003 tenant-isolation theme.
+[[TOOLING-ADOPTION-PLAN]] (Wave 4) and connects to the BUG-003 tenant-isolation theme.
 
 ## Decision 1 — Error tracking: self-hosted, not third-party SaaS
 
@@ -54,7 +54,7 @@ interacts with EF migrations + connection pooling — sequence it deliberately, 
 - **Complete audit logging** (BUG-082: interceptor audits only 3 entity types) → **required** — a
   regulated HR platform needs a queryable trail of *all* data changes.
 - **Gitleaks → hard gate** once the historically-committed Postgres password is rotated + purged from
-  history (currently advisory in [[../../TOOLING-ADOPTION-PLAN]]).
+  history (currently advisory in [[TOOLING-ADOPTION-PLAN]]).
 - **Trivy (SCA + image scanning) → adopt** — as the hosting provider we own the supply-chain risk.
 
 ## Decision 4 — Governance artifacts to track (flagged, out of scope for this ADR)

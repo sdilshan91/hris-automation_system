@@ -1,0 +1,13 @@
+{
+  "alwaysUpdateLinks": true,
+  "newLinkFormat": "shortest",
+  "useMarkdownLinks": false,
+  "attachmentFolderPath": "vault/attachments",
+  "showUnsupportedFiles": false,
+  "userIgnoreFilters": [
+    "QA/reports-archive/",
+    "QA/plans/archive/",
+    "Architecture/security-reviews/",
+    "Architecture/advisory-reports/"
+  ]
+}

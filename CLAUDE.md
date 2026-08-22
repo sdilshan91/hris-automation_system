@@ -396,7 +396,16 @@ main
 
 ## Shared Memory (Obsidian Vault)
 
-All agents share a persistent markdown knowledge base at `docs/vault/`. Open as an Obsidian vault for the human view; agents read/write the `.md` files directly. Start at [docs/vault/Home.md](docs/vault/Home.md) and follow conventions in [docs/vault/README.md](docs/vault/README.md).
+All agents share a persistent markdown knowledge base at `docs/vault/`. Agents read/write the `.md` files
+directly. Start at [docs/vault/Home.md](docs/vault/Home.md) and follow conventions in
+[docs/vault/README.md](docs/vault/README.md).
+
+> **Open the Obsidian vault at `docs/`, not `docs/vault/`** (config committed in `docs/.obsidian/`). Rooted at
+> `docs/vault/` it is a 34-note island; rooted at `docs/` the BA stories, QA ledgers, ADRs and architecture
+> are one graph — `[[US-PLT-005]]` resolves to the story and `[[TEST-FINDINGS#BUG-292]]` to the finding.
+> **Wikilinks resolve by note NAME, never by path** — `[[authentication-sso]]`, never
+> `[[../modules/authentication-sso]]`. That single mistake produced 21 of the 38 broken links found on
+> 2026-08-22.
 
 | Folder | Use it for |
 |---|---|
@@ -420,9 +429,19 @@ There are **two** distinct memory stores — keep them separate so knowledge doe
 | Store | What it is | Use for |
 |---|---|---|
 | **Obsidian vault** (`docs/vault/`) | Manual, **shared**, human-browsable. The cross-agent source of truth. | Domain rules, ADRs, handoffs, anything another agent/human should read. |
-| **Built-in agent memory** (`.claude/agent-memory/{agent}/`) | Auto-loaded each run via `memory: project` in agent frontmatter. **Private to that one agent.** | An agent's own operational notes ("tried X, it failed", recurring gotchas) it wants auto-recalled next run. |
+| **Built-in agent memory** (`.claude/agent-memory/{agent}/`) | Auto-loaded each run via `memory: project` in agent frontmatter. Scoped to one agent, but **tracked in git since 2026-08-22**. | An agent's own operational notes ("tried X, it failed", recurring gotchas) it wants auto-recalled next run. |
+| **Claude's own auto-memory** (`~/.claude/projects/…/memory/`) | Outside the repo, per-human, **never tracked**. Not a vault store. | One person's cross-session recall. **Never wikilink these from the vault** — write `` `memory:name` ``; four such dead links existed before 2026-08-22. |
 
-Rule of thumb: if it's worth sharing, it goes in the **vault**; if it's just one agent's working memory, the built-in store is fine. Never duplicate the same fact into both. Secrets/logs go in neither.
+Rule of thumb: if it's worth sharing, it goes in the **vault**; if it's just one agent's working memory, the
+built-in store is fine. Never duplicate the same fact into both. Secrets/logs go in neither.
+
+> **The rule had quietly inverted.** `.claude/agent-memory/` was gitignored, so 107 of the project's 141
+> notes (76%) sat on one NTFS drive — never reviewed, never shared, one disk failure from gone — while
+> `docs/vault/` fell from 70 commits in June 2026 to 5 in August. `vault-compliance-advisor` accepted
+> *either* store, so a private note satisfied the contract and the shared vault starved. Both are fixed:
+> agent-memory is tracked, and the hook now nudges separately on **`private-only`** runs. Replaying 10 real
+> subagent transcripts: **3 nudges before, 10 after** — including a `backend-dev` run that touched 55 files
+> and left nothing shared.
 
 ## Critical Rules
 1. **Tenant isolation is non-negotiable** — every query, cache key, and API call must be tenant-scoped

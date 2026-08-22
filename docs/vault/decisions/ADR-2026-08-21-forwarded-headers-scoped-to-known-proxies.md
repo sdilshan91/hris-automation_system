@@ -15,7 +15,7 @@ TLS terminates at the reverse-proxy nginx (`docker-compose.tls.yml`), which forw
 deployment that actually has TLS.
 
 Found by `@integration-enforcer` while auditing the GAP-033a security-headers change: the
-`if (ctx.Request.IsHttps)` HSTS branch is **dead code** behind the proxy. Filed as [[BUG-308]].
+`if (ctx.Request.IsHttps)` HSTS branch is **dead code** behind the proxy. Filed as [[TEST-FINDINGS#BUG-308|BUG-308]].
 
 The blast radius is wider than HSTS — though **not in the way this ADR first claimed.** The original
 draft asserted that password-reset links, invite links and OAuth redirect URIs shared the blind spot.
@@ -109,4 +109,4 @@ that has an "unconfigured" state.
 - New failure mode to watch: if the known-network config is wrong, the app silently reverts to
   believing it is on `http`. The HSTS-over-HTTPS test arm is the canary.
 
-Related: [[hrm-fe-be-contract-drift]] (same "two descriptions of one truth" class), [[read-the-running-log]].
+Related: `memory:hrm-fe-be-contract-drift` (same "two descriptions of one truth" class), `memory:read-the-running-log`.
