@@ -169,6 +169,55 @@ public sealed class EmployeeService : IEmployeeService
         return Result<EmployeeDto>.Success(await LoadDtoAsync(employee.Id, cancellationToken));
     }
 
+    /// <inheritdoc />
+    public async Task<Result<StoredFileResult>> GetProfilePhotoAsync(
+        Guid employeeId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<StoredFileResult>.Failure("Tenant context is not resolved.", 400);
+
+        var employee = await _dbContext.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+
+        if (employee is null)
+            return Result<StoredFileResult>.Failure("Employee not found.", 404);
+
+        if (string.IsNullOrWhiteSpace(employee.ProfilePhotoUrl))
+            return Result<StoredFileResult>.Failure("This employee has no profile photo.", 404);
+
+        // BACKWARD COMPATIBILITY, and this is not optional. Rows written BEFORE this change hold the value
+        // UploadAsync returned — `/{tenantId}/{relativePath}` — while new rows hold the bare key. Reading the
+        // column as a key without stripping that prefix would 404 every photo uploaded before today, which is
+        // a silent regression for every existing tenant. Tolerate both shapes on read rather than requiring a
+        // data migration to make the fix safe.
+        var storageKey = employee.ProfilePhotoUrl!.TrimStart('/');
+        var tenantPrefix = $"{_tenantContext.TenantId}/";
+        if (storageKey.StartsWith(tenantPrefix, StringComparison.OrdinalIgnoreCase))
+            storageKey = storageKey[tenantPrefix.Length..];
+
+        await using var stream = await _fileStorage.OpenReadAsync(
+            _tenantContext.TenantId, storageKey, cancellationToken);
+
+        if (stream is null)
+        {
+            _logger.LogWarning(
+                "Employee {EmployeeId} references photo {Key} which is not in storage (tenant {TenantId}).",
+                employeeId, storageKey, _tenantContext.TenantId);
+            return Result<StoredFileResult>.Failure("The stored photo is no longer available.", 404);
+        }
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        var fileName = storageKey.Split('/').LastOrDefault() ?? "photo";
+        var contentType = fileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            ? "image/png"
+            : "image/jpeg";
+
+        return Result<StoredFileResult>.Success(new StoredFileResult(buffer.ToArray(), contentType, fileName));
+    }
+
     public async Task<Result<EmployeeDto>> GetByIdAsync(
         Guid employeeId,
         CancellationToken cancellationToken = default)
@@ -309,12 +358,16 @@ public sealed class EmployeeService : IEmployeeService
         if (exifReplaced)
             await uploadStream.DisposeAsync();
 
-        // Update employee record with photo URL
-        employee.ProfilePhotoUrl = storedUrl;
+        // GAP-027: store the STORAGE KEY, not a URL. `UploadAsync` returns `/{tenantId}/{relativePath}`,
+        // which no route serves — so this column has been holding an unusable string and every avatar bound
+        // to it was a broken image. The key is what the download endpoint needs; a URL is a rendering
+        // concern and does not belong in the row.
+        employee.ProfilePhotoUrl = relativePath;
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        // Return a signed/temporary URL for display
-        var signedUrl = _fileStorage.GetSignedUrl(_tenantContext.TenantId, relativePath);
+        // GAP-027: hand back the AUTHENTICATED endpoint the frontend can actually fetch, not a fabricated
+        // /files/... path. The caller reads it as a blob through the auth interceptor.
+        var signedUrl = $"/api/v1/tenant/employees/{employeeId}/photo";
 
         _logger.LogInformation(
             "Profile photo uploaded. EmployeeId={EmployeeId}, FileName={FileName}, TenantId={TenantId}",

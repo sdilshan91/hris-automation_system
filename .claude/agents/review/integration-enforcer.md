@@ -6,7 +6,6 @@ tools:
   - Glob
   - Grep
   - Bash
-model: claude-opus-4-8
 maxTurns: 30
 memory: project
 ---

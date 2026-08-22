@@ -12,7 +12,6 @@ tools:
   - mcp__github__create_branch
   - mcp__github__push_files
   - mcp__github__create_pull_request
-model: claude-opus-4-8
 maxTurns: 40
 permissionMode: acceptEdits
 memory: project

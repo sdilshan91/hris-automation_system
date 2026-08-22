@@ -8940,3 +8940,50 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **The test certifies the wrong shape.** `recommendation-workspace.component.spec.ts:62` mocks `availableExportFormats: ['Excel']` — a value the API has never sent. The spec is green *because* it agrees with the wrong type rather than with the wire, which is precisely the test-theatre pattern `@test-authenticator` exists to catch.
 - **★ It also blocks ISSUE-379 item 1b.** The audit identified this file as the *precedent to copy* for the dashboard's `availableExportFormats`. Copying it as-is would propagate the defect to a second surface. **Fix this first, then copy.**
 - **Suggested fix:** widen the union to the real wire tokens (`'csv' | 'xlsx'`), or normalise in the mapper with an explicit, exhaustive map — not a cast. Then correct the spec to the real tokens. Removing the cast should make the compiler point at the problem, which is the test that the fix is right.
+
+---
+
+### ISSUE-389
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** FE (a11y)
+- **Module:** cross-cutting (Angular templates) · **US:** cross-cutting · **TC:** — (no TC; found by static analysis)
+- **Found:** 2026-08-22, while fixing the "no lint gate" finding from a `claude-automation-recommender` scan.
+- **Summary:** ESLint had **never been installed** on the frontend (`npm run lint` -> `ng lint`, but `angular.json` had no `lint` target and `@angular-eslint` was absent). Installing it surfaced **187 WCAG accessibility violations across ~121 template files**, none previously reported.
+- **Breakdown:** `click-events-have-key-events` 62 · `interactive-supports-focus` 61 · `label-has-associated-control` 43 · `no-autofocus` 11 · `role-has-required-aria` 10.
+- **Worst files:**
+
+  | File | a11y errors |
+  |---|---|
+  | `src/app/features/admin/audit-log/components/audit-log-list/audit-log-list.component.html` | 12 |
+  | `src/app/features/core-hr/custom-fields/components/custom-field-list/custom-field-list.component.ts` | 8 |
+  | `src/app/features/leave-management/components/holiday-calendar/holiday-calendar.component.html` | 7 |
+  | `src/app/features/leave-management/components/leave-type-form/leave-type-form.component.ts` | 7 |
+  | `src/app/features/admin/user-management/components/invite-users-modal/invite-users-modal.component.ts` | 6 |
+  | `src/app/features/auth/sso/sso-settings/sso-settings.component.ts` | 6 |
+  | `src/app/features/core-hr/employees/components/employee-profile/employee-profile.component.ts` | 5 |
+  | `src/app/features/payroll/components/adjustment-form/adjustment-form.component.ts` | 5 |
+
+- **★ Why the existing a11y tooling missed these.** The repo already has `@axe-core/playwright`, the Lighthouse MCP audit, and a `/design-review` skill — all **runtime** checks, which only see a component that a test actually navigates to and renders in the state that triggers the issue. A `(click)` on a non-focusable `<div>` is invisible to axe unless that exact element is on screen during a run. Static template linting sees all 121 files unconditionally. **These are complementary, not redundant** — the gap was never a weak a11y tool, it was the absence of the static layer entirely.
+- **Consequence:** keyboard-only and screen-reader users cannot operate the affected controls. Directly contradicts the WCAG posture asserted in tech-doc §6 NFR.
+- **Suggested fix:** triage per module rather than one sweep — `click-events-have-key-events` + `interactive-supports-focus` almost always co-occur on the same element and are fixed together (make it a `<button>`, or add `tabindex` + a keyboard handler). `no-autofocus` (11) and `role-has-required-aria` (10) are auto-fixable but change rendered markup, so they need review, not `--fix`.
+
+---
+
+### ISSUE-390
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** INFRA
+- **Module:** repo-wide · **Found:** 2026-08-22, while adding `.editorconfig`.
+- **Summary:** The working tree holds **mixed line endings**. Sampled: `src/backend` .cs -> **457 CRLF / 144 LF**; `src/frontend` .ts -> **285 CRLF / 115 LF**. `core.autocrlf=input` normalises on *commit* but never on *checkout*, and `.gitattributes` pins only `*.sh`.
+- **★ This is the unfixed general case of ISSUE-323.** That incident was a CRLF checkout silently breaking `scripts/run-backend-tests.sh` (`set -o pipefail\r`), which **defeated the ISSUE-312 aborted-run guard** — a green-looking gate that wasn't running. The remedy applied then was narrow: one `*.sh` line in `.gitattributes`. Every other LF-sensitive file in the repo still has the original exposure, and the drive is NTFS shared with Windows, so the condition that produced it is permanent.
+- **Consequence:** any new LF-sensitive artefact (a shell script not matching `*.sh`, a shebang'd hook, a Docker entrypoint) can reproduce ISSUE-323 exactly. Also blocks declaring `end_of_line` in `.editorconfig`: asserting `lf` would make `dotnet format` rewrite ~70% of every file in one diff (**236,950** violations measured, vs **7,185** with the assertion removed).
+- **Suggested fix:** a **standalone, nothing-else-in-it** commit — add `* text=auto eol=lf` to `.gitattributes`, run `git add --renormalize .`, then declare `end_of_line = lf` in `.editorconfig`. Must not ride along with feature work: the diff touches nearly every file and would make any accompanying change unreviewable.
+
+---
+
+### ISSUE-391
+
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** TEST + BE
+- **Module:** repo-wide · **Found:** 2026-08-22, first-ever `dotnet format` run (no `.editorconfig` existed before).
+- **Summary:** With the new `.editorconfig` in place, `dotnet format whitespace --verify-no-changes` reports **7,180 whitespace violations + 5 CHARSET**. **83% sit in `HRM.Tests`** (5,969 -> Integration 3,976 / Unit 1,993); the rest are diffuse.
+- **CHARSET (5):** five migrations under `Persistence/Migrations/` lack the UTF-8 BOM that `dotnet ef` emits — the other 290 all have one, so these five were hand-touched at some point, which the "never hand-write migrations" rule is meant to prevent. Worth a look for *why*, independently of the formatting.
+- **Suggested fix:** `dotnet format whitespace` per-project in separate commits (HRM.Tests alone is 83% of it), never repo-wide in one. Sequence **after ISSUE-390** — normalising line endings first avoids doing the same files twice.

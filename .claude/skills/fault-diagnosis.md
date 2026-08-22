@@ -100,7 +100,8 @@ to stdout/`ITestOutputHelper` — a suppressed logger hides the evidence.
 If a test passes alone but fails in the suite (or vice-versa), a sibling test is leaking shared state
 (DB rows in the shared `acme` tenant, a static, a left-open record). **Bisect by running tests in
 isolation** and watching for the polluting side effect:
-- **Backend (xUnit):** `dotnet test --filter "FullyQualifiedName~<Class>"` per suspect class; check whether
+- **Backend (xUnit):** `bash scripts/run-backend-tests.sh --filter "FullyQualifiedName~<Class>"` per suspect
+  class (the wrapper takes any `dotnet test` args and adds the ISSUE-312 abort check); check whether
   the shared DB/state mutates. Real-Postgres integration tests must clean their own rows (this repo's
   recruitment surfaces have no hard-delete API — a test that seeds un-deletable rows IS a polluter).
 - **Frontend (Karma):** `ng test --include='**/<one>.spec.ts' --watch=false --browsers=ChromeHeadless`

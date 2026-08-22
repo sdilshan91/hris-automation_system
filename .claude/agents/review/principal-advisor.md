@@ -10,8 +10,7 @@ tools:
   - WebFetch
   - mcp__microsoft-learn__microsoft_docs_search
   - mcp__microsoft-learn__microsoft_docs_fetch
-model: claude-opus-4-8
-maxTurns: 40
+maxTurns: 60
 memory: project
 ---
 

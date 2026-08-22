@@ -567,7 +567,22 @@ public sealed class EmployeeServiceTests : IDisposable
             createResult.Value!.Id, stream, "photo.jpg", "image/jpeg", 1024);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Contain("profile");
+
+        // GAP-027: upload returns the AUTHENTICATED endpoint the frontend can actually fetch.
+        //
+        // This used to assert `Contain("profile")`, which passed for the old value
+        // `/files/{tenantId}/core-hr/{id}/profile/photo.jpg` — a path NO route serves, so every avatar bound
+        // to it was a broken image. The old assertion was satisfied by the dead URL, which is why it never
+        // caught this.
+        result.Value.Should().Be($"/api/v1/tenant/employees/{createResult.Value!.Id}/photo");
+        result.Value.Should().NotContain("/files/",
+            "that scheme is fabricated by LocalFileStorage.GetSignedUrl and served by nothing");
+
+        // And the COLUMN holds the storage key, not a URL — the download endpoint reads it as a key.
+        using var verify = TestDbContextFactory.Create(_tenantContext, _dbName);
+        var saved = verify.Employees.Single(e => e.Id == createResult.Value!.Id);
+        saved.ProfilePhotoUrl.Should().Be($"core-hr/{createResult.Value!.Id}/profile/photo.jpg",
+            "a URL is a rendering concern and does not belong in the row");
     }
 
     [Fact]

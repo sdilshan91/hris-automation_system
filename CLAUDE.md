@@ -38,6 +38,9 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    `general-purpose` sub-agent and keep the *conclusion*, not the raw file dumps —
    don't pull every file into the main context. For a single-fact lookup where you
    already know the file/symbol, read it directly; don't over-delegate trivia.
+   *(As of 2026-08-22 `backend-dev`, `frontend-dev`, `qa-engineer`, `business-analyst` and
+   `requirements-auditor` hold the `Agent` tool and can actually do this. The remaining agents
+   deliberately cannot — narrow single-pass audits where fan-out adds cost, not coverage.)*
    *Parallelism:* run independent sub-agents concurrently (multiple `Agent` calls in
    one message) to speed things up — but **never parallelize dependent steps**
    (where one's output feeds the next) **or concurrent writes to the same file**
@@ -125,6 +128,23 @@ already-running session may not reconnect) and **approve the project-MCP trust p
 `.playwright-artifacts/` (gitignored). It is **read-only on the codebase** — used to investigate, not
 to edit code. Driven by the `@browser-debugger` agent and the `/debug-ui` skill.
 
+### Microsoft Learn MCP Server (official .NET/Azure docs)
+Remote HTTP server (`https://learn.microsoft.com/api/mcp`, defined in `.mcp.json`) giving agents grounded
+access to official Microsoft documentation instead of recalling it: `microsoft_docs_search` (breadth),
+`microsoft_code_sample_search` (working snippets), `microsoft_docs_fetch` (full page depth). Used by
+`@principal-advisor` for the `/advisor` dependency-currency pass and available to `@backend-dev` for
+.NET 10 / EF Core / ASP.NET Core APIs that post-date the model's training data.
+
+> **Note — three plugins were UNINSTALLED (2026-08-22) for colliding with this file.** The official
+> `github`, `playwright` and `microsoft-docs` plugins each ship a `.mcp.json` declaring a server with the
+> **same name** as ours but a **worse config**: `github` reads `${GITHUB_PERSONAL_ACCESS_TOKEN}` (we use
+> `${GITHUB_TOKEN}`), and `playwright` is a bare `npx @playwright/mcp@latest` with **no**
+> `--caps vision,pdf,devtools`, **no** `--save-session` and **no** `--output-dir`. Had the plugin's
+> definition ever won resolution, `@browser-debugger` would have silently lost vision/PDF/devtools and
+> stopped writing `.playwright-artifacts/` — presenting as *"the tool can't do that"*, not as a config
+> error. **`.mcp.json` is the single source for MCP servers here**; it is committed, so the team and CI
+> get the tuned flags. Do not re-install those three.
+
 ### Chrome DevTools MCP Server (performance / Lighthouse / memory)
 Local stdio server (`npx chrome-devtools-mcp@latest --isolated`, defined in `.mcp.json`) that exposes the
 **Chrome DevTools Protocol** — the front-end performance + audit layer Playwright doesn't cover. It launches
@@ -179,9 +199,10 @@ diagnosis). **Read-only on the codebase.**
 | `/design-review [URL\|--diff]` | Local + MCP (Playwright/Chrome-DevTools) | **Designer's-eye visual + UX audit (REPORT-ONLY).** Drives `@browser-debugger` to grade the *rendered* UI: first-impression, **AI-slop blacklist**, WCAG/typography/spacing/interaction checklist, trunk test + goodwill reservoir → a screenshot-backed report with **Design Score + AI-Slop Score** in `docs/Design/design-reports/`. The visual-taste counterpart to `/debug-ui` (correctness); never edits code. Adapted (MIT) from gstack `/design-review`, retargeted to our Angular 20 **App-UI** + multi-tenant stack. |
 | `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (read Serilog by `RequestId` → reproduce → hypothesis → fix the source) + backward call-stack tracing, flaky/order-dependent test bisection (xUnit/Karma), condition-based waiting. Encodes this repo's known root-cause classes (InMemory-masks-Postgres, BUG-003 tenant split). Respects the **report-only** boundary (diagnosis ends at a finding under `/test-all`). |
 | `/error-recovery` | Local | **Stuck-loop breaker.** Failure counter + 2/3/4-attempt escalation (Yellow→Orange→Red), "fix the code not the test," rollback-to-known-good. Governs each attempt *inside* the `/implement-all` 3-attempt remediation cap; pairs with `/fault-diagnosis`. |
-| `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + `docs/QA/` ledger deltas over a window into an honest retro: what shipped, quality/velocity **trends vs the previous retro**, what hurt, and 3-5 owned action items. Writes to `docs/vault/retros/{date}.md` (backlinked into a timeline) so trends accumulate. Also runs a **skill-friction pass**: clusters recurring friction (repeat root-cause classes, `.claude/` churn, abandoned remediation loops, new `agent-memory/feedback-*` notes) and proposes ≤3 ranked diffs to `.claude/skills/` — **report-only, two-occurrence bar, never weakens a guard rail**; the human applies them. The scoped alternative to an always-on observer skill. Read-only on code and on `.claude/`. Adapted (MIT) from gstack `/retro`. |
+| `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + `docs/QA/` ledger deltas over a window into an honest retro: what shipped, quality/velocity **trends vs the previous retro**, what hurt, and 3-5 owned action items. Writes to `docs/vault/retros/{date}.md` (backlinked into a timeline) so trends accumulate. Also runs a **skill-friction pass**: clusters recurring friction (repeat root-cause classes, `.claude/` churn, abandoned remediation loops, new `agent-memory/feedback-*` notes) and proposes ≤3 ranked diffs to `.claude/skills/` — **report-only, two-occurrence bar, never weakens a guard rail**; the human applies them. The scoped alternative to an always-on observer skill. Also runs a **setup-drift pass** — *are the instructions still true?* — checking the claims `ClaudeMdAccuracyTests` cannot see (hook `command:` paths, agent/skill tables vs `.claude/`, `.mcp.json` vs documented servers, `skillOverrides` vs the plugin's current skill set, lint/format gates still wired). Read-only on code and on `.claude/`. Adapted (MIT) from gstack `/retro`. |
 | `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical-consultant advisory (REPORT-ONLY).** Evidence-anchored, ranked advisory over 3 net-new passes — tech-radar/dependency currency, ADR-drift, complexity/dead-code — plus light synthesis that links (never re-runs) the existing auditors. Writes `docs/Architecture/advisory-reports/`, updates `docs/Architecture/radar/tech-radar.md`, proposes ADRs; folds actionable items into `/auto-heal`. Never edits src / deletes / bumps deps. Drives `@principal-advisor`. |
 | `/gap-analysis [module\|--nfr\|--reverse\|--arch\|--rollup]` | Local | **Implemented-vs-documented gap analysis (REPORT-ONLY).** Traces every documented requirement — the 125 BA stories, tech-doc §5/§11 functional, **§6 NFR**, §8/§9/§10 architecture — to actual code, and reports what is *really* built vs what the ledgers claim, bucketed by MoSCoW. **AC-level for Must Have, story-level for Should/Could**; a requirement passes only with code **+ wired/reachable + a bound test**, so a strong backend behind a broken FE contract is `PARTIAL`, not done. Five passes (functional · doc-coverage · NFR · reverse · architecture) + a ranked `GAP-REGISTER.md`. Writes `docs/Architecture/gap-analysis/`; **never edits `src/` and never corrects a false ledger line — it reports the contradiction and lets the human decide.** Drives `@requirements-auditor`. |
+| `/campaign {name}` | Local + MCP | **Batch driver for a large, homogeneous, mechanical backlog** — N call-sites/files/findings of the SAME class (the 657 hand-written `*.models.ts` interfaces; the 187 WCAG violations in ISSUE-389). The shape between `/implement-all` (story-scoped) and `/fix-finding` (one finding, full PR + regression TC + three audit gates). **Phase 1 is a mandatory survey** — a stratified sample classified MECHANICAL / HETEROGENEOUS / DECISION-REQUIRED; >20% non-mechanical **stops the campaign**, because that is exactly how the scripted 5-site migration in **BUG-310** produced wrong code for four of nine sites. Then pilots the smallest module end-to-end, then one PR per module batch with the full verify gate. Freezes its work-list at Phase 0; parks decision-required items rather than guessing; never closes a finding (that is `/verify-fix`). Edits `src/`. |
 | `/auto-heal` | Local | **Living-plan self-healing (breadth).** On any `OUT-OF-LANE:` flag or discovered adjacent gap: files the finding to `TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and **re-sorts the priority order** (severity × blast-radius × unblocks-others; gated items park at the decision-gate). Encodes Engineering-Discipline rule #6. The orchestrator's counterpart to every agent's out-of-lane contract; complements `/error-recovery` + `/fault-diagnosis` (depth). Never bypasses report-only / test-integrity / decision-gate. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
@@ -191,7 +212,26 @@ diagnosis). **Read-only on the codebase.**
 > not pipeline drivers; invoke them explicitly or let them fire on bug/stuck-loop triggers. They defer to
 > the `test-integrity-guard` hook and the `/implement-all` remediation loop rather than competing with them.
 
-> **Optional — .NET reference skills.** Installing the third-party MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) plugin (`/plugin marketplace add Aaronontheweb/dotnet-skills`) gives `@backend-dev` battle-tested C#/EF Core reference knowledge. Lean on **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test approach), `database-performance`, `csharp-api-design`/`-coding-standards`, and the `microsoft-extensions-*` DI/config skills. Also on-stack (promoted from unclassified — not muted): `project-structure`, `package-management`, `serialization` (System.Text.Json path), `snapshot-testing` (Verify, for API-response/contract tests), `opentelementry-dotnet-instrumentation` (dir name misspelled upstream — reference by exact path), `csharp-type-design-performance`, `csharp-concurrency-patterns` (its async/await + Channels guidance; the Akka tail is off-stack), and `crap-analysis` (stack-neutral coverage/risk tooling). Off-stack skills (`akka-*`, `aspire-*`, `playwright-blazor`/`-ci-caching`, `mjml-email-templates`, `verify-email-snapshots`, `r3-reactive-extensions`, `ilspy-decompile`, `dotnet-devcert-trust`, `local-tools`, `marketplace-publishing`, `skills-index-snippets`, `slopwatch`) are muted via `skillOverrides` in [.claude/settings.json](.claude/settings.json). As of v1.4.1 the plugin ships **35 skills + 6 agents**; keep the mute list in sync when it grows. Installed as a **project-scoped** plugin that auto-updates — its `extraKnownMarketplaces` + `enabledPlugins` live in the project [.claude/settings.json](.claude/settings.json) (not global), so it activates in this repo and travels with it. Not vendored.
+> **Optional — .NET reference skills.** Installing the third-party MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) plugin (`/plugin marketplace add Aaronontheweb/dotnet-skills`) gives `@backend-dev` battle-tested C#/EF Core reference knowledge. Lean on **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test approach), `database-performance`, `csharp-api-design`/`-coding-standards`, and the `microsoft-extensions-*` DI/config skills. Also on-stack (promoted from unclassified — not muted): `project-structure`, `package-management`, `serialization` (System.Text.Json path), `snapshot-testing` (Verify, for API-response/contract tests), `opentelementry-dotnet-instrumentation` (dir name misspelled upstream — reference by exact path), `csharp-type-design-performance`, `csharp-concurrency-patterns` (its async/await + Channels guidance; the Akka tail is off-stack), and `crap-analysis` (stack-neutral coverage/risk tooling). Off-stack skills (`akka-*`, `aspire-*`, `playwright-blazor`/`-ci-caching`, `mjml-email-templates`, `verify-email-snapshots`, `r3-reactive-extensions`, `ilspy-decompile`, `dotnet-devcert-trust`, `local-tools`, `marketplace-publishing`, `skills-index-snippets`, `slopwatch`) are muted via `skillOverrides` in [.claude/settings.json](.claude/settings.json). As of **v1.5.0** the plugin ships **36 skills + 6 agents**; keep the mute list in sync when it grows (verify with `/retro`'s setup-drift pass). v1.5.0 added **`csharp-nullable-reference-types`**, left **active** — every project sets `<Nullable>enable</Nullable>` and the build currently emits CS8602/CS8604 warnings, so it is squarely on-stack. **Installed 2026-08-22** — before that date the plugin was declared in `enabledPlugins` and described here but had **never actually been installed** (its marketplace was absent from `known_marketplaces.json`), so none of these skills reached `@backend-dev` and all 20 `skillOverrides` entries muted nothing. Installed as a **project-scoped** plugin that auto-updates — its `extraKnownMarketplaces` + `enabledPlugins` live in the project [.claude/settings.json](.claude/settings.json) (not global), so it activates in this repo and travels with it. Not vendored.
+
+> ⚠️ **`enabledPlugins` is a declaration, not an installer.** Adding a key there does **not** fetch the
+> plugin — you must also `claude plugin install <name>@<marketplace> --scope project`. This repo has hit
+> the trap twice: `dotnet-skills` sat declared-and-documented but uninstalled for months (its marketplace
+> was never even registered), and four plugins added on 2026-08-22 landed in the same state before being
+> installed properly. **Verify with:** the two sets — `enabledPlugins` in this file and the keys of
+> `~/.claude/plugins/installed_plugins.json` — must match exactly, in both directions. `/retro`'s
+> setup-drift pass checks this.
+>
+> **Official Anthropic plugins (project-scoped, in [.claude/settings.json](.claude/settings.json)).** Enabled 2026-08-22 alongside `frontend-design`. They auto-update and are **inert until the session restarts** after enabling:
+> - **`claude-code-setup`** — `/claude-automation-recommender`. A read-only scan of the repo that recommends hooks/skills/agents/MCP servers. Calibrated for projects with little setup, so most of its output is already-have here; its yield is *defects in existing config*. The 2026-08-22 run found the two that produced `ClaudeMdAccuracyTests` and ISSUE-389. Run it after a significant setup change, not on a cadence — the recurring version lives in `/retro`'s setup-drift pass.
+> - **`claude-md-management`** — `/revise-claude-md` + `claude-md-improver`. Audits CLAUDE.md quality and folds session learnings back in. **Complements, does not duplicate, [ClaudeMdAccuracyTests](src/backend/HRM.Tests/Unit/ClaudeMdAccuracyTests.cs):** the test catches *mechanical* drift (dead links, missing scripts, the ISSUE-312 warning); this catches *prose* rot, which no test can. Neither is sufficient alone.
+> - **`pr-review-toolkit`** — six review agents. **`silent-failure-hunter`** and **`type-design-analyzer`** are the net-new ones: they map onto this repo's two documented defect classes (swallowed errors; blind `as` casts hiding contract drift — see BUG-311/BUG-127). `code-reviewer` / `code-simplifier` overlap `/code-review` and `/simplify`; `pr-test-analyzer` overlaps `@test-authenticator`. Prefer the local agents where they overlap — they know the tenant-isolation rules.
+> - **`hookify`** — `/hookify` + `conversation-analyzer`, generates hooks from observed friction. Lower marginal value here (11 custom hooks already hand-written with rationale), but useful as the *authoring* step for whatever `/retro`'s skill-friction pass proposes turning into structural enforcement.
+> - **`security-guidance`** — pattern warnings on edit, an LLM diff review on `Stop`, and an agentic commit reviewer. Heavy overlap with `secret-guard`, `gitleaks.yml`, `semgrep.yml` and `/security-audit`; the **`Stop`-time diff review is the net-new layer**. Watch for duplicate findings — if it just re-reports what semgrep already caught, mute it via `skillOverrides` rather than living with the noise.
+>
+> - **`code-review` · `code-simplifier` · `csharp-lsp` · `typescript-lsp` · `feature-dev` · `skill-creator` · `superpowers`** — installed earlier but **undeclared** until 2026-08-22, so they existed only on one machine and never reached CI or a fresh clone. Now declared. `csharp-lsp`/`typescript-lsp` give real language-server navigation over 2,378 C# and 781 TypeScript files and are the highest-value pair of the group.
+>
+> **Overlap is the thing to manage here, not coverage.** Five plugins landed at once on a repo that already had 12 agents and 23 skills; the failure mode is three reviewers reporting the same finding and nobody reading any of them. Review after one full cycle and mute what does not earn its place.
 
 > **Optional — Angular reference skills.** The Angular team's official [`angular/skills`](https://github.com/angular/skills) package (`npx skills add https://github.com/angular/skills`) gives `@frontend-dev` current, idiomatic Angular reference knowledge — `angular-developer` (signals/`linkedSignal`/`resource`, standalone components, forms, DI, routing, SSR, a11y, testing) and `angular-new-app`. It tracks the latest Angular, matching our Angular 20 + signals + OnPush stack, and is **version-aware** (its rule #1 makes the agent check the project's Angular version before applying guidance — e.g. Signal Forms is gated to v21+, so it won't force v21 features on our v20). The frontend counterpart to `dotnet-skills` above. (Note: prefer this over the now-deprecated `analogjs/angular-skills`.) **`angular-developer` is now vendored** (see below); `angular-new-app` was skipped as greenfield `ng new` scaffolding, irrelevant to our existing app.
 
@@ -206,7 +246,7 @@ Source of truth: [.claude/skills/implement-all.md](.claude/skills/implement-all.
 
 1. Picks the first `[ ]` story in `docs/BA/STATUS.md` (scoped by module/ID arg, else priority order), marks it `[~]`, and cuts `feature/US-{MODULE}-{NNN}` from fresh `main`.
 2. Runs `@backend-dev` (incl. DB/EF/migrations), `@frontend-dev`, and `@qa-engineer` **in parallel** on non-overlapping paths; sub-agents do **not** commit.
-3. **Verify gate:** `dotnet build` → `dotnet test` → `npm run build` → `ng test` (headless). Any failure enters the **remediation loop** — up to 3 attempts that hand the verbatim errors to the owning dev agent and re-run the whole gate. It may **never** weaken/skip a test to go green; if it can't fix cleanly in 3 attempts it reverts the story to `[ ]` and stops without a PR.
+3. **Verify gate:** `dotnet build` → `scripts/run-backend-tests.sh` (never raw `dotnet test` — ISSUE-312) → `npm run build` → `ng test` (headless). Any failure enters the **remediation loop** — up to 3 attempts that hand the verbatim errors to the owning dev agent and re-run the whole gate. It may **never** weaken/skip a test to go green; if it can't fix cleanly in 3 attempts it reverts the story to `[ ]` and stops without a PR.
 4. On green: commits `feat(US-XXX)`, pushes, opens a PR, flips STATUS.md `[~]`→`[x]` on `main`.
 
 Run continuously with `/loop /implement-all [scope]` — it re-fires until the scope reports "all done." Requires a **clean working tree on `main`**; only run unattended when you're willing to review the stacked PRs after the fact (they are opened, not auto-merged).
@@ -288,7 +328,7 @@ main
 ```
 ├── .env                           # API keys (gitignored, local only)
 ├── .env.example                   # Template for .env
-├── .mcp.json                      # MCP server definitions (github, playwright) — loaded by Claude Code
+├── .mcp.json                      # MCP servers (github, playwright, chrome-devtools, microsoft-learn) — loaded by Claude Code
 ├── .gitignore
 ├── docs/                          # Discipline-based documentation (source of truth)
 │   ├── Architecture/              # System design, tech-radar, ADR index, tech doc, security reviews
@@ -420,11 +460,19 @@ dotnet restore HRM.sln
 dotnet build HRM.sln
 dotnet run --project HRM.Api          # serves API + Swagger UI at /swagger, Hangfire dashboard at /hangfire (dev only)
 
+# Tests — ALWAYS via the wrapper, never raw `dotnet test` (see below)
+bash scripts/run-backend-tests.sh src/backend/HRM.sln
+COVERAGE=1 bash scripts/run-backend-tests.sh src/backend/HRM.sln   # line coverage (slower; CI turns this on)
+
 # EF Core migrations (run from src/backend; --startup-project supplies config/connection string)
 dotnet ef migrations add <Name> --project HRM.Infrastructure --startup-project HRM.Api
 dotnet ef database update --project HRM.Infrastructure --startup-project HRM.Api
 ```
-Migrations are **applied automatically on startup** via `DbInitializer.RunAsync` (`Program.cs`), which also seeds a default admin tenant, roles, and admin user. There is currently no backend test project.
+Migrations are **applied automatically on startup** via `DbInitializer.RunAsync` (`Program.cs`), which also seeds a default admin tenant, roles, and admin user.
+
+**Backend tests live in `src/backend/HRM.Tests`** (xUnit + FluentAssertions + NSubstitute) — 360 unit and 215 integration test files. Integration tests run against a **real PostgreSQL via Testcontainers**; `Microsoft.EntityFrameworkCore.InMemory` is also referenced but is a known root-cause class for false greens (InMemory masks Postgres behaviour — see `/fault-diagnosis`), so prefer the Testcontainers path for anything touching SQL, query filters, or migrations.
+
+> **Never invoke `dotnet test` directly.** `dotnet test` can exit **0 even when the run ABORTS** (test-host crash, killed process, resource contention), so a partial run is indistinguishable from a green suite to CI, `/implement-all`, or an agent — this has already hidden a real regression (ISSUE-312). Always go through [scripts/run-backend-tests.sh](scripts/run-backend-tests.sh), which forces a non-zero exit on any VSTest abort marker. Coverage is **measure-only** (`COVERAGE=1`); no threshold is enforced yet, deliberately — setting a gate before anyone has seen the number is how the gate ends up lowered.
 
 ### Frontend (`src/frontend`, Angular 20)
 ```bash

@@ -8,10 +8,10 @@ tools:
   - Glob
   - Grep
   - Bash
+  - Agent
   - mcp__github__create_branch
   - mcp__github__push_files
   - mcp__github__create_pull_request
-model: claude-opus-4-8
 maxTurns: 60
 permissionMode: acceptEdits
 memory: project
@@ -119,7 +119,8 @@ src/backend/
    - API controllers/endpoints
    - Unit tests (≥ 70% coverage, ≥ 85% for critical modules)
    - Integration tests with Testcontainers
-4. Run `dotnet build` and `dotnet test` to verify
+4. Run `dotnet build` and `bash scripts/run-backend-tests.sh src/backend/HRM.sln` to verify
+   (**never raw `dotnet test`** — ISSUE-312: it can exit 0 on an ABORTED run)
 5. Commit with format: `feat(backend/{module}): implement US-{ID} - {title}`
 
 ## Code Standards

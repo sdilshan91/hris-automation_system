@@ -557,6 +557,47 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
 
     // ── US-ONB-003: self-service (the logged-in employee acts on their own tasks) ──
 
+    /// <inheritdoc />
+    public async Task<Result<StoredFileResult>> DownloadTaskAttachmentAsync(
+        Guid taskInstanceId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<StoredFileResult>.Failure("Tenant context is not resolved.", 400);
+
+        // Tenant-scoped by the global query filter.
+        var task = await _dbContext.OnboardingTaskInstances
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == taskInstanceId, cancellationToken);
+
+        if (task is null)
+            return Result<StoredFileResult>.Failure("Task not found.", 404);
+
+        if (string.IsNullOrWhiteSpace(task.AttachmentStorageKey))
+            return Result<StoredFileResult>.Failure("This task has no attachment.", 404);
+
+        await using var stream = await _fileStorage.OpenReadAsync(
+            _tenantContext.TenantId, task.AttachmentStorageKey, cancellationToken);
+
+        if (stream is null)
+        {
+            // The key exists but the blob does not — say so rather than serving an empty file, which would
+            // look like a successful download of nothing.
+            _logger.LogWarning(
+                "Onboarding task {TaskId} references attachment {Key} which is not in storage (tenant {TenantId}).",
+                task.Id, task.AttachmentStorageKey, _tenantContext.TenantId);
+            return Result<StoredFileResult>.Failure("The stored file is no longer available.", 404);
+        }
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer, cancellationToken);
+
+        // The storage key's last segment is the original filename.
+        var fileName = task.AttachmentStorageKey.Split('/').LastOrDefault() ?? "attachment";
+
+        return Result<StoredFileResult>.Success(new StoredFileResult(
+            buffer.ToArray(), "application/octet-stream", fileName));
+    }
+
     public async Task<Result<MyChecklistDto>> GetMyChecklistAsync(CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -968,9 +1009,12 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
             ? "completed"
             : IsOverdue(t, now) ? "overdue" : t.Status.ToString().ToLowerInvariant();
 
-        string? attachmentUrl = null;
-        if (!string.IsNullOrEmpty(t.AttachmentStorageKey))
-            attachmentUrl = _fileStorage.GetSignedUrl(_tenantContext.TenantId, t.AttachmentStorageKey, TimeSpan.FromMinutes(5));
+        // GAP-027: point at the AUTHENTICATED endpoint. This used to be GetSignedUrl(...), which fabricates
+        // `/files/{tenantId}/{path}` — a scheme no route serves — and my-checklist rendered it as an anchor
+        // href, so the link opened a 404 in a new tab.
+        string? attachmentUrl = string.IsNullOrEmpty(t.AttachmentStorageKey)
+            ? null
+            : $"/api/v1/onboarding/checklists/tasks/{t.Id}/attachment";
 
         return new MyChecklistTaskDto
         {

@@ -35,6 +35,7 @@ import {
   employeeStatusLabel,
   employmentTypeLabel,
 } from '../../models/employee.models';
+import { EmployeePhotoDirective } from '../../directives/employee-photo.directive';
 
 /**
  * US-CHR-003: Employee Directory with Search and Filters.
@@ -54,7 +55,8 @@ import {
 @Component({
   selector: 'app-employee-list',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    EmployeePhotoDirective, CommonModule, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   animations: [
     trigger('fadeSlideIn', [
@@ -499,7 +501,7 @@ import {
                 <div class="avatar-circle">
                   @if (employee.profilePhotoUrl) {
                     <img
-                      [src]="employee.profilePhotoUrl"
+                      [appEmployeePhoto]="employee.employeeId"
                       [alt]="employee.firstName + ' ' + employee.lastName"
                       class="w-full h-full object-cover"
                     />
@@ -597,7 +599,7 @@ import {
                       <div class="avatar-circle !w-8 !h-8 !text-xs">
                         @if (employee.profilePhotoUrl) {
                           <img
-                            [src]="employee.profilePhotoUrl"
+                            [appEmployeePhoto]="employee.employeeId"
                             [alt]="employee.firstName + ' ' + employee.lastName"
                             class="w-full h-full object-cover"
                           />
@@ -782,7 +784,7 @@ import {
                       >
                         <div class="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold flex items-center justify-center overflow-hidden flex-shrink-0">
                           @if (emp.profilePhotoUrl) {
-                            <img [src]="emp.profilePhotoUrl" [alt]="emp.firstName" class="w-full h-full object-cover" />
+                            <img [appEmployeePhoto]="emp.employeeId" [alt]="emp.firstName" class="w-full h-full object-cover" />
                           } @else {
                             <span>{{ getBulkInitials(emp.firstName, emp.lastName) }}</span>
                           }

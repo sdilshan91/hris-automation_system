@@ -157,8 +157,10 @@ IMPORTANT — DO NOT:
   - Touch src/frontend/ or docs/QA/
   - Modify other stories' code
 
-Verify with `dotnet build src/backend/HRM.sln` AND `dotnet test src/backend/HRM.sln`
-(your new tests must pass) before reporting back.
+Verify with `dotnet build src/backend/HRM.sln` AND
+`bash scripts/run-backend-tests.sh src/backend/HRM.sln` (your new tests must pass)
+before reporting back. Use the wrapper, NOT raw `dotnet test` — ISSUE-312: `dotnet test`
+can exit 0 on an ABORTED run, so a partial run reads as a full pass.
 Report a 5-bullet summary of files created/modified.
 ```
 

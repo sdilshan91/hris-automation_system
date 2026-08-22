@@ -37,7 +37,6 @@ tools:
   - mcp__chrome-devtools__take_screenshot
   - mcp__chrome-devtools__take_heapsnapshot
   - mcp__chrome-devtools__evaluate_script
-model: claude-opus-4-8
 maxTurns: 30
 memory: project
 ---

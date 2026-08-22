@@ -34,7 +34,8 @@ Both produce **one branch + one commit + one PR per story** with FE + BE + QA bu
    - `@qa-engineer`  → writes test cases in `docs/QA/{module}/`, no git commands
    Use the prompt templates from `.claude/skills/implement-all.md` (DRY).
 6. **Verify** — `dotnet build src/backend/HRM.sln` and `ng build` in `src/frontend/`. Abort on failure (keep branch local).
-7. **Test** — `dotnet test src/backend/HRM.sln --no-build`. Report failures but continue to PR (they go on the PR description as known issues).
+7. **Test** — `bash scripts/run-backend-tests.sh src/backend/HRM.sln --no-build` (**never raw
+   `dotnet test`** — ISSUE-312: it can exit 0 on an ABORTED run, so a partial run reads as a full pass). Report failures but continue to PR (they go on the PR description as known issues).
 8. **Commit** — single commit:
    ```
    feat(US-{ID}): {story title}
