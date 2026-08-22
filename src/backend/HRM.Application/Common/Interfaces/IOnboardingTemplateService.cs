@@ -49,6 +49,16 @@ public interface IOnboardingTemplateService
 
     Task<Result<OnboardingTemplateDto>> GetByIdAsync(Guid templateId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// B6: the department / job-title / user options the template builder's pickers need.
+    /// </summary>
+    /// <remarks>
+    /// Users are the tenant's ACTIVE users, keyed by USER id — <c>OnboardingTemplateTask.ResponsibleUserId</c>
+    /// is an FK to <c>users</c>, so returning employee ids would produce a picker whose every selection is
+    /// rejected (or silently mis-bound) on save.
+    /// </remarks>
+    Task<Result<OnboardingLookupsDto>> GetLookupsAsync(CancellationToken cancellationToken = default);
+
     Task<Result<PagedResult<OnboardingTemplateListItemDto>>> ListAsync(
         bool? isActive, string? search, int page, int pageSize, CancellationToken cancellationToken = default);
 }

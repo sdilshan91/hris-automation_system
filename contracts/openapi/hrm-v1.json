@@ -6212,6 +6212,37 @@
         },
         "type": "object"
       },
+      "ApiResponseOfOnboardingOnboardingLookupsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OnboardingOnboardingLookupsDto"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseOfOnboardingOnboardingTemplateDto": {
         "additionalProperties": false,
         "properties": {
@@ -19218,6 +19249,20 @@
         },
         "type": "object"
       },
+      "OnboardingLookupOptionDto": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OnboardingModifyChecklistRequest": {
         "additionalProperties": false,
         "properties": {
@@ -19621,6 +19666,33 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "OnboardingOnboardingLookupsDto": {
+        "additionalProperties": false,
+        "properties": {
+          "departments": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingLookupOptionDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "jobTitles": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingLookupOptionDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingLookupOptionDto"
+            },
+            "nullable": true,
+            "type": "array"
           }
         },
         "type": "object"
@@ -44002,6 +44074,35 @@
               }
             },
             "description": "Conflict"
+          }
+        },
+        "tags": [
+          "OnboardingTemplates"
+        ]
+      }
+    },
+    "/api/v1/onboarding/templates/lookups": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingOnboardingLookupsDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingOnboardingLookupsDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingOnboardingLookupsDto"
+                }
+              }
+            },
+            "description": "OK"
           }
         },
         "tags": [

@@ -186,6 +186,53 @@ public sealed class OnboardingTemplateService : IOnboardingTemplateService
         return Result<OnboardingTemplateDto>.Success(ToDto(template));
     }
 
+    /// <inheritdoc />
+    public async Task<Result<OnboardingLookupsDto>> GetLookupsAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<OnboardingLookupsDto>.Failure("Tenant context is not resolved.", 400);
+
+        // Departments and job titles ride the global query filter, so they are already tenant-scoped.
+        var departments = await _dbContext.Departments
+            .AsNoTracking()
+            .Where(d => !d.IsDeleted)
+            .OrderBy(d => d.Name)
+            .Select(d => new LookupOptionDto(d.Id, d.Name))
+            .ToListAsync(cancellationToken);
+
+        var jobTitles = await _dbContext.JobTitles
+            .AsNoTracking()
+            .Where(j => !j.IsDeleted)
+            .OrderBy(j => j.TitleName)
+            .Select(j => new LookupOptionDto(j.Id, j.TitleName))
+            .ToListAsync(cancellationToken);
+
+        // USERS, NOT EMPLOYEES. OnboardingTemplateTask.ResponsibleUserId is an FK to `users`; a picker built
+        // from employee ids would look right and be rejected on save.
+        //
+        // Users are global rather than tenant-scoped entities, so membership is the scope here: joined
+        // through UserTenants for THIS tenant and filtered to Active, which also keeps a removed or
+        // suspended member from remaining assignable.
+        var tenantId = _tenantContext.TenantId;
+        var users = await _dbContext.UserTenants
+            .AsNoTracking()
+            .Where(ut => ut.TenantId == tenantId && ut.Status == UserTenantStatus.Active)
+            .Join(
+                _dbContext.Users.AsNoTracking(),
+                ut => ut.UserId,
+                u => u.Id,
+                (ut, u) => new LookupOptionDto(u.Id, u.DisplayName ?? u.Email))
+            .OrderBy(o => o.Name)
+            .ToListAsync(cancellationToken);
+
+        return Result<OnboardingLookupsDto>.Success(new OnboardingLookupsDto
+        {
+            Departments = departments,
+            JobTitles = jobTitles,
+            Users = users,
+        });
+    }
+
     public async Task<Result<PagedResult<OnboardingTemplateListItemDto>>> ListAsync(
         bool? isActive, string? search, int page, int pageSize, CancellationToken cancellationToken = default)
     {

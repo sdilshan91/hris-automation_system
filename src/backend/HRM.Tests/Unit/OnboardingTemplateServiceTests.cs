@@ -258,4 +258,109 @@ public sealed class OnboardingTemplateServiceTests
         activeOnly.Value!.Items.Should().OnlyContain(t => t.IsActive);
         activeOnly.Value!.Items.Should().ContainSingle(t => t.TemplateName == "Active One");
     }
+
+    // ── B6: builder lookups ─────────────────────────────────────────────
+
+    /// <summary>
+    /// THE ARM THAT MATTERS FOR B6. `users` must carry USER ids, not employee ids.
+    ///
+    /// <c>OnboardingTemplateTask.ResponsibleUserId</c> is an FK to <c>users</c>. A picker populated with
+    /// EMPLOYEE ids would look entirely correct in the UI and then be rejected on save — or, worse, bind to
+    /// an unrelated row that happened to share the id. The fixture deliberately gives the employee and the
+    /// user DIFFERENT ids so the two cannot be confused by accident.
+    /// </summary>
+    [Fact]
+    public async Task GetLookups_returns_USER_ids_for_responsible_user_not_employee_ids_B6()
+    {
+        var userId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();   // deliberately different
+
+        using (var db = Db())
+        {
+            db.Users.Add(new User { Id = userId, Email = "mia@acme.com", DisplayName = "Mia Manager" });
+            db.UserTenants.Add(new UserTenant
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, UserId = userId,
+                Status = UserTenantStatus.Active,
+            });
+            db.Employees.Add(new Employee
+            {
+                Id = employeeId, TenantId = _tenantId, UserId = userId,
+                EmployeeNo = "E-1", FirstName = "Mia", LastName = "Manager",
+                Email = "mia@acme.com", IsDeleted = false,
+            });
+            db.SaveChanges();
+        }
+
+        var result = await Service().GetLookupsAsync();
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Users.Should().ContainSingle();
+        result.Value.Users[0].Id.Should().Be(userId,
+            "ResponsibleUserId is an FK to users; an employee id here produces a picker whose every "
+            + "selection is rejected on save");
+        result.Value.Users[0].Id.Should().NotBe(employeeId,
+            "the fixture gives them different ids precisely so this cannot pass by coincidence");
+        result.Value.Users[0].Name.Should().Be("Mia Manager");
+    }
+
+    /// <summary>
+    /// A user whose tenant membership is not Active must not remain assignable — otherwise a removed or
+    /// suspended member keeps showing up as a valid owner for onboarding work.
+    /// </summary>
+    [Fact]
+    public async Task GetLookups_excludes_users_whose_tenant_membership_is_not_active_B6()
+    {
+        var activeUser = Guid.NewGuid();
+        var suspendedUser = Guid.NewGuid();
+
+        using (var db = Db())
+        {
+            db.Users.Add(new User { Id = activeUser, Email = "a@acme.com", DisplayName = "Active Ana" });
+            db.Users.Add(new User { Id = suspendedUser, Email = "s@acme.com", DisplayName = "Suspended Sam" });
+            db.UserTenants.Add(new UserTenant
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, UserId = activeUser,
+                Status = UserTenantStatus.Active,
+            });
+            db.UserTenants.Add(new UserTenant
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, UserId = suspendedUser,
+                Status = UserTenantStatus.Suspended,
+            });
+            db.SaveChanges();
+        }
+
+        var result = await Service().GetLookupsAsync();
+
+        result.Value!.Users.Select(u => u.Id).Should().Contain(activeUser);
+        result.Value.Users.Select(u => u.Id).Should().NotContain(suspendedUser,
+            "a suspended member must not stay assignable as a task owner");
+    }
+
+    /// <summary>
+    /// Falls back to the email when a user has no display name — an option with a blank label is an
+    /// unpickable row in the UI.
+    /// </summary>
+    [Fact]
+    public async Task GetLookups_falls_back_to_email_when_the_user_has_no_display_name_B6()
+    {
+        var userId = Guid.NewGuid();
+        using (var db = Db())
+        {
+            db.Users.Add(new User { Id = userId, Email = "nodisplay@acme.com", DisplayName = null });
+            db.UserTenants.Add(new UserTenant
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, UserId = userId,
+                Status = UserTenantStatus.Active,
+            });
+            db.SaveChanges();
+        }
+
+        var result = await Service().GetLookupsAsync();
+
+        result.Value!.Users.Should().ContainSingle()
+            .Which.Name.Should().Be("nodisplay@acme.com",
+                "a blank label renders an unpickable row");
+    }
 }

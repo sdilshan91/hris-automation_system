@@ -51,6 +51,29 @@ public sealed class OnboardingTemplatesController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/onboarding/templates/lookups
+    /// B6: department / job-title / user options for the template builder's pickers.
+    /// </summary>
+    /// <remarks>
+    /// Declared BEFORE the <c>{id:guid}</c> route below. The guid constraint means "lookups" could not match
+    /// it anyway, but relying on a constraint for correct routing is fragile — an unconstrained id route
+    /// added later would swallow this silently, and the failure would look like a 404 from a working
+    /// endpoint.
+    /// </remarks>
+    [HttpGet("lookups")]
+    [RequirePermission("Onboarding.View")]
+    [ProducesResponseType(typeof(ApiResponse<OnboardingLookupsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetLookups(CancellationToken cancellationToken = default)
+    {
+        var result = await _mediator.Send(new GetOnboardingLookupsQuery(), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<OnboardingLookupsDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/onboarding/templates/{id}
     /// Gets a single checklist template (with its tasks) by id, tenant-scoped.
     /// </summary>
