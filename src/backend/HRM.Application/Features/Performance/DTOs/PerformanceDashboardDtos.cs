@@ -189,6 +189,23 @@ public sealed record DepartmentEmployeeScoreDto
 public sealed record DepartmentDrilldownDto
 {
     public Guid CycleId { get; init; }
+
+    /// <summary>
+    /// ISSUE-379: the drill-down breadcrumb prints the cycle. Only the id was on the wire, so the FE had
+    /// nothing to label it with.
+    ///
+    /// <para>NOTE: the register's row 6 named `employeeName` as this payload's missing field, at a stated
+    /// 100% confidence. `employeeName` is present and already read; THIS is the field that was missing.</para>
+    /// </summary>
+    public string CycleName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// ISSUE-379: the denominator for every score in this payload. Without it the FE cannot render
+    /// "4.2 / 5" and was defaulting the scale to 0. The cycle is already resolved in this path
+    /// (`PerformanceDashboardService.cs:142`), so this is exposure, not an extra query.
+    /// </summary>
+    public int RatingScaleMax { get; init; }
+
     public Guid DepartmentId { get; init; }
     public string DepartmentName { get; init; } = string.Empty;
     public int Headcount { get; init; }
@@ -225,6 +242,12 @@ public sealed record DepartmentTrendSeriesDto
 /// <summary>The multi-cycle trend payload (AC-3/FR-7).</summary>
 public sealed record PerformanceTrendDto
 {
+    /// <summary>
+    /// ISSUE-379: the trend chart plots scores against a scale it was never told. Resolved from the same
+    /// cycle the trend is built for — exposure, not an extra query.
+    /// </summary>
+    public int RatingScaleMax { get; init; }
+
     /// <summary>Which scope the server applied (Organization vs Team) — AC-5.</summary>
     public string Scope { get; init; } = string.Empty;
 

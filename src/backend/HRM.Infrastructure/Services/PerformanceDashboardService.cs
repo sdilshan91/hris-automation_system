@@ -174,6 +174,9 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         return Result<DepartmentDrilldownDto>.Success(new DepartmentDrilldownDto
         {
             CycleId = cycle.Id,
+            // ISSUE-379: the cycle is already resolved above; exposing it costs nothing.
+            CycleName = cycle.Name,
+            RatingScaleMax = cycle.RatingScaleMax,
             DepartmentId = department.Id,
             DepartmentName = department.Name,
             Headcount = scored.Count,
@@ -206,7 +209,7 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
             cyclesQuery = cyclesQuery.Where(c => cycleIds.Contains(c.Id));
         var cycles = await cyclesQuery
             .OrderBy(c => c.StartDate)
-            .Select(c => new { c.Id, c.Name, c.StartDate })
+            .Select(c => new { c.Id, c.Name, c.StartDate, c.RatingScaleMax }) // ISSUE-379: +1 column, same query
             .ToListAsync(cancellationToken);
 
         var points = new List<CycleTrendPointDto>(cycles.Count);
@@ -258,6 +261,12 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
 
         return Result<PerformanceTrendDto>.Success(new PerformanceTrendDto
         {
+            // ISSUE-379: the chart needs one y-axis denominator, but a trend spans MULTIPLE cycles and each
+            // carries its own RatingScaleMax. There is no single right answer, so this takes the MAXIMUM
+            // across the plotted cycles: it is the only choice under which no point can overflow the axis.
+            // Taking the latest cycle's scale would silently clip a historic point scored on a wider scale.
+            // (Mixed scales on one chart are arguably a product problem; this at least renders honestly.)
+            RatingScaleMax = cycles.Count == 0 ? 0 : cycles.Max(c => c.RatingScaleMax),
             Scope = scope.Kind.ToString(),
             Points = points,
             DepartmentSeries = deptSeries,

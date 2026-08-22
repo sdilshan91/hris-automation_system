@@ -38926,12 +38926,15 @@ export interface components {
             averageScore?: number;
             /** Format: uuid */
             cycleId?: string;
+            cycleName?: string | null;
             /** Format: uuid */
             departmentId?: string;
             departmentName?: string | null;
             employees?: components["schemas"]["PerformanceDepartmentEmployeeScoreDto"][] | null;
             /** Format: int32 */
             headcount?: number;
+            /** Format: int32 */
+            ratingScaleMax?: number;
         };
         PerformanceDepartmentEmployeeScoreDto: {
             /** Format: uuid */
@@ -39283,6 +39286,8 @@ export interface components {
         PerformancePerformanceTrendDto: {
             departmentSeries?: components["schemas"]["PerformanceDepartmentTrendSeriesDto"][] | null;
             points?: components["schemas"]["PerformanceCycleTrendPointDto"][] | null;
+            /** Format: int32 */
+            ratingScaleMax?: number;
             scope?: string | null;
         };
         PerformancePerformerDto: {

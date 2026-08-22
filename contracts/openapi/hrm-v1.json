@@ -24565,6 +24565,10 @@
             "format": "uuid",
             "type": "string"
           },
+          "cycleName": {
+            "nullable": true,
+            "type": "string"
+          },
           "departmentId": {
             "format": "uuid",
             "type": "string"
@@ -24581,6 +24585,10 @@
             "type": "array"
           },
           "headcount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ratingScaleMax": {
             "format": "int32",
             "type": "integer"
           }
@@ -25623,6 +25631,10 @@
             },
             "nullable": true,
             "type": "array"
+          },
+          "ratingScaleMax": {
+            "format": "int32",
+            "type": "integer"
           },
           "scope": {
             "nullable": true,
