@@ -224,7 +224,29 @@ instances**, so probes 3–5 could not be observed end-to-end.
   service invariant, one by the global soft-delete query filter). Both now pinned; the second needed a direct
   test of the gate as a pure function.
   8 mutations applied, 8 killed. Gate 5520/5520 + 4139/4139, build clean, contract OK.
-- [ ] **B5 · Salary-grade Active toggle + payslip generation panel** — two silent no-ops sharing the same shape.
+- [x] **B5 · Salary-grade Active toggle + payslip generation panel** ✅ **DONE (#557)** — the "same shape" framing
+  was right, and both were worse than one no-op each.
+  **Decided with the human** (best option, not cheapest): honour `isActive` server-side rather than delete the
+  toggle; mirror the server's generate states exactly with a confirm on the destructive case rather than a
+  blanket ban.
+  **The toggle:** the update DTO had no `IsActive`, so the switch was a save-time no-op — and the previous slice
+  had **edited the spec to stop asserting the field** rather than fix it, recording the bug as intended
+  behaviour. `DELETE` was the only writer and nothing set it back, so **a grade deactivated by mistake was
+  stuck for the life of the tenant**; update now writes it, which is what makes reactivation possible at all.
+  The wire field is **nullable** so a caller omitting it cannot silently reactivate.
+  **Deactivation warns, never blocks** — job titles must resolve to an ACTIVE grade, so the DTO now carries
+  `referencingJobTitleCount` (one grouped query) and *both* routes warn, including the list dialog that already
+  had the count and was discarding it.
+  **The payslip gate was wrong in BOTH directions:** enabled on `AwaitingApproval` (always 400s) and disabled
+  on `Finalized` (which the backend explicitly supports). The rule is now written once; the backend's own
+  duplicate literal (generate + retry) was extracted too.
+  **The audit caught two of my own errors:** I regenerated the contract *before* making `IsActive` nullable, so
+  the committed spec contradicted the design's central semantic and would have failed the CI gate; and my
+  comment claimed the form omits `isActive` on create when the toggle was still rendered there — the same bug,
+  one mode over. Toggle is now edit-only.
+  **Mutation testing found two unguarded fields**, one of them the very field B5 exists for (a write mapper
+  hard-coding `isActive: true` killed nothing, because every fixture used `true` and all form specs stub the
+  service). 11 mutations, 11 killed. Gate 5525/5525 + 4163/4163.
 - [x] **B6 · `GET /onboarding/templates/lookups`** ✅ **DONE (#550)** — endpoint built, contract regenerated, the
   `createSpyObj` mock replaced with an `HttpTestingController` arm.
   **The entry undersold the blast radius.** This was not one 404 on one screen: the template builder's *entire*
@@ -295,6 +317,17 @@ instances**, so probes 3–5 could not be observed end-to-end.
   side effect of a deploy. The open decision this entry carried is now closed.
 - [ ] **C5 · GAP-028 export bundle** — fix the emailed link first (**S**, a route already exists); documents ZIP +
   schema PDF are the M–L remainder.
+
+> ### 🔁 AUTO-HEAL 2026-08-23 (B5) — what its audit surfaced
+>
+> | item | sev | why it waits |
+> |---|---|---|
+> | **FE specs never exercise the `ApiResponse` envelope** | MED | Raised again by B5's audit after B4's. Service TestBeds register `provideHttpClient()` without `apiEnvelopeInterceptor` and flush pre-unwrapped bodies — the mechanism by which B4's `complete()` mismatch stayed invisible. **Still at the decision gate**; it is a repo-wide convention change. |
+> | **`mapSalaryGrade` leaves 5 more fields unpinned** | LOW | `name`/`minAmount`/`midAmount`/`maxAmount`/`currency` can each be hard-coded without failing a test. B5 pinned the two that mattered (`isActive`, the count); the rest are a broader mapper-coverage sweep, not a B5 fix. |
+>
+> **The lesson B5 adds to the S-1 file:** a *cast* and a *duplicate literal* are the same defect wearing
+> different clothes. The payslip gate had the rule three times — twice as a C# literal, once as a different
+> and wrong TypeScript expression — and the two C# copies agreeing is what made it look fine.
 
 ### Tier D — the structural item (the only one whose cost grows)
 
@@ -398,6 +431,11 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23 (later)** — **B5 shipped (#557).** Both halves were genuine, both were decided with the human
+  toward the better option. Two findings worth carrying: the audit caught that I had **regenerated the contract
+  before making the field nullable**, so the committed spec contradicted the very semantic the design rests on —
+  regenerate LAST, after the final signature change, not mid-way. And mutation testing again found that the
+  field a change exists for was the least guarded one, because every fixture used the passing value.
 - **2026-08-23** — **B3 ticked without a PR; B4 shipped (#555).** B3 was **already done** — verified against the
   code before starting, and both its defects had been fixed by #524/#525/#545. Third stale entry caught by
   checking rather than trusting; building it would have been pure duplication.
