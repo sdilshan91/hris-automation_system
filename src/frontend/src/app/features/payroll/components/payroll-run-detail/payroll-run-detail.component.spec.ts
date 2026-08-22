@@ -4,6 +4,8 @@ import { ActivatedRoute } from '@angular/router';
 import { provideHttpClient, HttpErrorResponse } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { By } from '@angular/platform-browser';
+import { PayslipListComponent } from '../payslip-list/payslip-list.component';
 import { ToastrService } from 'ngx-toastr';
 import { of, throwError, Subject } from 'rxjs';
 
@@ -74,10 +76,18 @@ describe('PayrollRunDetailComponent', () => {
     ]);
     email.getDistributionStatus.and.returnValue(of(emptyDistribution));
     email.streamDistributionStatus.and.returnValue(of());
+    // The embedded PayslipListComponent is the REAL component (only its service is stubbed), so the spy
+    // has to satisfy what that child calls on init as well as what this parent uses.
     payslips = jasmine.createSpyObj<PayslipService>('PayslipService', [
       'getGenerationStatus',
+      'listPayslips',
+      'streamGenerationStatus',
+      'generatePayslips',
+      'regeneratePayslips',
     ]);
     payslips.getGenerationStatus.and.returnValue(of(emptyGeneration));
+    payslips.listPayslips.and.returnValue(of([]));
+    payslips.streamGenerationStatus.and.returnValue(of(emptyGeneration));
     // The embedded US-PAY-012 audit-trail child fires getRunAuditTrail on init.
     audit = jasmine.createSpyObj<AuditService>('AuditService', [
       'getHistory',
@@ -223,6 +233,49 @@ describe('PayrollRunDetailComponent', () => {
     runs.getRun.and.returnValue(throwError(() => new Error('boom')));
     component.load();
     expect(component.error()).toBe('Could not load this payroll run.');
+  });
+
+  // ── B5: the bindings handed to the embedded payslip list ──────────────────────────────────────────
+  //
+  // Both new behaviours are tested inside PayslipListComponent, and nothing here pinned that this parent
+  // actually passes them. Deleting [runStatus] (the confirm then silently never fires) or reverting the
+  // gate to `status() !== 'Finalized'` failed ZERO tests — the child's own specs cannot see the parent.
+
+  function payslipListDebug() {
+    component.togglePayslips();
+    fixture.detectChanges();
+    return fixture.debugElement.query(By.directive(PayslipListComponent));
+  }
+
+  it('passes the run status down so the finalized-regeneration confirm can fire', () => {
+    setup({ ...baseRun, status: 'Finalized' });
+    const child = payslipListDebug();
+
+    expect(child).withContext('the payslip list must actually render').toBeTruthy();
+    expect(child.componentInstance.runStatus())
+      .withContext('without this the confirm never fires and finalized PDFs are overwritten silently')
+      .toBe('Finalized');
+    expect(child.componentInstance.canGenerate())
+      .withContext('the backend allows regenerating a finalized run')
+      .toBeTrue();
+  });
+
+  it('enables generation on a ReviewPending run', () => {
+    setup(baseRun); // ReviewPending
+    expect(payslipListDebug().componentInstance.canGenerate()).toBeTrue();
+  });
+
+  /**
+   * AwaitingApproval is the case the old rule got wrong in the harmful direction: the payslips panel
+   * renders (isComplete includes it) but it is NOT a BR-1 state, so `status !== 'Finalized'` left the
+   * button enabled on a screen where pressing it always returns 400 run_not_ready_for_payslips.
+   */
+  it('disables generation on a rendered run the server would still reject', () => {
+    setup({ ...baseRun, status: 'AwaitingApproval' });
+    const child = payslipListDebug();
+
+    expect(child).withContext('the panel must render, or this proves nothing').toBeTruthy();
+    expect(child.componentInstance.canGenerate()).toBeFalse();
   });
 
   describe('completed run', () => {

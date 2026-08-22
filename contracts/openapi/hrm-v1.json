@@ -30667,6 +30667,10 @@
             "nullable": true,
             "type": "string"
           },
+          "referencingJobTitleCount": {
+            "format": "int32",
+            "type": "integer"
+          },
           "updatedAt": {
             "format": "date-time",
             "nullable": true,
@@ -30689,6 +30693,10 @@
           "description": {
             "nullable": true,
             "type": "string"
+          },
+          "isActive": {
+            "nullable": true,
+            "type": "boolean"
           },
           "maxAmount": {
             "format": "double",

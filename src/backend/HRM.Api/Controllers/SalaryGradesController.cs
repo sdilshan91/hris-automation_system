@@ -106,7 +106,7 @@ public sealed class SalaryGradesController : ControllerBase
     {
         var command = new UpdateSalaryGradeCommand(
             id, request.Code, request.Name, request.MinAmount, request.MidAmount,
-            request.MaxAmount, request.Currency, request.Description);
+            request.MaxAmount, request.Currency, request.Description, request.IsActive);
 
         var result = await _mediator.Send(command, cancellationToken);
 

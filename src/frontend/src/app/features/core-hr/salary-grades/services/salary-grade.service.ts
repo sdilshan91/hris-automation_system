@@ -8,6 +8,7 @@ import {
   ISalaryGradeRequest,
   SalaryGradeWire,
   mapSalaryGrade,
+  toSalaryGradeUpdateWire,
 } from '../models/salary-grade.models';
 
 /**
@@ -67,13 +68,20 @@ export class SalaryGradeService {
       .pipe(map(mapSalaryGrade));
   }
 
-  /** Update an existing salary grade */
+  /**
+   * Update an existing salary grade, including its Active flag (B5).
+   *
+   * The payload is built by `toSalaryGradeUpdateWire`, which is typed from the generated
+   * `UpdateSalaryGradeRequest`. That is deliberate: before B5 the form posted an `isActive` the request DTO
+   * did not declare, so the API ignored it and the toggle was a silent no-op. Typing the body from the
+   * contract means a member disappearing becomes a compile error instead.
+   */
   update(
     id: string,
     request: ISalaryGradeRequest
   ): Observable<ISalaryGrade> {
     return this.http
-      .put<SalaryGradeWire>(`${this.baseUrl}/${id}`, request, {
+      .put<SalaryGradeWire>(`${this.baseUrl}/${id}`, toSalaryGradeUpdateWire(request), {
         withCredentials: true,
       })
       .pipe(map(mapSalaryGrade));

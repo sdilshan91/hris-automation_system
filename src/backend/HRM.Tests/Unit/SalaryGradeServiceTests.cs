@@ -63,6 +63,23 @@ public sealed class SalaryGradeServiceTests : IDisposable
             Description = description,
         };
 
+    private static UpdateSalaryGradeRequest NewUpdateRequest(
+        string code = "G1", string name = "Grade 1",
+        decimal min = 1000m, decimal? mid = 1500m, decimal max = 2000m,
+        string currency = "USD", string? description = "Associate band",
+        bool? isActive = null)
+        => new()
+        {
+            Code = code,
+            Name = name,
+            MinAmount = min,
+            MidAmount = mid,
+            MaxAmount = max,
+            Currency = currency,
+            Description = description,
+            IsActive = isActive,
+        };
+
     // ── Create ──────────────────────────────────────────────────────
 
     [Fact]
@@ -192,6 +209,108 @@ public sealed class SalaryGradeServiceTests : IDisposable
         result.Value!.Name.Should().Be("Grade 1 - Renamed");
         result.Value.Currency.Should().Be("EUR");
         result.Value.MaxAmount.Should().Be(2200m);
+    }
+
+    // ── B5: the Active flag is part of the update, and reactivation is possible at all ──────────────
+    //
+    // Before B5 `UpdateSalaryGradeRequest` had no IsActive member, so the edit form's Active toggle changed
+    // nothing on save — a control the user could flip, save, and see succeed while it did nothing. Worse,
+    // DELETE was the ONLY writer of the flag and there was no route back: a mis-clicked deactivation was
+    // permanent for the life of the tenant.
+
+    [Fact]
+    [Trait("TC", "TC-CHR-337")]
+    public async Task Update_CanDeactivate_AndTheGradeLeavesTheActiveList()
+    {
+        var service = CreateService();
+        var created = await service.CreateAsync(NewCreateRequest(code: "G1"));
+        var id = created.Value!.Id;
+        created.Value.IsActive.Should().BeTrue("a new grade starts active — otherwise this proves nothing");
+
+        var result = await service.UpdateAsync(id, NewUpdateRequest(code: "G1", isActive: false));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.IsActive.Should().BeFalse();
+        (await CreateService().GetAllAsync()).Value!.Should().NotContain(g => g.Id == id,
+            "the default list is active-only, so a deactivated grade must drop out of the pickers");
+    }
+
+    /// <summary>
+    /// THE ARM B5 EXISTS FOR. Reactivation was previously impossible through any route — `DELETE` set the
+    /// flag false and nothing set it back — so a grade deactivated by mistake was stuck forever.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-CHR-337")]
+    public async Task Update_CanReactivate_AGradeThatWasDeactivated()
+    {
+        var service = CreateService();
+        var created = await service.CreateAsync(NewCreateRequest(code: "G1"));
+        var id = created.Value!.Id;
+        (await CreateService().DeactivateAsync(id)).IsSuccess.Should().BeTrue(
+            "the arm depends on the grade actually being deactivated first");
+
+        var result = await CreateService().UpdateAsync(id, NewUpdateRequest(code: "G1", isActive: true));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.IsActive.Should().BeTrue();
+        (await CreateService().GetAllAsync()).Value!.Should().Contain(g => g.Id == id,
+            "a reactivated grade must come back to the pickers it disappeared from");
+    }
+
+    /// <summary>
+    /// Omitting the flag must leave it ALONE. If absent defaulted to true, every caller still posting the
+    /// pre-B5 body — other integrations, and most of this file — would silently undo deactivations.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-CHR-337")]
+    public async Task Update_WithoutTheFlag_LeavesADeactivatedGradeDeactivated()
+    {
+        var service = CreateService();
+        var created = await service.CreateAsync(NewCreateRequest(code: "G1"));
+        var id = created.Value!.Id;
+        (await CreateService().DeactivateAsync(id)).IsSuccess.Should().BeTrue();
+
+        // The pre-B5 request shape: no IsActive at all.
+        var result = await CreateService().UpdateAsync(id, NewUpdateRequest(code: "G1", isActive: null));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.IsActive.Should().BeFalse(
+            "absent must mean 'leave unchanged', never 'set it active'");
+    }
+
+    /// <summary>
+    /// B5: the read DTO carries how many job titles point at the grade, so the UI can warn before a
+    /// deactivation that will break those titles' next save (they must resolve to an ACTIVE grade).
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-CHR-337")]
+    public async Task Grade_reports_how_many_job_titles_reference_it()
+    {
+        var service = CreateService();
+        var created = await service.CreateAsync(NewCreateRequest(code: "G1"));
+        var id = created.Value!.Id;
+        var other = await CreateService().CreateAsync(NewCreateRequest(code: "G2"));
+
+        await using (var db = CreateDbContext())
+        {
+            db.JobTitles.Add(new Domain.Entities.JobTitle
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, TitleName = "Engineer", GradeId = id, IsActive = true,
+            });
+            db.JobTitles.Add(new Domain.Entities.JobTitle
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, TitleName = "Senior Engineer", GradeId = id, IsActive = true,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var single = (await CreateService().GetByIdAsync(id)).Value!;
+        single.ReferencingJobTitleCount.Should().Be(2);
+
+        var listed = (await CreateService().GetAllAsync()).Value!;
+        listed.Single(g => g.Id == id).ReferencingJobTitleCount.Should().Be(2);
+        listed.Single(g => g.Id == other.Value!.Id).ReferencingJobTitleCount.Should().Be(0,
+            "a grade nothing points at must report zero, not inherit its neighbour's count");
     }
 
     [Fact]

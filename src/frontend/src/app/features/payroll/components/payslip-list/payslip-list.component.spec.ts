@@ -201,6 +201,68 @@ describe('PayslipListComponent', () => {
       expect(payslip.generatePayslips).not.toHaveBeenCalled();
     });
 
+    // ── B5: regenerating a FINALIZED run overwrites PDFs that may already be distributed ────────────
+
+    it('asks before regenerating a finalized run, and does nothing when refused', () => {
+      setup(); // has Generated → hasGenerated true
+      fixture.componentRef.setInput('runStatus', 'Finalized');
+      fixture.detectChanges();
+      const confirmSpy = spyOn(window, 'confirm').and.returnValue(false);
+      payslip.regeneratePayslips.and.returnValue(of(status));
+
+      component.generate();
+
+      expect(confirmSpy).toHaveBeenCalled();
+      expect(payslip.regeneratePayslips)
+        .withContext('refusing the confirm must not overwrite already-sent payslips')
+        .not.toHaveBeenCalled();
+      expect(component.generating()).toBeFalse();
+    });
+
+    it('regenerates a finalized run once confirmed', () => {
+      setup();
+      fixture.componentRef.setInput('runStatus', 'Finalized');
+      fixture.detectChanges();
+      spyOn(window, 'confirm').and.returnValue(true);
+      payslip.regeneratePayslips.and.returnValue(of(status));
+
+      component.generate();
+
+      expect(payslip.regeneratePayslips)
+        .withContext('the backend supports this — confirming must not block a legitimate re-render')
+        .toHaveBeenCalledWith('r-1');
+    });
+
+    it('does NOT ask on a non-finalized run', () => {
+      setup();
+      fixture.componentRef.setInput('runStatus', 'Approved');
+      fixture.detectChanges();
+      const confirmSpy = spyOn(window, 'confirm').and.returnValue(true);
+      payslip.regeneratePayslips.and.returnValue(of(status));
+
+      component.generate();
+
+      expect(confirmSpy)
+        .withContext('a confirm on every regenerate is the kind of friction users learn to click through')
+        .not.toHaveBeenCalled();
+      expect(payslip.regeneratePayslips).toHaveBeenCalledWith('r-1');
+    });
+
+    it('does NOT ask on a finalized run that has nothing generated yet', () => {
+      setup([rows[1]]); // no Generated row → hasGenerated false
+      fixture.componentRef.setInput('runStatus', 'Finalized');
+      fixture.detectChanges();
+      const confirmSpy = spyOn(window, 'confirm').and.returnValue(true);
+      payslip.generatePayslips.and.returnValue(of(status));
+
+      component.generate();
+
+      expect(confirmSpy)
+        .withContext('there is nothing to overwrite, so there is nothing to warn about')
+        .not.toHaveBeenCalled();
+      expect(payslip.generatePayslips).toHaveBeenCalledWith('r-1');
+    });
+
     it('toasts an error if generation fails to start', () => {
       setup([rows[1]]);
       payslip.generatePayslips.and.returnValue(

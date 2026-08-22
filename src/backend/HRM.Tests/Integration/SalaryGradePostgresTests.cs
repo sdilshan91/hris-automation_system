@@ -218,4 +218,96 @@ public sealed class SalaryGradePostgresTests : IAsyncLifetime
             leaked.TenantId.Should().Be(tenantA);
         }
     }
+
+    // ══ Arm 4 (B5) — the grouped reference count, and Active round-tripping, on real Postgres ══
+
+    /// <summary>
+    /// B5 added two things the unit arms only exercise on EF InMemory: an <c>IsActive</c> write through the
+    /// UPDATE path, and a GROUPED reference count in <c>GetAllAsync</c>
+    /// (<c>Where(Contains) → GroupBy → Count → ToDictionaryAsync</c>).
+    ///
+    /// <para>
+    /// The count query is the part worth a Postgres arm: <c>Contains</c> over a client list translates to
+    /// <c>= ANY(@ids)</c> and the <c>GroupBy</c> to a SQL aggregate, neither of which InMemory exercises —
+    /// it just runs LINQ-to-objects and agrees by accident. If the translation broke, every grade would
+    /// report zero referrers and the deactivation warning would silently vanish product-wide.
+    /// </para>
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-CHR-005-48")]
+    public async Task ReferenceCount_AndActiveToggle_RoundTrip_OnRealPostgres()
+    {
+        var tenantId = Guid.NewGuid();
+        Guid referencedId;
+        Guid unreferencedId;
+
+        await using (var db = Db(tenantId))
+        {
+            referencedId = (await Service(db, tenantId)
+                .CreateAsync(NewRequest("G1", min: 1000m, max: 2000m), default)).Value!.Id;
+            unreferencedId = (await Service(db, tenantId)
+                .CreateAsync(NewRequest("G2", min: 3000m, max: 4000m), default)).Value!.Id;
+        }
+
+        await using (var db = Db(tenantId))
+        {
+            db.JobTitles.Add(new JobTitle
+            {
+                Id = Guid.NewGuid(), TenantId = tenantId, TitleName = "Engineer",
+                GradeId = referencedId, IsActive = true,
+            });
+            db.JobTitles.Add(new JobTitle
+            {
+                Id = Guid.NewGuid(), TenantId = tenantId, TitleName = "Senior Engineer",
+                GradeId = referencedId, IsActive = true,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = Db(tenantId))
+        {
+            var all = (await Service(db, tenantId).GetAllAsync(includeInactive: true, default)).Value!;
+
+            all.Single(g => g.Id == referencedId).ReferencingJobTitleCount.Should().Be(2,
+                "the grouped count must survive translation to SQL — a broken one silences every "
+                + "deactivation warning in the product");
+            all.Single(g => g.Id == unreferencedId).ReferencingJobTitleCount.Should().Be(0,
+                "a grade nothing points at must report zero, not inherit its neighbour's count");
+        }
+
+        // The Active flag written through UPDATE must persist to the real boolean column, and the grade
+        // must then be reachable again — reactivation was impossible before B5.
+        await using (var db = Db(tenantId))
+        {
+            var update = await Service(db, tenantId).UpdateAsync(referencedId, new UpdateSalaryGradeRequest
+            {
+                Code = "G1", Name = "Grade G1", MinAmount = 1000m, MidAmount = null, MaxAmount = 2000m,
+                Currency = "USD", Description = null, IsActive = false,
+            }, default);
+            update.IsSuccess.Should().BeTrue(update.Error);
+        }
+
+        await using (var verify = Db(tenantId))
+        {
+            var row = await verify.SalaryGrades.AsNoTracking().SingleAsync(g => g.Id == referencedId);
+            row.IsActive.Should().BeFalse("the flag must reach the boolean column, not just the DTO");
+
+            var activeOnly = (await Service(verify, tenantId).GetAllAsync(includeInactive: false, default)).Value!;
+            activeOnly.Should().NotContain(g => g.Id == referencedId);
+        }
+
+        await using (var db = Db(tenantId))
+        {
+            var back = await Service(db, tenantId).UpdateAsync(referencedId, new UpdateSalaryGradeRequest
+            {
+                Code = "G1", Name = "Grade G1", MinAmount = 1000m, MidAmount = null, MaxAmount = 2000m,
+                Currency = "USD", Description = null, IsActive = true,
+            }, default);
+            back.IsSuccess.Should().BeTrue(back.Error);
+
+            var activeOnly = (await Service(db, tenantId).GetAllAsync(includeInactive: false, default)).Value!;
+            activeOnly.Should().Contain(g => g.Id == referencedId,
+                "reactivation was impossible before B5 — a grade deactivated by mistake was stuck forever");
+        }
+    }
 }

@@ -1,12 +1,15 @@
 import {
   Component,
   ChangeDetectionStrategy,
+  computed,
+  DestroyRef,
   inject,
   signal,
   input,
   output,
   OnInit,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import {
   ReactiveFormsModule,
@@ -186,7 +189,10 @@ import {
           ></textarea>
         </div>
 
-        <!-- Active Toggle -->
+        <!-- Active Toggle — EDIT ONLY. A new grade is always created active: the create wire DTO has no
+             isActive member, so rendering the toggle here would repeat on create exactly the silent no-op
+             B5 fixed on update (flip it off, save, get a success toast, get an active grade anyway). -->
+        @if (grade()) {
         <div class="form-section">
           <div class="toggle-row">
             <div class="toggle-label-block">
@@ -194,6 +200,11 @@ import {
               <p class="field-hint">
                 Inactive grades are hidden from job-title grade pickers.
               </p>
+              @if (deactivationWarning(); as warning) {
+                <p class="field-hint text-amber-600" data-testid="deactivate-warning" role="status">
+                  {{ warning }}
+                </p>
+              }
             </div>
             <label class="toggle-switch" for="sg-active">
               <input
@@ -206,6 +217,7 @@ import {
             </label>
           </div>
         </div>
+        }
 
         <!-- Form actions -->
         <div class="form-actions">
@@ -336,6 +348,7 @@ import {
   `],
 })
 export class SalaryGradeFormComponent implements OnInit {
+  private readonly destroyRef = inject(DestroyRef);
   private readonly fb = inject(FormBuilder);
   private readonly gradeService = inject(SalaryGradeService);
   private readonly toastr = inject(ToastrService);
@@ -350,6 +363,13 @@ export class SalaryGradeFormComponent implements OnInit {
   readonly cancelled = output<void>();
 
   readonly isSaving = signal(false);
+
+  /**
+   * Mirrors the Active control so the warning below can be a `computed`. The component is OnPush and a
+   * reactive-form `patchValue` does not mark the view dirty, so a plain method reading `form.value` renders
+   * stale — the warning would only appear on some later, unrelated change detection pass.
+   */
+  private readonly activeToggle = signal(true);
   readonly duplicateCodeError = signal('');
 
   form!: FormGroup;
@@ -373,6 +393,11 @@ export class SalaryGradeFormComponent implements OnInit {
       },
       { validators: SalaryGradeFormComponent.bandOrderValidator }
     );
+
+    this.activeToggle.set(this.form.value.isActive);
+    this.form.controls['isActive'].valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value: boolean) => this.activeToggle.set(value));
   }
 
   /**
@@ -404,8 +429,34 @@ export class SalaryGradeFormComponent implements OnInit {
     return null;
   }
 
+  /**
+   * B5: warn when the toggle is being turned OFF on a grade job titles still point at.
+   *
+   * Job titles must resolve to an ACTIVE grade (`JobTitleService.ValidateGradeAsync`), so deactivating a
+   * referenced grade makes those titles fail their next save — a consequence invisible from this form.
+   * It warns rather than blocks: retiring a grade part-way through a re-grade is legitimate, and refusing
+   * it would leave no way out.
+   */
+  readonly deactivationWarning = computed<string | null>(() => {
+    const g = this.grade();
+    // Only when an ACTIVE grade is being switched off — creating an inactive grade, or saving one that was
+    // already inactive, breaks nothing new.
+    if (!g || !g.isActive || this.activeToggle()) return null;
+    const count = g.referencingJobTitleCount;
+    if (count <= 0) return null;
+    return count === 1
+      ? '1 job title uses this grade and will fail validation on its next save.'
+      : `${count} job titles use this grade and will fail validation on their next save.`;
+  });
+
   onSubmit(): void {
     if (this.form.invalid || this.isSaving()) return;
+
+    // Deactivating a grade in use is allowed, but not by accident.
+    const warning = this.deactivationWarning();
+    if (warning && !window.confirm(`${warning}\n\nDeactivate it anyway?`)) {
+      return;
+    }
 
     this.isSaving.set(true);
     this.duplicateCodeError.set('');

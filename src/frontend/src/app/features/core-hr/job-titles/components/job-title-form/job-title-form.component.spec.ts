@@ -32,6 +32,7 @@ describe('JobTitleFormComponent', () => {
       currency: 'USD',
       description: null,
       isActive: true,
+      referencingJobTitleCount: 0,
     },
     {
       id: 'sg-2',
@@ -43,6 +44,7 @@ describe('JobTitleFormComponent', () => {
       currency: 'USD',
       description: null,
       isActive: true,
+      referencingJobTitleCount: 0,
     },
   ];
 

@@ -41102,6 +41102,8 @@ export interface components {
             /** Format: double */
             minAmount?: number;
             name?: string | null;
+            /** Format: int32 */
+            referencingJobTitleCount?: number;
             /** Format: date-time */
             updatedAt?: string | null;
         };
@@ -41109,6 +41111,7 @@ export interface components {
             code?: string | null;
             currency?: string | null;
             description?: string | null;
+            isActive?: boolean | null;
             /** Format: double */
             maxAmount?: number;
             /** Format: double */

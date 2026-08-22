@@ -134,6 +134,75 @@ describe('SalaryGradeService', () => {
       expect(received!.code).toBe('G9');
       expect(received!.description).toBeNull();
     });
+
+    /**
+     * B5: `referencingJobTitleCount` drives the confirm shown before deactivating a grade that job titles
+     * still point at. Mutation testing found nothing pinned it through the mapper — the form arms set the
+     * count directly on the component input, so a mapper hard-coding 0 stayed green while every warning in
+     * the product silently stopped appearing.
+     */
+    it('carries the referencing job-title count through the mapper', () => {
+      let received: ISalaryGrade | undefined;
+      service.get('sg-7').subscribe((g) => (received = g));
+
+      httpMock.expectOne(`${baseUrl}/sg-7`).flush({
+        id: 'sg-7',
+        code: 'G7',
+        name: 'Grade 7',
+        minAmount: 1,
+        midAmount: null,
+        maxAmount: 2,
+        currency: 'USD',
+        isActive: true,
+        referencingJobTitleCount: 4,
+      });
+
+      expect(received!.referencingJobTitleCount)
+        .withContext('a dropped count reads as "nothing uses this grade" and silences every warning')
+        .toBe(4);
+    });
+
+    /**
+     * `isActive` is the field B5 exists for, and every wire fixture in this file sets it TRUE — so a
+     * mapper hard-coding `true` sailed through. Reading a DEACTIVATED grade is the arm that pins it.
+     */
+    it('carries a FALSE isActive through the mapper', () => {
+      let received: ISalaryGrade | undefined;
+      service.get('sg-6').subscribe((g) => (received = g));
+
+      httpMock.expectOne(`${baseUrl}/sg-6`).flush({
+        id: 'sg-6',
+        code: 'G6',
+        name: 'Grade 6',
+        minAmount: 1,
+        midAmount: null,
+        maxAmount: 2,
+        currency: 'USD',
+        isActive: false,
+      });
+
+      expect(received!.isActive)
+        .withContext('a mapper defaulting to true makes every deactivated grade look active')
+        .toBeFalse();
+    });
+
+    it('defaults the referencing count to 0 when the wire omits it', () => {
+      let received: ISalaryGrade | undefined;
+      service.get('sg-8').subscribe((g) => (received = g));
+
+      httpMock.expectOne(`${baseUrl}/sg-8`).flush({
+        id: 'sg-8',
+        code: 'G8',
+        name: 'Grade 8',
+        minAmount: 1,
+        midAmount: null,
+        maxAmount: 2,
+        currency: 'USD',
+        isActive: true,
+      });
+
+      expect(received!.referencingJobTitleCount).toBe(0);
+    });
   });
 
   describe('create', () => {
@@ -183,6 +252,33 @@ describe('SalaryGradeService', () => {
       expect(req.request.body).toEqual(request);
       expect(req.request.withCredentials).toBeTrue();
       req.flush({ ...mockGrade, name: 'Grade 1 (revised)' });
+    });
+
+    /**
+     * THE WRITE-SIDE ARM FOR THE FIELD B5 EXISTS FOR. The arm above sends `isActive: true`, so a
+     * `toSalaryGradeUpdateWire` that hard-coded `true` passed it — deactivation would silently stop
+     * working through the exact seam B5 built, and nothing would go red. Every form spec stubs this
+     * service, so this is the only layer that can catch it.
+     */
+    it('puts a FALSE isActive on the wire when the grade is being deactivated', () => {
+      const request: ISalaryGradeRequest = {
+        code: 'G1',
+        name: 'Grade 1',
+        minAmount: 32000,
+        midAmount: 41000,
+        maxAmount: 52000,
+        currency: 'USD',
+        description: 'Entry level',
+        isActive: false,
+      };
+
+      service.update('sg-1', request).subscribe();
+
+      const req = httpMock.expectOne(`${baseUrl}/sg-1`);
+      expect(req.request.body.isActive)
+        .withContext('the toggle is only real if the false actually reaches the API')
+        .toBeFalse();
+      req.flush({ ...mockGrade, isActive: false });
     });
   });
 

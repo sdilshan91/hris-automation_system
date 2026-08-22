@@ -5,12 +5,20 @@
  * `ISalaryGrade` view-model at the service seam so a backend rename becomes a compile error here.
  * The wire DTO also carries `createdAt`/`updatedAt`, which the FE does not render (dropped by the mapper).
  *
- * CONTRACT NOTE (D-core-hr slice 1): the create/update REQUEST DTOs
- * (`SalaryGradesCreateSalaryGradeRequest` / `…UpdateSalaryGradeRequest`) have **no `isActive` member** —
- * the API ignores an `isActive` sent on create/update, so the form's Active toggle is a silent no-op on
- * save (deactivation is the DELETE route). `ISalaryGradeRequest` below still carries `isActive` and the
- * form still sends it; removing it (and the dead toggle) needs a product decision and is reported, not
- * done here. See the D-core-hr slice-1 report.
+ * RESOLVED (B5, 2026-08-23) — the note that used to sit here said the update DTO had no `isActive`, so the
+ * form's Active toggle was a silent no-op on save, and flagged it for a product decision. The decision was
+ * to **honour the flag server-side** rather than delete the toggle: `UpdateSalaryGradeRequest.isActive`
+ * now exists and the request payload is typed from it, so a future removal is a compile error rather than
+ * a silent regression.
+ *
+ * That also closed a data-trap. `DELETE` was previously the only writer of the flag and there was no route
+ * back, so a mis-clicked deactivation was permanent; the toggle now reactivates as well. The wire field is
+ * NULLABLE — absent means "leave unchanged", so a caller posting the pre-B5 body cannot silently reactivate
+ * a deactivated grade.
+ *
+ * The read DTO gained `referencingJobTitleCount` — job titles must resolve to an ACTIVE grade
+ * (`JobTitleService.ValidateGradeAsync`), so deactivating a referenced grade breaks those titles' next
+ * save. It is surfaced as a WARNING, not a block: retiring a grade mid-re-grade is legitimate.
  */
 
 import type { Schema } from '@core/api';
@@ -28,11 +36,20 @@ export interface ISalaryGrade {
   currency: string;
   description: string | null;
   isActive: boolean;
+  /**
+   * How many job titles point at this grade. Drives the confirm shown before deactivating one that is in
+   * use — the person clicking the toggle cannot otherwise see that consequence.
+   */
+  referencingJobTitleCount: number;
 }
 
 /**
  * Request body for create/update (the DTO minus `id`; `id` travels in the
  * PUT route). Sent to POST/PUT /api/v1/tenant/salary-grades.
+ *
+ * `isActive` is honoured on UPDATE only. Create always makes an active grade and the create wire DTO has
+ * no such member, so the toggle is rendered in EDIT MODE ONLY — showing it on create would reproduce the
+ * very no-op B5 fixed: flip it off, save, get a success toast, and get an active grade anyway.
  */
 export interface ISalaryGradeRequest {
   code: string;
@@ -60,6 +77,13 @@ export interface ISalaryGradeErrorResponse {
 export type SalaryGradeWire = Schema<'SalaryGradesSalaryGradeDto'>;
 
 /**
+ * The UPDATE request as the contract defines it. Typing the payload from the generated schema is what
+ * stops `isActive` quietly becoming a no-op again: if the backend ever drops the member, this stops
+ * compiling instead of silently ignoring the toggle the way it did before B5.
+ */
+export type SalaryGradeUpdateWire = Schema<'SalaryGradesUpdateSalaryGradeRequest'>;
+
+/**
  * Maps the wire `SalaryGradesSalaryGradeDto` onto the `ISalaryGrade` view-model. Field names match
  * one-to-one (no renames); the mapper's job is to default the all-optional wire fields and drop the
  * wire-only `createdAt`/`updatedAt` the FE never renders.
@@ -75,5 +99,22 @@ export function mapSalaryGrade(w: SalaryGradeWire): ISalaryGrade {
     currency: w.currency ?? '',
     description: w.description ?? null,
     isActive: w.isActive ?? true,
+    referencingJobTitleCount: w.referencingJobTitleCount ?? 0,
+  };
+}
+
+/** Builds the UPDATE payload from the form model, typed by the contract. */
+export function toSalaryGradeUpdateWire(
+  request: ISalaryGradeRequest,
+): SalaryGradeUpdateWire {
+  return {
+    code: request.code,
+    name: request.name,
+    minAmount: request.minAmount,
+    midAmount: request.midAmount,
+    maxAmount: request.maxAmount,
+    currency: request.currency,
+    description: request.description,
+    isActive: request.isActive,
   };
 }

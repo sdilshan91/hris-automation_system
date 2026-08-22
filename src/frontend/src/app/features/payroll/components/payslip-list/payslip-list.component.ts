@@ -23,6 +23,10 @@ import {
   PDF_STATUS_BADGE,
   PDF_STATUS_LABELS,
 } from '../../models/payslip.models';
+import {
+  PayrollRunStatus,
+  payslipRegenerationNeedsConfirmation,
+} from '../../models/payroll-run.models';
 import { TrappedDialogDirective } from '../../../../shared/directives';
 
 /**
@@ -453,8 +457,13 @@ export class PayslipListComponent implements OnInit, OnDestroy {
 
   /** The run whose payslips we list. */
   readonly runId = input.required<string>();
-  /** Generation allowed only on a non-finalized run (BR-1); set by the parent. */
+  /** Generation allowed in the server's BR-1 states (`canGeneratePayslipsFor`); set by the parent. */
   readonly canGenerate = input<boolean>(true);
+  /**
+   * The run's lifecycle status. Used only to decide whether regenerating needs a confirmation — on a
+   * Finalized run the existing PDFs may already have been emailed to employees.
+   */
+  readonly runStatus = input<PayrollRunStatus | null>(null);
 
   readonly statusBadge = PDF_STATUS_BADGE;
   readonly statusLabels = PDF_STATUS_LABELS;
@@ -553,6 +562,20 @@ export class PayslipListComponent implements OnInit, OnDestroy {
     if (this.generating()) {
       return;
     }
+
+    // Regenerating a FINALIZED run is supported by the backend (the after-a-template-change case) but
+    // overwrites PDFs that may already be in employees' inboxes. Allowed, but never on one click.
+    if (
+      payslipRegenerationNeedsConfirmation(this.runStatus()) &&
+      this.hasGenerated() &&
+      !window.confirm(
+        'This payroll run is finalized and its payslips may already have been sent. ' +
+          'Regenerating overwrites those PDFs.\n\nRegenerate anyway?',
+      )
+    ) {
+      return;
+    }
+
     this.generating.set(true);
     const runId = this.runId();
     const request$ = this.hasGenerated()
