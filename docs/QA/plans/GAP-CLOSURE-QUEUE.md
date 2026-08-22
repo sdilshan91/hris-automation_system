@@ -198,11 +198,32 @@ instances**, so probes 3–5 could not be observed end-to-end.
   - *(original text below)*
 - [x] ~~B2 original~~ *(leave — two bugs)*. Send the required `employeeId/from/to`, **and** read
   `response.entries`. Migrate the LOP models to generated types.
-- [ ] **B3 · Recommendation workspace + self-assessment** *(performance — worst-affected module, 102 interfaces)*.
-  `ws.rows` not `ws.page.rows`; `items`/`isSelfAssessmentOpen`/`weightedSelfScore`/`submittedAt`. Rebuild
-  `recommendation-workspace.component.spec.ts:53` and `self-assessment.service.spec.ts:32` from the generated types.
-- [ ] **B4 · Offboarding complete** *(onboarding)*. Mirror the BE gate at `OffboardingService.cs:340`; correct the
-  `IOffboardingTask.clearanceStatus` union to the real decision vocabulary.
+- [x] **B3 · Recommendation workspace + self-assessment** ✅ **ALREADY DONE — no PR, no work needed.** Verified
+  against the code on 2026-08-22 before starting: both defects were fixed by the D-perf slices (#524/#525) and
+  BUG-311 (#545). `mapRecommendationWorkspace` reads `w.rows` (not `ws.page.rows`); `mapSelfAssessment` reads
+  `items`/`isSelfAssessmentOpen`/`weightedSelfScore`/`submittedAt`; both specs are rebuilt from `Schema<>`
+  fixtures, and the performance module has **0 raw-typed `http.get<IFoo>` calls**.
+  **Ticked without opening a PR because there was nothing to change.** Building the "fix" would have been the
+  effort duplication this queue exists to prevent — the entry was stale, not wrong when written. *Third stale
+  entry found by checking the code before trusting the ledger.*
+- [x] **B4 · Offboarding complete** ✅ **DONE (#555)** — and the prescription was the wrong shape.
+  **"Mirror the BE gate" would have re-created the defect.** The bug was that the rule existed twice — enforced
+  in `OffboardingService`, *predicted* in the Angular `pendingMandatoryTitles()` — with nothing checking they
+  agreed. Mirroring it more carefully leaves two descriptions to drift again. The rule now lives once, in
+  `OffboardingCompletionGate`, and the instance DTO **projects** it (`canComplete` + `pendingMandatoryItems`)
+  from the same call the endpoint enforces with; the client renders the answer.
+  **The union correction was right, and bigger than stated.** One type was doing the work of two vocabularies:
+  `'cleared'|'issues'|'pending'` is the DEPARTMENT traffic light, while a task carries
+  `'approved'|'pending_issues'|null`. They share no member, so the gate's comparison could never be true —
+  **every mandatory task blocked forever and the Complete button never enabled.**
+  **Three more live defects surfaced in the same slice:** the reason dropdown POSTed the display string
+  `'Contract End'`, which `Enum.TryParse` (strips `_`, not spaces) rejects → every use 400'd; `complete()` was
+  typed against the wrong DTO, so a *successful* completion blanked the dashboard; and `parseCompleteBlocked`
+  read an invented 409 shape, so AC-5's "which items block" never rendered.
+  **Mutation testing paid twice** — two gate clauses were unkillable by the existing arms (one masked by a
+  service invariant, one by the global soft-delete query filter). Both now pinned; the second needed a direct
+  test of the gate as a pure function.
+  8 mutations applied, 8 killed. Gate 5520/5520 + 4139/4139, build clean, contract OK.
 - [ ] **B5 · Salary-grade Active toggle + payslip generation panel** — two silent no-ops sharing the same shape.
 - [x] **B6 · `GET /onboarding/templates/lookups`** ✅ **DONE (#550)** — endpoint built, contract regenerated, the
   `createSpyObj` mock replaced with an `HttpTestingController` arm.
@@ -213,6 +234,23 @@ instances**, so probes 3–5 could not be observed end-to-end.
   **Sourced from the enums the backend already validates against, not hand-listed.** A hand-written lookup list is
   a second description of the same truth (S-1) and would drift the first time a category was added — the exact
   defect class this queue exists to close.
+
+> ### 🔁 AUTO-HEAL 2026-08-23 — what the B4 auditors surfaced
+>
+> Filed per rule #7 rather than fixed in-slice. The two CRIT/HIGH items **were** in-lane and are fixed in #555
+> (`complete()` DTO, the invented 409 shape); the rest are ranked here.
+>
+> | item | sev | where | why it waits |
+> |---|---|---|---|
+> | **Service specs never exercise the `ApiResponse` envelope** | MED | every `*.service.spec.ts` | Repo-wide convention: TestBeds register `provideHttpClient()` without `apiEnvelopeInterceptor` and flush pre-unwrapped bodies. **This is how the `complete()` mismatch stayed invisible.** Needs a decision: register the interceptor in service TestBeds, or accept that envelope coverage lives solely in `api-envelope.interceptor.spec.ts`. |
+> | **16 barrel `TS2308` collisions** | LOW | `features/*/index.ts` | `todayIso` exported by two modules in onboarding; same class in leave/payroll/performance. Campaign-shaped, not a B4 fix. |
+> | **`offboarding/initiate/:employeeId` has no inbound link** | LOW | `app.routes.ts:632` | Reachable only by typing the URL. Belongs with **E5 nav orphans** — added to that entry's list. |
+>
+> **The pattern worth carrying forward, in the auditor's words:** *the backend arms assert against real state
+> and kill mutants; the frontend arms assert against fixtures the frontend itself invented.* B4 cured that in
+> the completion **rule** and left it untreated in the completion **response** until the audit caught it. When a
+> module's FE specs are migrated to `Schema<>`, check the **controller's `ProducesResponseType`** for each
+> method — pointing the right-looking-but-wrong schema at an endpoint compiles fine.
 
 ### Tier C — activation gaps (the "cheapest large win", 0 of 6 closed in 35 commits)
 
@@ -328,6 +366,8 @@ instances**, so probes 3–5 could not be observed end-to-end.
   1 employee / 0 cycles / 0 offboarding instances. **Both blocked full runtime verification in iteration 0.**
 - [ ] **E5 · Nav orphans** — `/locations`, `/org-tree`, `/settings/custom-fields`, `/offboarding`,
   `/exit-interview/analytics` are routed with no nav entry or inbound link.
+  **+ `offboarding/initiate/:employeeId`** (found by the B4 wiring audit, 2026-08-23) — reachable only by
+  typing the URL; the natural entry point is the employee profile of a terminated employee.
 
 ### Tier F — reclassified / decisions pending
 
@@ -358,6 +398,18 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23** — **B3 ticked without a PR; B4 shipped (#555).** B3 was **already done** — verified against the
+  code before starting, and both its defects had been fixed by #524/#525/#545. Third stale entry caught by
+  checking rather than trusting; building it would have been pure duplication.
+  B4 was real, and its *prescription* was the wrong shape: "mirror the BE gate" would have re-created the
+  two-descriptions-of-one-rule defect that caused it. The rule now lives once and is projected.
+  **Two process notes worth keeping.** (1) Mutation testing found two gate clauses that no existing arm could
+  kill — one masked by a service invariant, one by a global query filter — which is the second time in this
+  programme that a surviving mutant marked a real gap rather than a pointless clause. (2) I contaminated my own
+  first mutation run: the "sources restored" check grepped a string that also matched a second call site, so a
+  stubbed projection went unnoticed and got baked into the backup, and every result after it was measured
+  against a broken baseline. **Restore verification must be a checksum, not a grep.**
+  Auditor findings folded in above; the envelope-coverage item needs a human call.
 - **2026-08-22** — **Phase 2 (contract completion) closed.** Ticked **B6** (#550) and **C2** (#552/#553); the
   ISSUE-379 exposure adds (#546-#549) and `/leaves/reports/summary` (#551) landed alongside. `api-types.ts` is
   settled, so **phase 3 (FE per module) is unblocked** — B3 is the topmost open item.
