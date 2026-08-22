@@ -39673,11 +39673,14 @@ export interface components {
             body?: string | null;
             /** Format: uuid */
             cycleId?: string;
+            cycleName?: string | null;
             developmentAreas?: string | null;
             /** Format: uuid */
             employeeId?: string;
             employeeName?: string | null;
             employeeNo?: string | null;
+            /** Format: double */
+            finalScore?: number | null;
             isLocked?: boolean;
             isTemplate?: boolean;
             /** Format: uuid */
@@ -39686,6 +39689,8 @@ export interface components {
             meetingNotesId?: string | null;
             /** Format: date-time */
             notesOpenedAt?: string | null;
+            /** Format: int32 */
+            ratingScaleMax?: number;
             /** Format: date-time */
             signoffCompletedAt?: string | null;
             /** Format: date-time */

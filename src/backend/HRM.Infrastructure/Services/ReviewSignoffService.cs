@@ -671,6 +671,11 @@ public sealed class ReviewSignoffService : IReviewSignoffService
             EmployeeName = $"{employee.FirstName} {employee.LastName}".Trim(),
             EmployeeNo = employee.EmployeeNo,
             CycleId = cycle.Id,
+            // ISSUE-379: same expressions the export path uses at :400/:409/:412. The cycle and review are
+            // already in hand here, so this is exposure, not an extra round trip.
+            CycleName = cycle.Name,
+            RatingScaleMax = cycle.RatingScaleMax,
+            FinalScore = review.FinalScore,
             // When no notes exist yet, return the template default (FR-1) so the editor opens populated.
             Body = notes?.Body ?? (cycle.MeetingNotesTemplate ?? DefaultTemplate),
             Strengths = notes?.Strengths,
