@@ -1,4 +1,3 @@
-import type { Schema } from '@core/api';
 
 /**
  * US-CHR-008: Employee Document Management models.
@@ -68,31 +67,20 @@ export interface IUploadDocumentRequest {
   expiryDate?: string | null;
 }
 
-/** Download response containing the signed URL (view-model consumed by the documents page as `downloadUrl`) */
-export interface IDocumentDownloadResponse {
-  downloadUrl: string;
-  expiresAt: string;
-}
-
-// ─── Wire contract → view-model mapper (D-core-hr slice 2) ────────────────────
+// ─── Document download (GAP-027) ─────────────────────────────────────────────
 //
-// LIVE DEFECT fixed here: the API returns `EmployeesDocumentDownloadResult { signedUrl, expiresAt, fileName,
-// mimeType }`, but the service cast the body to `IDocumentDownloadResponse` and the page read `.downloadUrl`.
-// The wire never sends `downloadUrl`, so `a.href` was `undefined` and clicking Download did nothing. The
-// mapper's INPUT is the generated DTO, so the rename `signedUrl → downloadUrl` happens ONCE, at the seam, and
-// the page keeps reading `downloadUrl` unchanged. (The old spec fixture invented `downloadUrl` and asserted it
-// contained 'signed-url', which is exactly what hid the break — that fixture is rebuilt from the wire shape.)
-
-/** The download response exactly as the API sends it. */
-export type DocumentDownloadWire = Schema<'EmployeesDocumentDownloadResult'>;
-
-/** Map the wire download result onto the `IDocumentDownloadResponse` view-model (`signedUrl → downloadUrl`). */
-export function mapDocumentDownload(w: DocumentDownloadWire): IDocumentDownloadResponse {
-  return {
-    downloadUrl: w.signedUrl ?? '',
-    expiresAt: w.expiresAt ?? '',
-  };
-}
+// There is deliberately NO download view-model or mapper here any more.
+//
+// The endpoint used to return `EmployeesDocumentDownloadResult { signedUrl, … }`, and a mapper renamed
+// `signedUrl → downloadUrl` so the page could set it as an anchor href. The URL was
+// `/files/{tenantId}/{path}` — a scheme no route has ever served — so every Download click navigated to a
+// 404. An earlier fix corrected the RENAME while leaving the URL itself dead, which is why this looked
+// handled for weeks.
+//
+// The endpoint now STREAMS the file (matching payslip / data-export / HR-report downloads), so
+// `DocumentService.downloadDocument` returns a Blob and there is no wire shape left to map. The generated
+// `EmployeesDocumentDownloadResult` schema no longer exists either — removing the DTO from the response
+// removed it from the contract, which is what caught this file's dangling reference.
 
 // ─── Validation constants (AC-3, BR-7) ──────────────────────
 

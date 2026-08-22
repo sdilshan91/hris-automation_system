@@ -1796,37 +1796,6 @@
         },
         "type": "object"
       },
-      "ApiResponseOfEmployeesDocumentDownloadResult": {
-        "additionalProperties": false,
-        "properties": {
-          "code": {
-            "nullable": true,
-            "type": "string"
-          },
-          "data": {
-            "$ref": "#/components/schemas/EmployeesDocumentDownloadResult"
-          },
-          "errors": {
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
-          },
-          "message": {
-            "nullable": true,
-            "type": "string"
-          },
-          "success": {
-            "type": "boolean"
-          },
-          "timestamp": {
-            "format": "date-time",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
       "ApiResponseOfEmployeesEmployeeDirectoryResult": {
         "additionalProperties": false,
         "properties": {
@@ -14602,28 +14571,6 @@
             "type": "string"
           },
           "managerName": {
-            "nullable": true,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "EmployeesDocumentDownloadResult": {
-        "additionalProperties": false,
-        "properties": {
-          "expiresAt": {
-            "format": "date-time",
-            "type": "string"
-          },
-          "fileName": {
-            "nullable": true,
-            "type": "string"
-          },
-          "mimeType": {
-            "nullable": true,
-            "type": "string"
-          },
-          "signedUrl": {
             "nullable": true,
             "type": "string"
           }
@@ -61276,23 +61223,6 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseOfEmployeesDocumentDownloadResult"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseOfEmployeesDocumentDownloadResult"
-                }
-              },
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResponseOfEmployeesDocumentDownloadResult"
-                }
-              }
-            },
             "description": "OK"
           },
           "403": {

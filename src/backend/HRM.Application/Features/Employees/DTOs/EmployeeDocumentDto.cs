@@ -48,6 +48,28 @@ public sealed record UploadEmployeeDocumentRequest
 /// <summary>
 /// Response for document download containing a signed URL (US-CHR-008 FR-6, AC-4).
 /// </summary>
+/// <summary>
+/// GAP-027 — the document's actual BYTES, streamed from an authenticated endpoint.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Replaces the signed-URL shape for delivery. <c>LocalFileStorage.GetSignedUrl</c> fabricates
+/// <c>/files/{tenantId}/{path}</c> — a URL scheme NO route has ever served — and its own comment admits the
+/// production pre-signing "would" be implemented. It never was. The frontend set that string as an anchor
+/// href, so every Download click navigated to a 404.
+/// </para>
+/// <para>
+/// Streaming matches what every other download endpoint in this codebase already does — payslips, data
+/// exports and HR report exports all <c>return File(...)</c> and none issue signed URLs. It is also
+/// genuinely authenticated: a bare <c>/files/...</c> navigation cannot carry a bearer token, which is the
+/// reason real deployments use pre-signed URLs and the reason a half-built scheme is worse than none.
+/// </para>
+/// </remarks>
+public sealed record DocumentContentResult(
+    byte[] Content,
+    string ContentType,
+    string FileName);
+
 public sealed record DocumentDownloadResult
 {
     public string SignedUrl { get; init; } = string.Empty;

@@ -363,7 +363,7 @@ describe('EmployeeDocumentsComponent', () => {
   describe('Download', () => {
     beforeEach(() => setup('HR Officer'));
 
-    it('should request download URL and trigger download', fakeAsync(() => {
+    it('should download the streamed file and trigger the save (GAP-027)', fakeAsync(() => {
       fixture.detectChanges();
       httpMock.expectOne(docsUrl).flush({ items: mockDocs, totalCount: mockDocs.length });
       tick();
@@ -387,17 +387,32 @@ describe('EmployeeDocumentsComponent', () => {
       component.downloadDocument(mockDocs[0]);
       expect(component.downloadingId()).toBe('doc-1');
 
+      // GAP-027: this used to flush `{ downloadUrl: 'https://storage.example.com/signed' }` — a plausible
+      // S3-looking URL the API has NEVER sent. The real value was `/files/{tenantId}/{path}`, which no
+      // route serves, so the anchor href 404'd. The fixture's plausibility is what hid it. The endpoint
+      // streams the file now, so the spec flushes BYTES.
       const req = httpMock.expectOne(`${docsUrl}/doc-1/download`);
       expect(req.request.method).toBe('GET');
-      req.flush({
-        downloadUrl: 'https://storage.example.com/signed',
-        expiresAt: '2026-06-12T10:05:00Z',
-      });
+      expect(req.request.responseType)
+        .withContext('the endpoint streams bytes, not JSON')
+        .toBe('blob');
+
+      const objectUrlSpy = spyOn(URL, 'createObjectURL').and.returnValue('blob:fake-object-url');
+      const revokeSpy = spyOn(URL, 'revokeObjectURL').and.stub();
+
+      req.flush(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
       tick();
 
       expect(component.downloadingId()).toBeNull();
       expect(createElementSpy).toHaveBeenCalledWith('a');
+      expect(objectUrlSpy)
+        .withContext('the blob must become an object URL — there is no server URL to link to any more')
+        .toHaveBeenCalled();
+      expect(fakeAnchor.href).toContain('blob:');
       expect(clickSpy).toHaveBeenCalled();
+      expect(revokeSpy)
+        .withContext('not revoking leaks the blob for the life of the page, once per download')
+        .toHaveBeenCalledWith('blob:fake-object-url');
       expect(appendChildSpy).toHaveBeenCalled();
       expect(removeChildSpy).toHaveBeenCalled();
     }));

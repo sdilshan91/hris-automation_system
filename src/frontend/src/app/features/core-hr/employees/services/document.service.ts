@@ -6,9 +6,6 @@ import { environment } from '../../../../../environments/environment';
 import {
   IEmployeeDocument,
   IUploadDocumentRequest,
-  IDocumentDownloadResponse,
-  DocumentDownloadWire,
-  mapDocumentDownload,
 } from '../models/document.models';
 import { IPaginatedResponse } from '../models/employee.models';
 
@@ -86,21 +83,25 @@ export class DocumentService {
   }
 
   /**
-   * Get a short-lived signed download URL for a document (AC-4, FR-6).
-   * The caller should follow the returned URL to download the file.
+   * Download a document (AC-4, FR-6) — returns the FILE, not a URL.
+   *
+   * GAP-027: this used to fetch `{ signedUrl }` and the page set it as an anchor href. The URL was
+   * `/files/{tenantId}/{path}`, a scheme no route has ever served, so every Download click navigated to a
+   * 404. The endpoint now streams the bytes, matching payslip / data-export / HR-report downloads, and this
+   * reads them as a Blob — the same pattern the recommendation and leave exports already use.
+   *
+   * A blob is also the only way this can stay authenticated: a bare `/files/...` navigation cannot carry a
+   * bearer token, which is precisely why real deployments use pre-signed URLs and why a half-built signing
+   * scheme was worse than none.
    */
-  getDownloadUrl(
+  downloadDocument(
     employeeId: string,
     documentId: string
-  ): Observable<IDocumentDownloadResponse> {
-    // The wire DTO is `EmployeesDocumentDownloadResult { signedUrl, … }`; the mapper renames `signedUrl` →
-    // `downloadUrl` so the page's `a.href = response.downloadUrl` resolves to a real URL (was `undefined`).
-    return this.http
-      .get<DocumentDownloadWire>(
-        `${this.baseUrl}/${employeeId}/documents/${documentId}/download`,
-        { withCredentials: true }
-      )
-      .pipe(map(mapDocumentDownload));
+  ): Observable<Blob> {
+    return this.http.get(
+      `${this.baseUrl}/${employeeId}/documents/${documentId}/download`,
+      { withCredentials: true, responseType: 'blob' }
+    );
   }
 
   /**
