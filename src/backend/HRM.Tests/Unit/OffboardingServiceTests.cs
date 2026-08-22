@@ -493,6 +493,267 @@ public sealed class OffboardingServiceTests
         result.ErrorCode.Should().Be("offboarding_not_found");
     }
 
+    // ── B4/AC-5: the projected gate and the enforced gate are ONE rule ──────────────────────────────
+    //
+    // The Angular dashboard used to predict what would block completion so it could disable the button and
+    // explain why. Its prediction and this service's enforcement were two hand-written descriptions of the
+    // same rule, and they disagreed: the client compared a task's clearance against "cleared", a token only
+    // departments ever carry, so it matched nothing and reported EVERY mandatory task as blocking. The
+    // button was permanently disabled and no test anywhere noticed, because each side was self-consistent.
+    //
+    // The rule now lives in OffboardingCompletionGate and is projected onto the instance DTO. These arms
+    // exist to keep the projection and the enforcement from drifting apart again — which is the only way
+    // the client can safely stop deriving it.
+
+    [Fact]
+    public async Task Projected_pending_items_are_exactly_what_completion_refuses_on()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+
+        var projected = (await Service().GetByIdAsync(initiated.Id)).Value!;
+        var attempt = (await Service().CompleteAsync(initiated.Id)).Value!;
+
+        attempt.Completed.Should().BeFalse("nothing has been cleared yet");
+        projected.CanComplete.Should().BeFalse();
+        projected.PendingMandatoryItems.Should().NotBeEmpty(
+            "a projection that reported nothing blocking would enable a button that then 409s");
+        projected.PendingMandatoryItems.Select(i => new { i.TaskId, i.Reason })
+            .Should().BeEquivalentTo(
+                attempt.PendingItems.Select(i => new { i.TaskId, i.Reason }),
+                options => options.WithStrictOrdering(),
+                "the dashboard renders the projection and the endpoint enforces the attempt; if these two "
+                + "lists can differ, the client is back to guessing");
+    }
+
+    [Fact]
+    public async Task Projection_flips_to_can_complete_at_the_same_moment_completion_starts_succeeding()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+        await ClearAllMandatory(initiated);
+
+        var projected = (await Service().GetByIdAsync(initiated.Id)).Value!;
+        projected.CanComplete.Should().BeTrue();
+        projected.PendingMandatoryItems.Should().BeEmpty();
+
+        // ...and the enforcement agrees, on the very same state.
+        (await Service().CompleteAsync(initiated.Id)).Value!.Completed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// BR-6: once completed nothing more can happen, so the button must be off even though no item blocks.
+    /// This is the half of <c>CanComplete</c> that the pending-items list alone cannot express — a
+    /// projection defined as "no blocking items" would re-enable the button on a finished offboarding.
+    /// </summary>
+    [Fact]
+    public async Task A_completed_offboarding_can_no_longer_be_completed_even_with_nothing_blocking()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+        await ClearAllMandatory(initiated);
+        (await Service().CompleteAsync(initiated.Id)).Value!.Completed.Should().BeTrue();
+
+        var projected = (await Service().GetByIdAsync(initiated.Id)).Value!;
+
+        projected.PendingMandatoryItems.Should().BeEmpty();
+        projected.CanComplete.Should().BeFalse("BR-6 makes completion irreversible");
+    }
+
+    /// <summary>
+    /// AC-5 blocks on an explicit refusal, not on the absence of a decision. Not every mandatory task is a
+    /// clearance; requiring a verdict on tasks that never receive one would deadlock every offboarding.
+    /// </summary>
+    [Fact]
+    public async Task A_refused_clearance_blocks_and_names_its_reason()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+        await ClearAllMandatory(initiated);
+
+        // Flip one approved MANDATORY clearance back to "issues" — the department found something
+        // outstanding. It must be a mandatory one: the gate ignores optional tasks by design, so picking
+        // whichever task happened to sort first would prove nothing (it is what the first draft of this
+        // arm did, and it passed against a refusal the gate was right to ignore).
+        var itTaskId = initiated.Departments
+            .Single(d => d.ClearanceCategory == ClearanceCategory.IT)
+            .Tasks.First(t => t.IsMandatory).Id;
+        var flip = await Service().RecordClearanceAsync(
+            new RecordClearanceInput(itTaskId, ClearanceStatus.PendingIssues, "Laptop not returned"));
+        flip.IsSuccess.Should().BeTrue(
+            "the arm asserts on the state this call creates; a silently-failed flip would leave it "
+            + $"asserting against an all-approved instance. Error: {flip.Error}");
+
+        var projected = (await Service().GetByIdAsync(initiated.Id)).Value!;
+
+        projected.CanComplete.Should().BeFalse();
+        projected.PendingMandatoryItems.Should().ContainSingle(i => i.TaskId == itTaskId)
+            .Which.Reason.Should().Be("clearance_not_approved",
+                "the dashboard distinguishes 'nobody has looked at this' from 'a department refused it'");
+    }
+
+    /// <summary>
+    /// A task can be <see cref="OnboardingTaskStatus.Completed"/> while its clearance is still REFUSED, and
+    /// that must still block. This is not a hypothetical: <c>ExitInterviewService</c> completes the exit
+    /// interview task on submission (<c>ExitInterviewService.cs:345</c>) and never touches
+    /// <c>ClearanceStatus</c> — so a department that flagged issues, followed by the employee submitting
+    /// their interview, produces exactly this state.
+    ///
+    /// <para>
+    /// This arm exists because mutation testing found the gap: deleting the
+    /// <c>|| ClearanceStatus == PendingIssues</c> clause left the whole suite GREEN. Every other arm reaches
+    /// a refused clearance through <c>RecordClearanceAsync</c>, which also sets the task back to
+    /// <c>InProgress</c> — so the first clause was doing all the work and the second was untested. Without
+    /// it, an outstanding department refusal silently stops blocking the moment anything else completes the
+    /// task.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_completed_task_whose_clearance_was_refused_still_blocks()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+        await ClearAllMandatory(initiated);
+
+        var taskId = initiated.Departments
+            .Single(d => d.ClearanceCategory == ClearanceCategory.IT)
+            .Tasks.First(t => t.IsMandatory).Id;
+        var refused = await Service().RecordClearanceAsync(
+            new RecordClearanceInput(taskId, ClearanceStatus.PendingIssues, "Outstanding"));
+        refused.IsSuccess.Should().BeTrue($"the arm depends on this flip. Error: {refused.Error}");
+
+        // Now complete the task the way ExitInterviewService does — status only, clearance untouched.
+        await using (var db = Db())
+        {
+            var task = db.OffboardingTaskInstances.Single(t => t.Id == taskId);
+            task.Status = OnboardingTaskStatus.Completed;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var check = Db())
+        {
+            var stored = check.OffboardingTaskInstances.Single(t => t.Id == taskId);
+            stored.Status.Should().Be(OnboardingTaskStatus.Completed,
+                "the arm is only meaningful if the task really is completed");
+            stored.ClearanceStatus.Should().Be(ClearanceStatus.PendingIssues,
+                "...while the refusal still stands — that combination is the whole point");
+        }
+
+        var projected = (await Service().GetByIdAsync(initiated.Id)).Value!;
+        var attempt = (await Service().CompleteAsync(initiated.Id)).Value!;
+
+        projected.CanComplete.Should().BeFalse(
+            "a department's refusal must outlive anything else marking the task done");
+        projected.PendingMandatoryItems.Should().ContainSingle(i => i.TaskId == taskId)
+            .Which.Reason.Should().Be("clearance_not_approved");
+        attempt.Completed.Should().BeFalse("the enforcement path must agree with the projection");
+    }
+
+    /// <summary>
+    /// The complement, and the reason the arm above must target a mandatory task: an OPTIONAL task that a
+    /// department refused does not block completion. AC-5 gates on mandatory items only, so a refused exit
+    /// survey must not strand an offboarding forever.
+    /// </summary>
+    [Fact]
+    public async Task A_refused_OPTIONAL_clearance_does_not_block_completion()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+        await ClearAllMandatory(initiated);
+
+        var optional = initiated.Departments
+            .SelectMany(d => d.Tasks)
+            .FirstOrDefault(t => !t.IsMandatory);
+        optional.Should().NotBeNull(
+            "the default template must carry at least one optional task, or this arm is vacuous");
+
+        var refused = await Service().RecordClearanceAsync(
+            new RecordClearanceInput(optional!.Id, ClearanceStatus.PendingIssues, "Survey skipped"));
+        refused.IsSuccess.Should().BeTrue(
+            $"a silently-failed refusal would leave this arm asserting on the pre-flip state, where nothing "
+            + $"blocked either — green whether the gate ignores optional refusals or the refusal never "
+            + $"happened. Error: {refused.Error}");
+
+        var projected = (await Service().GetByIdAsync(initiated.Id)).Value!;
+
+        // POSITIVE GUARDIAN: the refusal really did land somewhere observable. Without this the two
+        // assertions below describe exactly the state that already existed before the flip.
+        projected.Departments
+            .Single(d => d.ClearanceCategory == optional.ClearanceCategory)
+            .Status.Should().Be("issues", "the department the refused task belongs to must show it");
+
+        projected.PendingMandatoryItems.Should().BeEmpty();
+        projected.CanComplete.Should().BeTrue("AC-5 gates on MANDATORY items only");
+    }
+
+    /// <summary>
+    /// A soft-deleted mandatory task must not block — otherwise a removed task strands the offboarding
+    /// forever with no way to satisfy it, the same permanently-blocked symptom B4 fixed by another route.
+    ///
+    /// <para>
+    /// <b>What this arm does and does not prove.</b> It pins the end-to-end BEHAVIOUR, which is delivered by
+    /// the global query filter on <c>OffboardingTaskInstance</c> (<c>AppDbContext.cs:285</c>) — the deleted
+    /// row never reaches the gate at all. It does <i>not</i> pin the gate's own <c>!t.IsDeleted</c> clause:
+    /// removing that clause leaves this arm green, which mutation testing confirmed. The clause is pinned
+    /// instead by <see cref="OffboardingCompletionGateTests"/>, which calls the gate directly — it is a
+    /// public static that any caller can hand an unfiltered list to, so its correctness must not depend on
+    /// how the list was fetched.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_soft_deleted_mandatory_task_does_not_block()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+        await ClearAllMandatory(initiated);
+
+        var taskId = initiated.Departments
+            .Single(d => d.ClearanceCategory == ClearanceCategory.IT)
+            .Tasks.First(t => t.IsMandatory).Id;
+
+        // Put it back into a blocking state, then soft-delete it.
+        await using (var db = Db())
+        {
+            var task = db.OffboardingTaskInstances.Single(t => t.Id == taskId);
+            task.Status = OnboardingTaskStatus.Pending;
+            await db.SaveChangesAsync();
+        }
+        (await Service().GetByIdAsync(initiated.Id)).Value!.CanComplete.Should().BeFalse(
+            "the arm is only meaningful if the task blocks BEFORE it is deleted");
+
+        await using (var db = Db())
+        {
+            var task = db.OffboardingTaskInstances.Single(t => t.Id == taskId);
+            task.IsDeleted = true;
+            await db.SaveChangesAsync();
+        }
+
+        (await Service().GetByIdAsync(initiated.Id)).Value!.CanComplete.Should().BeTrue(
+            "a removed task cannot be satisfied, so blocking on it strands the offboarding permanently");
+    }
+
+    /// <summary>
+    /// The DTO documents the blocking list as being "in display order", and the dashboard renders it as a
+    /// sentence. Nothing pinned that ordering, so <c>OrderByDescending</c> survived as a mutation.
+    /// </summary>
+    [Fact]
+    public async Task Blocking_items_come_back_in_display_order()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+
+        var projected = (await Service().GetByIdAsync(initiated.Id)).Value!;
+
+        var expected = initiated.Departments
+            .SelectMany(d => d.Tasks)
+            .Where(t => t.IsMandatory)
+            .OrderBy(t => t.SortOrder)
+            .Select(t => t.Id)
+            .ToList();
+        expected.Should().HaveCountGreaterThan(1, "ordering is unobservable with a single item");
+        projected.PendingMandatoryItems.Select(i => i.TaskId).Should().Equal(expected);
+    }
+
     // ── NFR-2 tenant isolation ──────────────────────────────────────────
 
     [Fact]

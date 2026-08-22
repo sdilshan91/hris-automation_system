@@ -37280,6 +37280,7 @@ export interface components {
             title?: string | null;
         };
         OnboardingOffboardingInstanceDto: {
+            canComplete?: boolean;
             clearanceSummary?: components["schemas"]["OnboardingClearanceSummaryDto"];
             /** Format: date-time */
             completedAt?: string | null;
@@ -37298,6 +37299,7 @@ export interface components {
             /** Format: date */
             lastWorkingDay?: string;
             notes?: string | null;
+            pendingMandatoryItems?: components["schemas"]["OnboardingPendingMandatoryItemDto"][] | null;
             /** Format: int32 */
             progressPercent?: number;
             reason?: components["schemas"]["OffboardingReason"];

@@ -118,4 +118,91 @@ public sealed class OffboardingInitiatePostgresTests : IAsyncLifetime
         // "Knowledge transfer and handover" has offset 3 → due == LWD - 3 days.
         instance.Tasks.Single(t => t.Title == "Knowledge transfer and handover").DueDate.Should().Be(lwd.AddDays(-3));
     }
+
+    /// <summary>
+    /// B4 / AC-5 on REAL Postgres: the completion gate projected onto the instance DTO
+    /// (<c>CanComplete</c> + <c>PendingMandatoryItems</c>) behaves the same as it does on EF InMemory.
+    ///
+    /// <para>
+    /// The gate itself is pure LINQ over an already-materialised list, so it carries no provider risk. What
+    /// does is the bit underneath it: a soft-deleted task must be excluded by the global query filter
+    /// (<c>AppDbContext</c>'s <c>HasQueryFilter(t =&gt; !t.IsDeleted)</c>) reaching through the
+    /// <c>Include(o =&gt; o.Tasks)</c> on Npgsql — filter-through-Include is exactly the kind of behaviour
+    /// InMemory can agree with by accident. If it did not hold, a removed mandatory task would block
+    /// completion forever with no way to satisfy it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ONB-005-13")]
+    public async Task Completion_gate_projection_matches_enforcement_on_postgres_b4()
+    {
+        await using (var seed = CreateContext())
+        {
+            await seed.Database.MigrateAsync();
+            var deptId = Guid.NewGuid();
+            var jobTitleId = Guid.NewGuid();
+            seed.Departments.Add(new Department { Id = deptId, TenantId = _tenantId, Name = "Eng", Code = "ENG", IsActive = true });
+            seed.JobTitles.Add(new JobTitle { Id = jobTitleId, TenantId = _tenantId, TitleName = "SWE", IsActive = true });
+            seed.Employees.Add(new Employee
+            {
+                Id = _employeeId, TenantId = _tenantId, EmployeeNo = "EMP-0002",
+                FirstName = "Otto", LastName = "Exit", Email = "otto@acme.com",
+                DepartmentId = deptId, JobTitleId = jobTitleId,
+                DateOfJoining = DateTime.SpecifyKind(DateTime.UtcNow.AddYears(-2).Date, DateTimeKind.Utc),
+                Status = EmployeeStatus.Terminated,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        Guid instanceId;
+        await using (var db = CreateContext())
+        {
+            var initiated = await CreateService(db).InitiateAsync(new InitiateOffboardingInput(
+                _employeeId, new DateOnly(2026, 12, 1), null, OffboardingReason.Resignation, null));
+            initiated.IsSuccess.Should().BeTrue(initiated.Error);
+            instanceId = initiated.Value!.Id;
+        }
+
+        // Nothing cleared yet: the projection must name the blockers, and the enforcement must refuse.
+        await using (var db = CreateContext())
+        {
+            var projected = (await CreateService(db).GetByIdAsync(instanceId)).Value!;
+            projected.CanComplete.Should().BeFalse();
+            projected.PendingMandatoryItems.Should().NotBeEmpty();
+        }
+
+        await using (var db = CreateContext())
+        {
+            var attempt = (await CreateService(db).CompleteAsync(instanceId)).Value!;
+            attempt.Completed.Should().BeFalse("the projection said it would be refused");
+            attempt.PendingItems.Select(i => i.TaskId).Should().BeEquivalentTo(
+                (await CreateService(CreateContext()).GetByIdAsync(instanceId)).Value!
+                    .PendingMandatoryItems.Select(i => i.TaskId),
+                "the dashboard renders one list and the endpoint enforces the other; on real Postgres too, "
+                + "they must be the same list");
+        }
+
+        // Soft-delete every mandatory task. The global query filter must drop them THROUGH the Include, so
+        // nothing blocks any more.
+        await using (var db = CreateContext())
+        {
+            var tasks = await db.OffboardingTaskInstances
+                .Where(t => t.OffboardingInstanceId == instanceId && t.IsMandatory)
+                .ToListAsync();
+            tasks.Should().NotBeEmpty("the arm is vacuous if there were no mandatory tasks to remove");
+            foreach (var t in tasks)
+            {
+                t.IsDeleted = true;
+            }
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = CreateContext())
+        {
+            var projected = (await CreateService(db).GetByIdAsync(instanceId)).Value!;
+            projected.PendingMandatoryItems.Should().BeEmpty(
+                "a soft-deleted task cannot be completed, so blocking on it strands the offboarding");
+            projected.CanComplete.Should().BeTrue();
+        }
+    }
 }

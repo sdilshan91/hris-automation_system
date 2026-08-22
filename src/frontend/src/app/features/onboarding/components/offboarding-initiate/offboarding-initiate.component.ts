@@ -26,6 +26,7 @@ import { takeUntil } from 'rxjs/operators';
 import { OffboardingService } from '../../services/offboarding.service';
 import {
   OFFBOARDING_REASONS,
+  OFFBOARDING_REASON_LABEL,
   OffboardingReason,
   IInitiateOffboardingRequest,
   MAX_NOTES_LEN,
@@ -88,7 +89,7 @@ function notPastDate(control: AbstractControl): ValidationErrors | null {
             <label class="label-notion" for="reason">Reason for leaving *</label>
             <select id="reason" class="input-notion" formControlName="reason">
               @for (reason of reasons; track reason) {
-                <option [value]="reason">{{ reason }}</option>
+                <option [value]="reason">{{ reasonLabel(reason) }}</option>
               }
             </select>
             @if (ctrl('reason').touched && ctrl('reason').hasError('required')) {
@@ -208,6 +209,15 @@ export class OffboardingInitiateComponent implements OnInit, OnDestroy {
   readonly employeeId = input<string>('');
 
   readonly reasons = OFFBOARDING_REASONS;
+
+  /**
+   * Display text for a reason. The option VALUE stays the wire token: the old code rendered and sent the
+   * same string, so picking "Contract End" posted a value the API's `Enum.TryParse` could not parse
+   * (it strips underscores, not spaces) and the initiate came back 400 `invalid_reason`.
+   */
+  reasonLabel(reason: OffboardingReason): string {
+    return OFFBOARDING_REASON_LABEL[reason] ?? reason;
+  }
   readonly minDate = todayIso();
   readonly maxNotes = MAX_NOTES_LEN;
 

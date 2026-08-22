@@ -7,44 +7,60 @@ import { provideHttpClient, HttpErrorResponse } from '@angular/common/http';
 
 import { OffboardingService } from './offboarding.service';
 import { environment } from '../../../../environments/environment';
+import type { Schema } from '@core/api';
 import {
   IOffboardingInstance,
   IInitiateOffboardingRequest,
 } from '../models/offboarding.models';
+
+type InstanceWire = Schema<'OnboardingOffboardingInstanceDto'>;
+type CompleteResultWire = Schema<'OnboardingCompleteOffboardingResultDto'>;
 
 describe('OffboardingService', () => {
   let service: OffboardingService;
   let httpMock: HttpTestingController;
   const base = `${environment.apiBaseUrl}/offboarding`;
 
-  const instance = (over: Partial<IOffboardingInstance> = {}): IOffboardingInstance => ({
+  // The flushed body is the WIRE payload, not the view-model. It used to be the view-model, which meant
+  // the suite could never have caught the field renames the service is now responsible for translating:
+  // it asserted that what it invented came back unchanged. `Schema<>` makes the fixture the contract.
+  const instance = (over: Partial<InstanceWire> = {}): InstanceWire => ({
     id: 'off-1',
     employeeId: 'emp-1',
     employeeName: 'Jane Doe',
     lastWorkingDay: '2026-07-31',
-    reason: 'Resignation',
-    status: 'in_progress',
-    overallClearance: 'pending',
+    reasonName: 'Resignation',
+    statusName: 'InProgress',
     progressPercent: 0,
+    clearanceSummary: {
+      fullyCleared: false,
+      totalDepartments: 1,
+      clearedDepartments: 0,
+      pendingDepartments: 1,
+    },
     departments: [
       {
-        department: 'IT',
-        clearanceStatus: 'pending',
+        clearanceCategoryName: 'IT',
+        status: 'pending',
         tasks: [
           {
             id: 't-1',
             title: 'Return laptop',
-            responsibleRole: 'IT',
+            responsibleRoleName: 'IT',
             dueDate: '2026-07-30',
-            status: 'pending',
+            statusName: 'Pending',
             isMandatory: true,
-            clearanceStatus: 'pending',
+            clearanceStatus: null,
             remarks: null,
             linkedAssetId: 'a-1',
           },
         ],
       },
     ],
+    pendingMandatoryItems: [
+      { taskId: 't-1', title: 'Return laptop', clearanceCategoryName: 'IT', reason: 'not_completed' },
+    ],
+    canComplete: false,
     ...over,
   });
 
@@ -120,6 +136,12 @@ describe('OffboardingService', () => {
     req.flush(instance());
 
     expect(result!.departments.length).toBe(1);
+    // The service MAPS; it does not hand the wire body through. These four assertions each name a field
+    // whose wire spelling differs from the view-model's — the renames a passthrough would leave undefined.
+    expect(result!.departments[0].department).toBe('IT');
+    expect(result!.departments[0].tasks[0].responsibleRole).toBe('IT');
+    expect(result!.pendingMandatory[0].department).toBe('IT');
+    expect(result!.canComplete).toBeFalse();
   });
 
   it('getByEmployee GETs the collection filtered by employeeId', () => {
@@ -145,9 +167,21 @@ describe('OffboardingService', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ status: 'approved', remarks: 'OK' });
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(instance({ overallClearance: 'cleared', progressPercent: 100 }));
+    req.flush(
+      instance({
+        clearanceSummary: {
+          fullyCleared: true,
+          totalDepartments: 1,
+          clearedDepartments: 1,
+          pendingDepartments: 0,
+        },
+        progressPercent: 100,
+      }),
+    );
 
-    expect(result!.overallClearance).toBe('cleared');
+    expect(result!.overallClearance)
+      .withContext('the wire sends a fullyCleared flag; the traffic-light token is derived here')
+      .toBe('cleared');
   });
 
   // ─── returnAsset (AC-2) ────────────────────────────────────
@@ -174,9 +208,29 @@ describe('OffboardingService', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({});
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(instance({ status: 'completed' }));
+    // THE FIXTURE THAT USED TO LIE. This endpoint does NOT return the instance — it returns
+    // CompleteOffboardingResultDto, with the instance NESTED. The old spec flushed a bare instance, so it
+    // asserted the service handled a body the API has never sent, and the real one (which the service
+    // mapped straight through `mapOffboardingInstance`, producing an all-default blank) went untested.
+    const completed: CompleteResultWire = {
+      completed: true,
+      finalSettlementRef: '11111111-1111-1111-1111-111111111111',
+      pendingItems: [],
+      instance: instance({
+        statusName: 'Completed',
+        pendingMandatoryItems: [],
+        canComplete: false,
+      }),
+    };
+    req.flush(completed);
 
-    expect(result!.status).toBe('completed');
+    expect(result!.status)
+      .withContext('the instance is nested under `instance`; reading the result object itself yields blanks')
+      .toBe('Completed');
+    expect(result!.id).toBe('off-1');
+    expect(result!.departments.length)
+      .withContext('a blanked instance would render an empty dashboard after a SUCCESSFUL completion')
+      .toBe(1);
   });
 
   it('complete surfaces a 409 pending-mandatory block to the subscriber (AC-5)', () => {
@@ -184,14 +238,53 @@ describe('OffboardingService', () => {
     service.complete('off-1').subscribe({ error: (e) => (errored = e) });
 
     const req = httpMock.expectOne(`${base}/off-1/complete`);
+    // The REAL 409 body: the standard failure envelope carrying the result DTO. It is NOT unwrapped by
+    // apiEnvelopeInterceptor (that only rewrites 2xx), so `data` has to be stepped through. The old
+    // fixture invented a flat `{ pending: [titles] }` that the API has never sent — which is why
+    // parseCompleteBlocked returned null on every real block and the user saw a generic error instead of
+    // the list AC-5 promises.
     req.flush(
-      { pending: ['Return laptop', 'Finance clearance'] },
+      {
+        success: false,
+        code: 'pending_mandatory_items',
+        message: 'Cannot complete offboarding. The following mandatory items are pending.',
+        data: {
+          completed: false,
+          pendingItems: [
+            { taskId: 't-1', title: 'Return laptop', clearanceCategoryName: 'IT', reason: 'not_completed' },
+            {
+              taskId: 't-2',
+              title: 'Finance clearance',
+              clearanceCategoryName: 'Finance',
+              reason: 'clearance_not_approved',
+            },
+          ],
+        },
+      },
       { status: 409, statusText: 'Conflict' },
     );
 
     expect(errored).toBeTruthy();
     const pending = OffboardingService.parseCompleteBlocked(errored!);
-    expect(pending).toEqual(['Return laptop', 'Finance clearance']);
+    expect(pending).toEqual([
+      { taskId: 't-1', title: 'Return laptop', department: 'IT', reason: 'not_completed' },
+      {
+        taskId: 't-2',
+        title: 'Finance clearance',
+        department: 'Finance',
+        reason: 'clearance_not_approved',
+      },
+    ]);
+  });
+
+  it('returns null for a 409 that is not the pending-mandatory block', () => {
+    const other = new HttpErrorResponse({
+      error: { success: false, code: 'offboarding_completed', message: 'Already completed.' },
+      status: 409,
+    });
+    expect(OffboardingService.parseCompleteBlocked(other))
+      .withContext('a different 409 must fall back to the generic message, not claim an empty block list')
+      .toBeNull();
   });
 
   // ─── helpers ───────────────────────────────────────────────

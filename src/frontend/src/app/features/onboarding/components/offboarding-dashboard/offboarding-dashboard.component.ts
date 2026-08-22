@@ -21,12 +21,18 @@ import {
   IOffboardingInstance,
   IOffboardingTask,
   IAssetReturnLine,
-  ClearanceStatus,
+  DepartmentClearanceStatus,
+  TaskClearanceStatus,
+  OffboardingReason,
+  PendingBlockReason,
+  OFFBOARDING_REASON_LABEL,
   ClearanceDecision,
   MAX_REMARKS_LEN,
   clearanceChipClass,
   clearanceLabel,
   trafficLightClass,
+  taskClearanceChipClass,
+  taskClearanceLabel,
   pendingMandatoryTitles,
   canComplete,
   assetReturnLines,
@@ -85,7 +91,7 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
         @if (instance(); as inst) {
           <p class="mt-1 text-sm text-neutral-500">
             {{ inst.employeeName || 'Departing employee' }} ·
-            {{ inst.reason }} · Last working day {{ inst.lastWorkingDay }}
+            {{ reasonLabel(inst.reason) }} · Last working day {{ inst.lastWorkingDay }}
           </p>
         }
       </div>
@@ -192,7 +198,7 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
                     <p class="text-sm font-medium text-neutral-800 truncate">{{ line.title }}</p>
                     <p class="text-xs text-neutral-400">Asset {{ line.assetId }}</p>
                   </div>
-                  @if (line.status === 'completed') {
+                  @if (line.status === 'Completed') {
                     <span class="chip chip-cleared ml-auto">Returned</span>
                   } @else {
                     <div class="flex items-center gap-2 ml-auto flex-wrap justify-end">
@@ -253,7 +259,7 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
             [attr.aria-describedby]="pendingTitles().length ? 'pending-hint' : null"
             (click)="openConfirm()"
           >
-            @if (inst.status === 'completed') {
+            @if (inst.status === 'Completed') {
               Offboarding Completed
             } @else {
               Complete Offboarding
@@ -315,8 +321,8 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
             </p>
             <p class="text-xs text-neutral-400 mt-0.5">{{ task.responsibleRole }} · due {{ task.dueDate }}</p>
           </div>
-          <span class="chip" [ngClass]="chipClass(task.clearanceStatus)">
-            {{ statusLabel(task.clearanceStatus) }}
+          <span class="chip" [ngClass]="taskChipClass(task.clearanceStatus)">
+            {{ taskStatusLabel(task.clearanceStatus) }}
           </span>
         </div>
 
@@ -324,7 +330,7 @@ import { AssetCondition, ASSET_CONDITIONS } from '../../models/onboarding-asset.
           <p class="text-xs text-neutral-500 mt-2 italic">"{{ task.remarks }}"</p>
         }
 
-        @if (task.clearanceStatus !== 'cleared') {
+        @if (task.clearanceStatus !== 'approved') {
           @if (editingTask() === task.id) {
             <div class="mt-3 space-y-2" @fadeIn>
               <label class="sr-only" [attr.for]="'remarks-' + task.id">Remarks</label>
@@ -503,14 +509,44 @@ export class OffboardingDashboardComponent implements OnInit, OnDestroy {
   }
 
   // ─── Display helpers ────────────────────────────────────────
-  chipClass(status: ClearanceStatus): string {
+  chipClass(status: DepartmentClearanceStatus): string {
     return clearanceChipClass(status);
   }
-  lightClass(status: ClearanceStatus): string {
+  lightClass(status: DepartmentClearanceStatus): string {
     return trafficLightClass(status);
   }
-  statusLabel(status: ClearanceStatus): string {
+  statusLabel(status: DepartmentClearanceStatus): string {
     return clearanceLabel(status);
+  }
+
+  // A task's verdict is a DIFFERENT vocabulary from a department's traffic light
+  // ('approved'/'pending_issues'/null vs 'cleared'/'issues'/'pending'). Feeding one to the other is
+  // exactly the confusion that disabled the Complete button forever, so they get separate helpers.
+  taskChipClass(status: TaskClearanceStatus | null): string {
+    return taskClearanceChipClass(status);
+  }
+  taskStatusLabel(status: TaskClearanceStatus | null): string {
+    return taskClearanceLabel(status);
+  }
+
+  /** Display text for why a mandatory item blocks completion (AC-5). */
+  blockReasonLabel(reason: PendingBlockReason | null): string {
+    switch (reason) {
+      case 'clearance_not_approved':
+        return 'clearance not approved';
+      case 'not_completed':
+        return 'not completed';
+      default:
+        return 'pending';
+    }
+  }
+
+  /**
+   * Display text for the wire reason token — `ContractEnd` must not reach the screen as-is. A `null` reason
+   * means the API sent a token this build does not know; say so rather than inventing one.
+   */
+  reasonLabel(reason: OffboardingReason | null): string {
+    return reason === null ? 'Reason unavailable' : OFFBOARDING_REASON_LABEL[reason];
   }
   columnTemplate(inst: IOffboardingInstance): string {
     return `repeat(${inst.departments.length}, minmax(0, 1fr))`;
@@ -629,8 +665,14 @@ export class OffboardingDashboardComponent implements OnInit, OnDestroy {
           // AC-5: surface the structured pending-mandatory list inline.
           const pending = OffboardingService.parseCompleteBlocked(err);
           if (pending) {
+            // AC-5 asks for WHY, not just what. The server distinguishes "nobody has completed this yet"
+            // from "a department refused it" — two situations needing different action from HR — and the
+            // list used to drop that distinction on the floor.
+            const detail = pending
+              .map((p) => `${p.title} (${this.blockReasonLabel(p.reason)})`)
+              .join(', ');
             this.completeError.set(
-              `Cannot complete offboarding. The following mandatory items are pending: ${pending.join(', ')}.`,
+              `Cannot complete offboarding. The following mandatory items are pending: ${detail}.`,
             );
           } else {
             this.completeError.set(OffboardingService.parseErrorMessage(err));

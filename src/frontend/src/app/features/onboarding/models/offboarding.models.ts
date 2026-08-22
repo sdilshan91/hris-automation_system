@@ -1,13 +1,32 @@
 /**
  * US-ONB-005: Offboarding / Exit Checklist & Clearance models.
  *
- * Mirrors the PINNED backend contract under `/api/v1/offboarding` exactly
- * (paths/verbs/field names are fixed). Kept in ONE place so the service mapping,
- * the HR initiate form, and the clearance dashboard share a single source of
- * truth. Asset condition grades are reused from the US-ONB-004 asset register so
- * the return-asset selector matches the issuance vocabulary.
+ * The read payloads are the GENERATED contract types (`Schema<'Onboarding…Dto'>`) with explicit mappers
+ * into the view-models the templates render. A renamed C# property is now a TypeScript compile error in
+ * the mapper rather than a silent `undefined` on screen.
+ *
+ * ── What this file used to get wrong, and why it matters ─────────────────────────────────────────────
+ *
+ * **One union was doing the work of two vocabularies.** `ClearanceStatus` was declared as
+ * `'cleared' | 'issues' | 'pending'` — the *department* traffic light — and then also used as the type of
+ * a *task's* `clearanceStatus`, which the API only ever populates with `"approved"`, `"pending_issues"`,
+ * or null. Because the two vocabularies share no member, every comparison of a task's clearance against a
+ * department token was dead code that TypeScript happily accepted. The completion gate was exactly that
+ * comparison (`t.clearanceStatus !== 'cleared'`), so **every mandatory task counted as blocking forever**
+ * and the "Complete Offboarding" button could never enable. They are now two named types.
+ *
+ * **The reason dropdown could not be submitted.** `OffboardingReason` carried the display string
+ * `'Contract End'` and sent it as the wire value; the API parses reasons with `Enum.TryParse` after
+ * stripping underscores only, so the space made `"Contract End"` fail and the request came back
+ * **400 `invalid_reason`**. Display text and wire token are now separate things — the token comes from the
+ * contract enum, the label from {@link OFFBOARDING_REASON_LABEL}.
+ *
+ * **The completion rule is no longer predicted here at all.** The backend projects the answer
+ * (`canComplete` + `pendingMandatoryItems`) from the same code its completion endpoint enforces with, so
+ * the client renders it instead of re-deriving it. Re-deriving is what produced the bug above.
  */
 
+import type { Schema } from '@core/api';
 import { AssetCondition } from './onboarding-asset.models';
 
 // Note: AssetCondition / ASSET_CONDITIONS are NOT re-exported here — they live in
@@ -15,37 +34,74 @@ import { AssetCondition } from './onboarding-asset.models';
 // of the offboarding return-asset selector import them from onboarding-asset.models
 // directly to avoid a duplicate barrel export.
 
-/** Reason an employee is leaving (Data Requirements §7 / BR-1). */
+// ─── Wire vocabularies (mirror the contract enums exactly) ────────────────────
+
+/**
+ * Reason an employee is leaving — the **wire token**, not display text (BR-1 / Data Requirements §7).
+ * `ContractEnd` is one word on purpose: the API's `TryParseReason` strips underscores but not spaces, so
+ * the old `'Contract End'` was rejected with a 400. Render {@link OFFBOARDING_REASON_LABEL} instead.
+ */
 export type OffboardingReason =
   | 'Resignation'
   | 'Termination'
-  | 'Contract End'
+  | 'ContractEnd'
   | 'Retirement';
+
+/** Display text for a reason. Separate from the token so the two can never be confused again. */
+export const OFFBOARDING_REASON_LABEL: Readonly<Record<OffboardingReason, string>> = {
+  Resignation: 'Resignation',
+  Termination: 'Termination',
+  ContractEnd: 'Contract end',
+  Retirement: 'Retirement',
+} as const;
 
 /** Ordered reason options for the initiate dropdown. */
 export const OFFBOARDING_REASONS: readonly OffboardingReason[] = [
   'Resignation',
   'Termination',
-  'Contract End',
+  'ContractEnd',
   'Retirement',
 ] as const;
 
-/** Per-task clearance verdict a department head records (Data Requirements §7). */
-export type ClearanceStatus = 'cleared' | 'issues' | 'pending';
+/**
+ * The **department** traffic light (AC-3 / FR-4) — computed server-side across a department's tasks.
+ * Distinct from {@link TaskClearanceStatus}; conflating the two is what broke the completion gate.
+ */
+export type DepartmentClearanceStatus = 'cleared' | 'issues' | 'pending';
 
-/** Lifecycle status of a single exit task. */
-export type TaskStatus = 'pending' | 'in_progress' | 'completed';
+/**
+ * The **task**-level clearance verdict a department head records (AC-3), or `null` while undecided.
+ * Note that not every task is a clearance — a plain mandatory task stays `null` for its whole life and
+ * that is not a blocker.
+ */
+export type TaskClearanceStatus = 'approved' | 'pending_issues';
 
-/** Overall lifecycle status of the offboarding instance. */
-export type OffboardingStatus = 'in_progress' | 'completed';
+/**
+ * The value POSTed for a per-task clearance decision (AC-3). Deliberately an alias rather than a second
+ * literal union: the value you send and the value you read back are the same vocabulary, and writing it
+ * twice is how they drift.
+ */
+export type ClearanceDecision = TaskClearanceStatus;
 
-/** The value POSTed for a per-task clearance decision (AC-3). */
-export type ClearanceDecision = 'approved' | 'pending_issues';
+/**
+ * Why a mandatory item blocks completion (AC-5). The backend owns this vocabulary
+ * (`OffboardingCompletionGate.ReasonNotCompleted` / `ReasonClearanceNotApproved`).
+ */
+export const PENDING_BLOCK_REASONS = ['not_completed', 'clearance_not_approved'] as const;
+export type PendingBlockReason = (typeof PENDING_BLOCK_REASONS)[number];
+
+/** Lifecycle status of a single exit task (wire tokens — `Skipped` exists and is not a completion). */
+export type TaskStatus = 'Pending' | 'InProgress' | 'Completed' | 'Skipped';
+
+/** Overall lifecycle status of the offboarding instance (wire tokens). */
+export type OffboardingStatus = 'InProgress' | 'Completed';
+
+// ─── View-models ─────────────────────────────────────────────────────────────
 
 /**
  * One exit task within a department lane (AC-1/AC-3). `linkedAssetId` is set on
  * the IT "Asset Return" task that maps to a register entry (AC-2). `clearanceStatus`
- * drives the card chip + the department traffic light.
+ * drives the card chip; it is `null` until a decision is recorded.
  */
 export interface IOffboardingTask {
   id: string;
@@ -55,7 +111,7 @@ export interface IOffboardingTask {
   dueDate: string;
   status: TaskStatus;
   isMandatory: boolean;
-  clearanceStatus: ClearanceStatus;
+  clearanceStatus: TaskClearanceStatus | null;
   remarks?: string | null;
   linkedAssetId?: string | null;
 }
@@ -63,8 +119,17 @@ export interface IOffboardingTask {
 /** A department clearance lane = one Kanban column / accordion section (FR-4). */
 export interface IClearanceDepartment {
   department: string;
-  clearanceStatus: ClearanceStatus;
+  clearanceStatus: DepartmentClearanceStatus;
   tasks: IOffboardingTask[];
+}
+
+/** One mandatory item standing between this offboarding and completion (AC-5). */
+export interface IPendingMandatoryItem {
+  taskId: string;
+  title: string;
+  department: string;
+  /** Why it blocks — `null` when the API sends a reason this build does not know. */
+  reason: PendingBlockReason | null;
 }
 
 /** The full offboarding instance returned by GET endpoints (Output §7). */
@@ -73,13 +138,21 @@ export interface IOffboardingInstance {
   employeeId: string;
   employeeName?: string | null;
   lastWorkingDay: string;
-  reason: OffboardingReason;
+  /** `null` when the API sends a reason this build does not know — see {@link toOffboardingReason}. */
+  reason: OffboardingReason | null;
   status: OffboardingStatus;
   /** Overall clearance — only 'cleared' when every department is cleared (AC-3). */
-  overallClearance: ClearanceStatus;
+  overallClearance: DepartmentClearanceStatus;
   /** 0..100 completion of mandatory + optional tasks. */
   progressPercent: number;
   departments: IClearanceDepartment[];
+  /**
+   * AC-5: what blocks completion right now, **as the server computed it**. The client does not derive
+   * this; see the file header for what happened when it did.
+   */
+  pendingMandatory: IPendingMandatoryItem[];
+  /** AC-5: whether completing would succeed right now — the server's answer, not a local prediction. */
+  canComplete: boolean;
 }
 
 /** Body of POST /offboarding/initiate (Data Requirements §7 input fields). */
@@ -106,9 +179,142 @@ export interface IReturnAssetRequest {
   disposed?: boolean;
 }
 
-/** Shape of the 409 body when mandatory items block completion (AC-5). */
-export interface ICompleteBlockedError {
-  pending: string[];
+// ─── Wire contract → view-model mappers ──────────────────────────────────────
+
+export type OffboardingInstanceWire = Schema<'OnboardingOffboardingInstanceDto'>;
+export type OffboardingTaskWire = Schema<'OnboardingOffboardingTaskDto'>;
+export type DepartmentClearanceWire = Schema<'OnboardingDepartmentClearanceDto'>;
+export type PendingMandatoryItemWire = Schema<'OnboardingPendingMandatoryItemDto'>;
+export type CompleteOffboardingResultWire =
+  Schema<'OnboardingCompleteOffboardingResultDto'>;
+
+/**
+ * Narrows the wire's untyped `clearanceStatus` string to the task vocabulary.
+ *
+ * The contract types this field as `string | null` because the C# DTO does, so the generated type cannot
+ * narrow it for us. Narrowing here — rather than casting — means an unrecognised token becomes `null`
+ * (undecided) instead of a value the exhaustive `switch`es below would silently fall through.
+ */
+export function toTaskClearanceStatus(
+  value: string | null | undefined,
+): TaskClearanceStatus | null {
+  return value === 'approved' || value === 'pending_issues' ? value : null;
+}
+
+/**
+ * Narrows the instance lifecycle status.
+ *
+ * Unknown tokens fall back to `InProgress` deliberately: `Completed` gates BR-6 (completion is
+ * irreversible) and switches the primary button's label, so guessing "finished" from a token this build has
+ * never seen is the dangerous direction. An unrecognised status leaves the offboarding actionable instead.
+ */
+export function toOffboardingStatus(
+  value: string | null | undefined,
+): OffboardingStatus {
+  return value === 'Completed' ? 'Completed' : 'InProgress';
+}
+
+/**
+ * Narrows the leaving reason, or `null` when the API sends one this build does not know. Null rather than a
+ * guessed default: the reason is shown to HR on a termination record, and displaying the wrong one is worse
+ * than displaying none.
+ */
+export function toOffboardingReason(
+  value: string | null | undefined,
+): OffboardingReason | null {
+  return value != null && (OFFBOARDING_REASONS as readonly string[]).includes(value)
+    ? (value as OffboardingReason)
+    : null;
+}
+
+/** Narrows the blocking reason, or `null` when unrecognised. */
+export function toPendingBlockReason(
+  value: string | null | undefined,
+): PendingBlockReason | null {
+  return value != null && (PENDING_BLOCK_REASONS as readonly string[]).includes(value)
+    ? (value as PendingBlockReason)
+    : null;
+}
+
+/** Narrows the wire's untyped department `status` string to the traffic-light vocabulary. */
+export function toDepartmentClearanceStatus(
+  value: string | null | undefined,
+): DepartmentClearanceStatus {
+  return value === 'cleared' || value === 'issues' ? value : 'pending';
+}
+
+/** Narrows a task's lifecycle status; unknown tokens read as `Pending` (not done, not skipped). */
+export function toTaskStatus(value: string | null | undefined): TaskStatus {
+  return value === 'InProgress' || value === 'Completed' || value === 'Skipped'
+    ? value
+    : 'Pending';
+}
+
+/** Maps a wire task onto the card view-model. */
+export function mapOffboardingTask(w: OffboardingTaskWire): IOffboardingTask {
+  return {
+    id: w.id ?? '',
+    title: w.title ?? '',
+    responsibleRole: w.responsibleRoleName ?? '',
+    dueDate: w.dueDate ?? '',
+    status: toTaskStatus(w.statusName ?? w.status),
+    isMandatory: w.isMandatory ?? false,
+    clearanceStatus: toTaskClearanceStatus(w.clearanceStatus),
+    remarks: w.remarks ?? null,
+    linkedAssetId: w.linkedAssetId ?? null,
+  };
+}
+
+/** Maps a wire department lane onto the column view-model (`clearanceCategoryName` → `department`). */
+export function mapClearanceDepartment(
+  w: DepartmentClearanceWire,
+): IClearanceDepartment {
+  return {
+    department: w.clearanceCategoryName ?? '',
+    clearanceStatus: toDepartmentClearanceStatus(w.status),
+    tasks: (w.tasks ?? []).map(mapOffboardingTask),
+  };
+}
+
+/** Maps a wire blocking item (`clearanceCategoryName` → `department`). */
+export function mapPendingMandatoryItem(
+  w: PendingMandatoryItemWire,
+): IPendingMandatoryItem {
+  return {
+    taskId: w.taskId ?? '',
+    title: w.title ?? '',
+    department: w.clearanceCategoryName ?? '',
+    reason: toPendingBlockReason(w.reason),
+  };
+}
+
+/**
+ * Maps the whole instance payload. `overallClearance` is derived from the wire's
+ * `clearanceSummary` — the API sends counts and a `fullyCleared` flag, not a traffic-light token — while
+ * `canComplete`/`pendingMandatory` are taken verbatim because they are the server's own verdict.
+ */
+export function mapOffboardingInstance(
+  w: OffboardingInstanceWire,
+): IOffboardingInstance {
+  const summary = w.clearanceSummary;
+  const departments = (w.departments ?? []).map(mapClearanceDepartment);
+  return {
+    id: w.id ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? null,
+    lastWorkingDay: w.lastWorkingDay ?? '',
+    reason: toOffboardingReason(w.reasonName ?? w.reason),
+    status: toOffboardingStatus(w.statusName ?? w.status),
+    overallClearance: summary?.fullyCleared
+      ? 'cleared'
+      : departments.some((d) => d.clearanceStatus === 'issues')
+        ? 'issues'
+        : 'pending',
+    progressPercent: w.progressPercent ?? 0,
+    departments,
+    pendingMandatory: (w.pendingMandatoryItems ?? []).map(mapPendingMandatoryItem),
+    canComplete: w.canComplete ?? false,
+  };
 }
 
 // ─── Display + derivation helpers (pure — unit-tested directly) ──────────
@@ -142,8 +348,8 @@ export function isPastDate(iso: string, today: Date = new Date()): boolean {
   return picked.getTime() < start.getTime();
 }
 
-/** Tailwind chip class for a task/department clearance status (UI/UX §8). */
-export function clearanceChipClass(status: ClearanceStatus): string {
+/** Tailwind chip class for a DEPARTMENT clearance status (UI/UX §8). */
+export function clearanceChipClass(status: DepartmentClearanceStatus): string {
   switch (status) {
     case 'cleared':
       return 'chip-cleared';
@@ -154,8 +360,8 @@ export function clearanceChipClass(status: ClearanceStatus): string {
   }
 }
 
-/** Traffic-light color token for a department status (FR-4: green/yellow/red). */
-export function trafficLightClass(status: ClearanceStatus): string {
+/** Traffic-light color token for a DEPARTMENT status (FR-4: green/yellow/red). */
+export function trafficLightClass(status: DepartmentClearanceStatus): string {
   switch (status) {
     case 'cleared':
       return 'light-green';
@@ -166,8 +372,8 @@ export function trafficLightClass(status: ClearanceStatus): string {
   }
 }
 
-/** Human label for a clearance status chip. */
-export function clearanceLabel(status: ClearanceStatus): string {
+/** Human label for a DEPARTMENT clearance status chip. */
+export function clearanceLabel(status: DepartmentClearanceStatus): string {
   switch (status) {
     case 'cleared':
       return 'Cleared';
@@ -179,24 +385,52 @@ export function clearanceLabel(status: ClearanceStatus): string {
 }
 
 /**
- * The titles of all incomplete MANDATORY tasks across every department — drives
- * the disabled "Complete Offboarding" button's tooltip and the local guard
- * (BR-2 / AC-5). A task is outstanding when it is mandatory and not cleared.
- * Pure helper over the instance so it can be unit-tested without the component.
+ * Tailwind chip class for a TASK clearance verdict. Separate from
+ * {@link clearanceChipClass} because the vocabularies differ — an undecided task
+ * (`null`) is not the same thing as a department that is merely "pending".
+ */
+export function taskClearanceChipClass(
+  status: TaskClearanceStatus | null,
+): string {
+  switch (status) {
+    case 'approved':
+      return 'chip-cleared';
+    case 'pending_issues':
+      return 'chip-issues';
+    default:
+      return 'chip-pending';
+  }
+}
+
+/** Human label for a TASK clearance verdict. */
+export function taskClearanceLabel(status: TaskClearanceStatus | null): string {
+  switch (status) {
+    case 'approved':
+      return 'Approved';
+    case 'pending_issues':
+      return 'Issues';
+    default:
+      return 'Awaiting clearance';
+  }
+}
+
+/**
+ * The titles of all mandatory items blocking completion — drives the disabled
+ * "Complete Offboarding" button's tooltip (BR-2 / AC-5).
+ *
+ * This **reads** the server's list rather than re-deriving it from the tasks. The
+ * previous local derivation compared a task's clearance against a department-level
+ * token, so it matched nothing and reported every mandatory task as blocking.
  */
 export function pendingMandatoryTitles(
   instance: IOffboardingInstance | null,
 ): string[] {
-  if (!instance) return [];
-  return instance.departments
-    .flatMap((d) => d.tasks)
-    .filter((t) => t.isMandatory && t.clearanceStatus !== 'cleared')
-    .map((t) => t.title);
+  return (instance?.pendingMandatory ?? []).map((p) => p.title);
 }
 
-/** Whether the instance can be completed locally (no pending mandatory tasks). */
+/** Whether the instance can be completed — the server's verdict (AC-5 / BR-6). */
 export function canComplete(instance: IOffboardingInstance | null): boolean {
-  return !!instance && instance.status !== 'completed' && pendingMandatoryTitles(instance).length === 0;
+  return instance?.canComplete ?? false;
 }
 
 /** A single asset-return line surfaced in the dashboard's Asset Return section. */
