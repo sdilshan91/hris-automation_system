@@ -8112,6 +8112,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/onboarding/templates/lookups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfOnboardingOnboardingLookupsDto"];
+                        "text/json": components["schemas"]["ApiResponseOfOnboardingOnboardingLookupsDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfOnboardingOnboardingLookupsDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/onboarding/templates/{id}": {
         parameters: {
             query?: never;
@@ -32837,6 +32874,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfOnboardingOnboardingLookupsDto: {
+            code?: string | null;
+            data?: components["schemas"]["OnboardingOnboardingLookupsDto"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfOnboardingOnboardingTemplateDto: {
             code?: string | null;
             data?: components["schemas"]["OnboardingOnboardingTemplateDto"];
@@ -37028,6 +37074,11 @@ export interface components {
             /** Format: uuid */
             templateId?: string;
         };
+        OnboardingLookupOptionDto: {
+            /** Format: uuid */
+            id?: string;
+            name?: string | null;
+        };
         OnboardingModifyChecklistRequest: {
             addTasks?: components["schemas"]["OnboardingAdHocTaskRequest"][] | null;
             taskChanges?: components["schemas"]["OnboardingModifyTaskRequest"][] | null;
@@ -37173,6 +37224,11 @@ export interface components {
             updatedAt?: string | null;
             /** Format: int32 */
             version?: number;
+        };
+        OnboardingOnboardingLookupsDto: {
+            departments?: components["schemas"]["OnboardingLookupOptionDto"][] | null;
+            jobTitles?: components["schemas"]["OnboardingLookupOptionDto"][] | null;
+            users?: components["schemas"]["OnboardingLookupOptionDto"][] | null;
         };
         OnboardingOnboardingTaskInstanceDto: {
             category?: string | null;
