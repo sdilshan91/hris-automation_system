@@ -204,8 +204,15 @@ instances**, so probes 3–5 could not be observed end-to-end.
 - [ ] **B4 · Offboarding complete** *(onboarding)*. Mirror the BE gate at `OffboardingService.cs:340`; correct the
   `IOffboardingTask.clearanceStatus` union to the real decision vocabulary.
 - [ ] **B5 · Salary-grade Active toggle + payslip generation panel** — two silent no-ops sharing the same shape.
-- [ ] **B6 · `GET /onboarding/templates/lookups`** — the FE calls it, no controller serves it, it is absent from the
-  OpenAPI spec. Add the endpoint; replace the `createSpyObj` mock with an `HttpTestingController` arm.
+- [x] **B6 · `GET /onboarding/templates/lookups`** ✅ **DONE (#550)** — endpoint built, contract regenerated, the
+  `createSpyObj` mock replaced with an `HttpTestingController` arm.
+  **The entry undersold the blast radius.** This was not one 404 on one screen: the template builder's *entire*
+  reference vocabulary — task categories, owner roles, document types — came from this call, so every dropdown in
+  it was permanently empty. A screen that renders with empty dropdowns looks like "no data configured yet", which
+  is why a 404 survived this long without a bug report.
+  **Sourced from the enums the backend already validates against, not hand-listed.** A hand-written lookup list is
+  a second description of the same truth (S-1) and would drift the first time a category was added — the exact
+  defect class this queue exists to close.
 
 ### Tier C — activation gaps (the "cheapest large win", 0 of 6 closed in 35 commits)
 
@@ -225,8 +232,23 @@ instances**, so probes 3–5 could not be observed end-to-end.
   passed every single-tenant arm. 7 arms, 3/3 mutations RED, gate 5470/5470.
   **Spawned:** ISSUE-386 (Offer + Overtime still fall through to legacy; each needs its own equivalence arm
   before seeding, because their legacy approver is *not* verified to be the line manager).
-- [ ] **C2 · GAP-027 dead download URL** — 5 consumers emit `/files/…`, which no route serves; plus the
-  `downloadUrl`/`signedUrl` FE mismatch. Point them at the existing authenticated `/download` route.
+- [x] **C2 · GAP-027 dead download URL** ✅ **DONE (#552 documents · #553 photos + onboarding attachment).**
+  **The prescription was wrong: there was no existing `/download` route to point at.** `FileStorageService` writes
+  to disk and hands back a storage key; `/files/…` was fabricated by string concatenation at five call sites and
+  served by nothing. Every one of the five was a 404, not a mismatch — so "re-point the FE" would have re-pointed
+  it at another dead URL. *Sixth confirmed case of a prescription written without re-reading the target.*
+  **Profile photos were doubly broken** — the value STORED (`/{tenantId}/{path}`) and the value RETURNED
+  (`/files/{tenantId}/{path}`) disagreed with each other, and neither was routable.
+  **`<img src>` could not carry the fix.** In this app the access token IS a Bearer header (only the refresh token
+  is a cookie), so an image URL cannot authenticate. The bytes are fetched through `HttpClient` and bound as an
+  object URL — via **one directive**, because a missed `revokeObjectURL` leaks a blob per rendered avatar and
+  three hand-written copies of that lifecycle is how one ends up wrong (S-1 again).
+  **One of the five got NO endpoint, deliberately.** Nothing renders the asset-acknowledgment `ackUrl`, so the
+  fabricated URL was deleted rather than a download built for a consumer that does not exist. A dead field holding
+  a *plausible* URL invites someone to render it and inherit the 404.
+  **The upload test could not fail** — `Contain("profile")` was satisfied by the dead
+  `/files/…/profile/photo.jpg` itself. It now asserts equality with the real endpoint.
+  Mutation-verified (removing the revoke reddens the destroy arm). Gate 5504/5504 + 4119/4119.
 - [ ] **C3 · GAP-025 audit pairing** — 3 unpaired call sites, and `employee_field_audit_logs` has **4 writers,
   0 readers**. Decide explicitly whether it gains a reader or is a forensic side-table; record in the vault.
 - [ ] **C4 · GAP-026 terminated-employee enrollment** — add the `Status == Active` guard.
@@ -263,9 +285,14 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > **DECIDED — C4 guards new enrollments only** (below).
 >
 > **Phase order:**
-> 1. **Ledger truth** — correct the rows that overstate (done: ISSUE-379 corrected, [[BUG-311]] filed).
-> 2. **Contract completion** — ISSUE-379 exposure adds · B6 · `/reports/summary` · C2. One final regen.
-> 3. **FE per module** against the settled contract — B3/B4/B5 first slice, D1 finishes each.
+> 1. **Ledger truth** ✅ — corrected the rows that overstate (ISSUE-379 corrected, [[BUG-311]] filed + fixed #545).
+> 2. **Contract completion** ✅ **COMPLETE 2026-08-22** — ISSUE-379 exposure adds (#546-#549) · B6 (#550) ·
+>    `/reports/summary` (#551) · C2 (#552-#553). **`api-types.ts` is now settled**, which is the precondition
+>    phase 3 was waiting on: migrating a module against a contract about to change guarantees rework.
+>    **Two of the four turned out not to be backend gaps at all** — `teamRanking` (#546) was a mapper discarding
+>    data the API already sent, and BUG-311's export formats were a *second* description of a list the backend
+>    already owned. Both were filed as "add the field"; both were fixed by deleting a duplicate description.
+> 3. **FE per module** against the settled contract — B3/B4/B5 first slice, D1 finishes each. ← **NOW ACTIVE**
 > 4. **Behaviour gaps** — C3 · C4 · C5 · E5.
 > 5. **Infra, tests, docs** — E2 · E3 · E4 · F1–F4 · A3.
 >
@@ -331,4 +358,14 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-22** — **Phase 2 (contract completion) closed.** Ticked **B6** (#550) and **C2** (#552/#553); the
+  ISSUE-379 exposure adds (#546-#549) and `/leaves/reports/summary` (#551) landed alongside. `api-types.ts` is
+  settled, so **phase 3 (FE per module) is unblocked** — B3 is the topmost open item.
+  **Ticked in a separate commit, on purpose:** ticking inside each PR makes every concurrent PR conflict on this
+  one file, which is the conflict the one-item rule exists to prevent.
+  **Two corrections this phase forced into the register.** C2's prescription ("point them at the existing
+  `/download` route") named a route that does not exist — the sixth prescription in this queue written without
+  re-reading its target, and the third to be *inverted* by checking. And two of the four "backend field gaps"
+  were duplicate descriptions on the FE side, not missing data. The pattern is now consistent enough to state
+  plainly: **a finding's stated cause is unreliable in both directions; only its symptom is evidence.**
 - **2026-08-17** — Queue created from the gap-analysis refresh §7. Iteration 0 probe done: **5 of 5 confirmed**, two worse than the static read (LOP has a second primary bug; self-assessment throws rather than empties). Bar set at all four legs; S-1 method set to generated types + explicit mappers. #509/#510/#511 merged, so the queue starts from a clean trunk.
