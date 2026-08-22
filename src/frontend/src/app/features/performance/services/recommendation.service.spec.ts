@@ -129,7 +129,8 @@ describe('RecommendationService (US-PRF-010)', () => {
     pageSize: 25,
     budget: { allocatedAmount: 100000, consumedAmount: 0, currency: 'USD' },
     compensationVisible: true,
-    availableExportFormats: ['Excel'],
+    // BUG-311: the wire sends csv/xlsx, never 'Excel'.
+    availableExportFormats: ['csv', 'xlsx'],
     ...over,
   });
 
@@ -443,11 +444,11 @@ describe('RecommendationService (US-PRF-010)', () => {
 
   it('export() requests a blob with format + cycle params', () => {
     let response: HttpResponse<Blob> | undefined;
-    service.export('Excel', 'c-1').subscribe((r) => (response = r));
+    service.export('csv', 'c-1').subscribe((r) => (response = r));
 
     const req = httpMock.expectOne((r) => r.url === `${baseUrl}/summary/export`);
     expect(req.request.method).toBe('GET');
-    expect(req.request.params.get('format')).toBe('Excel');
+    expect(req.request.params.get('format')).toBe('csv');
     expect(req.request.params.get('cycleId')).toBe('c-1');
     expect(req.request.responseType).toBe('blob');
 

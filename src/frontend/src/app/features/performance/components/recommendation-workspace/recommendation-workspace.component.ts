@@ -27,6 +27,7 @@ import {
   RECOMMENDATION_TYPES,
   RECOMMENDATION_TYPE_LABEL,
   RecommendationExportFormat,
+  RECOMMENDATION_EXPORT_LABELS,
   RecommendationStatus,
   RecommendationType,
   budgetConsumedPercent,
@@ -125,7 +126,7 @@ import {
               class="inline-flex items-center rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm transition hover:bg-neutral-50 disabled:opacity-50"
               [attr.data-testid]="'export-' + fmt"
             >
-              {{ exporting() === fmt ? 'Exporting…' : 'Export ' + fmt }}
+              {{ exporting() === fmt ? 'Exporting…' : 'Export ' + exportLabel(fmt) }}
             </button>
           }
           <button
@@ -1139,6 +1140,11 @@ export class RecommendationWorkspaceComponent implements OnInit {
   }
 
   // ── export (FR-6) ──
+  /** BUG-311: the wire tokens (csv/xlsx) are not user-facing copy. */
+  exportLabel(format: RecommendationExportFormat): string {
+    return RECOMMENDATION_EXPORT_LABELS[format] ?? format;
+  }
+
   onExport(format: RecommendationExportFormat): void {
     this.exporting.set(format);
     this.service.export(format, this.cycleId()).subscribe({
@@ -1148,7 +1154,11 @@ export class RecommendationWorkspaceComponent implements OnInit {
           const filename =
             this.filenameFromDisposition(
               response.headers.get('Content-Disposition'),
-            ) ?? `recommendations.${format === 'Excel' ? 'xlsx' : 'pdf'}`;
+            // BUG-311: this used to read `format === 'Excel' ? 'xlsx' : 'pdf'`. `format` is never
+            // 'Excel' — the wire sends csv/xlsx — so the ternary ALWAYS took the 'pdf' branch, and any
+            // export served without a Content-Disposition header was saved as recommendations.pdf
+            // regardless of what it actually contained. The wire token IS the extension.
+            ) ?? `recommendations.${format}`;
           this.triggerDownload(blob, filename);
         }
         this.exporting.set(null);

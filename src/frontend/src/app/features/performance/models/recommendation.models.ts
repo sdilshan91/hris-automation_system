@@ -91,7 +91,43 @@ export type RecommendationStatus =
   | 'Rejected';
 
 /** Export formats the backend can produce (PascalCase, US-PLT-003). */
-export type RecommendationExportFormat = 'Excel' | 'Pdf';
+/**
+ * BUG-311 — the export formats the API ACTUALLY sends.
+ *
+ * This was declared `'Excel' | 'Pdf'`. The wire sends `["csv", "xlsx"]`
+ * (`RecommendationService.cs:45` `SupportedExportFormats`), and the mismatch was hidden by a blind
+ * `as RecommendationExportFormat[]` cast in the mapper — so the union described values that never
+ * occur, every branch on `'Excel'`/`'Pdf'` was unreachable, and the type gave no protection at all.
+ *
+ * A cast is not a conversion; it is an instruction to stop checking. The same shape reintroduced
+ * BUG-127 earlier (`as IEmployee` silencing two wrong field names).
+ *
+ * Kept as a narrow union rather than `string` deliberately: the generated contract types this field
+ * `string[] | null`, so deriving from it would erase the type entirely. The union is the FE's stated
+ * expectation, and `isRecommendationExportFormat` below is what keeps that expectation honest at
+ * runtime instead of asserting it.
+ */
+export const RECOMMENDATION_EXPORT_FORMATS = ['csv', 'xlsx'] as const;
+
+export type RecommendationExportFormat = (typeof RECOMMENDATION_EXPORT_FORMATS)[number];
+
+/** Display labels — the raw wire tokens are not user-facing copy. */
+export const RECOMMENDATION_EXPORT_LABELS: Readonly<Record<RecommendationExportFormat, string>> = {
+  csv: 'CSV',
+  xlsx: 'Excel (XLSX)',
+};
+
+/**
+ * Runtime narrowing for a wire token.
+ *
+ * Filtering with this (rather than casting) means a format a NEWER backend starts advertising is
+ * dropped instead of rendering a button whose label and handler the FE does not understand. Silently
+ * ignoring an unknown format is the safe direction: the user loses one export option they never had,
+ * rather than clicking a control that cannot work.
+ */
+export function isRecommendationExportFormat(value: string): value is RecommendationExportFormat {
+  return (RECOMMENDATION_EXPORT_FORMATS as readonly string[]).includes(value);
+}
 
 /** Budget health band — drives the tracker bar color (FR-8/BR-4). */
 export type BudgetHealth = 'Healthy' | 'Warning' | 'Exceeded';
@@ -372,8 +408,9 @@ export function mapRecommendationWorkspace(
     },
     budget: mapRecommendationBudget(w.budget),
     compensationVisible: w.compensationVisible ?? false,
-    availableExportFormats: (w.availableExportFormats ??
-      []) as RecommendationExportFormat[],
+    // BUG-311: FILTER, do not cast. The cast that used to be here claimed the wire matched a union it
+    // never matched; narrowing keeps the claim true and drops anything unrecognised.
+    availableExportFormats: (w.availableExportFormats ?? []).filter(isRecommendationExportFormat),
   };
 }
 
