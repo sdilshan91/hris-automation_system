@@ -332,10 +332,24 @@ instances**, so probes 3–5 could not be observed end-to-end.
   **Spawned:** ISSUE-392 (six `IAuditExempt` entities whose "own writer" has zero audit references, four
   money-related — **decision-gated**) · ISSUE-393 (null-tenant invisibility is platform-wide, ~30 writers) ·
   ISSUE-394 · ISSUE-395.
-- [ ] **C4 · GAP-026 terminated-employee enrollment** — add the `Status == Active` guard.
-  **DECIDED 2026-08-21: guard NEW enrollments only; existing enrollments are left untouched.** AC-7 makes
-  termination manual, and a validation guard must not silently mutate live benefit/training records as a
-  side effect of a deploy. The open decision this entry carried is now closed.
+- [x] **C4 · GAP-026 terminated-employee enrollment** ✅ **DONE (#561)** — and the prescription would have
+  caused a regression.
+  **`Status == Active` was the WRONG guard.** It would have blocked **probationary and suspended** employees,
+  who are employed and routinely enrol. Used the predicate this repo already had —
+  `Terminated or Inactive` — which existed verbatim in **three** places (AttendanceService ×2, OvertimeService)
+  and agreed, which is exactly what made a fourth copy look harmless. GAP-026 is what happened when the fourth
+  site simply *forgot*. Now one definition (`EmployeeStatusExtensions`), three copies migrated, zero raw
+  comparisons left.
+  **Closed the CLASS, not the instance.** `TrainingService.EnrollAsync` had the identical gap one service over
+  — course status checked, employee status never. The register names instances; closing only what it names is
+  how the defect returns. (The C3 lesson, applied rather than re-learned.)
+  **The 2026-08-21 decision held:** new enrollments only, existing ones untouched, with an arm proving a
+  mid-year termination does not retroactively end cover. Eligibility LISTING is guarded too — showing plans the
+  endpoint would refuse is the same defect one screen later, and it is how HR ends up believing a terminated
+  employee is still covered.
+  4/4 mutations killed on real Postgres, **including the over-block mutation** (`!= Active`, i.e. the
+  register's own prescription) — so the arm that stops the fix over-reaching is demonstrably load-bearing
+  rather than assumed. Gate 5543/5543.
 - [ ] **C5 · GAP-028 export bundle** — fix the emailed link first (**S**, a route already exists); documents ZIP +
   schema PDF are the M–L remainder.
 
@@ -465,6 +479,13 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23 (C4)** — **C4 shipped (#561), diverging from its own prescription.** `Status == Active` would
+  have blocked probation and suspension — a regression dressed as a fix. **That is now the fourth prescription
+  in this queue that was wrong**, after A2 (two-thirds wrong), C2 (named a route that does not exist) and B4
+  ("mirror the gate" would have re-created the defect). The pattern is no longer anecdotal: *a register entry's
+  SYMPTOM is evidence; its PRESCRIPTION is a hypothesis someone wrote without re-reading the target.*
+  Also: closing the class rather than the named instance found the same gap in `TrainingService`. Worth doing
+  on every remaining item — the register lists instances, not classes.
 - **2026-08-23 (later still)** — **C3 shipped (#559).** Decision taken and recorded; the register's site list was
   wrong in membership; and both audits found things that would have shipped. The one worth repeating: the
   change **could have been a no-op** and every test would have stayed green, because the arms asserted the row
