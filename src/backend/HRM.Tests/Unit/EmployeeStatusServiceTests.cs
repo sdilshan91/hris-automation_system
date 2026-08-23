@@ -407,6 +407,69 @@ public sealed class EmployeeStatusServiceTests : IDisposable
             .Should().Be(1);
     }
 
+    /// <summary>
+    /// C3/GAP-025: the SCHEDULED path must be as auditable as the immediate one.
+    ///
+    /// <para>
+    /// <c>ChangeStatusAsync</c> paired its field-audit write with a central audit_logs row; the background
+    /// job that applies a future-dated change — the same status change, just later — did not. So a
+    /// termination scheduled for next month was invisible to the audit viewer while the identical
+    /// termination applied today was fully visible. Which of the two you got depended on nothing but the
+    /// effective date.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ApplyPendingFutureDated_writes_a_central_audit_row_like_the_immediate_path_c3()
+    {
+        var empId = await SeedEmployee();
+
+        await using (var seed = CreateDbContext())
+        {
+            seed.FutureDatedStatusChanges.Add(new FutureDatedStatusChange
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantId,
+                EmployeeId = empId,
+                FromStatus = EmployeeStatus.Active,
+                ToStatus = EmployeeStatus.Suspended,
+                Reason = "Scheduled suspension",
+                EffectiveDate = DateTime.UtcNow.Date,
+                RequestedByUserId = _currentUser.UserId,
+                RequestedBy = _currentUser.Email,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await CreateService().ApplyPendingFutureDatedChangesAsync();
+
+        await using var db = CreateDbContext();
+
+        var central = await db.AuditLogs
+            .IgnoreQueryFilters()
+            .Where(a => a.ResourceId == empId.ToString()
+                && ((a.Action != null && a.Action.Contains("StatusChanged"))
+                    || a.EventType.Contains("StatusChanged")))
+            .ToListAsync();
+
+        central.Should().ContainSingle(
+            "a scheduled status change must reach the central trail exactly like an immediate one");
+        central[0].TenantId.Should().Be(_tenantId,
+            "audit_logs has NO global query filter that scopes reads — AuditLogService scopes explicitly "
+            + "with TenantId == tenantId, while the MODEL filter admits TenantId == null. So a row written "
+            + "with a null or wrong tenant is silently invisible to the viewer this fix exists to feed, and "
+            + "C3 would have shipped as a no-op.");
+        central[0].UserId.Should().BeNull(
+            "the scheduler is the actor, not a signed-in user — pinned so the decision survives the comment");
+        central[0].Before!.Should().Contain("Active");
+        central[0].After!.Should().Contain("Suspended");
+        central[0].Detail.Should().Contain(_currentUser.Email,
+            "the scheduler is the actor, so the trail has to name who REQUESTED the change instead");
+
+        // The forensic row is still written alongside — the two records serve different readers.
+        (await db.EmployeeFieldAuditLogs.CountAsync(a => a.EmployeeId == empId && a.Section == "StatusChange"))
+            .Should().Be(1);
+    }
+
     [Fact]
     public async Task ChangeStatus_InvalidTransition_Returns400()
     {

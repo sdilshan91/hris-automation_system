@@ -754,6 +754,36 @@ public sealed class OffboardingServiceTests
         projected.PendingMandatoryItems.Select(i => i.TaskId).Should().Equal(expected);
     }
 
+    /// <summary>
+    /// C3/GAP-025: completing an offboarding TERMINATES an employee, and did so with no audit row of any
+    /// kind. `Employee` is IAuditExempt so the interceptor skips it, and this path hand-assigns the status
+    /// rather than going through `EmployeeStatusService`, so it wrote neither the central trail nor the
+    /// forensic table. Termination is the most compliance-sensitive employee event in the product and was
+    /// the least traceable.
+    /// </summary>
+    [Fact]
+    public async Task Complete_writes_a_central_audit_row_for_the_termination_c3()
+    {
+        SeedEmployees();
+        var initiated = (await Service().InitiateAsync(InitiateInput())).Value!;
+        await ClearAllMandatory(initiated);
+
+        (await Service().CompleteAsync(initiated.Id)).Value!.Completed.Should().BeTrue();
+
+        using var db = Db();
+        var central = db.AuditLogs
+            .Where(a => a.ResourceId == _employeeId.ToString() && a.EventType == "Employee.StatusChanged")
+            .ToList();
+
+        central.Should().ContainSingle("a termination must be answerable from the audit viewer");
+        central[0].TenantId.Should().Be(_tenantId,
+            "audit_logs reads are scoped by an explicit TenantId predicate — a null-tenant row is invisible");
+        central[0].ResourceType.Should().Be("Employee");
+        central[0].After!.Should().Contain("Terminated");
+        central[0].Detail.Should().Contain("offboarding",
+            "the trail must say HOW the termination happened; both routes share one action name");
+    }
+
     // ── NFR-2 tenant isolation ──────────────────────────────────────────
 
     [Fact]

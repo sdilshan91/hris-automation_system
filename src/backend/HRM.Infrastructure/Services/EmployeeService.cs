@@ -159,6 +159,27 @@ public sealed class EmployeeService : IEmployeeService
         };
 
         _dbContext.Employees.Add(employee);
+
+        // C3/GAP-025: creating an employee wrote NO audit row anywhere — not the central trail (Employee is
+        // IAuditExempt, so the interceptor skips it) and not even the field-audit table, which only records
+        // subsequent edits. Every later change to this person was traceable; the moment they entered the
+        // system was not.
+        //
+        // No PII on this row: the employee number and the surrogate id identify the record without putting a
+        // name, email or national id into a table read by everyone with audit access.
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Employee.Created",
+            Action = "Employee.Created",
+            ResourceType = "Employee",
+            ResourceId = employee.Id.ToString(),
+            Detail = $"Employee {employee.EmployeeNo} created.",
+            CreatedAt = DateTime.UtcNow,
+        });
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -363,6 +384,24 @@ public sealed class EmployeeService : IEmployeeService
         // to it was a broken image. The key is what the download endpoint needs; a URL is a rendering
         // concern and does not belong in the row.
         employee.ProfilePhotoUrl = relativePath;
+
+        // C3/GAP-025: replacing a person's photo mutated the employee row and logged only a Serilog line.
+        // The asymmetry had become stark — VIEWING a profile writes Employee.ProfileViewed, EDITING one
+        // writes Employee.ProfileUpdated, and swapping the photo on a record that also holds a national id
+        // wrote nothing. No PII on the row: the employee id identifies it.
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Employee.PhotoUpdated",
+            Action = "Employee.PhotoUpdated",
+            ResourceType = "Employee",
+            ResourceId = employee.Id.ToString(),
+            Detail = "Employee profile photo replaced.",
+            CreatedAt = DateTime.UtcNow,
+        });
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // GAP-027: hand back the AUTHENTICATED endpoint the frontend can actually fetch, not a fabricated
@@ -965,6 +1004,29 @@ public sealed class EmployeeService : IEmployeeService
                     ChangedBy = _currentUser.IsAuthenticated ? _currentUser.Email : "system",
                 });
             }
+
+            // C3/GAP-025: ONE central audit row for the whole edit, alongside the per-section forensic rows
+            // above. `Employee` is IAuditExempt, so the AuditCaptureInterceptor skips it and the field-audit
+            // table was the only record — a table the audit viewer cannot read. The result was that editing an
+            // employee, one of the most compliance-sensitive actions in the product, left nothing visible in
+            // the audit trail, while merely VIEWING that employee's profile logged "Employee.ProfileViewed".
+            //
+            // Only the section NAMES go on the central row. The before/after values stay in the field-audit
+            // table, which is deliberately not readable from the general viewer because those snapshots carry
+            // masked PII (see docs/vault/decisions/2026-08-23-employee-field-audit-is-forensic.md).
+            _dbContext.AuditLogs.Add(new AuditLog
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = _tenantContext.TenantId,
+                UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+                EventType = "Employee.ProfileUpdated",
+                Action = "Employee.ProfileUpdated",
+                ResourceType = "Employee",
+                ResourceId = employeeId.ToString(),
+                Detail =
+                    $"Employee profile updated. Sections: {string.Join(", ", beforeSnapshots.Keys.Order())}.",
+                CreatedAt = DateTime.UtcNow,
+            });
         }
 
         // Save with optimistic concurrency check (FR-4, AC-3)

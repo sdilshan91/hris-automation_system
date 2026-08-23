@@ -325,6 +325,31 @@ public sealed class EmployeeStatusService : IEmployeeStatusService
                 ChangedBy = $"{pending.RequestedBy} (scheduled job)",
             });
 
+            // C3/GAP-025: the CENTRAL trail too. `ChangeStatusAsync` pairs its field-audit write with an
+            // audit_logs row; this path — the same status change, just applied later by the scheduler — did
+            // not, so a future-dated termination was invisible to the audit viewer while an immediate one
+            // was fully visible. Same event, two different levels of accountability, decided by nothing more
+            // than which day the effective date fell on.
+            //
+            // UserId is null on purpose: the actor is the scheduler, not a signed-in user. The requester is
+            // preserved in Detail so the trail still names who asked for it.
+            _dbContext.AuditLogs.Add(new AuditLog
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = pending.TenantId,
+                UserId = null,
+                EventType = "Employee.StatusChanged",
+                Action = "Employee.StatusChanged",
+                ResourceType = "Employee",
+                ResourceId = pending.EmployeeId.ToString(),
+                Before = JsonSerializer.Serialize(new { Status = previousStatus.ToString() }),
+                After = JsonSerializer.Serialize(new { Status = pending.ToStatus.ToString() }),
+                Detail =
+                    $"Scheduled status change applied: {previousStatus} → {pending.ToStatus} "
+                    + $"(effective {pending.EffectiveDate:yyyy-MM-dd}, requested by {pending.RequestedBy}).",
+                CreatedAt = DateTime.UtcNow,
+            });
+
             // Side effects
             await ApplySideEffectsForBackgroundJobAsync(pending.Employee, pending.ToStatus, pending.TenantId, cancellationToken);
 

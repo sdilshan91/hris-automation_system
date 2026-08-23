@@ -11,10 +11,12 @@ using FluentAssertions;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Features.Employees.DTOs;
 using HRM.Domain.Entities;
+using HRM.Application.Features.AuditLog.DTOs;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -287,6 +289,135 @@ public sealed class EmployeeProfileServiceTests : IDisposable
     }
 
     // ── AC-2: Edit as HR with audit snapshot ──────────────────────
+
+    /// <summary>
+    /// C3/GAP-025: editing an employee must reach the CENTRAL audit trail, not only the forensic table.
+    ///
+    /// <para>
+    /// <c>Employee</c> is <c>IAuditExempt</c>, so <c>AuditCaptureInterceptor</c> skips it and the per-section
+    /// <c>employee_field_audit_logs</c> rows were the only record — a table the US-NTF-005 audit viewer
+    /// cannot read. The effect was that editing an employee left nothing visible to compliance, while merely
+    /// VIEWING that same profile logged <c>Employee.ProfileViewed</c>.
+    /// </para>
+    ///
+    /// <para>
+    /// Only the section NAMES go on the central row. The values stay in the forensic table by design — those
+    /// snapshots carry masked PII that must not surface in a viewer everyone with audit access can read.
+    /// See docs/vault/decisions/2026-08-23-employee-field-audit-is-forensic.md.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task UpdateProfile_writes_one_central_audit_row_beside_the_forensic_rows_c3()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        // TWO sections on purpose. With one, "one row per EDIT" and "one row per SECTION" are
+        // indistinguishable — moving the AuditLogs.Add inside the per-section loop would keep a
+        // single-section arm green. Two sections also exercise the `.Order()` join in Detail, which a
+        // single key never does.
+        var result = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            PersonalInfo = new PersonalInfoUpdate { FirstName = "Jane", LastName = "Smith" },
+            ContactInfo = new ContactInfoUpdate { Phone = "+94 77 000 1111" },
+        });
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = CreateDbContext();
+
+        // Read THROUGH the query filter, not around it. IgnoreQueryFilters() waives the very property this
+        // arm is about — whether the row is reachable by a tenant-scoped reader.
+        var central = await db.AuditLogs
+            .Where(a => a.ResourceId == empId.ToString() && a.EventType == "Employee.ProfileUpdated")
+            .ToListAsync();
+
+        central.Should().ContainSingle(
+            "one central row per edit — not one per section, which would flood the viewer");
+        central[0].ResourceType.Should().Be("Employee");
+        central[0].TenantId.Should().Be(_tenantId,
+            "audit_logs has NO global filter scoping reads — AuditLogService scopes explicitly with "
+            + "TenantId == tenantId, so a null-tenant row is invisible to the viewer this fix exists to feed");
+        central[0].Detail.Should().Contain("PersonalInfo");
+        central[0].Detail.Should().Contain("ContactInfo",
+            "the central row names WHICH sections changed so an auditor knows where to look");
+
+        // ...and it deliberately carries NO values — neither the new one nor, more importantly, the OLD one.
+        // The before-snapshot is what the forensic table holds and what the masked-PII argument is about.
+        central[0].Detail.Should().NotContain("Jane");
+        central[0].Detail.Should().NotContain("John",
+            "the BEFORE value is the one the ADR keeps out of the general viewer");
+
+        // The forensic rows are still written alongside — the two records serve different readers.
+        (await db.EmployeeFieldAuditLogs.CountAsync(a => a.EmployeeId == empId))
+            .Should().Be(2, "one forensic row per changed section");
+    }
+
+    /// <summary>
+    /// THE ARM C3'S THESIS ACTUALLY RESTS ON: the row is reachable by the US-NTF-005 VIEWER, not merely
+    /// present in the table.
+    ///
+    /// <para>
+    /// Every other arm reads <c>db.AuditLogs</c> directly. That is one predicate short of the claim:
+    /// <c>AuditLogService.BuildFilteredQuery</c> scopes reads with an EXPLICIT
+    /// <c>Where(a =&gt; a.TenantId == tenantId)</c> — <c>audit_logs</c> has no read-scoping global filter — so a
+    /// row written with a null or wrong tenant sits in the table, satisfies every direct-read arm, and is
+    /// invisible to compliance. If someone later adds an action allow-list to that query, this is the arm
+    /// that reddens; the others would all stay green while the feature silently reverted to GAP-025.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task UpdateProfile_audit_row_is_returned_by_the_audit_viewer_c3()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        (await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+            PersonalInfo = new PersonalInfoUpdate { FirstName = "Jane" },
+        })).IsSuccess.Should().BeTrue();
+
+        using var db = CreateDbContext();
+        var viewer = new AuditLogService(
+            db, _tenantContext, _currentUser, NullLogger<AuditLogService>.Instance);
+
+        var page = await viewer.ListAsync(
+            new AuditLogFilter(null, null, null, null, null, null), page: 1, pageSize: 50);
+
+        page.IsSuccess.Should().BeTrue(page.Error);
+        page.Value!.Items.Should().Contain(
+            i => i.Action == "Employee.ProfileUpdated" && i.ResourceId == empId.ToString(),
+            "the audit VIEWER must return the row — being in the table is not the same as being visible, "
+            + "and the difference is exactly the tenant predicate this fix has to get right");
+    }
+
+    /// <summary>
+    /// A save that changes NOTHING must not fabricate an audit entry. The impl guards this with
+    /// <c>if (beforeSnapshots.Count &gt; 0)</c>; hoisting the central write out of that block — a plausible
+    /// refactor — would record an edit that never happened. For a compliance trail a FALSE entry is worse
+    /// than a missing one, and nothing else catches it.
+    /// </summary>
+    [Fact]
+    public async Task UpdateProfile_with_no_actual_changes_writes_no_central_audit_row_c3()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        var empId = await SeedEmployee(deptId, jtId);
+
+        var result = await CreateService().UpdateProfileAsync(empId, new UpdateEmployeeProfileRequest
+        {
+            RowVersion = 0,
+        });
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var db = CreateDbContext();
+        (await db.AuditLogs.CountAsync(a => a.ResourceId == empId.ToString()
+                && a.EventType == "Employee.ProfileUpdated"))
+            .Should().Be(0, "a no-op save must not manufacture a record of an edit");
+    }
 
     [Fact]
     public async Task UpdateProfile_PersonalInfo_ShouldSucceedAndWriteAudit()
