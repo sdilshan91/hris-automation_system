@@ -195,7 +195,7 @@ public sealed class OvertimeService : IOvertimeService
             return Result<OvertimeDto>.Failure(
                 "No employee record is linked to the current user.", 403);
 
-        if (employee.Status is EmployeeStatus.Terminated or EmployeeStatus.Inactive)
+        if (employee.Status.HasLeftTheOrganisation())
             return Result<OvertimeDto>.Failure(
                 "Overtime pre-approval is not allowed for your current employment status.", 403);
 

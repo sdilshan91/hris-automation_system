@@ -102,7 +102,7 @@ public sealed class AttendanceService : IAttendanceService
                 "No employee record is linked to the current user.", 403);
 
         // BR-5: only active employees may clock in.
-        if (employee.Status is EmployeeStatus.Terminated or EmployeeStatus.Inactive)
+        if (employee.Status.HasLeftTheOrganisation())
             return Result<AttendanceLogDto>.Failure(
                 "Clock-in is not allowed for your current employment status.", 403);
 
@@ -491,7 +491,7 @@ public sealed class AttendanceService : IAttendanceService
                 "No employee record is linked to the current user.", 403);
 
         // Active-employee only (consistent with clock-in BR-5).
-        if (employee.Status is EmployeeStatus.Terminated or EmployeeStatus.Inactive)
+        if (employee.Status.HasLeftTheOrganisation())
             return Result<RegularizationDto>.Failure(
                 "Regularization is not allowed for your current employment status.", 403);
 

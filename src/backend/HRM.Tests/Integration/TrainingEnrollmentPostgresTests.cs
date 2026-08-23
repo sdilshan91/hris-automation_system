@@ -187,6 +187,54 @@ public sealed class TrainingEnrollmentPostgresTests : IAsyncLifetime
         dup.ErrorCode.Should().Be("already_enrolled");
     }
 
+    // ── GAP-026 / C4: employment status gates NEW course enrollments ─────────────
+    //
+    // Same class as the benefits gap the register named, one service over. Course status was checked;
+    // EMPLOYEE status never was, so a terminated employee could be enrolled onto an open course.
+
+    [Theory]
+    [InlineData(EmployeeStatus.Terminated)]
+    [InlineData(EmployeeStatus.Inactive)]
+    public async Task EmployeeWhoHasLeft_CannotEnroll_422_gap026(EmployeeStatus status)
+    {
+        var courseId = await SeedCourseAsync(_tenantA, CourseStatus.Open, capacity: null);
+        await SetEmployeeStatusAsync(_empA, status);
+
+        var enroll = await Enroll(_tenantA, _userA, courseId);
+
+        enroll.IsFailure.Should().BeTrue();
+        enroll.StatusCode.Should().Be(422);
+        enroll.ErrorCode.Should().Be("employee_not_enrollable");
+
+        await SetEmployeeStatusAsync(_empA, EmployeeStatus.Active);
+    }
+
+    /// <summary>
+    /// The over-reach guard: a probationer is employed and routinely takes training. Blocking anything
+    /// non-Active would be a regression dressed as a fix.
+    /// </summary>
+    [Fact]
+    public async Task ProbationEmployee_CanStillEnroll_gap026()
+    {
+        var courseId = await SeedCourseAsync(_tenantA, CourseStatus.Open, capacity: null);
+        await SetEmployeeStatusAsync(_empA, EmployeeStatus.Probation);
+
+        var enroll = await Enroll(_tenantA, _userA, courseId);
+
+        enroll.IsSuccess.Should().BeTrue(
+            $"Probation is an employed state. Error: {enroll.Error}");
+
+        await SetEmployeeStatusAsync(_empA, EmployeeStatus.Active);
+    }
+
+    private async Task SetEmployeeStatusAsync(Guid employeeId, EmployeeStatus status)
+    {
+        await using var db = Db(Tc(_tenantA), User(_userA, _tenantA));
+        var employee = await db.Employees.SingleAsync(e => e.Id == employeeId);
+        employee.Status = status;
+        await db.SaveChangesAsync();
+    }
+
     // ── AC-2/AC-4: Draft not enrollable; illegal status transition → 409 ────────
 
     [Fact]

@@ -110,6 +110,124 @@ public sealed class BenefitEnrollmentPostgresTests : IAsyncLifetime
         await dispatcher.Received(1).SendEmailAsync(Arg.Is<NotificationRequest>(r => r.EventKey == "benefit_enrolled"), Arg.Any<CancellationToken>());
     }
 
+    // ── GAP-026 / C4: employment status gates NEW enrollments ────────────────────
+    //
+    // Status was never consulted on this path, so a TERMINATED employee could be enrolled into any
+    // rules-free plan — silently, with no error and no log, on a benefits-cost path. Note the plan in these
+    // arms carries NO eligibility rules on purpose: with rules present, an unrelated rule could refuse the
+    // enrollment and the arm would pass without the status guard existing at all.
+
+    [Theory]
+    [InlineData(EmployeeStatus.Terminated)]
+    [InlineData(EmployeeStatus.Inactive)]
+    public async Task Enroll_EmployeeWhoHasLeft_Is422_AndWritesNoRow_gap026(EmployeeStatus status)
+    {
+        var planId = await SeedPlanAsync(_tenantA, BenefitPlanStatus.Active,
+            opensAt: Today.AddDays(-5), closesAt: Today.AddDays(5));
+        await SetEmployeeStatusAsync(_empFullTime, status);
+
+        await using var db = Db(Tc(_tenantA), User(_userFullTime, _tenantA));
+        var result = await Service(db, _userFullTime).EnrollAsync(
+            new EnrollRequest { PlanId = planId, CoverageLevel = "EmployeeOnly" }, CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("employee_not_enrollable");
+
+        await using var verify = Db(Tc(_tenantA), User(_userFullTime, _tenantA));
+        (await verify.BenefitEnrollments.AsNoTracking().CountAsync(e => e.EmployeeId == _empFullTime))
+            .Should().Be(0, "a refused enrollment must leave no row behind");
+
+        await SetEmployeeStatusAsync(_empFullTime, EmployeeStatus.Active);
+    }
+
+    /// <summary>
+    /// THE ARM THAT STOPS THE FIX OVER-REACHING. The gap register prescribed <c>Status == Active</c>, which
+    /// would have blocked probationary and suspended employees too — a regression dressed as a fix. A
+    /// probationer is employed and routinely enrols; a suspended employee is still employed and their cover
+    /// normally continues. Plan-specific exclusions are what the eligibility RULES are for.
+    /// </summary>
+    [Theory]
+    [InlineData(EmployeeStatus.Probation)]
+    [InlineData(EmployeeStatus.Suspended)]
+    public async Task Enroll_EmployeeStillEmployed_Succeeds_gap026(EmployeeStatus status)
+    {
+        var planId = await SeedPlanAsync(_tenantA, BenefitPlanStatus.Active,
+            opensAt: Today.AddDays(-5), closesAt: Today.AddDays(5));
+        await SetEmployeeStatusAsync(_empFullTime, status);
+
+        await using var db = Db(Tc(_tenantA), User(_userFullTime, _tenantA));
+        var result = await Service(db, _userFullTime).EnrollAsync(
+            new EnrollRequest { PlanId = planId, CoverageLevel = "EmployeeOnly" }, CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(
+            $"{status} is still employed — blocking it would be a regression, not a fix. Error: {result.Error}");
+
+        await SetEmployeeStatusAsync(_empFullTime, EmployeeStatus.Active);
+    }
+
+    /// <summary>
+    /// C4's decision: block NEW enrollments, leave EXISTING ones alone. AC-7 makes ending an enrollment an
+    /// explicit manual act, and a validation guard must not silently terminate live benefit records as a
+    /// side effect of a deploy — someone terminated mid-year keeps cover until a human ends it.
+    /// </summary>
+    [Fact]
+    public async Task Termination_does_not_disturb_an_existing_enrollment_gap026()
+    {
+        var planId = await SeedPlanAsync(_tenantA, BenefitPlanStatus.Active,
+            opensAt: Today.AddDays(-5), closesAt: Today.AddDays(5));
+
+        await using (var db = Db(Tc(_tenantA), User(_userFullTime, _tenantA)))
+        {
+            (await Service(db, _userFullTime).EnrollAsync(
+                new EnrollRequest { PlanId = planId, CoverageLevel = "EmployeeOnly" }, CancellationToken.None))
+                .IsSuccess.Should().BeTrue();
+        }
+
+        await SetEmployeeStatusAsync(_empFullTime, EmployeeStatus.Terminated);
+
+        await using var verify = Db(Tc(_tenantA), User(_userFullTime, _tenantA));
+        var enrollment = await verify.BenefitEnrollments.AsNoTracking()
+            .SingleAsync(e => e.EmployeeId == _empFullTime && e.BenefitPlanId == planId);
+        enrollment.Status.Should().Be(BenefitEnrollmentStatus.Active,
+            "the guard blocks new enrollments; it must not retroactively end cover someone already has");
+
+        await SetEmployeeStatusAsync(_empFullTime, EmployeeStatus.Active);
+    }
+
+    [Fact]
+    public async Task EligiblePlans_AreEmpty_ForAnEmployeeWhoHasLeft_gap026()
+    {
+        await SeedPlanAsync(_tenantA, BenefitPlanStatus.Active,
+            opensAt: Today.AddDays(-5), closesAt: Today.AddDays(5));
+
+        await using (var before = Db(Tc(_tenantA), User(_userFullTime, _tenantA)))
+        {
+            (await Service(before, _userFullTime).GetMyEligiblePlansAsync(CancellationToken.None))
+                .Value!.Should().NotBeEmpty("the arm is vacuous unless the plan is eligible while employed");
+        }
+
+        await SetEmployeeStatusAsync(_empFullTime, EmployeeStatus.Terminated);
+
+        await using var db = Db(Tc(_tenantA), User(_userFullTime, _tenantA));
+        var plans = await Service(db, _userFullTime).GetMyEligiblePlansAsync(CancellationToken.None);
+
+        plans.IsSuccess.Should().BeTrue();
+        plans.Value!.Should().BeEmpty(
+            "listing plans the enrollment endpoint would refuse is the same defect one screen later — and it "
+            + "is how HR ends up believing a terminated employee is still covered");
+
+        await SetEmployeeStatusAsync(_empFullTime, EmployeeStatus.Active);
+    }
+
+    private async Task SetEmployeeStatusAsync(Guid employeeId, EmployeeStatus status)
+    {
+        await using var db = Db(Tc(_tenantA), User(_userFullTime, _tenantA));
+        var employee = await db.Employees.SingleAsync(e => e.Id == employeeId);
+        employee.Status = status;
+        await db.SaveChangesAsync();
+    }
+
     // ── AC-4: ineligible → 422 not_eligible + failing-rule reason ────────────────
 
     [Fact]
