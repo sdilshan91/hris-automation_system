@@ -242,6 +242,17 @@ public sealed class TrainingService : ITrainingService
         if (employee is null)
             return Result<EnrollmentDto>.Failure("Employee not found.", 404, "employee_not_found");
 
+        // GAP-026 / C4: the same defect the register recorded against BenefitEnrollmentService, one service
+        // over — status was never consulted, so a terminated employee could be enrolled onto a course. Filed
+        // as one gap; it is one CLASS, and closing only the named instance is how it comes back.
+        //
+        // NEW enrollments only, same as benefits: an existing enrollment is ended explicitly by a human, not
+        // silently by a deploy.
+        if (!employee.Status.CanStartNewActivity())
+            return Result<EnrollmentDto>.Failure(
+                "This employee's employment status does not allow new course enrollments.",
+                422, "employee_not_enrollable");
+
         return await RunRaceSafeAsync(
             () => EnrollCoreAsync(courseId, employee, cancellationToken), cancellationToken);
     }

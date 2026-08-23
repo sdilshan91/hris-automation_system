@@ -160,6 +160,12 @@ public sealed class BenefitEnrollmentService : IBenefitEnrollmentService
 
     private async Task<Result<IReadOnlyList<EligiblePlanDto>>> EligiblePlansForAsync(Employee employee, CancellationToken cancellationToken)
     {
+        // GAP-026 / C4: an employee who cannot enrol must not be shown plans they would be refused. Listing
+        // them and then rejecting the click is the same defect one screen later — and it is how HR ends up
+        // believing a terminated employee is still covered.
+        if (!employee.Status.CanStartNewActivity())
+            return Result<IReadOnlyList<EligiblePlanDto>>.Success(Array.Empty<EligiblePlanDto>());
+
         var attrs = ToAttributes(employee);
         var today = Today;
 
@@ -219,6 +225,18 @@ public sealed class BenefitEnrollmentService : IBenefitEnrollmentService
 
         if (target is null)
             return Result<BenefitEnrollmentDto>.Failure("Employee not found.", 404, "no_employee");
+
+        // GAP-026 / C4: status was never consulted here, so a TERMINATED employee could be enrolled into any
+        // rules-free plan — silently, no error, no log, on a benefits-cost path. Uses the shared predicate
+        // rather than a fourth hand-written copy of `Terminated or Inactive`; see EmployeeStatusExtensions.
+        //
+        // NEW enrollments only. Existing ones are deliberately untouched: AC-7 makes ending an enrollment an
+        // explicit manual act, and a validation guard must not silently terminate live benefit records as a
+        // side effect of a deploy.
+        if (!target.Status.CanStartNewActivity())
+            return Result<BenefitEnrollmentDto>.Failure(
+                "This employee's employment status does not allow new benefit enrollments.",
+                422, "employee_not_enrollable");
 
         // 2. Plan must exist + be Active.
         var plan = await _db.BenefitPlans.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.PlanId, cancellationToken);
