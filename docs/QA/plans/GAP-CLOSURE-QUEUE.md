@@ -309,8 +309,29 @@ instances**, so probes 3–5 could not be observed end-to-end.
   **The upload test could not fail** — `Contain("profile")` was satisfied by the dead
   `/files/…/profile/photo.jpg` itself. It now asserts equality with the real endpoint.
   Mutation-verified (removing the revoke reddens the destroy arm). Gate 5504/5504 + 4119/4119.
-- [ ] **C3 · GAP-025 audit pairing** — 3 unpaired call sites, and `employee_field_audit_logs` has **4 writers,
-  0 readers**. Decide explicitly whether it gains a reader or is a forensic side-table; record in the vault.
+- [x] **C3 · GAP-025 audit pairing** ✅ **DONE (#559)** — decision recorded, and the entry's own site list was wrong.
+  **DECIDED (human):** `employee_field_audit_logs` stays a **forensic side-table, write-only by design** — its
+  snapshots carry masked PII that must not surface in a viewer everyone with audit access can read. ADR:
+  [[2026-08-23-employee-field-audit-is-forensic]].
+  **The obligation that decision creates.** A 4-writer/0-reader table is not dangerous for lacking a screen; it
+  is dangerous because **nothing notices when a write stops**. Answering "forensic" without addressing that
+  would have left it as fragile as before, with a decision recorded to make it look considered.
+  **"3 unpaired sites" — right count, wrong membership.** ReportingStructure and the immediate status change
+  were *already* paired (BUG-023, ISSUE-025). The real three were `UpdateProfileAsync`,
+  `ApplyPendingFutureDatedChangesAsync`, and `CreateAsync` — which wrote **no audit anywhere**. Editing an
+  employee left nothing in the viewer while merely **viewing** one logged `Employee.ProfileViewed`.
+  **The audits made it bigger, twice.** Wiring: C3 was closing the register's LIST, not the CLASS —
+  `OffboardingService.CompleteAsync` terminates an employee with no audit row of any kind, the most
+  compliance-sensitive employee event being the least traceable. Tests: the change **could have shipped as a
+  no-op** — `audit_logs` has no read-scoping global filter, every viewer read scopes `TenantId == tenantId`
+  explicitly, and all three arms passed with a null tenant while two waived the property via
+  `IgnoreQueryFilters()`. One arm now asserts through `AuditLogService.ListAsync`.
+  **The guard took four versions to become falsifiable** (brace-splitter broke on interpolated strings →
+  vacuous; `"AuditLogs.Add"` is a *substring* of `"EmployeeFieldAuditLogs.Add"` → unfalsifiable; helper
+  inference from a bare name mention → blind on the one site it protects). 11 mutations, 11 killed.
+  **Spawned:** ISSUE-392 (six `IAuditExempt` entities whose "own writer" has zero audit references, four
+  money-related — **decision-gated**) · ISSUE-393 (null-tenant invisibility is platform-wide, ~30 writers) ·
+  ISSUE-394 · ISSUE-395.
 - [ ] **C4 · GAP-026 terminated-employee enrollment** — add the `Status == Active` guard.
   **DECIDED 2026-08-21: guard NEW enrollments only; existing enrollments are left untouched.** AC-7 makes
   termination manual, and a validation guard must not silently mutate live benefit/training records as a
@@ -328,6 +349,19 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > **The lesson B5 adds to the S-1 file:** a *cast* and a *duplicate literal* are the same defect wearing
 > different clothes. The payslip gate had the rule three times — twice as a C# literal, once as a different
 > and wrong TypeScript expression — and the two C# copies agreeing is what made it look fine.
+
+> ### 🔁 AUTO-HEAL 2026-08-23 (C3) — the audit-marker class
+>
+> | item | sev | why it waits |
+> |---|---|---|
+> | **ISSUE-392 — six `IAuditExempt` entities with no writer** | HIGH | The marker permits exemption only if the entity's own service writes an explicit row. Six claim that and don't: two tenant-wide **money policies**, **overtime approve/reject**, **F&F settlement amounts**, plus two attachment paths. *Decision-gated:* add the writers, or drop the marker and accept interceptor capture — the latter changes audit volume, which is an ops call. **"Who approved this overtime?" is unanswerable today.** |
+> | **ISSUE-393 — null-tenant audit rows are invisible** | MED | Platform-wide across ~30 writers. The model filter admits `TenantId == null`; every viewer read scopes explicitly. A row written with a null tenant is in the table and unreachable, with no detector. Wants a `SaveChanges` guard, not another test. |
+> | ISSUE-394 · ISSUE-395 | LOW/MED | Audit addressability on bulk import + applicant conversion; offboarding's missing `EmploymentHistory` row. |
+>
+> **What C3 adds to the S-1 file:** the systemic defect here was not a duplicated *description* but a duplicated
+> *promise* — `IAuditExempt` is a marker whose meaning ("something else audits this") nothing verifies. That is
+> the same shape as a hand-written interface claiming to match a wire contract. A marker that asserts a fact
+> about code elsewhere needs a guard, or it is a comment with a compiler-checked name.
 
 ### Tier D — the structural item (the only one whose cost grows)
 
@@ -431,6 +465,13 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23 (later still)** — **C3 shipped (#559).** Decision taken and recorded; the register's site list was
+  wrong in membership; and both audits found things that would have shipped. The one worth repeating: the
+  change **could have been a no-op** and every test would have stayed green, because the arms asserted the row
+  existed rather than that the reader could see it — a difference of exactly one predicate. *When a fix's thesis
+  is "X is now visible to Y", the test has to go through Y.*
+  The guard needed **four versions** before it could fail at all. Mutation-testing the GUARD, not just the code,
+  is the only reason that was ever discovered.
 - **2026-08-23 (later)** — **B5 shipped (#557).** Both halves were genuine, both were decided with the human
   toward the better option. Two findings worth carrying: the audit caught that I had **regenerated the contract
   before making the field nullable**, so the committed spec contradicted the very semantic the design rests on —
