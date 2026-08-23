@@ -8987,3 +8987,50 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Summary:** With the new `.editorconfig` in place, `dotnet format whitespace --verify-no-changes` reports **7,180 whitespace violations + 5 CHARSET**. **83% sit in `HRM.Tests`** (5,969 -> Integration 3,976 / Unit 1,993); the rest are diffuse.
 - **CHARSET (5):** five migrations under `Persistence/Migrations/` lack the UTF-8 BOM that `dotnet ef` emits — the other 290 all have one, so these five were hand-touched at some point, which the "never hand-write migrations" rule is meant to prevent. Worth a look for *why*, independently of the formatting.
 - **Suggested fix:** `dotnet format whitespace` per-project in separate commits (HRM.Tests alone is 83% of it), never repo-wide in one. Sequence **after ISSUE-390** — normalising line endings first avoids doing the same files twice.
+
+### ISSUE-392
+
+- **Type:** ISSUE · **Severity:** HIGH · **Status:** OPEN (decision-gated) · **Layer:** BE
+- **Module:** payroll · attendance · recruitment · **Found:** 2026-08-23, C3 wiring audit (GAP-025 follow-on).
+- **Summary:** `IAuditExempt` permits exemption for exactly two reasons (`IAuditExempt.cs:12-25`): the entity's own service writes an explicit audit row, or the entity is high-volume/infra. **Six entities claim reason 1 and their writer contains zero audit references** — the same false claim that made GAP-025 possible on `Employee`.
+- **Instances:**
+
+  | Entity | Writer | What is unaudited |
+  |---|---|---|
+  | `TenantFnFPolicy` | `FnFPolicyService.cs:30` | tenant-wide final-settlement **money policy** |
+  | `TenantPayrollCalendarPolicy` | `PayrollCalendarPolicyService.cs:33` | tenant-wide **payroll calendar policy** |
+  | `OvertimeRecord` | `OvertimeService.cs:376,440` | **approve/reject decisions that affect pay** |
+  | `FinalSettlement` / `FinalSettlementLine` | `RealPayrollFnFIntegration.cs` | **F&F settlement amounts** |
+  | `InterviewAttachment` | `InterviewAttachmentService.cs` | candidate file attachments |
+  | `SelfAssessment` (attachment leg) | `SelfAssessmentAttachmentService.cs` | attachment path only |
+
+- **Why it is gated, not just fixed:** the choice per entity is *add the explicit writer the marker promises* or *remove `IAuditExempt` and let `AuditCaptureInterceptor` capture it* (it already masks PII at write time — `AuditCaptureInterceptor.cs:206-219`). Removing the marker is cheaper and more honest for the two low-volume policy entities, but it **changes audit volume**, which is a product/ops call.
+- **Note:** "who approved this overtime?" is currently unanswerable from the audit viewer. That is the instance most likely to be asked about first.
+- **Related:** GAP-025 · C3 (#TBD) · [[2026-08-23-employee-field-audit-is-forensic]]
+
+### ISSUE-393
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Module:** platform (audit) · **Found:** 2026-08-23, C3 test-authenticity audit.
+- **Summary:** `audit_logs`' **model** query filter admits `TenantId == null` (`AppDbContext.cs:838-841`), but **every viewer read scopes explicitly** with `Where(a => a.TenantId == tenantId)` (`AuditLogService.cs:199-200`). So an audit row written with a null tenant sits in the table, satisfies any direct-`DbSet` test, and is **permanently invisible to the US-NTF-005 viewer** — a silent failure with no detector.
+- **Blast radius:** ~30 audit writers repo-wide, not just C3's. C3's own arms now assert `TenantId`, but nothing generalises that.
+- **Suggested fix:** either an `AuditLogWriterTenantScopeTests` guard over all writers, or a `SaveChanges` interceptor rejecting a null-tenant `AuditLog` outside system context. The second is stronger — it makes the invariant unbreakable rather than merely observed.
+- **Related:** C3 · ISSUE-392
+
+### ISSUE-394
+
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN (decision-gated) · **Layer:** BE
+- **Module:** core-hr · recruitment · **Found:** 2026-08-23, C3 wiring audit.
+- **Summary:** Two audit-addressability inconsistencies that C3 made *visible* rather than created:
+  - `BulkEmployeeImportService.cs:1259-1272` audits **one row per import job** (`ResourceType="EmployeeImport"`), a documented BUG-022/FR-10 decision. Post-C3 an API-created employee has an addressable `Employee.Created` row and an imported one does not, so "everything about employee X" finds one and not the other.
+  - `ApplicantConversionService.cs:269-278` writes `EventType="recruitment.applicant.converted"` with **no `Action`, `ResourceType` or `ResourceId`** — off-convention and unreachable under any `ResourceType=Employee` filter. It also sets `ReportsToEmployeeId` directly (`:241-244`), bypassing `ReportingStructureService.AddManagerAudit`.
+- **Suggested fix:** decide whether import emits per-employee rows (fold the answer into the ADR); correct the conversion row to the `Entity.Verb` convention regardless — that half needs no decision.
+- **Related:** C3 · [[2026-08-23-employee-field-audit-is-forensic]]
+
+### ISSUE-395
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Module:** onboarding · core-hr · **Found:** 2026-08-23, C3 wiring audit.
+- **Summary:** `OffboardingService.CompleteAsync` terminates an employee by hand-assigning `Status`/`IsActive` rather than routing through `EmployeeStatusService`, so it also writes **no `EmploymentHistory` row**. C3 added the missing `audit_logs` row, so the termination is now traceable — but the **employment timeline still misses it**, which is a separate user-visible gap from the audit one.
+- **Why not fixed in C3:** C3's lane was audit pairing. Adding history writes is a behaviour change to the employment-timeline feature and deserves its own slice (the clean fix is routing the whole path through `EmployeeStatusService`, which also removes the duplication).
+- **Related:** C3 · GAP-025

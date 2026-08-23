@@ -17,6 +17,7 @@ using HRM.Application.Features.Employees.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
 using HRM.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using HRM.Tests.Unit.Helpers;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -44,6 +45,11 @@ public sealed class EmployeeServiceTests : IDisposable
         _tenantContext.IsSystemContext.Returns(false);
 
         _currentUser = Substitute.For<ICurrentUser>();
+        // Employee creation is always a signed-in HR action in production. Left unstubbed, NSubstitute
+        // returns false and every arm here silently exercised the ANONYMOUS branch — including the C3 audit
+        // row, whose whole purpose is naming the actor. Matches EmployeeProfileServiceTests /
+        // EmployeeStatusServiceTests, which both stub it.
+        _currentUser.IsAuthenticated.Returns(true);
         _currentUser.Email.Returns("admin@test.com");
         _currentUser.UserId.Returns(Guid.NewGuid());
 
@@ -265,6 +271,73 @@ public sealed class EmployeeServiceTests : IDisposable
     }
 
     // ── AC-2: Create employee (happy path) ─────────────────────────
+
+    /// <summary>
+    /// C3/GAP-025: replacing a profile photo mutated the employee row and logged only a Serilog line, while
+    /// merely VIEWING the same profile wrote an audit row. Photo replacement is identity-adjacent on a
+    /// record that also holds a national id.
+    /// </summary>
+    [Fact]
+    public async Task UploadProfilePhoto_writes_a_central_audit_row_c3()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+        var created = await CreateService().CreateAsync(MakeRequest(deptId, jtId));
+        created.IsSuccess.Should().BeTrue(created.Error);
+        var empId = created.Value!.Id;
+
+        var bytes = new byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46 };
+        using var jpeg = new MemoryStream(bytes);
+        var upload = await CreateService().UploadProfilePhotoAsync(
+            empId, jpeg, "photo.jpg", "image/jpeg", bytes.Length);
+        upload.IsSuccess.Should().BeTrue(upload.Error);
+
+        await using var db = CreateDbContext();
+        var central = await db.AuditLogs
+            .Where(a => a.ResourceId == empId.ToString() && a.EventType == "Employee.PhotoUpdated")
+            .ToListAsync();
+
+        central.Should().ContainSingle();
+        central[0].TenantId.Should().Be(_tenantId);
+        central[0].ResourceType.Should().Be("Employee");
+        central[0].Detail.Should().Be("Employee profile photo replaced.",
+            "no filename or PII on a row every audit reader can see");
+    }
+
+    /// <summary>
+    /// C3/GAP-025: creating an employee wrote NO audit row anywhere — not the central trail (Employee is
+    /// IAuditExempt, so the interceptor skips it) and not the forensic table, which only records subsequent
+    /// edits. Every later change to that person was traceable; the moment they entered the system was not.
+    /// </summary>
+    [Fact]
+    public async Task Create_writes_a_central_audit_row_c3()
+    {
+        var deptId = await SeedDepartment();
+        var jtId = await SeedJobTitle();
+        await SeedTenant(_tenantId);
+
+        var result = await CreateService().CreateAsync(MakeRequest(deptId, jtId));
+        result.IsSuccess.Should().BeTrue();
+
+        await using var db = CreateDbContext();
+        var central = await db.AuditLogs
+            .Where(a => a.ResourceId == result.Value!.Id.ToString() && a.EventType == "Employee.Created")
+            .ToListAsync();
+
+        central.Should().ContainSingle("an employee entering the system is an auditable event");
+        central[0].ResourceType.Should().Be("Employee");
+        central[0].TenantId.Should().Be(_tenantId,
+            "audit_logs has NO global query filter that scopes reads — AuditLogService scopes explicitly "
+            + "with TenantId == tenantId, while the MODEL filter admits TenantId == null. So a row written "
+            + "with a null or wrong tenant is silently invisible to the viewer this fix exists to feed, and "
+            + "C3 would have shipped as a no-op.");
+        central[0].UserId.Should().Be(_currentUser.UserId,
+            "an audit row whose purpose is accountability is worthless without the actor");
+        // Pin the WHOLE string, not one absent word: NotContain("john") left LastName, Phone, DateOfBirth
+        // and Gender free to leak. The employee number identifies the record without any of them.
+        central[0].Detail.Should().Be($"Employee {result.Value!.EmployeeNo} created.");
+    }
 
     [Fact]
     public async Task Create_ValidEmployee_ShouldSucceed_WithAutoEmployeeNo()

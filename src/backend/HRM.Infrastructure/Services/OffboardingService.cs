@@ -357,8 +357,34 @@ public sealed class OffboardingService : IOffboardingService
 
         // AC-4: terminate the employee (mapped from reason: resignation/contract-end/retirement → Terminated too,
         // since EmployeeStatus has no Resigned value — the closest terminal state).
+        var previousStatus = employee.Status;
         employee.Status = EmployeeStatus.Terminated;
         employee.IsActive = false;
+
+        // C3/GAP-025: this path terminated an employee with NO audit row of any kind. `Employee` is
+        // IAuditExempt so the interceptor skips it, and unlike `EmployeeStatusService.ChangeStatusAsync`
+        // this one hand-assigns the status instead of going through that service — so it wrote neither the
+        // central trail nor the forensic table. Termination is the most compliance-sensitive employee event
+        // in the product, and it was the least traceable: the viewer saw an `OffboardingInstance.Update` and
+        // a `User.Update`, neither of which says a person was terminated.
+        //
+        // Same action name as the status service so both routes to a termination answer one query.
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId,
+            UserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
+            EventType = "Employee.StatusChanged",
+            Action = "Employee.StatusChanged",
+            ResourceType = "Employee",
+            ResourceId = employee.Id.ToString(),
+            Before = System.Text.Json.JsonSerializer.Serialize(new { Status = previousStatus.ToString() }),
+            After = System.Text.Json.JsonSerializer.Serialize(new { Status = EmployeeStatus.Terminated.ToString() }),
+            Detail =
+                $"Employee terminated by offboarding completion (reason {instance.Reason}, "
+                + $"last working day {instance.LastWorkingDay:yyyy-MM-dd}).",
+            CreatedAt = DateTime.UtcNow,
+        });
 
         // FR-5: deactivate the linked user account so the employee cannot log in (existing user-active gate).
         if (employee.UserId.HasValue)

@@ -25,3 +25,4 @@ One file per decision: `YYYY-MM-DD-<short-slug>.md`. Use [[_template]] as a star
 
 - [[ADR-2026-08-21-headroom-not-adopted]] — Headroom context-compression proxy evaluated and rejected (fit, not credibility)
 - [[ADR-2026-08-21-claude-mem-not-adopted]] — claude-mem auto-capture memory daemon evaluated and rejected; in-repo SubagentStop nudge adopted instead
+- [[2026-08-23-employee-field-audit-is-forensic]] — `employee_field_audit_logs` stays write-only by design (masked PII); every write must be paired with a central `audit_logs` row, and a guard enforces it
