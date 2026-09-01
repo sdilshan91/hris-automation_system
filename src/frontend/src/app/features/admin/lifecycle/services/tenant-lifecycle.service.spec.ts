@@ -56,7 +56,10 @@ describe('TenantLifecycleService', () => {
     expect(req.request.body).toEqual({
       reason: 'Repeated ToS violations on the platform',
     });
-    req.flush(result);
+    // The wire sends PascalCase (`Suspended`); the view model is lowercase. Flushing the view model here
+    // is what let that translation go unverified — the spec asserted the service handled a body the API
+    // does not send.
+    req.flush({ ...result, status: 'Suspended' });
 
     expect(res?.status).toBe('suspended');
   });
@@ -78,7 +81,7 @@ describe('TenantLifecycleService', () => {
     });
     req.flush({
       ...result,
-      status: 'terminating',
+      status: 'Terminating',
       eventType: 'termination_initiated',
       terminationScheduledAt: '2026-07-17T10:00:00Z',
     });
@@ -94,7 +97,7 @@ describe('TenantLifecycleService', () => {
     const req = httpMock.expectOne(`${lifecycle}/reactivate`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toBeNull();
-    req.flush({ ...result, status: 'active', eventType: 'reactivated' });
+    req.flush({ ...result, status: 'Active', eventType: 'reactivated' });
 
     expect(res?.status).toBe('active');
   });
@@ -106,7 +109,7 @@ describe('TenantLifecycleService', () => {
     const req = httpMock.expectOne(`${lifecycle}/restore`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toBeNull();
-    req.flush({ ...result, status: 'suspended', eventType: 'restored' });
+    req.flush({ ...result, status: 'Suspended', eventType: 'restored' });
 
     expect(res?.status).toBe('suspended');
   });

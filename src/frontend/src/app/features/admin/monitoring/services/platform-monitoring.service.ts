@@ -8,6 +8,12 @@ import {
   ITenantMonitoringDetail,
   ITenantUsageDashboard,
   ITenantUsageFilters,
+  PlatformHealthWire,
+  TenantUsageDashboardWire,
+  TenantMonitoringDetailWire,
+  mapPlatformHealth,
+  mapTenantUsageDashboard,
+  mapTenantMonitoringDetail,
 } from '../models/monitoring.models';
 
 /**
@@ -35,9 +41,9 @@ export class PlatformMonitoringService {
 
   /** AC-1/FR-1/FR-6: platform health rollup. */
   getHealth(): Observable<IPlatformHealth> {
-    return this.http.get<IPlatformHealth>(`${this.monitoringUrl}/health`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<PlatformHealthWire>(`${this.monitoringUrl}/health`, { withCredentials: true })
+      .pipe(map(mapPlatformHealth));
   }
 
   /**
@@ -57,10 +63,12 @@ export class PlatformMonitoringService {
     if (filters.createdFrom) params = params.set('createdFrom', filters.createdFrom);
     if (filters.createdTo) params = params.set('createdTo', filters.createdTo);
 
-    return this.http.get<ITenantUsageDashboard>(`${this.monitoringUrl}/tenant-usage`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<TenantUsageDashboardWire>(`${this.monitoringUrl}/tenant-usage`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(mapTenantUsageDashboard));
   }
 
   /**
@@ -76,14 +84,10 @@ export class PlatformMonitoringService {
    */
   getTenantDetail(tenantId: string): Observable<ITenantMonitoringDetail> {
     return this.http
-      .get<ITenantMonitoringDetail>(`${this.monitoringUrl}/tenants/${tenantId}`, {
+      .get<TenantMonitoringDetailWire>(`${this.monitoringUrl}/tenants/${tenantId}`, {
         withCredentials: true,
       })
-      .pipe(
-        map((detail) => ({
-          ...detail,
-          status: (detail.status ?? '').toLowerCase(),
-        })),
-      );
+      .pipe(map(mapTenantMonitoringDetail));
   }
+
 }

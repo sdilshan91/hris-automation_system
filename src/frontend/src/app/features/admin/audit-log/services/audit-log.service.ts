@@ -6,12 +6,21 @@ import { environment } from '../../../../../environments/environment';
 import {
   AuditExportFormat,
   IActorOption,
-  IActorSearchResult,
   IAuditLogDetail,
   IAuditLogFilters,
   IAuditLogListParams,
   IAuditLogPage,
   IFilterOptions,
+  AuditLogPageWire,
+  AuditLogDetailWire,
+  AuditLogActorWire,
+  AuditLogFilterOptionsWire,
+  TenantUserPageWire,
+  mapAuditLogPage,
+  mapAuditLogDetail,
+  mapActorOption,
+  mapFilterOptions,
+  mapUserActorOptions,
 } from '../models/audit-log.models';
 
 /**
@@ -26,7 +35,9 @@ import {
  * header (added by the tenantInterceptor) and never a tenant id.
  *
  * Backend contract (finalized in parallel — keep models in one file):
- *   GET  /api/v1/tenant/audit-log?page=&pageSize=&startDate=&endDate=
+ * (NOTE: the routes below are the PLURAL `/tenant/audit-logs` the code actually
+ * builds — the singular spelling in this list was stale.)
+ *   GET  /api/v1/tenant/audit-logs?page=&pageSize=&startDate=&endDate=
  *          &actorUserId=&action=&resourceType=&search=   → IAuditLogPage  (AC-1/2)
  *   GET  /api/v1/tenant/audit-log/:id                     → IAuditLogDetail (AC-3)
  *   GET  /api/v1/tenant/audit-log/export?format=csv|json&<same filters>
@@ -55,17 +66,27 @@ export class AuditLogService {
       .set('pageSize', String(params.pageSize));
     httpParams = this.applyFilters(httpParams, params);
 
-    return this.http.get<IAuditLogPage>(this.baseUrl, {
-      params: httpParams,
-      withCredentials: true,
-    });
+    return this.http
+      .get<AuditLogPageWire>(this.baseUrl, {
+        params: httpParams,
+        withCredentials: true,
+      })
+      .pipe(map(mapAuditLogPage));
   }
 
-  /** Full audit record (before/after JSON, user agent, trace id) for AC-3. */
+  /**
+   * Full audit record (before/after JSON, user agent, trace id) for AC-3.
+   *
+   * NOTE: the detail DTO carries NO `summary` — `IAuditLogDetail.summary` is
+   * optional for that reason. A caller that renders a summary must merge in the
+   * list row it came from rather than expecting one here.
+   */
   getAuditDetail(id: string): Observable<IAuditLogDetail> {
-    return this.http.get<IAuditLogDetail>(`${this.baseUrl}/${id}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<AuditLogDetailWire>(`${this.baseUrl}/${id}`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapAuditLogDetail));
   }
 
   /**
@@ -102,19 +123,11 @@ export class AuditLogService {
       params = params.set('search', search.trim());
     }
     return this.http
-      .get<IActorSearchResult[]>(`${this.baseUrl}/actors`, {
+      .get<AuditLogActorWire[]>(`${this.baseUrl}/actors`, {
         params,
         withCredentials: true,
       })
-      .pipe(
-        map((res) =>
-          (res ?? []).map((a) => ({
-            id: a.userId,
-            displayName: a.name,
-            email: a.email,
-          }))
-        )
-      );
+      .pipe(map((res) => (res ?? []).map(mapActorOption)));
   }
 
   /**
@@ -123,9 +136,11 @@ export class AuditLogService {
    * empty arrays so the component can fall back to row-derived options.
    */
   getFilterOptions(): Observable<IFilterOptions> {
-    return this.http.get<IFilterOptions>(`${this.baseUrl}/filter-options`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<AuditLogFilterOptionsWire>(`${this.baseUrl}/filter-options`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapFilterOptions));
   }
 
   /**
@@ -134,23 +149,18 @@ export class AuditLogService {
    * option shape the picker needs.
    *
    * @deprecated US-NTF-005 replaced the eager actor preload with the debounced
-   * `searchActors()` type-ahead; retained for backward compatibility.
+   * `searchActors()` type-ahead; retained for backward compatibility. It has NO
+   * production caller left — only the spec — so this migration types it against
+   * the real `PagedResult` envelope without reviving it (see the OUT-OF-LANE note
+   * proposing its removal).
    */
   getActorOptions(): Observable<IActorOption[]> {
     return this.http
-      .get<IActorListEnvelope>(this.usersUrl, {
+      .get<TenantUserPageWire>(this.usersUrl, {
         params: { page: '1', pageSize: '200', status: 'active' },
         withCredentials: true,
       })
-      .pipe(
-        map((res) =>
-          (res.items ?? []).map((u) => ({
-            id: u.userTenantId,
-            displayName: u.displayName,
-            email: u.email,
-          }))
-        )
-      );
+      .pipe(map(mapUserActorOptions));
   }
 
   /** Apply the shared filter params, omitting any empty filter (AND logic). */
@@ -190,9 +200,4 @@ export class AuditLogService {
     }
     return next;
   }
-}
-
-/** Minimal projection of the US-ADM-005 user-list response we consume here. */
-interface IActorListEnvelope {
-  items: { userTenantId: string; displayName: string; email: string }[];
 }

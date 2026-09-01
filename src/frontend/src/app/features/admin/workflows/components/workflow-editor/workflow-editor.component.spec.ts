@@ -226,6 +226,7 @@ describe('WorkflowEditorComponent', () => {
 
     const definition: IWorkflowDefinition = {
       id: 'wf-1',
+      lineageId: 'lin-1',
       name: 'Standard Leave',
       entityType: 'Leave',
       version: 1,

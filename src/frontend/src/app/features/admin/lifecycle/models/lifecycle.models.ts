@@ -9,6 +9,8 @@
  * interfaces describe the unwrapped body).
  */
 
+import type { Schema } from '@core/api';
+
 /** Lifecycle status values a tenant can be in. */
 export type TenantLifecycleStatus =
   | 'active'
@@ -16,7 +18,12 @@ export type TenantLifecycleStatus =
   | 'past_due'
   | 'suspended'
   | 'terminating'
-  | 'terminated';
+  | 'terminated'
+  /**
+   * A lifecycle status this build does not recognise. Present so the mapper never has to LIE about a
+   * tenant's state — see {@link mapTenantLifecycleStatus}.
+   */
+  | 'unknown';
 
 /** Request body for POST .../lifecycle/suspend (FR-1 / AC-1). */
 export interface ISuspendTenantRequest {
@@ -50,13 +57,21 @@ export interface ITenantLifecycleResult {
   eventType: TenantLifecycleEventType;
 }
 
-/** Audited lifecycle event types (FR-7). */
+/**
+ * Audited lifecycle event types (FR-7).
+ *
+ * These are NOT a C# enum — the backend writes lowercase snake_case string
+ * literals, so the casing matches 1:1. `'plan_changed'` was MISSING: it is
+ * written by the plan-change path (ISSUE-341) and appears in real history rows,
+ * where it previously fell through every label and dot-colour branch.
+ */
 export type TenantLifecycleEventType =
   | 'suspended'
   | 'termination_initiated'
   | 'terminated'
   | 'reactivated'
-  | 'restored';
+  | 'restored'
+  | 'plan_changed';
 
 /**
  * A `tenant_lifecycle_event` row, returned by GET .../lifecycle/history.
@@ -68,7 +83,12 @@ export interface ITenantLifecycleEvent {
   eventType: TenantLifecycleEventType;
   detailJson: string | null;
   createdAt: string;
-  createdBy: string;
+  /**
+   * Nullable on the wire — system-generated rows (the hard-delete job's
+   * `terminated` event) have no acting user. It was declared non-null `string`,
+   * so the timeline printed `undefined` after the separator for those rows.
+   */
+  createdBy: string | null;
 }
 
 /** Reason field constraints (FR-1 / AC-1). */
@@ -138,4 +158,93 @@ export function lifecycleEventLabel(eventType: TenantLifecycleEventType): string
     default:
       return eventType;
   }
+}
+
+// ─── Wire contract → view-model mappers (D1 admin slice 1) ────────────────────
+//
+// All five lifecycle routes EXIST. The drift is entirely in the STATUS token:
+// the wire sends `TenantStatus.ToString()` — PascalCase `Trial | Active | PastDue |
+// Suspended | Terminating | Terminated` — while this module's vocabulary is
+// lowercase snake_case. Every `canSuspend`/`canTerminate`/`canReactivate`/
+// `canRestore` gate compares with `===`, so a raw wire status made all four
+// `false` and the quick-action buttons vanished after any transition.
+//
+// `toLowerCase()` is NOT a fix — `PastDue` becomes `pastdue`, not `past_due`, and
+// that is precisely the value the "can I suspend this?" gate cares about. Hence an
+// explicit table.
+
+export type TenantLifecycleResultWire = Schema<'TenantsTenantLifecycleResultDto'>;
+export type TenantLifecycleEventWire = Schema<'TenantsTenantLifecycleEventDto'>;
+
+/**
+ * PascalCase `TenantStatus` → this module's snake_case token. Exported because
+ * the monitoring service consumes the same status field and must agree; anything
+ * unrecognised maps to `'terminated'`, the most restrictive state, so an unknown
+ * value can never enable a destructive action it was not meant to.
+ */
+export function mapTenantLifecycleStatus(
+  wire: string | null | undefined,
+): TenantLifecycleStatus {
+  switch (wire ?? '') {
+    case 'Active':
+      return 'active';
+    case 'Trial':
+      return 'trial';
+    case 'PastDue':
+      return 'past_due';
+    case 'Suspended':
+      return 'suspended';
+    case 'Terminating':
+      return 'terminating';
+    default:
+      // NEVER default to 'terminated'. That is the most severe state in the union, and an unrecognised
+      // value is not evidence of it — the operator would see a red "Terminated" badge for a tenant that is
+      // running fine. Every consumer is safe with 'unknown': the four quick-action gates take a `string` and
+      // fail closed, and `lifecycleStatusClass` renders a neutral badge for anything it does not know.
+      return 'unknown';
+  }
+}
+
+const LIFECYCLE_EVENT_TYPES: readonly TenantLifecycleEventType[] = [
+  'suspended',
+  'termination_initiated',
+  'terminated',
+  'reactivated',
+  'restored',
+  'plan_changed',
+];
+
+/** Narrow with a guard, not a cast; unknown → `'terminated'` (see above). */
+export function mapTenantLifecycleEventType(
+  wire: string | null | undefined,
+): TenantLifecycleEventType {
+  const v = (wire ?? '') as TenantLifecycleEventType;
+  return LIFECYCLE_EVENT_TYPES.includes(v) ? v : 'terminated';
+}
+
+export function mapTenantLifecycleResult(
+  w: TenantLifecycleResultWire,
+): ITenantLifecycleResult {
+  return {
+    tenantId: w.tenantId ?? '',
+    subdomain: w.subdomain ?? '',
+    status: mapTenantLifecycleStatus(w.status),
+    suspendedAt: w.suspendedAt ?? null,
+    suspendedReason: w.suspendedReason ?? null,
+    terminationScheduledAt: w.terminationScheduledAt ?? null,
+    eventType: mapTenantLifecycleEventType(w.eventType),
+  };
+}
+
+export function mapTenantLifecycleEvent(
+  w: TenantLifecycleEventWire,
+): ITenantLifecycleEvent {
+  return {
+    id: w.id ?? '',
+    tenantId: w.tenantId ?? '',
+    eventType: mapTenantLifecycleEventType(w.eventType),
+    detailJson: w.detailJson ?? null,
+    createdAt: w.createdAt ?? '',
+    createdBy: w.createdBy ?? null,
+  };
 }

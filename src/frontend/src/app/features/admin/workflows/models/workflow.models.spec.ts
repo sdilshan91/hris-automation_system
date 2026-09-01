@@ -76,6 +76,7 @@ describe('workflow.models helpers', () => {
   describe('groupByEntityType', () => {
     const make = (id: string, et: IWorkflowSummary['entityType']): IWorkflowSummary => ({
       id,
+      lineageId: `lin-${id}`,
       name: id,
       entityType: et,
       version: 1,

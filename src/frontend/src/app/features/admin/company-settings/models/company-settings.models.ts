@@ -19,6 +19,8 @@
  * any wipes the stored value to its default (ISSUE-322 data-loss). These keys
  * match exactly what the GET aggregate (`ToOrgProfileDto`) returns.
  */
+import type { Schema } from '@core/api';
+
 export interface IOrgProfile {
   name: string;
   legalName: string;
@@ -294,4 +296,109 @@ export function formatDatePreview(token: string, sample = new Date(2026, 4, 11))
     default:
       return `${dd} ${monthShort} ${yyyy}`;
   }
+}
+
+// ─── Wire contract → view-model mappers (D1 admin slice) ─────────────────────
+//
+// THIS MIGRATION FOUND A LIVE DEFECT. `ICompanySettings` declares `org`; the API sends **`orgProfile`**
+// (`TenantSettingsDto.OrgProfile`). `http.get<ICompanySettings>(…)` asserted the shape instead of checking
+// it, so `settings.org` was `undefined` and the template's `[value]="s.org"` handed the org-profile section
+// nothing — the whole first tab of company settings bound to a field the server has never sent.
+//
+// Exactly the class this migration exists to remove: no error, no log, an empty screen, and a TypeScript
+// type confidently asserting otherwise. The mapper below translates the name once, where it is visible.
+//
+// `autoCreateUserOnHire` is on the wire and absent from the view model. Left alone deliberately — adding a
+// field the UI does not render would be inventing scope; flagged instead.
+
+export type TenantSettingsWire = Schema<'TenantSettingsTenantSettingsDto'>;
+export type OrgProfileWire = Schema<'TenantSettingsOrgProfileDto'>;
+export type BrandingWire = Schema<'TenantSettingsBrandingDto'>;
+export type LocalizationWire = Schema<'TenantSettingsLocalizationDto'>;
+export type PasswordPolicyWire = Schema<'TenantSettingsPasswordPolicyDto'>;
+export type SessionPolicyWire = Schema<'TenantSettingsSessionPolicyDto'>;
+export type PlanGatingWire = Schema<'TenantSettingsPlanGatingDto'>;
+export type BrandingUploadResultWire = Schema<'TenantSettingsBrandingUploadResultDto'>;
+
+export function mapOrgProfile(w: OrgProfileWire | undefined): IOrgProfile {
+  return {
+    name: w?.name ?? '',
+    legalName: w?.legalName ?? '',
+    registrationNumber: w?.registrationNumber ?? '',
+    address: w?.address ?? '',
+    industry: w?.industry ?? '',
+    companySize: w?.companySize ?? '',
+    fiscalYearStartMonth: w?.fiscalYearStartMonth ?? 1,
+    defaultCountryCode: w?.defaultCountryCode ?? null,
+    probationPeriodDays: w?.probationPeriodDays ?? 0,
+    leaveCancellationWindowDays: w?.leaveCancellationWindowDays ?? 0,
+    payslipFooterDisclaimer: w?.payslipFooterDisclaimer ?? null,
+    payrollFromEmail: w?.payrollFromEmail ?? null,
+  };
+}
+
+export function mapBranding(w: BrandingWire | undefined): IBranding {
+  return {
+    logoUrl: w?.logoUrl ?? null,
+    emailLogoUrl: w?.emailLogoUrl ?? null,
+    faviconUrl: w?.faviconUrl ?? null,
+    primaryColor: w?.primaryColor ?? '',
+  };
+}
+
+export function mapLocalization(w: LocalizationWire | undefined): ILocalization {
+  return {
+    defaultLanguage: w?.defaultLanguage ?? '',
+    dateFormat: w?.dateFormat ?? '',
+    numberFormat: w?.numberFormat ?? '',
+    timeZone: w?.timeZone ?? '',
+    currency: w?.currency ?? '',
+  };
+}
+
+export function mapPasswordPolicy(w: PasswordPolicyWire | undefined): IPasswordPolicy {
+  return {
+    minLength: w?.minLength ?? 0,
+    requireUppercase: w?.requireUppercase ?? false,
+    requireLowercase: w?.requireLowercase ?? false,
+    requireDigit: w?.requireDigit ?? false,
+    requireSpecialCharacter: w?.requireSpecialCharacter ?? false,
+    historyCount: w?.historyCount ?? 0,
+    maxAgeDays: w?.maxAgeDays ?? 0,
+  };
+}
+
+export function mapSessionPolicy(w: SessionPolicyWire | undefined): ISessionPolicy {
+  return {
+    idleTimeoutMinutes: w?.idleTimeoutMinutes ?? 0,
+    absoluteTimeoutHours: w?.absoluteTimeoutHours ?? 0,
+    maxConcurrentSessions: w?.maxConcurrentSessions ?? 0,
+  };
+}
+
+/**
+ * Maps the settings aggregate. `orgProfile` → `org` is the rename that was silently failing; every other
+ * block keeps its name. `plan` stays optional because BR-3 makes it genuinely conditional — the backend
+ * sends it only when the tier constrains something.
+ */
+export function mapCompanySettings(w: TenantSettingsWire): ICompanySettings {
+  return {
+    org: mapOrgProfile(w.orgProfile),
+    branding: mapBranding(w.branding),
+    localization: mapLocalization(w.localization),
+    passwordPolicy: mapPasswordPolicy(w.passwordPolicy),
+    sessionPolicy: mapSessionPolicy(w.sessionPolicy),
+    plan: w.plan
+      ? { tier: w.plan.tier ?? undefined, lockedFeatures: w.plan.lockedFeatures ?? undefined }
+      : undefined,
+  };
+}
+
+/**
+ * The wire also carries `assetKind` (which slot was written). The view model does not declare it and nothing
+ * renders it, so it is dropped rather than added — widening a view model for a field no screen uses is
+ * inventing scope, not migrating.
+ */
+export function mapBrandingUploadResult(w: BrandingUploadResultWire): IBrandingUploadResult {
+  return { url: w.url ?? '' };
 }

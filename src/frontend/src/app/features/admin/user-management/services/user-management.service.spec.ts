@@ -11,6 +11,11 @@ import {
   IInviteResult,
   IInvitation,
   IAssignableRole,
+  TenantUserPageWire,
+  TenantUserDetailWire,
+  InvitationWire,
+  InviteResultWire,
+  RoleWire,
 } from '../models/user-management.models';
 import { environment } from '../../../../../environments/environment';
 
@@ -21,16 +26,23 @@ describe('UserManagementService', () => {
   const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
   const invitationsUrl = `${environment.apiBaseUrl}/tenant/users/invitations`;
 
-  const mockList: IUserListResponse = {
+  /**
+   * D1 — the WIRE shape (`PagedResultOfUsersTenantUserListItemDto`). Note what the
+   * old view-model fixture got wrong: role refs are keyed `roleId` (not `id`), the
+   * employee link is `linkedEmployeeId` (not `employeeId`), and `status` is the
+   * PascalCase C# enum name `Active` (not `'active'`).
+   */
+  const mockListWire: TenantUserPageWire = {
     items: [
       {
         userTenantId: 'ut-1',
         userId: 'u-1',
         displayName: 'Jane Doe',
         email: 'jane@acme.com',
-        roles: [{ id: 'r-1', name: 'HR Officer' }],
-        status: 'active',
+        roles: [{ roleId: 'r-1', name: 'HR Officer' }],
+        status: 'Active',
         lastLoginAt: '2026-06-01T10:00:00Z',
+        linkedEmployeeId: 'e-9',
       },
     ],
     totalCount: 1,
@@ -61,6 +73,7 @@ describe('UserManagementService', () => {
 
   describe('getUsers', () => {
     it('builds query params and GETs the user list', () => {
+      let list: IUserListResponse | undefined;
       service
         .getUsers({
           page: 2,
@@ -69,10 +82,7 @@ describe('UserManagementService', () => {
           status: 'active',
           roleId: 'r-1',
         })
-        .subscribe((res) => {
-          expect(res.totalCount).toBe(1);
-          expect(res.items[0].displayName).toBe('Jane Doe');
-        });
+        .subscribe((res) => (list = res));
 
       const req = httpMock.expectOne(
         (r) => r.url === usersUrl && r.method === 'GET'
@@ -83,7 +93,28 @@ describe('UserManagementService', () => {
       expect(req.request.params.get('status')).toBe('active');
       expect(req.request.params.get('roleId')).toBe('r-1');
       expect(req.request.withCredentials).toBeTrue();
-      req.flush(mockList);
+      req.flush(mockListWire);
+
+      expect(list?.totalCount).toBe(1);
+      expect(list?.items[0].displayName).toBe('Jane Doe');
+      // RENAMES asserted: roleId -> id, linkedEmployeeId -> employeeId,
+      // and the PascalCase enum name -> the FE's normalized token.
+      expect(list?.items[0].roles).toEqual([{ id: 'r-1', name: 'HR Officer' }]);
+      expect(list?.items[0].employeeId).toBe('e-9');
+      expect(list?.items[0].status).toBe('active');
+    });
+
+    it('maps the PascalCase Suspended status the FE union used to omit', () => {
+      let list: IUserListResponse | undefined;
+      service.getUsers({ page: 1, pageSize: 20 }).subscribe((r) => (list = r));
+
+      httpMock
+        .expectOne((r) => r.url === usersUrl && r.method === 'GET')
+        .flush({ items: [{ userTenantId: 'ut-2', status: 'Suspended' }] });
+
+      expect(list?.items[0].status).toBe('suspended');
+      expect(list?.items[0].roles).toEqual([]);
+      expect(list?.items[0].employeeId).toBeNull();
     });
 
     it('omits empty optional filters', () => {
@@ -95,58 +126,128 @@ describe('UserManagementService', () => {
       expect(req.request.params.has('search')).toBeFalse();
       expect(req.request.params.has('status')).toBeFalse();
       expect(req.request.params.has('roleId')).toBeFalse();
-      req.flush(mockList);
+      req.flush(mockListWire);
     });
   });
 
   describe('getUserDetail', () => {
-    it('GETs a single user detail', () => {
-      const detail: IUserDetail = {
+    it('projects the detail DTO, renaming userAgent -> device', () => {
+      const detailWire: TenantUserDetailWire = {
         userTenantId: 'ut-1',
         userId: 'u-1',
         displayName: 'Jane Doe',
         email: 'jane@acme.com',
-        status: 'active',
+        status: 'Active',
         lastLoginAt: null,
-        roles: [],
+        linkedEmployeeId: 'e-9',
+        roles: [{ roleId: 'r-1', name: 'HR Officer' }],
+        activeSessions: [
+          {
+            id: 's-1',
+            userAgent: 'Chrome/140 on Linux',
+            ipAddress: '10.0.0.4',
+            lastActiveAt: '2026-06-01T10:00:00Z',
+            issuedAt: '2026-06-01T09:00:00Z',
+            expiresAt: '2026-06-08T09:00:00Z',
+          },
+        ],
+        invitationHistory: [],
       };
-      service.getUserDetail('ut-1').subscribe((d) => {
-        expect(d.userTenantId).toBe('ut-1');
-      });
+
+      let detail: IUserDetail | undefined;
+      service.getUserDetail('ut-1').subscribe((d) => (detail = d));
+
       // GAP-009: the detail route is /{userTenantId}/detail.
       const req = httpMock.expectOne(`${usersUrl}/ut-1/detail`);
       expect(req.request.method).toBe('GET');
-      req.flush(detail);
+      req.flush(detailWire);
+
+      expect(detail?.userTenantId).toBe('ut-1');
+      expect(detail?.status).toBe('active');
+      expect(detail?.roles).toEqual([{ id: 'r-1', name: 'HR Officer' }]);
+      // RENAME asserted: the wire has no `device`, only `userAgent`.
+      expect(detail?.activeSessions).toEqual([
+        {
+          id: 's-1',
+          device: 'Chrome/140 on Linux',
+          ipAddress: '10.0.0.4',
+          lastActiveAt: '2026-06-01T10:00:00Z',
+        },
+      ]);
+    });
+
+    it('leaves the sections that have NO wire source empty rather than inventing them', () => {
+      let detail: IUserDetail | undefined;
+      service.getUserDetail('ut-1').subscribe((d) => (detail = d));
+
+      httpMock
+        .expectOne(`${usersUrl}/ut-1/detail`)
+        .flush({ userTenantId: 'ut-1', linkedEmployeeId: 'e-9' });
+
+      // `UsersTenantUserDetailDto` has no audit field, and carries only the
+      // employee's ID — never its name/title/department.
+      expect(detail?.recentAudit).toBeUndefined();
+      expect(detail?.linkedEmployee).toBeNull();
     });
   });
 
   describe('getAssignableRoles', () => {
     it('GETs assignable roles', () => {
-      const roles: IAssignableRole[] = [
-        { id: 'r-1', name: 'HR Officer', description: 'HR ops' },
+      // The wire DTO is the full RolesRoleDto, not the 3-field option shape.
+      const rolesWire: RoleWire[] = [
+        {
+          id: 'r-1',
+          name: 'HR Officer',
+          description: 'HR ops',
+          permissions: ['Employee.View.All'],
+          isBuiltIn: true,
+          userCount: 5,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+        { id: 'r-2', name: 'Auditor' },
       ];
-      service.getAssignableRoles().subscribe((r) => {
-        expect(r.length).toBe(1);
-      });
+      let roles: IAssignableRole[] | undefined;
+      service.getAssignableRoles().subscribe((r) => (roles = r));
       // GAP-009: /users/assignable-roles has never existed; roles come from the roles endpoint.
       const req = httpMock.expectOne(`${environment.apiBaseUrl}/tenant/roles`);
       expect(req.request.method).toBe('GET');
-      req.flush(roles);
+      req.flush(rolesWire);
+
+      expect(roles).toEqual([
+        { id: 'r-1', name: 'HR Officer', description: 'HR ops' },
+        // A role with no description defaults to '' rather than undefined.
+        { id: 'r-2', name: 'Auditor', description: '' },
+      ]);
     });
   });
 
   describe('inviteUsers', () => {
     it('POSTs emails + roleIds and returns per-email results', () => {
-      const results: IInviteResult[] = [
-        { email: 'a@acme.com', status: 'invited' },
-        { email: 'b@acme.com', status: 'error', error: 'Already a member' },
-      ];
+      // Each POST answers with ONE UsersInviteResultDto { created, errors } —
+      // never the per-address IInviteResult the old fixture flushed.
+      const okWire: InviteResultWire = {
+        created: [
+          {
+            id: 'inv-1',
+            email: 'a@acme.com',
+            status: 'Invited',
+            invitedRoleIds: ['r-1'],
+            invitedAt: '2026-06-01T00:00:00Z',
+            expiresAt: '2026-06-04T00:00:00Z',
+            isExpired: false,
+          },
+        ],
+        errors: [],
+      };
+      const failWire: InviteResultWire = {
+        created: [],
+        errors: [{ email: 'b@acme.com', error: 'Already a member' }],
+      };
+
+      let res: IInviteResult[] | undefined;
       service
         .inviteUsers({ emails: ['a@acme.com', 'b@acme.com'], roleIds: ['r-1'] })
-        .subscribe((res) => {
-          expect(res.length).toBe(2);
-          expect(res[1].status).toBe('error');
-        });
+        .subscribe((r) => (res = r));
 
       // GAP-009: the API takes ONE { email, roleIds } per call, so a two-address invite is two requests.
       const reqs = httpMock.match(`${usersUrl}/invite`);
@@ -155,42 +256,76 @@ describe('UserManagementService', () => {
       expect(reqs[0].request.body).toEqual({ email: 'a@acme.com', roleIds: ['r-1'] });
       expect(reqs[1].request.body).toEqual({ email: 'b@acme.com', roleIds: ['r-1'] });
       expect(reqs[0].request.withCredentials).toBeTrue();
-      reqs[0].flush(results[0]);
-      reqs[1].flush(results[1]);
+      reqs[0].flush(okWire);
+      reqs[1].flush(failWire);
+
+      expect(res).toEqual([
+        { email: 'a@acme.com', status: 'invited' },
+        { email: 'b@acme.com', status: 'error', error: 'Already a member' },
+      ]);
     });
   });
 
   describe('inviteFromCsv', () => {
     it('POSTs parsed CSV rows wrapped in { rows }', () => {
       const rows = [{ email: 'a@acme.com', roleNames: ['Employee'] }];
-      service.inviteFromCsv(rows).subscribe();
+      let res: IInviteResult[] | undefined;
+      service.inviteFromCsv(rows).subscribe((r) => (res = r));
 
       // GAP-009: the bulk endpoint is invite/bulk.
       const req = httpMock.expectOne(`${usersUrl}/invite/bulk`);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual({ rows });
-      req.flush([{ email: 'a@acme.com', status: 'invited' }]);
+      // D1: ONE object, not an array — flushing an array here is what let the
+      // component's `res.filter(…)` look safe when it was calling an array method
+      // on a plain object.
+      req.flush({
+        created: [
+          {
+            id: 'inv-2',
+            email: 'a@acme.com',
+            status: 'Invited',
+            invitedRoleIds: [],
+            invitedAt: '2026-06-01T00:00:00Z',
+            expiresAt: '2026-06-04T00:00:00Z',
+            isExpired: false,
+          },
+        ],
+        errors: [{ email: 'bad@acme.com', error: 'Unknown role' }],
+      } satisfies InviteResultWire);
+
+      expect(res).toEqual([
+        { email: 'a@acme.com', status: 'invited' },
+        { email: 'bad@acme.com', status: 'error', error: 'Unknown role' },
+      ]);
     });
   });
 
   describe('getInvitations', () => {
     it('GETs pending invitations', () => {
-      const invitations: IInvitation[] = [
+      const invitationsWire: InvitationWire[] = [
         {
           id: 'inv-1',
           email: 'pending@acme.com',
-          roles: [{ id: 'r-1', name: 'Employee' }],
+          // The wire sends only role IDs, and the PascalCase status name.
+          invitedRoleIds: ['r-1'],
+          status: 'Invited',
           invitedAt: '2026-06-01T00:00:00Z',
           expiresAt: '2026-06-04T00:00:00Z',
-          status: 'pending',
+          isExpired: false,
         },
       ];
-      service.getInvitations().subscribe((inv) => {
-        expect(inv.length).toBe(1);
-      });
+      let inv: IInvitation[] | undefined;
+      service.getInvitations().subscribe((r) => (inv = r));
       const req = httpMock.expectOne(invitationsUrl);
       expect(req.request.method).toBe('GET');
-      req.flush(invitations);
+      req.flush(invitationsWire);
+
+      // RENAME asserted: wire `Invited` -> view-model `pending`.
+      expect(inv?.[0].status).toBe('pending');
+      // NO WIRE SOURCE: the name is blank because the API sends ids only. The
+      // mapper must not invent a label here.
+      expect(inv?.[0].roles).toEqual([{ id: 'r-1', name: '' }]);
     });
   });
 

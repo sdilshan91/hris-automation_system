@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   ICompanySettings,
@@ -10,6 +11,10 @@ import {
   ISessionPolicy,
   IBrandingUploadResult,
   BrandingSlot,
+  TenantSettingsWire,
+  BrandingUploadResultWire,
+  mapCompanySettings,
+  mapBrandingUploadResult,
 } from '../models/company-settings.models';
 
 /**
@@ -38,9 +43,9 @@ export class CompanySettingsService {
 
   /** Full settings aggregate for the current tenant (AC-1..AC-4). */
   getSettings(): Observable<ICompanySettings> {
-    return this.http.get<ICompanySettings>(this.baseUrl, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<TenantSettingsWire>(this.baseUrl, { withCredentials: true })
+      .pipe(map(mapCompanySettings));
   }
 
   /** AC-1 / FR-1: persist the organization profile sub-object. */
@@ -92,10 +97,10 @@ export class CompanySettingsService {
     const form = new FormData();
     form.append('file', file);
     form.append('slot', slot);
-    return this.http.post<IBrandingUploadResult>(
-      `${this.baseUrl}/branding/upload`,
-      form,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<BrandingUploadResultWire>(`${this.baseUrl}/branding/upload`, form, {
+        withCredentials: true,
+      })
+      .pipe(map(mapBrandingUploadResult));
   }
 }

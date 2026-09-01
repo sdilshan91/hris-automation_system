@@ -9,6 +9,8 @@
 /** Reserved subdomains (AC-2) — kept client-side for instant feedback before
  * the debounced availability call confirms against the server. The backend is
  * the source of truth; this list is a UX nicety only. */
+import type { Schema } from '@core/api';
+
 export const RESERVED_SUBDOMAINS: readonly string[] = [
   'www', 'api', 'admin', 'app', 'mail', 'status', 'docs', 'help', 'support',
   'static', 'cdn', 'dev', 'stage', 'prod', 'test', 'qa',
@@ -76,4 +78,59 @@ export interface ITenantSummary {
   status: string;
   plan: string;
   createdAt: string;
+}
+
+// ─── Wire contract → view-model mappers (D1 admin slice) ─────────────────────
+//
+// THIS MIGRATION FOUND A LIVE DEFECT. `ITenantSummary` declares `tenantId`; the API sends **`id`**
+// (`TenantListItemDto.Id`). `http.get<ITenantSummary[]>(…)` asserted the shape rather than checking it, so
+// `tenantId` was `undefined` on every row — and the tenant list uses it as the `@for` TRACK KEY
+// (`track t.tenantId`). Every row therefore tracked by the same undefined value.
+//
+// A track key is exactly the wrong field to leave undefined: Angular uses it to decide which DOM node
+// belongs to which row, so the failure is not a blank cell but wrong or duplicated rows on re-render.
+
+export type ProvisionTenantWire = Schema<'TenantsProvisionTenantResultDto'>;
+export type TenantListItemWire = Schema<'TenantsTenantListItemDto'>;
+export type SubdomainAvailabilityWire = Schema<'TenantsSubdomainAvailabilityDto'>;
+export type SubscriptionPlanWire = Schema<'TenantsSubscriptionPlanDto'>;
+
+export function mapProvisionTenant(w: ProvisionTenantWire): IProvisionTenantResponse {
+  return {
+    tenantId: w.tenantId ?? '',
+    subdomain: w.subdomain ?? '',
+    status: w.status ?? '',
+    createdAt: w.createdAt ?? '',
+  };
+}
+
+/** `id` → `tenantId`: the rename that was silently failing. */
+export function mapTenantSummary(w: TenantListItemWire): ITenantSummary {
+  return {
+    tenantId: w.id ?? '',
+    name: w.name ?? '',
+    subdomain: w.subdomain ?? '',
+    status: w.status ?? '',
+    plan: w.plan ?? '',
+    createdAt: w.createdAt ?? '',
+  };
+}
+
+export function mapSubdomainAvailability(w: SubdomainAvailabilityWire): ISubdomainAvailability {
+  return {
+    // Fail CLOSED: an absent flag must not read as "this subdomain is free".
+    available: w.available ?? false,
+    reason: w.reason ?? undefined,
+  };
+}
+
+export function mapSubscriptionPlan(w: SubscriptionPlanWire): ISubscriptionPlan {
+  return {
+    id: w.id ?? '',
+    name: w.name ?? '',
+    code: w.code ?? '',
+    priceMonthly: w.priceMonthly ?? 0,
+    trialDays: w.trialDays ?? 0,
+    maxEmployees: w.maxEmployees ?? null,
+  };
 }

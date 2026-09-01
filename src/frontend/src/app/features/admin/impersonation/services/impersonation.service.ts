@@ -1,12 +1,19 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IStartImpersonationRequest,
   IStartImpersonationResponse,
   IEndImpersonationResponse,
   IImpersonationTarget,
+  StartImpersonationWire,
+  EndImpersonationWire,
+  ImpersonationTargetWire,
+  mapStartImpersonation,
+  mapEndImpersonation,
+  mapImpersonationTarget,
 } from '../models/impersonation.models';
 
 /**
@@ -37,26 +44,28 @@ export class ImpersonationService {
   start(
     request: IStartImpersonationRequest,
   ): Observable<IStartImpersonationResponse> {
-    return this.http.post<IStartImpersonationResponse>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<StartImpersonationWire>(this.baseUrl, request, { withCredentials: true })
+      .pipe(map(mapStartImpersonation));
   }
 
   /** AC-3: end the active impersonation session. */
   end(sessionId: string): Observable<IEndImpersonationResponse> {
-    return this.http.post<IEndImpersonationResponse>(
-      `${this.baseUrl}/${sessionId}/end`,
-      null,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<EndImpersonationWire>(`${this.baseUrl}/${sessionId}/end`, null, {
+        withCredentials: true,
+      })
+      .pipe(map(mapEndImpersonation));
   }
 
   /** Active, impersonatable members of a tenant (BR-2: system users excluded). */
   getTargets(tenantId: string): Observable<IImpersonationTarget[]> {
     const params = new HttpParams().set('tenantId', tenantId);
-    return this.http.get<IImpersonationTarget[]>(`${this.baseUrl}/targets`, {
-      params,
-      withCredentials: true,
-    });
+    return this.http
+      .get<ImpersonationTargetWire[]>(`${this.baseUrl}/targets`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapImpersonationTarget)));
   }
 }

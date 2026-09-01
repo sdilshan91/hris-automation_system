@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IProvisionTenantRequest,
@@ -8,6 +9,14 @@ import {
   ISubdomainAvailability,
   ISubscriptionPlan,
   ITenantSummary,
+  ProvisionTenantWire,
+  TenantListItemWire,
+  SubdomainAvailabilityWire,
+  SubscriptionPlanWire,
+  mapProvisionTenant,
+  mapTenantSummary,
+  mapSubdomainAvailability,
+  mapSubscriptionPlan,
 } from '../models/tenant.models';
 
 /**
@@ -40,18 +49,16 @@ export class TenantProvisioningService {
   provisionTenant(
     request: IProvisionTenantRequest,
   ): Observable<IProvisionTenantResponse> {
-    return this.http.post<IProvisionTenantResponse>(
-      this.tenantsUrl,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ProvisionTenantWire>(this.tenantsUrl, request, { withCredentials: true })
+      .pipe(map(mapProvisionTenant));
   }
 
   /** AC-4: list all tenants for the System Admin tenant list. */
   getTenants(): Observable<ITenantSummary[]> {
-    return this.http.get<ITenantSummary[]>(this.tenantsUrl, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<TenantListItemWire[]>(this.tenantsUrl, { withCredentials: true })
+      .pipe(map((rows) => (rows ?? []).map(mapTenantSummary)));
   }
 
   /** AC-2/FR-2: debounced subdomain availability check (taken/reserved/invalid). */
@@ -59,17 +66,18 @@ export class TenantProvisioningService {
     subdomain: string,
   ): Observable<ISubdomainAvailability> {
     const params = new HttpParams().set('subdomain', subdomain);
-    return this.http.get<ISubdomainAvailability>(
-      `${this.tenantsUrl}/subdomain-availability`,
-      { params, withCredentials: true },
-    );
+    return this.http
+      .get<SubdomainAvailabilityWire>(`${this.tenantsUrl}/subdomain-availability`, {
+        params,
+        withCredentials: true,
+      })
+      .pipe(map(mapSubdomainAvailability));
   }
 
   /** Active subscription plans for the card-based picker. */
   getSubscriptionPlans(): Observable<ISubscriptionPlan[]> {
-    return this.http.get<ISubscriptionPlan[]>(
-      `${this.tenantsUrl}/plans`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<SubscriptionPlanWire[]>(`${this.tenantsUrl}/plans`, { withCredentials: true })
+      .pipe(map((rows) => (rows ?? []).map(mapSubscriptionPlan)));
   }
 }

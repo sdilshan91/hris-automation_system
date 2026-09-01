@@ -332,9 +332,12 @@ export class UserRoleAssignmentComponent implements OnInit {
     this.rolesService
       .assignRoles(user.userTenantId, { roleIds })
       .subscribe({
-        next: (updatedUser) => {
-          this.user.set(updatedUser);
-          const newIds = new Set(updatedUser.roles.map((r) => r.roleId));
+        next: () => {
+          // D1: the PATCH responds with no body (bare ApiResponse), so the saved
+          // state is the set we just submitted — reading it back off the response
+          // dereferenced `undefined` and threw. The role ids are authoritative here
+          // because the endpoint replaces the whole set with exactly `roleIds`.
+          const newIds = new Set(roleIds);
           this.selectedRoleIds.set(newIds);
           this.originalRoleIds.set(new Set(newIds));
           this.selectedRoleIdsArray.set([...newIds]);

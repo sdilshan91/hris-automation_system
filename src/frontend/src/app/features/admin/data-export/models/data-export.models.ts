@@ -16,6 +16,8 @@
  */
 
 /** Lifecycle status of a single export job (GET history / status). */
+import type { Schema } from '@core/api';
+
 export type ExportStatus =
   | 'Queued'
   | 'Processing'
@@ -221,3 +223,36 @@ export const DEFAULT_FORMAT_OPTIONS: IExportFormatOptions = {
   delimiter: ',',
   dateFormat: 'ISO',
 };
+
+// ─── Wire contract → view-model mappers (D1 admin slice) ─────────────────────
+//
+// `http.get<IExportRecord[]>(…)` asserted the row shape rather than checking it. The history list drives the
+// download button's enablement via `downloadAvailable`, so a renamed or dropped flag would silently disable
+// (or, worse, enable) a download of a bundle containing the whole tenant's data.
+//
+// `downloadAvailable` therefore defaults to FALSE: the server is authoritative about whether a bundle is
+// still fetchable, and an absent flag must not be read as "yes".
+
+export type ExportRequestWire = Schema<'DataExportExportRequestDto'>;
+export type ExportInitiatedWire = Schema<'DataExportExportInitiatedDto'>;
+
+export function mapExportRecord(w: ExportRequestWire): IExportRecord {
+  return {
+    id: w.id ?? '',
+    scope: w.scope ?? '',
+    status: (w.status ?? 'Queued') as ExportStatus,
+    requestedAt: w.requestedAt ?? '',
+    completedAt: w.completedAt ?? null,
+    fileSizeBytes: w.fileSizeBytes ?? null,
+    expiresAt: w.expiresAt ?? null,
+    // Server-authoritative gate — fail closed.
+    downloadAvailable: w.downloadAvailable ?? false,
+  };
+}
+
+export function mapExportInitiated(w: ExportInitiatedWire): IInitiateExportResponse {
+  return {
+    exportId: w.exportId ?? '',
+    status: (w.status ?? 'Queued') as ExportStatus,
+  };
+}
