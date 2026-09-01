@@ -475,9 +475,23 @@ instances**, so probes 3–5 could not be observed end-to-end.
   **The guard was counting its own documentation** (ISSUE-401): every migrated file gains a comment explaining
   the pattern it replaced, so *finishing* a module raised its count unless the explanation was deleted.
   Comments are stripped now; that is what moved the true baseline from 267 to 218.
-  **Remaining, worst-first** (each its own slice + PR): payroll **40** · attendance **35** · onboarding **20** ·
-  core **16** · benefits **12** · training **10** · core-hr **10** · recruitment **7** · reports **3** ·
-  leave **3** · notifications **2** · dashboard **1**.
+  **Slice 2 — payroll ✅ DONE (#569): 55 → 4.** Repo-wide 218 → **167**. The residual four are *not*
+  unmigrated work — each targets an endpoint that does not exist or returns no body to map, documented at the
+  call site. **This slice found two CRITICALs, both features that cannot work at all:**
+  **BUG-316** — a payroll run cannot be STARTED from the UI (`POST /payroll/runs/validate` does not exist →
+  `canSubmit` is permanently false → `submit()` returns early; no other entry point), and **BUG-317** — the
+  statutory editor hydrates from the LIST projection, which carries no `taxSlabs`, so it opens empty and
+  saving **destroys the tenant's configured tax bands**.
+  Plus **BUG-318** (payslip progress polled exactly ONCE — the wire sends `isComplete`, the FE read
+  `isGenerating` — then toasted "finished" mid-render) and **BUG-314** (the approval exceptions panel rendered
+  blank rows; the wire sends `string[]`, the FE declared objects).
+  **Defaults were treated as decisions**, because this is money: `isSending` defaults *true* (absent ≠
+  finished), `hasSent` *false* (no implied consent for a duplicate mailing to every employee), enums are never
+  coerced, and nullable money stays `null` — `0` on `slabTo` collapses the top tax band, `0` on
+  `wageCeilingAnnual` means no EPF at all.
+  **Remaining, worst-first** (each its own slice + PR): attendance **35** · onboarding **20** · core **16** ·
+  benefits **12** · training **10** · core-hr **10** · recruitment **7** · reports **3** · leave **3** ·
+  notifications **2** · dashboard **1** · payroll **4** (blocked on BUG-315/316 + ISSUE-404).
   - *(original scoping note below)*
 - [ ] ~~D1 original~~ — **the 450 wire-adjacent interfaces + a drift guard.**
   Original text: module by module, worst-first. **669 hand-written interfaces vs 11 `Schema<>` uses** —
@@ -487,6 +501,22 @@ instances**, so probes 3–5 could not be observed end-to-end.
   - *Cheapest wins:* attendance (drift is latent) and recruitment (adapters already exist).
   - *Do last:* authentication — 100% hand-written yet verified correct, so the risk there is future drift only.
   - Tier B items already migrate their own module's files; D1 finishes each module.
+
+> ### 🔁 AUTO-HEAL 2026-08-23 (D1/payroll) — the migration is finding CRITICALs, not tidying types
+>
+> | item | sev | why it waits |
+> |---|---|---|
+> | **BUG-316 — payroll cannot be started** | **CRIT** | `POST /payroll/runs/validate` does not exist. Needs the endpoint built, or `canSubmit` to degrade gracefully when validation is unavailable. A backend decision either way. |
+> | **BUG-317 — statutory editor destroys tax bands** | **CRIT** | Needs `getRule(id)` + component hydration change. |
+> | **ISSUE-403 — exemptions & cumulative PAYE unreachable** | HIGH | Fully built on the BE *with Postgres tests*; no FE surface, so every rule is created non-cumulative with zero exemptions — a wrong tax deduction on a real payslip. A story, not a migration. |
+> | **BUG-315 — formula Test button 404s** | HIGH | Salary formulas are never validated before computing real pay. |
+> | ISSUE-405 · ISSUE-404 · ISSUE-406 · ISSUE-402 | HIGH–MED | Dead adjustment filters; unmappable responses; dropped `negativeNetWarning`; approval history shows no actor. |
+>
+> **What two slices have now established:** the register's estimate that "~1 field in 5 describes something
+> never built" was, if anything, conservative — and the failures are not cosmetic. Admin found a settings tab
+> bound to nothing and a list tracking by `undefined`; payroll found two features that cannot run at all.
+> **In every case the spec flushed the same invented shape the cast asserted** — the tests were complicit,
+> not merely stale. That is the argument for finishing the remaining 11 modules.
 
 ### Tier E — infrastructure + guards
 
@@ -540,6 +570,12 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23 (D1/payroll)** — **Slice 2 done (#569): payroll 55 → 4, repo-wide 218 → 167.** Two CRITICALs
+  — a payroll run cannot be started from the UI, and the statutory editor destroys tax bands on save. Neither
+  had a failing test, because in both cases the spec asserted the shape the cast invented.
+  **The lesson to carry into the remaining modules:** treat every mapper default as a decision and write down
+  which way it fails. On money paths the least-claiming value is the only defensible one — `hasSent` defaulting
+  true would have handed the backend the flag that unlocks a duplicate payslip mailing to every employee.
 - **2026-08-23 (D1/admin)** — **First migration slice done (#567): admin 49 → 0, repo-wide 267 → 218.**
   Two live bugs in it, both in services the delegated agent did not reach — which is the argument for
   per-module slices over a batch tool, restated with evidence rather than as a prediction.
