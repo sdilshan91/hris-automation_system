@@ -214,6 +214,45 @@ documented for leave-management integration tests.)
   employees/{employeeId}/shift?date=`. Times are "HH:mm" strings (null for FLEXIBLE); duplicate name
   → 409 `duplicate_name`. RotationDto kept the pinned shape; step `order` is 0-based.
 
+## FE↔BE contract: the wire truth (D1 slice 3, 2026-09-01)
+
+The Angular attendance service was migrated off unchecked `http.get<IFoo>()` casts onto generated
+`Schema<'Attendance…Dto'>` aliases + explicit mappers (mapper block at the foot of
+`features/attendance/models/attendance.models.ts`). Domain rules that came out of the field-by-field
+comparison and are worth keeping:
+
+- **`RegularizationDto` keys the id `id`, not `regularizationId`** — and the employee's "My regularizations"
+  list uses `regularizationId` as its `@for` **track key**. Every row tracked by the same `undefined`, so the
+  list broke the first time an employee filed a *second* request. Same rename on `AttendanceLogDto` and
+  `ClockOutResultDto` (`id`), which is latent only because nothing reads the log id yet.
+- **Neither `RegularizationDto` nor `AttendanceLogDto` carries `tenantId`** — correctly: the tenant is
+  implicit in the JWT + `X-Tenant-Subdomain`. The view models declared it and it was `undefined` at runtime.
+  Do not re-add it; a blank tenant id in a view model is one refactor away from being a cache key.
+- **Regularization approval has THREE outcomes, not two.** On a multi-level workflow the approve endpoint
+  returns `Status = PENDING` with `Action = APPROVED` — the step advanced, the request is NOT approved. The
+  FE union has been widened to represent it, but the approvals UI still reports it as final and removes the
+  row (see TEST-FINDINGS).
+- **`decision.action` is past-tense (`APPROVED`/`REJECTED`)**, never the imperative `APPROVE`/`REJECT`.
+- **The period lock's "never locked" state is a `null` BODY, not `isLocked: false`.** The mapper fails closed
+  (`isLocked ?? true`), so the null must be short-circuited in the service before mapping — otherwise a
+  never-locked month renders as locked with a dead Unlock button.
+- **`OvertimeDto.approvedMinutes` is nullable and is what gets PAID.** It must never be defaulted from
+  `overtimeMinutes`. `multiplier` has no honest numeric default (`0` reads "0x", `1` reads as straight time).
+- **Summary generation is SYNCHRONOUS** — `GenerateAsync` returns the literal `COMPLETED` and nothing else;
+  the DTO's documented `PENDING`/`RUNNING` are aspirational, and the FE's 2s poll is unreachable *and*
+  unbounded.
+- **`ScheduledReportConfigDto.recipients` is `Guid[]`**, but the FE form collects comma-separated emails —
+  so creating a scheduled report 400s in production. The `reportType` vocabularies also disagree
+  (FE `daily-attendance` vs BE `DEPARTMENT_COMPARISON`), and `ScheduledReportJob` ignores `reportType`
+  entirely and always sends the trailing-30-day custom report.
+- **`ShiftDto.rotation` is typed non-nullable in the generated types but is really `null` for SINGLE and
+  FLEXIBLE shifts** (Swashbuckle drops `nullable` on a bare complex `$ref`). Truthiness-check every
+  object-valued wire field in this module.
+- `workingDays` encoding agrees on both sides (1=Mon..7=Sun); shift `type` values agree exactly
+  (`SINGLE|ROTATING|FLEXIBLE`). Verified, not assumed.
+
+See [[frontend-dev]] agent notes for the general migration pattern.
+
 ## Related stories
 - `US-ATT-001` — Employee clock-in from browser with optional geolocation (this scaffold)
 - `US-ATT-002` — Employee clock-out + work-hours auto-calculation (this story)

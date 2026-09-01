@@ -199,6 +199,22 @@ describe('MonthlySummaryComponent', () => {
     expect(text).toContain('Summary not generated yet');
   });
 
+  // Paired arms: the em-dash arm alone would also pass if the banner never rendered,
+  // so the 0% arm is its positive guardian — it proves this banner CAN show a figure.
+  it('renders a real 0% average as 0%, not as unknown', () => {
+    setup({ ...result, banner: { totalEmployees: 2, averageAttendancePercent: 0, totalLopDays: 4 } });
+    const banner = fixture.nativeElement.querySelector('[data-test="banner"]') as HTMLElement;
+    expect(banner.textContent).toContain('0%');
+    expect(banner.textContent).not.toContain('—');
+  });
+
+  it('renders an absent average as an em dash — never as 0% (a false absenteeism claim)', () => {
+    setup({ ...result, banner: { totalEmployees: 2, averageAttendancePercent: null, totalLopDays: 4 } });
+    const banner = fixture.nativeElement.querySelector('[data-test="banner"]') as HTMLElement;
+    expect(banner.textContent).toContain('—');
+    expect(banner.textContent).not.toContain('0%');
+  });
+
   it('triggers generation, polls until COMPLETED, then reloads (AC-3)', fakeAsync(() => {
     setup({ ...result, generatedAt: null, rows: [], banner: { totalEmployees: 0, averageAttendancePercent: 0, totalLopDays: 0 } });
 

@@ -13,6 +13,8 @@
  * IP allowlist (FR-4, AC-5) — those are enforced server-side and surfaced as typed errors.
  */
 
+import type { Schema } from '@core/api';
+
 /** Clock-in source channel recorded on the attendance log (§7 `source`). */
 export type AttendanceSource = 'WEB' | 'MOBILE_WEB';
 
@@ -205,7 +207,14 @@ export interface ICreateRegularizationRequest {
  */
 export interface IRegularization {
   regularizationId: string;
-  tenantId: string;
+  /**
+   * D1 slice 3: `tenantId` was declared here but `RegularizationDto` has never carried it —
+   * the tenant is implicit in the JWT + the X-Tenant-Subdomain header, and echoing it into a
+   * per-employee response would be a tenant-isolation smell (Critical Rule #1). It was
+   * `undefined` at runtime on every row and read only by spec fixtures, so it is gone rather
+   * than defaulted to `''`: a blank tenant id in a view model is one refactor away from being
+   * used as a cache key.
+   */
   employeeId: string;
   /** Linked attendance_log when one already existed (e.g. MISSED_CLOCK_OUT); else null. */
   attendanceLogId: string | null;
@@ -367,7 +376,14 @@ export interface IBulkApproveRequest {
  */
 export interface IRegularizationDecisionDto {
   regularizationId: string;
-  status: 'APPROVED' | 'REJECTED';
+  /**
+   * D1 slice 3: widened to include 'PENDING'. On a multi-level approval workflow the backend
+   * records the approver's decision and returns `Status = PENDING` with `Action = APPROVED` —
+   * the step advanced, the regularization is NOT yet approved. The old two-value union made
+   * that state unrepresentable, which is why the UI still reports it as final (see the
+   * OUT-OF-LANE note in the migration report).
+   */
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
   action: string;
   approvalLevel: number;
   /** Created/linked attendance log on APPROVE; null on REJECT. */
@@ -873,8 +889,13 @@ export interface IEmployeeMonthlySummary {
  */
 export interface IMonthlySummaryBanner {
   totalEmployees: number;
-  /** Average attendance percentage across the listed employees (0–100). */
-  averageAttendancePercent: number;
+  /**
+   * Average attendance percentage across the listed employees (0–100), or null
+   * when the server did not supply it. Null is NOT 0: on a percentage, 0 is the
+   * worst value in the range, so defaulting an absent figure to 0 would render a
+   * headline claim of total absenteeism. Unknown renders as an em dash.
+   */
+  averageAttendancePercent: number | null;
   /** Total Loss-of-Pay days across the listed employees (BR-3). */
   totalLopDays: number;
 }
@@ -1782,4 +1803,1394 @@ export function initialsOf(name: string): string {
     return parts[0].slice(0, 2).toUpperCase();
   }
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// D1 slice 3 — WIRE CONTRACT → VIEW-MODEL MAPPERS
+//
+// Before this slice every attendance HTTP call named a hand-written `I…` type — an unchecked CAST, not a
+// check. TypeScript accepted whatever the server actually sent. The two D1 slices that landed before
+// this one found four live bugs that way, two of them CRITICAL.
+//
+// Each block below declares the REAL wire shape as a `Schema<'…'>` alias generated from the API's own
+// OpenAPI document, plus an explicit mapper to the view model. Every optional wire field is defaulted
+// deliberately: attendance drives PAY (overtime, late deductions) and APPROVALS, so an absent flag must
+// never assert that work finished, that time was approved, or that a period is unlocked. Where the
+// least-claiming value is not obvious, the reasoning is inline at the site.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  WIRE TYPES + MAPPERS — concern: clock-in / clock-out / status + monthly summaries
+//  (US-ATT-001, US-ATT-002, US-ATT-007)
+//
+//  Requires at the TOP of this file:  import type { Schema } from '@core/api';
+//
+//  apiEnvelopeInterceptor already unwraps { success, data }, so these alias the INNER dto.
+//  Every generated property is optional (Swashbuckle emits no `required`), so every field
+//  is defaulted below. Non-obvious decisions, all deliberate:
+//
+//  RENAMES
+//    AttendanceLogDto.id       -> IAttendanceLog.attendanceLogId
+//    ClockOutResultDto.id      -> IClockOutResult.attendanceLogId
+//
+//  NO WIRE SOURCE (flagged, not silently nulled — see report OUT-OF-LANE #2)
+//    IAttendanceLog.tenantId   -- the wire DTO carries no tenant id at all. Emitted as ''
+//                                 to keep the interface satisfiable; the field must be
+//                                 DELETED from IAttendanceLog (no component reads it).
+//
+//  DEFAULTS THAT ARE DECISIONS (which way each one fails)
+//    requireGeolocation ?? false  -- fails OPEN in the UI on purpose. The server is the
+//        authority: AttendanceService.ClockInAsync L142 / ClockOutAsync L343 reject a
+//        coordinate-less punch with a typed 400 when the tenant requires geo, and the
+//        server ITSELF defaults the flag to false when no settings row exists (L458).
+//        Defaulting to `true` would hard-block clock-in client-side for tenants where geo
+//        is optional -> no attendance record -> absent -> LOP. That failure is silent and
+//        unrecoverable by the employee; failing open is loud (a server 400 the FE shows
+//        verbatim) and cannot bypass anything.
+//    isClockedIn ?? false         -- fails toward "offer the Clock In button". A wrong
+//        `false` is caught by the backend's 409 already_clocked_in guard; a wrong `true`
+//        would strand the employee on a timer they cannot clock out of.
+//    ClockOutResult.status ?? 'ANOMALY' -- NEVER default to 'COMPLETE': that asserts a
+//        clean finished day (Rule 1). ANOMALY is the module's own "flagged for review"
+//        bucket, so an unknown value routes to a human instead of silently passing.
+//    overtimeMinutes ?? null      -- null = "unknown", not 0 = "there was none". The card
+//        hides the OT badge on null (clock-in.component L419 `?? 0`), so this claims nothing.
+//    SummaryGenerationStatus.status ?? 'PENDING' -- never claim the Hangfire job finished
+//        on a missing flag (same class as the payroll isComplete/isGenerating inversion).
+//        WARNING: this is only safe once monthly-summary.component's poll is bounded —
+//        its `takeWhile(s => s.status !== 'COMPLETED', true)` has no cap and each poll is a
+//        full-tenant recompute. See report OUT-OF-LANE #4 (blocking companion fix).
+//    DailyBreakdown.status ?? 'ABSENT' -- does not assert that work happened, and fails
+//        loud (red cell) rather than silently green. Display-only: the pay-bearing counts
+//        come from IEmployeeMonthlySummary, not from this cell.
+//    source ?? 'WEB'              -- server-validated to WEB|MOBILE_WEB
+//        (ClockInValidator L14) and the entity default is "WEB"; audit-only, unrendered.
+//
+//  UNMAPPED WIRE FIELDS (reported, deliberately NOT added to the view models — no screen
+//  renders them): ClockStatusDto.lastCompleted, AttendanceLogDto.createdAt,
+//  ClockOutResultDto.employeeId, DailyBreakdownDto.lateMinutes/earlyDepartureMinutes.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type AttendanceLogWire = Schema<'AttendanceAttendanceLogDto'>;
+export type ClockOutResultWire = Schema<'AttendanceClockOutResultDto'>;
+export type ClockStatusWire = Schema<'AttendanceClockStatusDto'>;
+export type MonthlySummaryBannerWire = Schema<'AttendanceMonthlySummaryBannerDto'>;
+export type EmployeeMonthlySummaryWire = Schema<'AttendanceEmployeeMonthlySummaryDto'>;
+export type MonthlySummaryResultWire = Schema<'AttendanceMonthlySummaryResult'>;
+export type DailyBreakdownWire = Schema<'AttendanceDailyBreakdownDto'>;
+export type EmployeeDailyBreakdownResultWire =
+  Schema<'AttendanceEmployeeDailyBreakdownResult'>;
+export type SummaryGenerationStatusWire = Schema<'AttendanceSummaryGenerationStatusDto'>;
+
+// ─── narrowing helpers (guarded casts, never a blind `as`) ───────────────────
+
+const ATTENDANCE_SOURCES: readonly AttendanceSource[] = ['WEB', 'MOBILE_WEB'];
+const CLOCK_OUT_STATUSES: readonly ClockOutStatus[] = [
+  'COMPLETE',
+  'SHORT_DAY',
+  'OVERTIME',
+  'ANOMALY',
+];
+const DAILY_BREAKDOWN_STATUSES: readonly DailyBreakdownStatus[] = [
+  'PRESENT',
+  'ABSENT',
+  'LEAVE',
+  'HOLIDAY',
+  'WEEKLY_OFF',
+  'HALF_DAY',
+];
+const SUMMARY_GENERATION_STATUSES: readonly ISummaryGenerationStatus['status'][] = [
+  'PENDING',
+  'RUNNING',
+  'COMPLETED',
+];
+
+/** Wire `source` is `string | null`; the server validates WEB|MOBILE_WEB. Fallback: 'WEB'. */
+function narrowSource(value: string | null | undefined): AttendanceSource {
+  return ATTENDANCE_SOURCES.includes(value as AttendanceSource)
+    ? (value as AttendanceSource)
+    : 'WEB';
+}
+
+/** Unknown/absent -> 'ANOMALY' (flag for review); never 'COMPLETE' (would assert a clean day). */
+function narrowClockOutStatus(value: string | null | undefined): ClockOutStatus {
+  return CLOCK_OUT_STATUSES.includes(value as ClockOutStatus)
+    ? (value as ClockOutStatus)
+    : 'ANOMALY';
+}
+
+/** Unknown/absent -> 'ABSENT'; never 'PRESENT' (would assert work happened). */
+function narrowDailyStatus(value: string | null | undefined): DailyBreakdownStatus {
+  return DAILY_BREAKDOWN_STATUSES.includes(value as DailyBreakdownStatus)
+    ? (value as DailyBreakdownStatus)
+    : 'ABSENT';
+}
+
+/** Unknown/absent -> 'PENDING'; never 'COMPLETED' (would claim the generation job finished). */
+function narrowGenerationStatus(
+  value: string | null | undefined,
+): ISummaryGenerationStatus['status'] {
+  return SUMMARY_GENERATION_STATUSES.includes(
+    value as ISummaryGenerationStatus['status'],
+  )
+    ? (value as ISummaryGenerationStatus['status'])
+    : 'PENDING';
+}
+
+// ─── US-ATT-001 / US-ATT-002: clock-in, clock-out, status ────────────────────
+
+export function mapAttendanceLog(w: AttendanceLogWire): IAttendanceLog {
+  return {
+    // RENAME: the wire key is `id`.
+    attendanceLogId: w.id ?? '',
+    // NO WIRE SOURCE — AttendanceLogDto carries no tenant id. Placeholder only; see banner.
+    tenantId: '',
+    employeeId: w.employeeId ?? '',
+    clockIn: w.clockIn ?? '',
+    clockOut: w.clockOut ?? null,
+    clockInLatitude: w.clockInLatitude ?? null,
+    clockInLongitude: w.clockInLongitude ?? null,
+    source: narrowSource(w.source),
+    // Absent lateness must not claim a punctual arrival OR invent a penalty: false/0 is the
+    // server's own on-time encoding, and the badge simply does not render.
+    isLate: w.isLate ?? false,
+    lateMinutes: w.lateMinutes ?? 0,
+  };
+}
+
+/**
+ * Shared child mapper — also reused by `ClockStatusDto.lastCompleted` (currently unmapped;
+ * IClockStatus has no `lastCompleted` field — see report OUT-OF-LANE #5).
+ */
+export function mapClockOutResult(w: ClockOutResultWire): IClockOutResult {
+  return {
+    // RENAME: the wire key is `id`.
+    attendanceLogId: w.id ?? '',
+    clockIn: w.clockIn ?? '',
+    clockOut: w.clockOut ?? '',
+    totalWorkMinutes: w.totalWorkMinutes ?? 0,
+    // null = unknown, NOT 0 = "no overtime was earned". OT feeds pay.
+    overtimeMinutes: w.overtimeMinutes ?? null,
+    status: narrowClockOutStatus(w.status),
+    isEarlyDeparture: w.isEarlyDeparture ?? false,
+    earlyDepartureMinutes: w.earlyDepartureMinutes ?? 0,
+  };
+}
+
+export function mapClockStatus(w: ClockStatusWire): IClockStatus {
+  return {
+    isClockedIn: w.isClockedIn ?? false,
+    clockedInAt: w.clockedInAt ?? null,
+    // Fails OPEN by design — the server enforces the policy and defaults it to false itself.
+    requireGeolocation: w.requireGeolocation ?? false,
+    shiftName: w.shiftName ?? null,
+    // NOTE: the wire type is date-time, the view model documents "HH:mm". Always null today
+    // (backend: "always null until US-ATT-005"). See report OUT-OF-LANE #6.
+    shiftStart: w.shiftStart ?? null,
+  };
+}
+
+// ─── US-ATT-007: monthly summary + daily breakdown + generation ──────────────
+
+export function mapMonthlySummaryBanner(
+  w: MonthlySummaryBannerWire | undefined,
+): IMonthlySummaryBanner {
+  return {
+    totalEmployees: w?.totalEmployees ?? 0,
+    // NOT `?? 0`: unlike a count, a percentage has no neutral zero — 0% asserts
+    // that nobody attended. An absent figure must claim nothing.
+    averageAttendancePercent: w?.averageAttendancePercent ?? null,
+    // 0 LOP days on an absent banner is the least-claiming value: it never invents a
+    // deduction. The authoritative per-employee LOP still comes from each row.
+    totalLopDays: w?.totalLopDays ?? 0,
+  };
+}
+
+export function mapEmployeeMonthlySummary(
+  w: EmployeeMonthlySummaryWire,
+): IEmployeeMonthlySummary {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    employeeNumber: w.employeeNumber ?? null,
+    departmentName: w.departmentName ?? null,
+    // All counters default to 0: an absent counter must never inflate presence, overtime,
+    // or LOP. 0 under-reports (visible as an obviously empty row) instead of over-paying
+    // or over-deducting.
+    presentDays: w.presentDays ?? 0,
+    absentDays: w.absentDays ?? 0,
+    lateCount: w.lateCount ?? 0,
+    earlyDepartureCount: w.earlyDepartureCount ?? 0,
+    workMinutes: w.workMinutes ?? 0,
+    overtimeMinutes: w.overtimeMinutes ?? 0,
+    leaveDays: w.leaveDays ?? 0,
+    holidays: w.holidays ?? 0,
+    weeklyOffs: w.weeklyOffs ?? 0,
+    lopDays: w.lopDays ?? 0,
+    generatedAt: w.generatedAt ?? '',
+  };
+}
+
+export function mapMonthlySummaryResult(
+  w: MonthlySummaryResultWire,
+): IMonthlySummaryResult {
+  return {
+    yearMonth: w.yearMonth ?? '',
+    rows: (w.rows ?? []).map(mapEmployeeMonthlySummary),
+    banner: mapMonthlySummaryBanner(w.banner),
+    // MUST stay null on absence: `notGenerated` (monthly-summary.component L404) keys off
+    // `generatedAt == null` to offer on-demand generation. Inventing a timestamp would hide
+    // the "not generated yet" state and show an empty table as if it were the real month.
+    generatedAt: w.generatedAt ?? null,
+  };
+}
+
+export function mapDailyBreakdown(w: DailyBreakdownWire): IDailyBreakdown {
+  return {
+    date: w.date ?? '',
+    status: narrowDailyStatus(w.status),
+    clockIn: w.clockIn ?? null,
+    clockOut: w.clockOut ?? null,
+    // null = no record for the day; the row renders no time range rather than "0m worked".
+    workMinutes: w.workMinutes ?? null,
+    // An absent flag must not claim the day was regularized/approved.
+    isRegularized: w.isRegularized ?? false,
+    isLate: w.isLate ?? false,
+    isEarlyDeparture: w.isEarlyDeparture ?? false,
+  };
+}
+
+export function mapEmployeeDailyBreakdownResult(
+  w: EmployeeDailyBreakdownResultWire,
+): IEmployeeDailyBreakdownResult {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    yearMonth: w.yearMonth ?? '',
+    days: (w.days ?? []).map(mapDailyBreakdown),
+  };
+}
+
+export function mapSummaryGenerationStatus(
+  w: SummaryGenerationStatusWire,
+): ISummaryGenerationStatus {
+  return {
+    yearMonth: w.yearMonth ?? '',
+    // Fails OPEN: an unrecognised/absent status keeps the caller polling rather than
+    // announcing success. Requires the bounded-poll companion fix (OUT-OF-LANE #4).
+    status: narrowGenerationStatus(w.status),
+    generatedAt: w.generatedAt ?? null,
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  D1 slice 3 — REGULARIZATIONS concern (US-ATT-003 submit/list, US-ATT-004
+//  manager queue / approve / reject / bulk-approve).
+//
+//  Owns the shared child mapper `mapRegularizationDecision` (re-used by the
+//  bulk result's `items[].decision`) plus `mapPendingRegularization` and
+//  `mapBulkRegularizationItem`.
+//
+//  ── TWO MODEL EDITS ARE REQUIRED BEFORE THIS COMPILES (see FINDINGS) ────────
+//   (1) `IRegularization` (~line 208): DELETE the line `  tenantId: string;`.
+//       `AttendanceRegularizationDto` has no TenantId — the tenant is implicit
+//       in the JWT/tenant interceptor. No component reads it (only 3 spec
+//       fixtures set it). Inventing `tenantId: ''` would be a fabricated
+//       tenant key, which is the one thing this codebase must never do.
+//   (2) `IRegularizationDecisionDto.status` (~line 370): widen
+//         'APPROVED' | 'REJECTED'   ->   'PENDING' | 'APPROVED' | 'REJECTED'
+//       The backend genuinely returns Status = "PENDING" on an intermediate
+//       multi-level approval step (RegularizationApprovalService.cs:443-450).
+//
+//  ── NON-OBVIOUS RENAMES ────────────────────────────────────────────────────
+//   * IRegularization.regularizationId  <- wire `id`.   ****LIVE BUG TODAY****
+//     Both `@for` blocks in regularization.component.ts (L167 desktop, L184
+//     mobile) do `track req.regularizationId`. Untyped today, so every row
+//     tracks `undefined`.
+//   * IPendingRegularization.regularizationId <- wire `regularizationId`.
+//     NO rename — verified field-for-field against
+//     AttendancePendingRegularizationDto. The approval queue's row id is safe.
+//
+//  ── NON-OBVIOUS DEFAULTS (each one is a decision; direction stated) ────────
+//   * `succeeded: w.succeeded ?? false` — an absent flag must NEVER claim an
+//     approval happened. `onBulkSuccess` removes every `succeeded` row from the
+//     queue and toasts "N request(s) approved"; defaulting true would silently
+//     drop a request that was NOT approved. False keeps the row in the queue and
+//     shows the (generic) error toast — recoverable, and visibly wrong.
+//   * `status: 'PENDING'` fallback on both regularization statuses — an absent
+//     or unrecognised status must never render the green APPROVED pill.
+//   * `regularizationType` — passed through UNCHANGED when unrecognised (not
+//     coerced to a member). `regularizationTypeLabel()` is an exhaustive switch
+//     with no default, so an unknown type renders a BLANK Type cell rather than
+//     confidently mislabelling a MISSED_CLOCK_IN as MISSED_BOTH. Same reasoning
+//     as `mapPayslip`'s `pdfStatus`. Visibly wrong beats confidently wrong.
+//   * `attendanceLogId` / `totalWorkMinutes` / `overtimeMinutes` /
+//     `attendanceStatus` default to NULL, not 0/''. The backend leaves them null
+//     on REJECT and on an intermediate approval step; `0` would read as a real
+//     computed "0 minutes worked" and these feed payroll semantics.
+//   * `decision` is left `undefined` (not a synthesised empty object) when the
+//     wire omits it — a failed bulk item genuinely has no decision.
+//
+//  Backend value sources (READ-ONLY verification, 2026-09-01):
+//   HRM.Domain/Entities/RegularizationType.cs
+//     RegularizationType : MISSED_CLOCK_IN | MISSED_CLOCK_OUT | MISSED_BOTH
+//     RegularizationStatus: PENDING | APPROVED | REJECTED | CANCELLED
+//   HRM.Domain/Entities/RegularizationApprovalHistory.cs
+//     decision `action` : "APPROVED" | "REJECTED"  (NOT "APPROVE"/"REJECT")
+//   RegularizationApprovalService.cs:387,462
+//     decision `attendanceStatus` : COMPLETE | SHORT_DAY | OVERTIME | ANOMALY
+// ═════════════════════════════════════════════════════════════════════════════
+
+export type RegularizationWire = Schema<'AttendanceRegularizationDto'>;
+export type PendingRegularizationWire = Schema<'AttendancePendingRegularizationDto'>;
+export type PendingRegularizationQueueWire =
+  Schema<'AttendancePendingRegularizationQueueResult'>;
+export type RegularizationDecisionWire = Schema<'AttendanceRegularizationDecisionDto'>;
+export type BulkRegularizationItemWire = Schema<'AttendanceBulkRegularizationItemResult'>;
+export type BulkApproveRegularizationWire =
+  Schema<'AttendanceBulkApproveRegularizationResult'>;
+
+/** The four values `HRM.Domain/Entities/RegularizationStatus` can emit. */
+const REGULARIZATION_STATUS_VALUES: readonly RegularizationStatus[] = [
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+  'CANCELLED',
+];
+
+/**
+ * Narrow the wire's bare `string | null` status onto the view-model union.
+ *
+ * Fallback is PENDING and that direction is deliberate: an absent, empty or
+ * unrecognised status renders the amber "Pending" pill. It must never render
+ * the green APPROVED pill — an employee who reads "Approved" stops chasing a
+ * correction that was never actually applied, and the corrected day never
+ * reaches payroll.
+ */
+function narrowRegularizationStatus(value: string | null | undefined): RegularizationStatus {
+  return REGULARIZATION_STATUS_VALUES.includes(value as RegularizationStatus)
+    ? (value as RegularizationStatus)
+    : 'PENDING';
+}
+
+/**
+ * US-ATT-003: an employee's own regularization request.
+ * `POST /attendance/regularizations` (201) and `GET /attendance/regularizations`.
+ *
+ * RENAME: `id` -> `regularizationId`. This is the `track` key of both `@for`
+ * blocks in regularization.component.ts; before this mapper every row tracked
+ * `undefined`.
+ *
+ * `regularizationType` is passed through rather than coerced — see the banner.
+ */
+export function mapRegularization(w: RegularizationWire): IRegularization {
+  return {
+    // RENAME: the wire field is `id`. Bound to `@for … track req.regularizationId`.
+    regularizationId: w.id ?? '',
+    employeeId: w.employeeId ?? '',
+    attendanceLogId: w.attendanceLogId ?? null,
+    date: w.date ?? '',
+    // Passed through, NOT coerced: an unknown type must render a blank label,
+    // never a confidently wrong one (regularizationTypeLabel has no default arm).
+    regularizationType: (w.regularizationType ?? '') as RegularizationType,
+    requestedClockIn: w.requestedClockIn ?? null,
+    requestedClockOut: w.requestedClockOut ?? null,
+    reason: w.reason ?? '',
+    // Absent/unknown => PENDING. Must never read as APPROVED.
+    status: narrowRegularizationStatus(w.status),
+    createdAt: w.createdAt ?? '',
+  };
+}
+
+/**
+ * US-ATT-004: one row of the manager's pending-approval queue.
+ * `GET /attendance/regularizations/pending` -> `{ items, totalCount }`.
+ *
+ * NO RENAME on the id: the wire field is already `regularizationId`, verified
+ * against `PendingRegularizationDto` (RegularizationApprovalDtos.cs). This id is
+ * the row `track` key, the checkbox `selectedIds` key, and the path segment of
+ * approve/reject/bulk-approve — it is the single most safety-critical field in
+ * this slice, so the `?? ''` fallback is intentionally an EMPTY id rather than a
+ * plausible-looking one: an empty id produces a 404/400 the manager sees, not a
+ * silent action on the wrong record.
+ */
+export function mapPendingRegularization(
+  w: PendingRegularizationWire,
+): IPendingRegularization {
+  return {
+    regularizationId: w.regularizationId ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    employeePhoto: w.employeePhoto ?? null,
+    date: w.date ?? '',
+    // Passed through, NOT coerced — see mapRegularization.
+    regularizationType: (w.regularizationType ?? '') as RegularizationType,
+    requestedClockIn: w.requestedClockIn ?? null,
+    requestedClockOut: w.requestedClockOut ?? null,
+    reason: w.reason ?? '',
+    submittedOn: w.submittedOn ?? '',
+  };
+}
+
+/**
+ * US-ATT-004: the outcome of a single approve/reject, and the `decision` embedded
+ * in each bulk-approve item. SHARED child mapper — owned by this concern.
+ *
+ * `status` can be PENDING as well as APPROVED/REJECTED: an intermediate step of a
+ * multi-level workflow records the approval but leaves the regularization pending
+ * (RegularizationApprovalService.cs:443-450). Hence the widened union and the
+ * PENDING fallback — never assert APPROVED on an absent status.
+ *
+ * The computed fields stay NULL on absence: the backend nulls them on REJECT and
+ * on an intermediate step, and `0` would read as a genuine "0 minutes worked",
+ * which is a payroll-visible claim.
+ */
+export function mapRegularizationDecision(
+  w: RegularizationDecisionWire,
+): IRegularizationDecisionDto {
+  const status = narrowRegularizationStatus(w.status);
+  return {
+    regularizationId: w.regularizationId ?? '',
+    // CANCELLED cannot arise from a decision; collapse it to PENDING so the VM
+    // union stays the three values the backend actually emits here.
+    status: status === 'CANCELLED' ? 'PENDING' : status,
+    // Wire values are "APPROVED"/"REJECTED" (RegularizationApprovalHistory), NOT
+    // "APPROVE"/"REJECT". Nothing renders this today; kept as a bare string.
+    action: w.action ?? '',
+    approvalLevel: w.approvalLevel ?? 0,
+    attendanceLogId: w.attendanceLogId ?? null,
+    totalWorkMinutes: w.totalWorkMinutes ?? null,
+    overtimeMinutes: w.overtimeMinutes ?? null,
+    attendanceStatus: w.attendanceStatus ?? null,
+    comment: w.comment ?? null,
+    actionedAt: w.actionedAt ?? '',
+  };
+}
+
+/**
+ * US-ATT-004 BR-7: one per-id result inside a bulk approve.
+ *
+ * `succeeded` defaults to FALSE. This is the load-bearing default of the slice:
+ * `RegularizationApprovalsComponent.onBulkSuccess` removes every `succeeded` row
+ * from the queue and counts it into the "N request(s) approved" toast. Defaulting
+ * true on an absent flag would delete a request from the manager's queue while
+ * claiming an approval that never happened, and there is no second screen that
+ * would ever surface it again. False leaves the row in place and shows the error
+ * toast — the manager retries and sees the truth.
+ */
+export function mapBulkRegularizationItem(
+  w: BulkRegularizationItemWire,
+): IBulkApproveItemResult {
+  return {
+    regularizationId: w.regularizationId ?? '',
+    // Absent flag must NEVER claim success. See the doc comment above.
+    succeeded: w.succeeded ?? false,
+    // Genuinely absent on a failed item — do not synthesise an empty decision.
+    decision: w.decision ? mapRegularizationDecision(w.decision) : undefined,
+    error: w.error ?? undefined,
+    errorCode: w.errorCode ?? undefined,
+  };
+}
+
+/**
+ * US-ATT-004 BR-7: `POST /attendance/regularizations/bulk-approve`.
+ *
+ * The counts are recomputed from the mapped items rather than trusted from the
+ * wire, so `succeededCount` can never disagree with the rows the component
+ * actually removes (and an absent `succeeded` flag cannot be laundered back into
+ * a success by a wire-supplied count). `totalRequested` DOES come from the wire —
+ * the backend de-duplicates ids, so it is the only honest source for "how many
+ * distinct ids were processed".
+ */
+export function mapBulkApproveResult(
+  w: BulkApproveRegularizationWire,
+): IBulkApproveResult {
+  const items = (w.items ?? []).map(mapBulkRegularizationItem);
+  const succeededCount = items.filter((i) => i.succeeded).length;
+  return {
+    totalRequested: w.totalRequested ?? items.length,
+    succeededCount,
+    failedCount: items.length - succeededCount,
+    items,
+  };
+}
+
+// ─── D1 slice 3: SHIFTS & SHIFT ASSIGNMENT (US-ATT-005) — wire types + mappers ──
+//
+// Concern: getShifts / createShift / updateShift / cloneShift / assignShift / getResolvedShift.
+// Owns the shared child types AttendanceShiftDto, AttendanceRotationDto, AttendanceRotationStepDto.
+// (deleteShift is `.delete<void>` — untouched.)
+//
+// RENAMES: none. Every IShift field has an identically-named wire field; this concern is a pure
+// optionality/narrowing migration, not a rename fix.
+//
+// NON-OBVIOUS DEFAULTS (each is a decision — the failure direction is stated at the call site):
+//   isDefault      -> false   never let an absent flag paint every shift as the tenant default.
+//   isActive       -> false   an absent flag must not claim a shift is live and schedulable.
+//   type           -> 'SINGLE' guarded narrow; ROTATING is never inferred (it would open the
+//                              rotation editor on a shift that has no rotation).
+//   rotation       -> undefined  the backend sends `null` for SINGLE/FLEXIBLE (ShiftService.ToDto),
+//                              even though the generated type omits `| null`. Truthiness-checked.
+//   assignedCount  -> 0       never claim assignments that did not happen (assign toast reads it).
+//
+// KNOWN-BENIGN NUMERIC DEFAULTS (?? 0): breakDurationMinutes, gracePeriodMinutes,
+// assignedEmployeeCount. These are non-nullable ints in C# (ShiftDto) and are always emitted; the
+// `??` exists only because Swashbuckle marks every property optional. NOTE for reviewers: the edit
+// form patches straight from the mapped IShift, so a wrongly-zeroed break/grace WOULD be written
+// back on the next save — see ISSUE-410 (SHIFT-07).
+//
+// NOT MAPPED (wire fields with no IShift field — FLAGGED, not silently widened): standardWorkMinutes,
+// minimumWorkMinutes, autoBreakMinutes, autoBreakThresholdMinutes, overtimeThresholdMinutes
+// (the DF-56 per-shift work-minute overrides). No screen renders them and IShiftRequest cannot send
+// them — see BUG-322 (they are wiped on every PUT).
+
+export type ShiftWire = Schema<'AttendanceShiftDto'>;
+export type ResolvedShiftWire = Schema<'AttendanceResolvedShiftDto'>;
+export type RotationWire = Schema<'AttendanceRotationDto'>;
+export type RotationStepWire = Schema<'AttendanceRotationStepDto'>;
+export type AssignmentResultWire = Schema<'AttendanceAssignmentResultDto'>;
+
+/**
+ * Narrow the wire's `type: string | null` onto {@link ShiftType} (US-ATT-005 FR-1).
+ *
+ * The backend constant set is exactly SINGLE | ROTATING | FLEXIBLE
+ * (HRM.Domain/Entities/Shift.cs `ShiftType`, enforced by `ShiftRequestValidator` via
+ * `ShiftType.IsValid`), so the FE union already matches the emitted values 1:1 — this guard only
+ * fires on a malformed/absent payload.
+ *
+ * FALLBACK = 'SINGLE', matching the entity default (`Shift.Type = ShiftType.Single`). Deliberately
+ * NOT 'ROTATING' (it would render a rotation editor for a shift with no rotation) and not
+ * 'FLEXIBLE' (it would hide the start/end columns on a shift that has them). Under 'SINGLE' an
+ * unknown shift with no times renders "—" via `formatShiftTimes`, which claims nothing.
+ */
+function narrowShiftType(value: string | null | undefined): ShiftType {
+  const v = (value ?? '').trim().toUpperCase();
+  return v === 'SINGLE' || v === 'ROTATING' || v === 'FLEXIBLE' ? v : 'SINGLE';
+}
+
+/** Map one rotation step (FR-7). `order` is used only for relative sort on both sides. */
+export function mapRotationStep(w: RotationStepWire): IRotationStep {
+  return {
+    order: w.order ?? 0,
+    shiftId: w.shiftId ?? '',
+    durationDays: w.durationDays ?? 0,
+  };
+}
+
+/** Map the rotation pattern of a ROTATING shift (FR-7). */
+export function mapRotation(w: RotationWire): IRotation {
+  return {
+    cycleLengthDays: w.cycleLengthDays ?? 0,
+    referenceStartDate: w.referenceStartDate ?? '',
+    steps: (w.steps ?? []).map(mapRotationStep),
+  };
+}
+
+/**
+ * Shared field logic for {@link mapShift} and {@link mapResolvedShift}. AttendanceResolvedShiftDto is
+ * a structural superset of AttendanceShiftDto (C#: `ResolvedShiftDto : ShiftDto`), so the resolved
+ * wire object is accepted here directly and only the three extra fields are added by the caller.
+ */
+function mapShiftFields(w: ShiftWire): IShift {
+  return {
+    id: w.id ?? '',
+    name: w.name ?? '',
+    type: narrowShiftType(w.type),
+    // `HH:mm` or null (backend formats TimeOnly with "HH:mm"); null for FLEXIBLE (BR-8).
+    startTime: w.startTime ?? null,
+    endTime: w.endTime ?? null,
+    breakDurationMinutes: w.breakDurationMinutes ?? 0,
+    gracePeriodMinutes: w.gracePeriodMinutes ?? 0,
+    minimumHours: w.minimumHours ?? null,
+    // ISO day numbers 1=Mon..7=Sun. VERIFIED to agree with the backend, not assumed:
+    // ShiftScheduleResolver.IsoDay / AttendanceSummaryService.IsoDay both map Sun=0 -> 7, and
+    // ShiftRequestValidator rejects anything outside 1..7. `[]` renders "—" via formatWorkingDays.
+    workingDays: w.workingDays ?? [],
+    // An absent flag must not paint a shift with the tenant "Default" badge (BR-1, FR-5).
+    isDefault: w.isDefault ?? false,
+    // Least-claiming: absent => render "Inactive" rather than assert the shift is live/schedulable.
+    // Nothing gates on this beyond the badge, so a wrong `false` is visible, not silent.
+    isActive: w.isActive ?? false,
+    // 0 understates the delete guard, but the guard is server-side (409 shift_in_use), so an absent
+    // count cannot cause a wrongful delete — it can only show "0 assigned" until the next refresh.
+    assignedEmployeeCount: w.assignedEmployeeCount ?? 0,
+    // The generated type says `rotation?: AttendanceRotationDto` with no `| null`, but ShiftService
+    // .ToDto emits `Rotation = null` for every non-ROTATING shift — hence the truthiness check, not
+    // an `undefined` check. Absent => undefined, which is what the shift form/editor branches on.
+    rotation: w.rotation ? mapRotation(w.rotation) : undefined,
+  };
+}
+
+/** Map a shift definition (GET/POST/PUT /attendance/shifts, POST …/clone). */
+export function mapShift(w: ShiftWire): IShift {
+  return mapShiftFields(w);
+}
+
+/**
+ * Map the shift resolved for an employee on a date (FR-7/AC-5). Reuses {@link mapShiftFields} for
+ * every inherited field.
+ *
+ * `effectiveFrom` / `effectiveTo` are genuinely null on the wire when the resolution fell back to
+ * the tenant default shift (C# `ResolvedShiftDto.EffectiveFrom` is `DateOnly?`). `IResolvedShift`
+ * declares `effectiveFrom: string`, so absence is mapped to '' — a blank date that asserts no
+ * window — rather than a fabricated date. See ISSUE-410 (SHIFT-05): the view model should be widened
+ * to `string | null`, which is a models change outside this mapper.
+ */
+export function mapResolvedShift(w: ResolvedShiftWire): IResolvedShift {
+  return {
+    ...mapShiftFields(w),
+    effectiveFrom: w.effectiveFrom ?? '',
+    effectiveTo: w.effectiveTo ?? null,
+    resolvedForDate: w.resolvedForDate ?? '',
+  };
+}
+
+/**
+ * Map the bulk-assign result (AC-2). `assignedCount` is rendered verbatim in the success toast AND
+ * added to the row's `assignedEmployeeCount`, so it defaults to 0: an absent count must never let
+ * the UI announce assignments that the backend did not make.
+ */
+export function mapAssignmentResult(w: AssignmentResultWire): IAssignmentResult {
+  return {
+    assignedCount: w.assignedCount ?? 0,
+    employeeShiftIds: w.employeeShiftIds ?? [],
+  };
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  US-ATT-006 OVERTIME — wire types + mappers (D1 slice 3, "overtime" concern)
+//
+//  Covers: POST /attendance/overtime/pre-approval, GET /overtime/my,
+//          GET /overtime/pending, POST /overtime/{id}/approve,
+//          POST /overtime/{id}/reject, GET /overtime/report.
+//  All six paths VERIFIED present in contracts/openapi/hrm-v1.json.
+//
+//  THIS SURFACE DRIVES PAY. Every default below is chosen so that an ABSENT wire
+//  field can only ever UNDER-claim. Read the per-field comments before changing one.
+//
+//  Non-obvious defaults / decisions (full rationale at each site):
+//   • approvedMinutes -> `?? null` (NEVER `?? overtimeMinutes`, NEVER `?? 0`).
+//     null is the VM's real "not yet awarded" value and both components branch on it.
+//   • multiplier      -> `?? Number.NaN` (NOT 0, NOT 1). Renders "—" via the existing
+//     NaN branch in formatMultiplier(). See DECISION note below.
+//   • status          -> guarded narrow, fallback 'PENDING'. Never APPROVED.
+//   • type            -> guarded narrow, fallback 'AUTO_DETECTED'. Never PRE_APPROVED.
+//   • id              -> `?? ''` and NEVER substituted from another field: an empty id
+//     makes approve/reject 404 loudly instead of actioning the wrong record.
+//   • report totals   -> zeroed object when the wire omits `totals` (under-claims).
+//
+//  Renames: NONE. Every wire key maps 1:1 onto the same VM key.
+//  Wire fields with NO view-model home (deliberately NOT mapped — see FINDINGS):
+//    OvertimeDto/QueueItemDto.dailyCapApplied, .weeklyCapExceeded  (ISSUE-079)
+//    OvertimeReportRowDto.unapprovedMinutes, OvertimeReportTotals.unapprovedMinutes (ISSUE-080)
+//    OvertimeQueueResult.totalCount (service already discards it; queue count is list length)
+// ═════════════════════════════════════════════════════════════════════════════
+
+export type OvertimeWire = Schema<'AttendanceOvertimeDto'>;
+export type OvertimeQueueItemWire = Schema<'AttendanceOvertimeQueueItemDto'>;
+export type OvertimeQueueResultWire = Schema<'AttendanceOvertimeQueueResult'>;
+export type OvertimeDecisionWire = Schema<'AttendanceOvertimeDecisionDto'>;
+export type OvertimeReportRowWire = Schema<'AttendanceOvertimeReportRowDto'>;
+export type OvertimeReportTotalsWire = Schema<'AttendanceOvertimeReportTotals'>;
+export type OvertimeReportResultWire = Schema<'AttendanceOvertimeReportResult'>;
+
+/**
+ * Wire `status` is `string | null`; the VM is the narrow {@link OvertimeStatus} union.
+ * Backend literals verified in src/backend/HRM.Domain/Entities/OvertimeRecord.cs:
+ * "PENDING" | "APPROVED" | "REJECTED" | "UNAPPROVED".
+ *
+ * FALLBACK = 'PENDING', and it is deliberate in two directions:
+ *  - It can never read as APPROVED, so an absent/unknown status can never make an
+ *    unapproved record look payroll-ready (BR-6: UNAPPROVED is never payroll-ready).
+ *  - weeklyOvertimeMinutes() COUNTS PENDING toward the weekly cap and excludes
+ *    REJECTED/UNAPPROVED, so 'PENDING' also makes the cap bar warn earlier rather
+ *    than later. Falling back to 'UNAPPROVED' would silently shrink the bar.
+ * An unrecognised (new backend) status also lands on 'PENDING' — never payable.
+ */
+const OVERTIME_STATUS_VALUES: readonly OvertimeStatus[] = [
+  'PENDING',
+  'APPROVED',
+  'REJECTED',
+  'UNAPPROVED',
+];
+function toOvertimeStatus(raw: string | null | undefined): OvertimeStatus {
+  return OVERTIME_STATUS_VALUES.includes(raw as OvertimeStatus)
+    ? (raw as OvertimeStatus)
+    : 'PENDING';
+}
+
+/**
+ * Wire `type` is `string | null`; the VM is the narrow {@link OvertimeType} union.
+ * Backend literals: "AUTO_DETECTED" | "PRE_APPROVED" (OvertimeRecord.cs).
+ *
+ * FALLBACK = 'AUTO_DETECTED' — the LESS-claiming of the two. 'PRE_APPROVED' would
+ * assert the employee obtained permission in advance (AC-2/FR-4), which is exactly
+ * the claim BR-6 exists to police; "the system noticed it" claims nothing.
+ */
+const OVERTIME_TYPE_VALUES: readonly OvertimeType[] = ['AUTO_DETECTED', 'PRE_APPROVED'];
+function toOvertimeType(raw: string | null | undefined): OvertimeType {
+  return OVERTIME_TYPE_VALUES.includes(raw as OvertimeType)
+    ? (raw as OvertimeType)
+    : 'AUTO_DETECTED';
+}
+
+/**
+ * The pay multiplier (1.5x / 2x / holiday rate, BR-3/BR-7). The VM types it as a
+ * non-nullable `number`, so an absent wire value needs SOME number — and every
+ * ordinary number is a lie:
+ *   `?? 0` renders "0x"  -> reads as "this overtime is worth nothing".
+ *   `?? 1` renders "1x"  -> silently pays straight time; the most dangerous option
+ *                           because it looks like a legitimate rate.
+ * NaN is the only value in `number` that cannot be misread as a rate, and
+ * formatMultiplier() already has an explicit NaN branch that renders "—" (it
+ * predates this mapper — the author anticipated an unknown multiplier). The FE
+ * never does arithmetic with this value; it is display-only in both overtime
+ * screens, and payroll multiplies server-side. If arithmetic is ever added, NaN
+ * propagates visibly instead of producing a plausible wrong number.
+ * See DECISION-OT-MULTIPLIER in the report: the honest fix is `multiplier: number | null`.
+ */
+function toOvertimeMultiplier(raw: number | null | undefined): number {
+  return raw ?? Number.NaN;
+}
+
+/**
+ * Map an `AttendanceOvertimeDto` (pre-approval submit, my-overtime list) to {@link IOvertime}.
+ */
+export function mapOvertime(w: OvertimeWire): IOvertime {
+  return {
+    // No fallback to any other field: components/my-overtime tracks rows by `ot.id`
+    // and the approvals queue posts it to /overtime/{id}/approve. Empty fails loudly.
+    id: w.id ?? '',
+    employeeId: w.employeeId ?? '',
+    attendanceLogId: w.attendanceLogId ?? null,
+    // DatePipe renders '' as blank rather than throwing; do NOT substitute today.
+    date: w.date ?? '',
+    // 0, never a guess. Also the [max] of the manager's "adjust awarded minutes"
+    // input — 0 blocks an adjustment rather than authorising invented minutes.
+    overtimeMinutes: w.overtimeMinutes ?? 0,
+    // PAY-CRITICAL. `?? null` preserves the wire's tri-state.
+    //  - `?? w.overtimeMinutes` would award unapproved overtime, and my-overtime's
+    //    displayMinutes()/detail row would report a PENDING record as approved.
+    //  - `?? 0` would silently zero a genuinely APPROVED record (underpay) and
+    //    render "0m" where the template's `!= null` branch expects "—".
+    approvedMinutes: w.approvedMinutes ?? null,
+    multiplier: toOvertimeMultiplier(w.multiplier),
+    type: toOvertimeType(w.type),
+    status: toOvertimeStatus(w.status),
+    reason: w.reason ?? '',
+    managerComment: w.managerComment ?? null,
+    createdAt: w.createdAt ?? '',
+  };
+}
+
+/** `GET /overtime/my` returns a bare array; preserve the existing `?? []` empty-list behaviour. */
+export function mapOvertimeList(ws: OvertimeWire[] | null | undefined): IOvertime[] {
+  return (ws ?? []).map(mapOvertime);
+}
+
+/**
+ * Map one manager-queue row. `OvertimeQueueItemWire` is structurally a superset of
+ * `OvertimeWire`, so the shared half is reused rather than duplicated — the id,
+ * minutes and status defaults above apply identically here, which matters most in
+ * this screen (a wrong id approves the wrong person's overtime).
+ */
+export function mapOvertimeQueueItem(w: OvertimeQueueItemWire): IOvertimeQueueItem {
+  return {
+    ...mapOvertime(w),
+    // '' -> initials() renders '?' and the name cell is blank. Do NOT substitute
+    // the employeeId: a GUID in the "Employee" column reads as a real identity.
+    employeeName: w.employeeName ?? '',
+    employeePhoto: w.employeePhoto ?? null,
+    // Distinct from createdAt on the wire (submission vs record creation); keep them apart.
+    submittedOn: w.submittedOn ?? '',
+  };
+}
+
+/**
+ * `GET /overtime/pending` returns `{ items, totalCount }`; the service already
+ * projects to `items` only, so this replaces the existing `res?.items ?? []`.
+ * `totalCount` is intentionally discarded — the queue badge counts the rendered list.
+ */
+export function mapOvertimeQueue(
+  w: OvertimeQueueResultWire | null | undefined,
+): IOvertimeQueueItem[] {
+  return (w?.items ?? []).map(mapOvertimeQueueItem);
+}
+
+/**
+ * Map an approve/reject decision. Backend emits status "APPROVED" | "REJECTED" here,
+ * but the shared narrower's 'PENDING' fallback is the right failure mode: an absent
+ * status must never read as APPROVED. On REJECT `approvedMinutes` is null on the wire
+ * and stays null.
+ */
+export function mapOvertimeDecision(w: OvertimeDecisionWire): IOvertimeDecision {
+  return {
+    id: w.id ?? '',
+    status: toOvertimeStatus(w.status),
+    approvedMinutes: w.approvedMinutes ?? null,
+    multiplier: toOvertimeMultiplier(w.multiplier),
+    managerComment: w.managerComment ?? null,
+    actionedAt: w.actionedAt ?? '',
+  };
+}
+
+/**
+ * One monthly-report row. All four minute columns are `?? 0`: this is an AGGREGATE
+ * of records, so "the backend sent no number" and "no minutes in that bucket" are
+ * both honestly rendered as 0m, and 0 is the under-claiming direction for pay.
+ * NOTE: the wire also carries `unapprovedMinutes` (BR-6/ISSUE-080). IOvertimeReportRow
+ * has no such field and the table renders no such column, so it is NOT mapped here —
+ * see ISSUE-410 (ISSUE-OT-UNAPPROVED).
+ */
+export function mapOvertimeReportRow(w: OvertimeReportRowWire): IOvertimeReportRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    // '' keeps the row visible (and sortable) with a blank name rather than dropping it.
+    employeeName: w.employeeName ?? '',
+    approvedMinutes: w.approvedMinutes ?? 0,
+    pendingMinutes: w.pendingMinutes ?? 0,
+    rejectedMinutes: w.rejectedMinutes ?? 0,
+    recordCount: w.recordCount ?? 0,
+  };
+}
+
+/**
+ * Report totals. The wire's `totals` is OPTIONAL, so an absent object becomes an
+ * all-zero footer: visibly inconsistent with non-zero rows (someone notices) and
+ * incapable of over-stating payable minutes. Summing the rows here instead would
+ * invent a tenant-wide total the backend did not send.
+ */
+function mapOvertimeReportTotals(
+  w: OvertimeReportTotalsWire | null | undefined,
+): IOvertimeReportResult['totals'] {
+  return {
+    approvedMinutes: w?.approvedMinutes ?? 0,
+    pendingMinutes: w?.pendingMinutes ?? 0,
+    rejectedMinutes: w?.rejectedMinutes ?? 0,
+    recordCount: w?.recordCount ?? 0,
+  };
+}
+
+/**
+ * `GET /overtime/report?month=yyyy-MM`. The wire's array key is `items` (NOT `rows`,
+ * unlike the sibling attendance report DTOs) and the VM already agrees — verified, no rename.
+ */
+export function mapOvertimeReportResult(
+  w: OvertimeReportResultWire,
+): IOvertimeReportResult {
+  return {
+    // '' would render "No overtime records were found for ." in the empty state; the
+    // component's own month() signal is the label source everywhere else, so '' is
+    // preferable to echoing a month the server did not confirm.
+    month: w.month ?? '',
+    items: (w.items ?? []).map(mapOvertimeReportRow),
+    totals: mapOvertimeReportTotals(w.totals),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// WIRE TYPES + MAPPERS — concern: late/early policy & reports, lateness score,
+// payroll feed, period locks, reconciliation (US-ATT-008 / US-ATT-009).
+//
+// Owns: AttendanceLatePolicyDto, AttendanceLateEarlyReportResult,
+//       AttendanceLateEarlyRowDto, AttendanceLatenessScoreDto,
+//       AttendanceAttendancePayrollResult, AttendanceAttendancePayrollRowDto,
+//       AttendancePeriodLockDto, AttendanceReconciliationResult,
+//       AttendanceReconciliationRowDto.
+//
+// RENAMES: none. Every field in this slice is name-for-name identical between the
+// view models and the wire DTOs (verified field-by-field against hrm-v1.json).
+// The value of these mappers is therefore ENTIRELY in the defaults and in the
+// period-lock null path — not in renaming.
+//
+// NON-OBVIOUS DEFAULTS (each is also commented at its site):
+//   · IPeriodLock.isLocked        -> `?? true`  (fail CLOSED: never claim "Open")
+//   · ILatePolicy.isActive        -> `?? false` (absent must not switch deductions on)
+//   · ILatePolicy.deductionDays   -> `?? 0`     (0 = no money moved)
+//   · ILatePolicy.period          -> guarded narrow, fallback 'MONTHLY'
+//   · ILateEarlyRow.isChronic     -> `?? false` (absent must not brand an employee)
+//   · overtimeMultiplierDetails   -> passed through unchanged, never coerced
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── US-ATT-008: late policy ────────────────────────────────────────────────
+
+export type LatePolicyWire = Schema<'AttendanceLatePolicyDto'>;
+
+/**
+ * US-ATT-008 (FR-4, BR-4). `AttendanceLatePolicyDto` is ALSO the PUT request body
+ * (`PUT /api/v1/attendance/late-policy` accepts `AttendanceLatePolicyDto`), so the
+ * VM round-trips cleanly and `updateLatePolicy` needs no request mapper.
+ *
+ * Direction of every default here is "the policy does the least": an absent field
+ * must never invent a deduction, because `deductionDays` is money.
+ */
+export function mapLatePolicy(w: LatePolicyWire): ILatePolicy {
+  return {
+    // 0 is deliberately OUT OF RANGE for the policy form's `Validators.min(1)`, so an
+    // absent threshold surfaces as a visible validation error HR must resolve rather
+    // than silently persisting a fabricated number on the next save. Nothing in the FE
+    // computes a deduction from this value — it is display + round-trip only.
+    thresholdCount: w.thresholdCount ?? 0,
+    // Money. 0 = "no day is deducted"; any non-zero fallback would invent a deduction.
+    deductionDays: w.deductionDays ?? 0,
+    // Guarded narrow, never a blind `as`. 'MONTHLY' is both the more permissive window
+    // (the threshold resets more often) and what `latePolicyPeriodLabel` already falls
+    // back to for anything that is not 'QUARTERLY'.
+    period: w.period === 'QUARTERLY' ? 'QUARTERLY' : 'MONTHLY',
+    // Absent must not claim employees are being notified.
+    notificationOnLate: w.notificationOnLate ?? false,
+    // Same reasoning as thresholdCount: 0 fails the form's `min(1)` and is visible.
+    chronicThreshold: w.chronicThreshold ?? 0,
+    // An absent flag must NEVER switch enforcement on — that would assert that late
+    // deductions are live when we do not know that they are.
+    isActive: w.isActive ?? false,
+  };
+}
+
+// ─── US-ATT-008: late / early report ────────────────────────────────────────
+
+export type LateEarlyRowWire = Schema<'AttendanceLateEarlyRowDto'>;
+export type LateEarlyReportResultWire = Schema<'AttendanceLateEarlyReportResult'>;
+
+export function mapLateEarlyRow(w: LateEarlyRowWire): ILateEarlyRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    // '' renders as an empty Employee cell; '—' would fabricate a label. The report is
+    // keyed on employeeId, so an empty name is a visible data gap, not a wrong claim.
+    employeeName: w.employeeName ?? '',
+    // VM allows null and the template already renders `departmentName || '—'`.
+    departmentName: w.departmentName ?? null,
+    lateCount: w.lateCount ?? 0,
+    totalLateMinutes: w.totalLateMinutes ?? 0,
+    earlyDepartureCount: w.earlyDepartureCount ?? 0,
+    totalEarlyMinutes: w.totalEarlyMinutes ?? 0,
+    // FR-7: drives the amber `row-chronic` highlight, the "Chronic" badge and the CSV
+    // "Yes/No" column. An absent flag must NOT brand an employee a chronic offender,
+    // so this is the one boolean in this slice that fails OPEN (false = no accusation).
+    isChronic: w.isChronic ?? false,
+  };
+}
+
+export function mapLateEarlyReportResult(
+  w: LateEarlyReportResultWire,
+): ILateEarlyReportResult {
+  return {
+    from: w.from ?? '',
+    to: w.to ?? '',
+    rows: (w.rows ?? []).map(mapLateEarlyRow),
+  };
+}
+
+// ─── US-ATT-008: lateness score ─────────────────────────────────────────────
+
+export type LatenessScoreWire = Schema<'AttendanceLatenessScoreDto'>;
+
+/**
+ * US-ATT-008 (§8, AC-4). The VM is exactly the four wire fields — the "score",
+ * the used-percentage and the amber/green tone are DERIVED in
+ * `latenessScoreTone()` / `latenessUsedPercent()` and in the component, not
+ * carried on the wire. Nothing is dropped here.
+ */
+export function mapLatenessScore(w: LatenessScoreWire): ILatenessScore {
+  return {
+    yearMonth: w.yearMonth ?? '',
+    lateCount: w.lateCount ?? 0,
+    // NOTE the knock-on: `latenessScoreTone`/`latenessUsedPercent` treat
+    // `allowedLates <= 0` as "no allowance configured" and render amber / a full bar
+    // on the first late. That is the existing, deliberate handling of an unset
+    // allowance, so 0 is the consistent default — there is no null option on a
+    // `number` VM field, and any positive fallback would invent an allowance the
+    // policy never granted.
+    allowedLates: w.allowedLates ?? 0,
+    earlyDepartureCount: w.earlyDepartureCount ?? 0,
+  };
+}
+
+// ─── US-ATT-009: attendance → payroll feed ──────────────────────────────────
+
+export type AttendancePayrollRowWire = Schema<'AttendanceAttendancePayrollRowDto'>;
+export type AttendancePayrollResultWire = Schema<'AttendanceAttendancePayrollResult'>;
+
+/**
+ * US-ATT-009 (FR-1, FR-2). All ten VM fields have a wire source and all ten wire
+ * fields have a VM home — nothing dropped, nothing invented. Every numeric field
+ * defaults to 0: a payroll feed row that is missing a count must read as "no days,
+ * no minutes", never as an assumed workload.
+ */
+export function mapAttendancePayrollRow(
+  w: AttendancePayrollRowWire,
+): IAttendancePayrollRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    period: w.period ?? '',
+    totalWorkingDays: w.totalWorkingDays ?? 0,
+    totalPresentDays: w.totalPresentDays ?? 0,
+    totalAbsentDays: w.totalAbsentDays ?? 0,
+    lopDays: w.lopDays ?? 0,
+    // Money (BR-4). 0 = no late-arrival day converted to LOP.
+    lateDeductionDays: w.lateDeductionDays ?? 0,
+    approvedOvertimeMinutes: w.approvedOvertimeMinutes ?? 0,
+    totalWorkMinutes: w.totalWorkMinutes ?? 0,
+    // Loosely-typed jsonb passthrough (wire `object | null`, VM `unknown`). Kept
+    // verbatim and normalised only absent -> null; the shape is owned by payroll and
+    // no attendance screen renders it, so coercing it here would be inventing structure.
+    overtimeMultiplierDetails: w.overtimeMultiplierDetails ?? null,
+  };
+}
+
+export function mapAttendancePayrollResult(
+  w: AttendancePayrollResultWire,
+): IAttendancePayrollResult {
+  return {
+    period: w.period ?? '',
+    rows: (w.rows ?? []).map(mapAttendancePayrollRow),
+  };
+}
+
+// ─── US-ATT-009: period lock ────────────────────────────────────────────────
+
+export type PeriodLockWire = Schema<'AttendancePeriodLockDto'>;
+
+/**
+ * US-ATT-009 (FR-3, FR-4, AC-4/AC-5). The highest-stakes mapper in the module.
+ *
+ * CALL IT ONLY ON A NON-NULL BODY. `GET /attendance/period-lock` returns `null`
+ * for "this period has never been locked", and that must stay `null` — running it
+ * through this mapper would fabricate a lock row with an empty id and, worse, an
+ * `isLocked: true` default. The service therefore uses
+ * `map((res) => (res ? mapPeriodLock(res) : null))`, NOT `map(mapPeriodLock)`.
+ * `lockPeriod` / `unlockPeriod` always return a body, so they map unconditionally.
+ */
+export function mapPeriodLock(w: PeriodLockWire): IPeriodLock {
+  return {
+    // No id can be invented. '' is honest, but see the FINDING: `confirmUnlock()`
+    // bails silently on a falsy id, so an id-less lock row closes the modal with no
+    // toast rather than erroring.
+    id: w.id ?? '',
+    periodStart: w.periodStart ?? '',
+    periodEnd: w.periodEnd ?? '',
+    // FAIL CLOSED. This flag decides whether the UI announces the period as "Open"
+    // (offering "Lock Attendance", no locked banner, stepper step 1 unticked) or as
+    // "Locked" (banner + "Unlock"). `?? false` on a present-but-malformed lock row
+    // would tell HR the period is still editable and that payroll must not pull yet —
+    // an assertion we cannot make from a missing field. `?? true` at worst offers an
+    // Unlock that the backend rejects with a visible error toast; it never invites an
+    // edit on a frozen period. The genuinely-unlocked case is a `null` BODY (handled
+    // above by the service, not by this default), so this fail-closed choice does not
+    // hide the legitimate "Lock Attendance" button on a never-locked period.
+    isLocked: w.isLocked ?? true,
+    lockedBy: w.lockedBy ?? null,
+    lockedAt: w.lockedAt ?? null,
+    unlockedBy: w.unlockedBy ?? null,
+    unlockedAt: w.unlockedAt ?? null,
+  };
+}
+
+// ─── US-ATT-009: reconciliation ─────────────────────────────────────────────
+
+export type ReconciliationRowWire = Schema<'AttendanceReconciliationRowDto'>;
+export type ReconciliationResultWire = Schema<'AttendanceReconciliationResult'>;
+
+export function mapReconciliationRow(w: ReconciliationRowWire): IReconciliationRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    presentDays: w.presentDays ?? 0,
+    lopDays: w.lopDays ?? 0,
+    approvedOvertimeMinutes: w.approvedOvertimeMinutes ?? 0,
+    totalWorkMinutes: w.totalWorkMinutes ?? 0,
+  };
+}
+
+export function mapReconciliationResult(
+  w: ReconciliationResultWire,
+): IReconciliationResult {
+  return {
+    period: w.period ?? '',
+    rows: (w.rows ?? []).map(mapReconciliationRow),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// US-ATT-010 wire types + mappers — HR DASHBOARD / LIVE BOARD / DEPT COMPARISON
+//                                   / CUSTOM REPORT / TRENDS / SCHEDULED REPORTS
+// ---------------------------------------------------------------------------
+// Owns: AttendanceDashboardKpiDto, AttendanceLiveBoardResult(+RowDto),
+//       AttendanceDeptComparisonResult(+RowDto), AttendanceCustomReportResult(+RowDto),
+//       AttendanceTrendsResult(+AttendanceTrendPointDto), AttendanceScheduledReportConfigDto.
+//
+// FIELD NAMES: verified 1:1 against contracts/openapi/hrm-v1.json and the C# source
+// (HRM.Application/Features/Attendance/DTOs/DashboardDtos.cs). There are NO renames in
+// this concern — every VM field has an identically-named wire field. Every VM field
+// also HAS a wire source (nothing is invented, nothing is dropped).
+//
+// WIRE-ONLY fields deliberately NOT surfaced (no screen renders them — see
+// attendance-reports.component.ts custom-report table, which has 6 columns:
+// Employee / Present / Absent / Late / Overtime / Worked):
+//   AttendanceCustomReportRowDto.employeeNumber, .departmentName
+// Widening ICustomReportRow to hold them would violate hard-rule #3.
+//
+// NON-OBVIOUS DEFAULTS (each is a decision; the failure direction is stated):
+//  * Numeric KPI/report counters -> `?? 0`. The C# records declare these as
+//    non-nullable int/decimal, so they are ALWAYS serialised; `?? 0` is defence
+//    against a degraded payload, not a routine path. FAILURE DIRECTION: a KPI card
+//    would render a confident "0" (see ISSUE-410 (F-06)) — there is no other option
+//    without widening IDashboardKpi to `number | null`, which every KPI template
+//    binding and the donut arithmetic would then have to handle.
+//  * `rows` / series arrays -> `?? []`. Empty renders the component's own empty
+//    state ("No data yet." / "Set a date range and click Generate.") which is the
+//    honest read of "the server sent nothing".
+//  * String scalars the UI does not render (`date`, `month`, `from`, `to`) -> `?? ''`.
+//  * `ILiveBoardRow.status` -> PASSED THROUGH, never coerced. See below.
+//  * `IScheduledReportConfig.frequency` / `.format` -> PASSED THROUGH, never coerced.
+//  * `IScheduledReportConfig.isActive` -> `?? false` (an absent flag must NOT switch a
+//    schedule on). Fails CLOSED: shows "Paused".
+//
+// ENUM-ISH UNIONS — the deliberate choice to pass through rather than fabricate.
+// `LiveBoardStatus`, `ScheduledReportFrequency` and `ScheduledReportFormat` are narrow
+// FE unions with no "unknown" member, while the wire types them `string | null`. Every
+// consumer of these three already degrades safely on an unrecognised value:
+//   attendance-dashboard.component.ts:429  statusLabel  = STATUS_META[s]?.label ?? s
+//   attendance-dashboard.component.ts:433  statusPill   = STATUS_META[s]?.pill  ?? grey
+//   attendance-dashboard.component.ts:438  clockInTime  = '—' unless status === 'CLOCKED_IN'
+//   attendance-reports.component.ts:385    {{ s.frequency }} / {{ s.format }} rendered raw
+// So an absent/unknown value renders BLANK-or-RAW with a NEUTRAL GREY pill — it reads as
+// "unknown", and never as "present"/"active". Coercing instead (e.g. status -> 'NOT_CLOCKED_IN',
+// frequency -> 'DAILY') would put a confident, actionable-but-false claim on screen. This is
+// the same call made for `PayslipListItemDto.pdfStatus` in features/payroll/models/payslip.models.ts
+// ("visibly wrong beats confidently wrong"). Raised as ISSUE-410 (F-07) (add explicit 'UNKNOWN'
+// members) because a cast is still a cast.
+//
+// VOCABULARY VERIFIED AGAINST THE BACKEND (reading only — nothing edited):
+//   LiveBoardStatus: HRM.Infrastructure/Services/AttendanceDashboardService.cs:615-628 emits
+//     exactly "CLOCKED_IN" | "ON_LEAVE" | "HOLIDAY" | "NOT_CLOCKED_IN" — matches the FE union
+//     value-for-value, no FE-only members, no missing members.
+//   frequency / format: AttendanceDashboardService.cs:745-754 (ValidateScheduledDto) upper-cases
+//     and REJECTS anything outside DAILY|WEEKLY|MONTHLY and CSV|XLSX|PDF, so a persisted row can
+//     only ever carry a value in the FE union. An out-of-union value means a wire/serialisation
+//     fault, not a legitimate state.
+//   reportType: AttendanceDashboardService.cs:749 only checks IsNullOrWhiteSpace and Trim()s —
+//     ANY non-blank string is accepted and echoed back verbatim. IScheduledReportConfig.reportType
+//     is therefore correctly a bare `string`, not a union. (See ISSUE-410 (F-04) for the doc drift.)
+//
+// DEPENDENCIES ON OTHER CONCERNS: none. No shared child mapper is used or redeclared.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type DashboardKpiWire = Schema<'AttendanceDashboardKpiDto'>;
+export type LiveBoardRowWire = Schema<'AttendanceLiveBoardRowDto'>;
+export type LiveBoardResultWire = Schema<'AttendanceLiveBoardResult'>;
+export type DeptComparisonRowWire = Schema<'AttendanceDeptComparisonRowDto'>;
+export type DeptComparisonResultWire = Schema<'AttendanceDeptComparisonResult'>;
+export type CustomReportRowWire = Schema<'AttendanceCustomReportRowDto'>;
+export type CustomReportResultWire = Schema<'AttendanceCustomReportResult'>;
+export type TrendPointWire = Schema<'AttendanceTrendPointDto'>;
+export type TrendsResultWire = Schema<'AttendanceTrendsResult'>;
+export type ScheduledReportConfigWire = Schema<'AttendanceScheduledReportConfigDto'>;
+
+/**
+ * US-ATT-010 (AC-1, FR-1) — `GET /attendance/dashboard`.
+ * All seven VM fields map 1:1 onto identically-named wire fields; nothing renamed,
+ * nothing dropped, nothing invented. `date` is not rendered by the dashboard (the
+ * KPI card list at attendance-dashboard.component.ts:43-47 covers the five counters,
+ * and `attendancePercent` is rendered separately at :141/:165), so `?? ''` is inert.
+ */
+export function mapDashboardKpi(w: DashboardKpiWire): IDashboardKpi {
+  return {
+    // Not rendered anywhere; the component tracks its own `date()` signal.
+    date: w.date ?? '',
+    // The five counters below drive the KPI cards AND the donut arithmetic
+    // (buildDonutSegments). Non-nullable ints in C#, so `?? 0` is degraded-payload
+    // defence only; it renders an indistinguishable "0" if it ever fires (ISSUE-410, F-06).
+    expectedHeadcount: w.expectedHeadcount ?? 0,
+    clockedIn: w.clockedIn ?? 0,
+    pendingClockIn: w.pendingClockIn ?? 0,
+    onLeave: w.onLeave ?? 0,
+    absent: w.absent ?? 0,
+    // Rendered as "{{ attendancePercent | number:'1.0-1' }}%" and in the donut hub.
+    // Server-computed (clockedIn / expectedHeadcount * 100); the FE never recomputes it.
+    attendancePercent: w.attendancePercent ?? 0,
+  };
+}
+
+/**
+ * US-ATT-010 (AC-2, FR-2) — one row of the live attendance board.
+ * `status` drives the coloured presence chip and is PASSED THROUGH unchanged: an
+ * absent value becomes `''`, which misses the STATUS_META lookup and renders an
+ * empty label on the neutral-grey pill, and `clockInTime()` returns '—' because the
+ * status is not 'CLOCKED_IN'. Coercing to 'NOT_CLOCKED_IN' would print a confident
+ * "Not Clocked In" that HR could act on; coercing to anything green is unthinkable.
+ */
+export function mapLiveBoardRow(w: LiveBoardRowWire): ILiveBoardRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    // Optional on the VM AND nullable on the wire: keep `undefined`, do not invent ''.
+    employeeNumber: w.employeeNumber ?? undefined,
+    departmentName: w.departmentName ?? undefined,
+    // Guarded cast, documented fallback: unknown/absent => '' => grey chip, blank label.
+    status: (w.status ?? '') as LiveBoardStatus,
+    // Only read when status === 'CLOCKED_IN'; `undefined` renders '—'.
+    clockInAt: w.clockInAt ?? undefined,
+  };
+}
+
+/** US-ATT-010 (AC-2, FR-2) — `GET /attendance/dashboard/live-board`. */
+export function mapLiveBoardResult(w: LiveBoardResultWire): ILiveBoardResult {
+  return {
+    // Not rendered; the board header uses the component's own `date()` signal.
+    date: w.date ?? '',
+    // `[]` renders the board's empty state — the honest read of "no rows sent".
+    rows: (w.rows ?? []).map(mapLiveBoardRow),
+  };
+}
+
+/** US-ATT-010 (AC-3, FR-3) — one department row of the comparison report. */
+export function mapDeptComparisonRow(w: DeptComparisonRowWire): IDeptComparisonRow {
+  return {
+    departmentId: w.departmentId ?? '',
+    departmentName: w.departmentName ?? '',
+    // Feeds attendanceRateColor() (>90 green / 80-90 amber / <80 red) and a clamped
+    // bar width. A missing rate therefore paints RED, not green — the safe direction:
+    // it under-claims department performance rather than certifying it.
+    attendanceRatePct: w.attendanceRatePct ?? 0,
+    employeeCount: w.employeeCount ?? 0,
+  };
+}
+
+/** US-ATT-010 (AC-3, FR-3) — `GET /attendance/reports/department-comparison`. */
+export function mapDeptComparisonResult(
+  w: DeptComparisonResultWire,
+): IDeptComparisonResult {
+  return {
+    // Not rendered; the component owns the `deptMonth()` signal it queried with.
+    month: w.month ?? '',
+    rows: (w.rows ?? []).map(mapDeptComparisonRow),
+  };
+}
+
+/**
+ * US-ATT-010 (AC-4, FR-4) — one employee row of the custom date-range report.
+ * The wire also carries `employeeNumber` and `departmentName`; the report table
+ * renders neither, so they are intentionally not surfaced (hard-rule #3).
+ */
+export function mapCustomReportRow(w: CustomReportRowWire): ICustomReportRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    // Day counts and minute totals; `?? 0` renders "0"/"0m". These are display-only
+    // (this report feeds no pay calculation — see mapAttendancePayrollRow for that).
+    presentDays: w.presentDays ?? 0,
+    absentDays: w.absentDays ?? 0,
+    lateCount: w.lateCount ?? 0,
+    overtimeMinutes: w.overtimeMinutes ?? 0,
+    workMinutes: w.workMinutes ?? 0,
+  };
+}
+
+/** US-ATT-010 (AC-4, FR-4) — `GET /attendance/reports/custom`. */
+export function mapCustomReportResult(
+  w: CustomReportResultWire,
+): ICustomReportResult {
+  return {
+    // Not rendered; the export filename is built from the component's own filters().
+    from: w.from ?? '',
+    to: w.to ?? '',
+    rows: (w.rows ?? []).map(mapCustomReportRow),
+  };
+}
+
+/**
+ * US-ATT-010 (AC-5, FR-6) — one point of a trend series.
+ * Wire field names are `period` / `value` — identical to ITrendPoint. `period` is the
+ * x-axis category label and `value` the y-value; a renamed field here would silently
+ * flat-line the SVG at y = chartH.
+ */
+export function mapTrendPoint(w: TrendPointWire): ITrendPoint {
+  return {
+    period: w.period ?? '',
+    value: w.value ?? 0,
+  };
+}
+
+/**
+ * US-ATT-010 (AC-5, FR-6) — `GET /attendance/reports/trends`.
+ * The four series keys (`attendanceRate` / `lateArrivals` / `overtimeHours` /
+ * `absenteeismRate`) match TREND_SERIES in attendance-reports.component.ts:48-53
+ * exactly. `?? []` per series: an empty series yields `points: ''` and no dots, i.e.
+ * an empty chart card — which is what the data actually says.
+ */
+export function mapTrendsResult(w: TrendsResultWire): ITrendsResult {
+  return {
+    attendanceRate: (w.attendanceRate ?? []).map(mapTrendPoint),
+    lateArrivals: (w.lateArrivals ?? []).map(mapTrendPoint),
+    overtimeHours: (w.overtimeHours ?? []).map(mapTrendPoint),
+    absenteeismRate: (w.absenteeismRate ?? []).map(mapTrendPoint),
+  };
+}
+
+/**
+ * US-ATT-010 (FR-8) — a scheduled-report configuration (response direction).
+ *
+ * `isActive` is the gate the Hangfire job filters on (HRM.Api/Jobs/ScheduledReportJob.cs:81
+ * `.Where(c => c.IsActive)`), so an ABSENT flag must never read as "on": `?? false` shows
+ * "Paused". Fails closed — the worst case is HR re-enabling a schedule that was already on,
+ * never a schedule that silently keeps mailing while the UI says it is paused.
+ *
+ * `frequency` / `format` are passed through with a guarded cast rather than coerced to a
+ * union member: both are rendered raw ("{{ s.frequency }} · {{ s.deliveryTime }} · {{ s.format }}"),
+ * so an unknown value shows itself instead of fabricating a delivery cadence. Defaulting
+ * frequency to 'DAILY' would tell HR a report arrives every morning when the backend's
+ * IsDue() switch returns `false` for any unrecognised frequency and it never sends at all.
+ */
+export function mapScheduledReportConfig(
+  w: ScheduledReportConfigWire,
+): IScheduledReportConfig {
+  return {
+    // Wire `id` is nullable (absent on create). `undefined` keeps the VM's optional
+    // shape and keeps deleteSchedule()'s `if (!config.id) return;` guard honest.
+    id: w.id ?? undefined,
+    // Free-form on both sides; the backend accepts any non-blank string (no union).
+    reportType: w.reportType ?? '',
+    // Guarded casts, pass-through fallback — see the banner note above.
+    frequency: (w.frequency ?? '') as ScheduledReportFrequency,
+    format: (w.format ?? '') as ScheduledReportFormat,
+    // Wire is `{ [key: string]: unknown } | null` (C# Dictionary<string, object?>),
+    // which is assignable to the VM's `Record<string, unknown>` arm. `{}` == "no
+    // saved filters", matching the backend's own `FiltersJson = "{}"` default.
+    filters: w.filters ?? {},
+    // `[]` renders "0 recipient(s)" and the create form refuses to submit on empty —
+    // the least-claiming default. NOTE: these are backend GUIDs, not emails (BUG-319).
+    recipients: w.recipients ?? [],
+    // Rendered raw between two "·" separators. `''` shows a visible gap rather than
+    // asserting a delivery time the schedule does not have.
+    deliveryTime: w.deliveryTime ?? '',
+    // Absent flag must NOT switch a schedule on.
+    isActive: w.isActive ?? false,
+  };
+}
+
+/**
+ * US-ATT-010 (FR-8) — request direction for POST/PUT `…/reports/scheduled`.
+ *
+ * The VM is currently posted straight through as the request body. Every VM key is
+ * name-identical to `AttendanceScheduledReportConfigDto`, so no key is silently wrong —
+ * this function exists so the COMPILER proves that, and keeps proving it after the next
+ * `npm run api:types` regeneration. It is a shape adapter only: it deliberately does not
+ * transform `recipients`, because the email-vs-GUID defect (BUG-319) is a UI/backend
+ * decision, not something a mapper may paper over.
+ */
+export function toScheduledReportConfigWire(
+  vm: IScheduledReportConfig,
+): ScheduledReportConfigWire {
+  return {
+    // Omitted-as-null on create; the backend binds `Guid? Id`.
+    id: vm.id ?? null,
+    reportType: vm.reportType,
+    frequency: vm.frequency,
+    format: vm.format,
+    filters: vm.filters as Record<string, unknown>,
+    recipients: vm.recipients,
+    deliveryTime: vm.deliveryTime,
+    isActive: vm.isActive,
+  };
 }

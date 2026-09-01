@@ -61,7 +61,6 @@ public sealed class FrontendWireContractDriftGuardTests
     private static readonly IReadOnlyDictionary<string, int> KnownUnmigrated = new Dictionary<string, int>(StringComparer.Ordinal)
     {
         ["core/auth/auth.service.ts"] = 23,
-        ["features/attendance/services/attendance.service.ts"] = 41,
         ["features/benefits/services/benefit.service.ts"] = 12,
         ["features/core-hr/custom-fields/services/custom-field.service.ts"] = 6,
         ["features/core-hr/employees/services/bulk-import.service.ts"] = 1,

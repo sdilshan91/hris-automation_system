@@ -37,3 +37,5 @@
 - [Sentry ESM inject seam](sentry-esm-inject-seam.md) — @sentry/angular exports are frozen ESM; spyOn(Sentry,'init') throws; expose an injectable SentryApi seam (default realSentry) to unit-test init/setTag wiring
 - [Payroll defaulting rule](feedback-payroll-defaulting.md) — on money paths a mapper default must be the least-claiming value; never assert money moved, consent given, or work finished
 - [Payroll statutory contract traps](project-payroll-statutory-contract-traps.md) — the list DTO carries no taxSlabs/socialSecurity; hydrating the editor from it opens empty and saving destroys the bands
+- [Wire migration: envelope + defaults](wire-migration-envelope-and-defaults.md) — alias the INNER dto (envelope auto-unwraps); spec flush bodies are WIRE bodies; pick the default that cannot over-claim
+- [Wire migration: parallel split](wire-migration-parallel-split.md) — fan out research per domain concern to scratch fragments; apply the shared-file edits serially with assert-count-1 replacements
