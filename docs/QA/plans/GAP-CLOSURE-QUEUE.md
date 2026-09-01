@@ -145,7 +145,8 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | **1** | [[TEST-FINDINGS#BUG-317]] · [[TEST-FINDINGS#BUG-316]] **CRITICAL** | BUG-317 destroys a tenant's income-tax bands on an ordinary open-and-save. Data loss beats everything below. |
 | **2** | [[TEST-FINDINGS#BUG-322]] | silent, pay-affecting data loss on a routine edit, and invisible — no screen renders the wiped fields. Ranks above other HIGHs because nothing surfaces it. |
 | **3** | [[TEST-FINDINGS#BUG-321]] | an approver is actively misinformed that a decision is final. Ungated, and the fix is local to one subscribe. |
-| **4** | **D1 remaining slices** (auth 23 → benefits 12 → training 10 → onboarding 13 → …) | preventive; each slice fixes its own findings. `core/auth` first by size — but scoping it showed hydration already fails closed (`?? []`), so it is **not** the authorization emergency this row first claimed. Corrected rather than left standing. |
+| **4** | **D1 remaining slices** (benefits 12 → onboarding 13 → notifications 13 → training 10 → …) | preventive, but *not* merely preventive: auth ✅ done (23 → 0) and it found **two HIGH live bugs** ([[TEST-FINDINGS#BUG-412]] empty tenant-user list, [[TEST-FINDINGS#BUG-413]] PascalCase enum never matched) in the one module the queue had twice called "verified correct." Two consecutive scoping notes underrated this slice; stop pre-rating them from field-name greps. |
+| **4a** | **enum-case sweep** ([[TEST-FINDINGS#BUG-413]] fold) | **NOT SURVEYED.** Any FE union compared against a C# enum crosses the same PascalCase boundary that made `status === 'active'` dead code. Scope it *before* the remaining slices, or each rediscovers it one module at a time. |
 | **5** | [[TEST-FINDINGS#ISSUE-409]] | not a product defect, but it silently defeats the agent-memory store for every narrowed-cwd agent — it compounds across all remaining loop work. |
 | **6** | [[TEST-FINDINGS#ISSUE-410]] triage of the 5 remaining in-code findings | cheap; prevents a second evaporation of the same kind |
 | **7** | [[TEST-FINDINGS#ISSUE-411]] 269 dead finding wikilinks | MED, zero functional risk, but it silently defeats ledger↔work traceability in the graph. `/campaign`-shaped mechanical sweep — do not hand-edit. |
@@ -552,7 +553,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
   undetected. Paired mapper-level arms fixed it. Three further arms exist only because `@test-authenticator`
   found absence assertions with no positive twin — `mapRotation`/`mapRotationStep` could have been **deleted
   outright** with all 94 tests still green. *An absence arm without its positive twin is not a test.*
-  **Remaining, worst-first** (each its own slice + PR): **auth 23** · benefits **12** · training **10** ·
+  **Remaining, worst-first** (each its own slice + PR): benefits **12** · training **10** ·
   onboarding **13** · core-hr **6** · recruitment **7** · notifications **13** · leave **4** · reports **4** ·
   employees **6** · payroll **4** (blocked on BUG-315/316 + ISSUE-404) · misc **4**.
   **Auth scoped (read-only, before starting):** field names match the contract exactly — *no* rename drift.
@@ -562,6 +563,39 @@ instances**, so probes 3–5 could not be observed end-to-end.
   inferred from the site count, not from reading the file. The slice is still worth doing (it makes the type
   honest and 14 hand-written `??` defenses stop being load-bearing), but it is **not** the emergency the
   ranking implied. Also: the wire carries `tenantMemberships`, which the FE interface does not declare.
+  **Slice 4 — auth ✅ DONE: 23 → 0.** Repo-wide 126 → **103**. (The queue carried 167; the attendance slice
+  shrank the dict to 126 but left BOTH count comments in the guard saying 167. Corrected here — the same
+  carried-forward-figure trap slice 3 called out, this time in the guard's own documentation.)
+  **⚠ THE SCOPING NOTE ABOVE WAS WRONG, and wrong in the optimistic direction.** It said "field names match
+  the contract exactly — *no* rename drift" and the original note called auth "verified correct, so the risk
+  there is future drift only." The slice found **two HIGH bugs, both live today**:
+  **BUG-412** — the tenant user list was **always empty**. `GET /tenant/users` returns
+  `ApiResponse<PagedResult<…>>` and the FE asserted `ITenantUser[]`, so a PagedResult object was treated as an
+  array. It breaks the admin **user-lockout console** and the **SSO break-glass admin picker** — the control
+  that stops an `sso_only` tenant locking itself out. **BUG-413** — the backend serializes `TenantStatus` as
+  **PascalCase** (`"Active"`, `"PastDue"`) while the FE union is lowercase snake_case, so
+  `tenant.status === 'active'` has **never** matched a real response, and `past_due` was unreachable.
+  Plus **BUG-414** (`roles` is `TenantUserRoleDto[]` on the wire, `string[]` in the FE) and **ISSUE-416** (a
+  read-modify-write that could silently set `mfaPolicy` to `off` and wipe `MfaRequiredRoles` while saving an
+  unrelated form). **ISSUE-415** is left OPEN and needs backend work: `TenantUserListItemDto` carries no
+  lockout state at all, so the lockout console can never *find* a locked user — the Unlock action works, the
+  discovery path does not.
+  **Why "verified correct" held for so long:** both consumers of `getTenantUsers` mock it at the service
+  boundary and return a hand-built array. The specs asserted the shape the FE wished for, so the suite was
+  green against a contract the server never spoke. **A mock at the service boundary cannot verify the wire** —
+  that is precisely the surface these slices exist to check.
+  **Defaults are authorization decisions on this surface**, and every one fails closed: absent
+  roles/permissions → `[]` (deny), absent token → `''` (no Authorization header → 401, unauthenticated not
+  unauthorized), absent `mfaVerify.success` → `false` (never mark an account MFA-protected the server did not
+  confirm), unknown tenant status → `'suspended'` never `'active'`, unreadable `mfaPolicy` → `'required'`
+  never `'off'`. `refreshToken` is deliberately **never** mapped into a JS-reachable view model.
+  **`ITenantInfo.status` had to become OPTIONAL, not defaulted.** `TenantService.setTenantFromAuth` resolves
+  `status: tenant.status ?? previous ?? 'active'`, so inventing `'active'` in the mapper would **overwrite a
+  `suspended` status already resolved from `/tenant/context`** and silently un-suspend the tenant for
+  `tenantGuard`. Absent must stay absent.
+  **⚠ FOLD — BUG-413 is very likely NOT auth-only.** Any FE string union compared against a C# enum crosses
+  the same PascalCase boundary, and nothing checks it. **Not surveyed.** Worth a scoped sweep before the
+  remaining slices, since each will otherwise rediscover it one module at a time.
   - *(original scoping note below)*
 - [ ] ~~D1 original~~ — **the 450 wire-adjacent interfaces + a drift guard.**
   Original text: module by module, worst-first. **669 hand-written interfaces vs 11 `Schema<>` uses** —

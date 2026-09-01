@@ -9,7 +9,6 @@ import { TenantService } from '../tenant/tenant.service';
 import {
   ILoginRequest,
   ILoginResponse,
-  IRefreshResponse,
   ICurrentUserResponse,
   IForgotPasswordRequest,
   IResetPasswordRequest,
@@ -27,6 +26,34 @@ import {
   IMfaVerifyResponse,
   ITenantAuthSettings,
   ITenantUser,
+  // ── D1 slice 4: the generated wire contract + the explicit mappers to the view models.
+  //    Every request below used to name a hand-written `I…` type — an unchecked CAST, not a
+  //    check, so the compiler accepted whatever the server sent. These `…Wire` aliases are
+  //    derived from the API's own OpenAPI document, so a DTO rename is now a compile error here
+  //    instead of an `undefined` on screen. This is the AUTHORIZATION surface: every default in
+  //    the mappers below fails closed. See the mapper block at the foot of auth.models.ts.
+  LoginResponseWire,
+  RefreshResponseWire,
+  CurrentUserWire,
+  UserTenantWire,
+  SwitchTenantResponseWire,
+  SessionWire,
+  MfaEnrollResponseWire,
+  MfaVerifyResponseWire,
+  TenantAuthSettingsWire,
+  TenantUserPageWire,
+  MessageResponseWire,
+  mapLoginResponse,
+  mapRefreshResponse,
+  mapCurrentUser,
+  mapUserTenant,
+  mapSwitchTenantResponse,
+  mapSession,
+  mapMfaEnrollResponse,
+  mapMfaVerifyResponse,
+  mapTenantAuthSettings,
+  mapTenantUserPage,
+  mapMessageResponse,
 } from './auth.models';
 
 @Injectable({ providedIn: 'root' })
@@ -105,10 +132,11 @@ export class AuthService {
   login(request: ILoginRequest): Observable<ILoginResponse> {
     this.isLoading.set(true);
     return this.http
-      .post<ILoginResponse>(`${this.apiUrl}/auth/login`, request, {
+      .post<LoginResponseWire>(`${this.apiUrl}/auth/login`, request, {
         withCredentials: true, // include httpOnly cookies
       })
       .pipe(
+        map(mapLoginResponse),
         tap((response) => this.handleLoginResponse(response)),
         catchError((error) => {
           this.isLoading.set(false);
@@ -122,7 +150,8 @@ export class AuthService {
 
   logout(): void {
     this.http
-      .post<IMessageResponse>(`${this.apiUrl}/auth/logout`, null, {
+      // No mapper: nothing reads the body — the local session is cleared either way (AC-5).
+      .post<MessageResponseWire>(`${this.apiUrl}/auth/logout`, null, {
         withCredentials: true,
       })
       .pipe(
@@ -153,10 +182,11 @@ export class AuthService {
     this.refreshSubject$.next(null);
 
     return this.http
-      .post<IRefreshResponse>(`${this.apiUrl}/auth/refresh`, null, {
+      .post<RefreshResponseWire>(`${this.apiUrl}/auth/refresh`, null, {
         withCredentials: true,
       })
       .pipe(
+        map(mapRefreshResponse),
         tap((response) => {
           this.setAccessToken(response.accessToken);
           this.refreshSubject$.next(response.accessToken);
@@ -185,9 +215,11 @@ export class AuthService {
   completeSsoLogin(): Observable<void> {
     return this.refreshToken().pipe(
       switchMap(() =>
-        this.http.get<ICurrentUserResponse>(`${this.apiUrl}/auth/me`, {
-          withCredentials: true,
-        })
+        this.http
+          .get<CurrentUserWire>(`${this.apiUrl}/auth/me`, {
+            withCredentials: true,
+          })
+          .pipe(map(mapCurrentUser))
       ),
       tap((me) => this.hydrateFromMe(me)),
       map(() => undefined)
@@ -214,15 +246,18 @@ export class AuthService {
   restoreSession(): Promise<void> {
     return firstValueFrom(
       this.http
-        .post<IRefreshResponse>(`${this.apiUrl}/auth/refresh`, null, {
+        .post<RefreshResponseWire>(`${this.apiUrl}/auth/refresh`, null, {
           withCredentials: true,
         })
         .pipe(
+          map(mapRefreshResponse),
           tap((response) => this.setAccessToken(response.accessToken)),
           switchMap(() =>
-            this.http.get<ICurrentUserResponse>(`${this.apiUrl}/auth/me`, {
-              withCredentials: true,
-            })
+            this.http
+              .get<CurrentUserWire>(`${this.apiUrl}/auth/me`, {
+                withCredentials: true,
+              })
+              .pipe(map(mapCurrentUser))
           ),
           tap((me) => this.hydrateFromMe(me)),
           map(() => undefined),
@@ -253,19 +288,17 @@ export class AuthService {
   // ─── Forgot Password ────────────────────────────────────
 
   forgotPassword(request: IForgotPasswordRequest): Observable<IMessageResponse> {
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/auth/forgot-password`,
-      request
-    );
+    return this.http
+      .post<MessageResponseWire>(`${this.apiUrl}/auth/forgot-password`, request)
+      .pipe(map(mapMessageResponse));
   }
 
   // ─── Reset Password ─────────────────────────────────────
 
   resetPassword(request: IResetPasswordRequest): Observable<IMessageResponse> {
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/auth/reset-password`,
-      request
-    );
+    return this.http
+      .post<MessageResponseWire>(`${this.apiUrl}/auth/reset-password`, request)
+      .pipe(map(mapMessageResponse));
   }
 
   // ─── Accept Invitation (BUG-294) ────────────────────────
@@ -278,10 +311,9 @@ export class AuthService {
   acceptInvitation(
     request: IAcceptInvitationRequest
   ): Observable<IMessageResponse> {
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/auth/accept-invitation`,
-      request
-    );
+    return this.http
+      .post<MessageResponseWire>(`${this.apiUrl}/auth/accept-invitation`, request)
+      .pipe(map(mapMessageResponse));
   }
 
   // ─── Change Password (DF-27(c), US-AUTH-004) ─────────────
@@ -292,29 +324,32 @@ export class AuthService {
    * tenant password policy + history rules (same path as the reset flow).
    */
   changePassword(request: IChangePasswordRequest): Observable<IMessageResponse> {
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/auth/change-password`,
-      request,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<MessageResponseWire>(`${this.apiUrl}/auth/change-password`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapMessageResponse));
   }
 
   // ─── My Tenants (for tenant switcher) ────────────────────
 
   getMyTenants(): Observable<IUserTenant[]> {
-    return this.http.get<IUserTenant[]>(`${this.apiUrl}/auth/my-tenants`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<UserTenantWire[] | null>(`${this.apiUrl}/auth/my-tenants`, {
+        withCredentials: true,
+      })
+      .pipe(map((list) => (list ?? []).map(mapUserTenant)));
   }
 
   // ─── Switch Tenant ───────────────────────────────────────
 
   switchTenant(request: ISwitchTenantRequest): Observable<ISwitchTenantResponse> {
     return this.http
-      .post<ISwitchTenantResponse>(`${this.apiUrl}/auth/switch-tenant`, request, {
+      .post<SwitchTenantResponseWire>(`${this.apiUrl}/auth/switch-tenant`, request, {
         withCredentials: true,
       })
       .pipe(
+        map(mapSwitchTenantResponse),
         tap((response) => {
           this.handleTenantSwitchResponse(response);
           this.redirectTo(response.redirectUrl);
@@ -325,65 +360,74 @@ export class AuthService {
   // ─── Sessions ────────────────────────────────────────────
 
   getMySessions(): Observable<ISession[]> {
-    return this.http.get<ISession[]>(`${this.apiUrl}/auth/me/sessions`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<SessionWire[] | null>(`${this.apiUrl}/auth/me/sessions`, {
+        withCredentials: true,
+      })
+      .pipe(map((list) => (list ?? []).map(mapSession)));
   }
 
   revokeSession(sessionId: string): Observable<IMessageResponse> {
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/auth/me/sessions/${sessionId}/revoke`,
-      null,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<MessageResponseWire>(
+        `${this.apiUrl}/auth/me/sessions/${sessionId}/revoke`,
+        null,
+        { withCredentials: true }
+      )
+      .pipe(map(mapMessageResponse));
   }
 
   // ─── Admin Session Management (US-AUTH-009) ─────────────
 
   getUserSessions(userId: string): Observable<ISession[]> {
-    return this.http.get<ISession[]>(
-      `${this.apiUrl}/tenant/users/by-user/${userId}/sessions`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<SessionWire[] | null>(
+        `${this.apiUrl}/tenant/users/by-user/${userId}/sessions`,
+        { withCredentials: true }
+      )
+      .pipe(map((list) => (list ?? []).map(mapSession)));
   }
 
   revokeUserSession(userId: string, sessionId?: string): Observable<IMessageResponse> {
     const body = sessionId ? { sessionId } : {};
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/tenant/users/by-user/${userId}/sessions/revoke`,
-      body,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<MessageResponseWire>(
+        `${this.apiUrl}/tenant/users/by-user/${userId}/sessions/revoke`,
+        body,
+        { withCredentials: true }
+      )
+      .pipe(map(mapMessageResponse));
   }
 
   // ─── Session Keep-Alive (US-AUTH-009 BR-6) ──────────────
 
   keepAlive(): Observable<IMessageResponse> {
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/auth/me/keep-alive`,
-      null,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<MessageResponseWire>(`${this.apiUrl}/auth/me/keep-alive`, null, {
+        withCredentials: true,
+      })
+      .pipe(map(mapMessageResponse));
   }
 
   // ─── MFA Enrollment (US-AUTH-005) ───────────────────────
 
   enrollMfa(): Observable<IMfaEnrollResponse> {
-    return this.http.post<IMfaEnrollResponse>(
-      `${this.apiUrl}/auth/mfa/enroll`,
-      null,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<MfaEnrollResponseWire>(`${this.apiUrl}/auth/mfa/enroll`, null, {
+        withCredentials: true,
+      })
+      .pipe(map(mapMfaEnrollResponse));
   }
 
   verifyMfaEnrollment(code: string): Observable<IMfaVerifyResponse> {
     return this.http
-      .post<IMfaVerifyResponse>(
+      .post<MfaVerifyResponseWire>(
         `${this.apiUrl}/auth/mfa/verify`,
         { code },
         { withCredentials: true }
       )
       .pipe(
+        map(mapMfaVerifyResponse),
         tap((response) => {
           if (response.success) {
             // Update local user state to reflect MFA is now enabled
@@ -399,12 +443,13 @@ export class AuthService {
 
   verifyMfaLogin(email: string, code: string): Observable<ILoginResponse> {
     return this.http
-      .post<ILoginResponse>(
+      .post<LoginResponseWire>(
         `${this.apiUrl}/auth/mfa/challenge`,
         { email, code },
         { withCredentials: true }
       )
       .pipe(
+        map(mapLoginResponse),
         tap((response) => this.handleLoginResponse(response))
       );
   }
@@ -425,10 +470,11 @@ export class AuthService {
   }
 
   getTenantAuthSettings(): Observable<ITenantAuthSettings> {
-    return this.http.get<ITenantAuthSettings>(
-      `${this.apiUrl}/tenant/auth-settings`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<TenantAuthSettingsWire>(`${this.apiUrl}/tenant/auth-settings`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapTenantAuthSettings));
   }
 
   updateTenantAuthSettings(settings: ITenantAuthSettings): Observable<void> {
@@ -451,11 +497,13 @@ export class AuthService {
    * POST /tenant/users/by-user/{userId}/unlock (ISSUE-007: keyed by global userId)
    */
   unlockUser(userId: string): Observable<IMessageResponse> {
-    return this.http.post<IMessageResponse>(
-      `${this.apiUrl}/tenant/users/by-user/${userId}/unlock`,
-      null,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<MessageResponseWire>(
+        `${this.apiUrl}/tenant/users/by-user/${userId}/unlock`,
+        null,
+        { withCredentials: true }
+      )
+      .pipe(map(mapMessageResponse));
   }
 
   /**
@@ -463,10 +511,11 @@ export class AuthService {
    * GET /tenant/users
    */
   getTenantUsers(): Observable<ITenantUser[]> {
-    return this.http.get<ITenantUser[]>(
-      `${this.apiUrl}/tenant/users`,
-      { withCredentials: true }
-    );
+    return this.http
+      .get<TenantUserPageWire | null>(`${this.apiUrl}/tenant/users`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapTenantUserPage));
   }
 
   // ─── Token Access ────────────────────────────────────────
