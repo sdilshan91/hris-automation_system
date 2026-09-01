@@ -29,6 +29,7 @@ guard convention (careful-guard.py).
 import sys
 import os
 import json
+import re
 import shlex
 
 GIT_SUBCMDS_WITH_NO_VERIFY = {"commit", "push", "merge", "cherry-pick", "rebase", "am"}
@@ -67,6 +68,56 @@ def _segments(tokens):
             seg.append(t)
     if seg:
         yield seg
+
+
+# Command wrappers that can precede `git` without changing what runs. Without stripping
+# these, `env git commit --no-verify` sails past a guard that only inspects seg[0] — which
+# is how this hook could be bypassed by a five-character prefix (verified 2026-09-01:
+# env / nice / time / sudo / bash -c all returned "allow" on a --no-verify commit).
+_WRAPPERS = frozenset({
+    "env", "nice", "ionice", "time", "nohup", "stdbuf", "timeout",
+    "sudo", "doas", "command", "exec", "builtin", "xargs",
+})
+_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
+_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _strip_wrappers(seg):
+    """Drop leading VAR=VAL assignments and command wrappers so seg[0] is the real program.
+
+    Never skips past a `git` token: a wrapper flag's value is only consumed when it is not
+    itself git, so `nice -n 10 git commit` resolves but `nice git ...` cannot be skipped over.
+    """
+    i, n = 0, len(seg)
+    while i < n:
+        tok = seg[i]
+        if _ASSIGN_RE.match(tok) and not tok.startswith("-"):
+            i += 1
+            continue
+        if _basename(tok) in _WRAPPERS:
+            i += 1
+            while i < n and seg[i].startswith("-"):
+                i += 1
+                if i < n and not seg[i].startswith("-") and _basename(seg[i]) not in ("git", "git.exe"):
+                    i += 1
+            continue
+        break
+    return seg[i:]
+
+
+def _inline_shell_commands(seg):
+    """Yield token lists for `bash -c "<script>"` payloads so the script is inspected too."""
+    if not seg or _basename(seg[0]) not in _SHELLS:
+        return
+    for i, tok in enumerate(seg):
+        if tok == "-c" and i + 1 < len(seg):
+            try:
+                lex = shlex.shlex(seg[i + 1], posix=True, punctuation_chars=True)
+                lex.whitespace_split = True
+                yield list(lex)
+            except ValueError:
+                return
+            return
 
 
 def _check_git_segment(seg):
@@ -126,9 +177,24 @@ def main():
     except ValueError:
         _allow()  # unparseable shell -> fail open
 
-    for seg in _segments(tokens):
-        if seg and _basename(seg[0]) in ("git", "git.exe"):
-            reason = _check_git_segment(seg)
+    def _scan(tok_list, depth=0):
+        for seg in _segments(tok_list):
+            seg = _strip_wrappers(seg)
+            if not seg:
+                continue
+            if depth < 3:
+                for inner in _inline_shell_commands(seg):
+                    hit = _scan(inner, depth + 1)
+                    if hit:
+                        return hit
+            if _basename(seg[0]) in ("git", "git.exe"):
+                hit = _check_git_segment(seg)
+                if hit:
+                    return hit
+        return None
+
+    for _once in (0,):
+            reason = _scan(tokens)
             if reason:
                 _deny(
                     "no-verify-guard blocked this Bash command:\n"
