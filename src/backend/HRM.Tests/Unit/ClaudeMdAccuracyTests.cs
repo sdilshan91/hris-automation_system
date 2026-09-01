@@ -170,6 +170,42 @@ public sealed class ClaudeMdAccuracyTests
             string.Join(" | ", offending));
     }
 
+    /// <summary>
+    /// Load-bearing rules must survive a CLAUDE.md edit. This guard exists because one did not.
+    ///
+    /// On 2026-09-01 CLAUDE.md was trimmed 398 -> 309 lines by moving changelog prose out to
+    /// docs/DEV/. The move was careful and nothing looked wrong, but it silently took with it the
+    /// fact that all 5 backend projects set &lt;Nullable&gt;enable&lt;/Nullable&gt; and the build really
+    /// emits CS8602/CS8604/CS8714. That is a live coding constraint: an agent that does not know
+    /// it writes null-unsafe C# or reaches for `!`. It was caught only by diffing all 40 normative
+    /// statements by hand, which is exactly the kind of check that does not survive contact with a
+    /// deadline. So it is a test now.
+    ///
+    /// The anchors are deliberately SHORT and distinctive, not whole sentences — this must survive
+    /// legitimate rewording and only fire when a rule genuinely leaves the corpus. Content moved
+    /// into .claude/rules/ still counts: the corpus is the union, because a rule scoped to the
+    /// files it governs is better placed, not lost.
+    ///
+    /// If this fails you have exactly two honest options: put the rule back, or delete its row
+    /// here because you decided the rule no longer applies. Never loosen the anchor to go green.
+    /// </summary>
+    [Theory]
+    [InlineData("Nullable", "NRT is on in all 5 projects; the build emits CS8602/CS8604/CS8714")]
+    [InlineData("tenant-scoped", "Critical Rule #1 — every query, cache key and API call is tenant-scoped")]
+    [InlineData("hand-write", "migrations are CLI-only; a hand-written one drifts from the model")]
+    [InlineData("ISSUE-312", "`dotnet test` exits 0 on an ABORTED run, so a partial run reads as green")]
+    [InlineData("weaken", "a test may never be weakened, skipped or deleted to make a gate pass")]
+    [InlineData("REPORT-ONLY", "the report-only boundary is what stops the test loop 'fixing' its own findings")]
+    [InlineData(".env", "Critical Rule #6 — secrets live in .env, never hardcoded")]
+    public void LoadBearingRules_SurviveInTheInstructionCorpus(string anchor, string why)
+    {
+        InstructionCorpus()
+            .Should().Contain(anchor,
+                "this rule is load-bearing and an agent only follows what is auto-loaded. {0}. "
+                + "It must appear in CLAUDE.md or a file under .claude/rules/. If you moved it to "
+                + "docs/ it is NO LONGER loaded and the rule is effectively gone.", why);
+    }
+
     private static string ClaudeMd() => Read("CLAUDE.md");
 
     /// <summary>
