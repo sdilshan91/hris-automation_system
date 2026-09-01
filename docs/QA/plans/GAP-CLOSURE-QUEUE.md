@@ -118,6 +118,48 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > were written from what the UI wanted and never reconciled. The remaining ~570 interfaces should be expected
 > to behave the same way, so "finish the migration" is not a mechanical task and should not be estimated as one.
 
+## 🔁 AUTO-HEAL 2026-09-01 — D1 attendance slice + a gap in auto-heal itself
+
+> **The miss this records:** seven findings from this session were filed to `TEST-FINDINGS.md` but
+> **never folded into this queue** — the ledger half of auto-heal without the queue half. A finding that
+> only exists in the ledger is not scheduled, so nothing ever picks it up. Same evaporation the
+> 2026-08-21 entry above was written to stop, recurring one programme later. The protocol needs the
+> fold to happen in the **same turn** as the filing, not "later".
+
+### Newly folded (all verified against code before filing, not taken on an agent's report)
+
+| finding | sev | what | gate |
+|---|---|---|---|
+| [[TEST-FINDINGS#BUG-322]] | HIGH | any shift edit silently nulls 5 DF-56 work-minute overrides (`ShiftService.cs:169-173` assigns from a request `IShiftRequest` never populates). **Pay-affecting** — overtime + auto-break thresholds. | needs decision: widen FE request vs. patch-semantics BE |
+| [[TEST-FINDINGS#BUG-321]] | HIGH | multi-level regularization approval reports "approved" and drops the row while the server said `PENDING` (`regularization-approvals.component.ts:582-600` discards the mapped decision). **ENH-005 is CONTRADICTED** — the workflow it says is absent exists at `RegularizationApprovalService.cs:439-450`. | ungated |
+| [[TEST-FINDINGS#BUG-319]] | HIGH | scheduled-report create always 400s: UI collects emails, `ScheduledReportConfig.Recipients` binds `List<Guid>`. | needs decision: user-picker vs. accept emails |
+| [[TEST-FINDINGS#BUG-320]] | MED | `updateShift` sends FLEXIBLE + `workingDays: []`, rejected by `ShiftRequestValidator`. | needs decision: which side is right |
+| [[TEST-FINDINGS#ISSUE-409]] | MED | agents keep writing `agent-memory` into nested `.claude/` dirs where it is never loaded — **4th recurrence**; the notes are silently lost. | needs decision: relocate vs. warn hook |
+| [[TEST-FINDINGS#ISSUE-408]] | LOW | `IAttendanceLog.tenantId` has no wire source; mapper emits `''`. Pinned by a test so nobody "repairs" it into a fabricated tenant key. | ungated |
+| [[TEST-FINDINGS#ISSUE-410]] | LOW | 8 findings existed only as code comments with report-local IDs (`F-01`, `SHIFT-01`…); rewired to ledger IDs. 5 still need triage. | ungated |
+
+### Re-sorted — severity × blast-radius × unblocks-others − gated
+
+| rank | item | why here |
+|---|---|---|
+| **1** | [[TEST-FINDINGS#BUG-317]] · [[TEST-FINDINGS#BUG-316]] **CRITICAL** | BUG-317 destroys a tenant's income-tax bands on an ordinary open-and-save. Data loss beats everything below. |
+| **2** | [[TEST-FINDINGS#BUG-322]] | silent, pay-affecting data loss on a routine edit, and invisible — no screen renders the wiped fields. Ranks above other HIGHs because nothing surfaces it. |
+| **3** | [[TEST-FINDINGS#BUG-321]] | an approver is actively misinformed that a decision is final. Ungated, and the fix is local to one subscribe. |
+| **4** | **D1 remaining slices** (auth 23 → benefits 12 → training 10 → onboarding 13 → …) | preventive; each slice fixes its own findings. `core/auth` first by size — but scoping it showed hydration already fails closed (`?? []`), so it is **not** the authorization emergency this row first claimed. Corrected rather than left standing. |
+| **5** | [[TEST-FINDINGS#ISSUE-409]] | not a product defect, but it silently defeats the agent-memory store for every narrowed-cwd agent — it compounds across all remaining loop work. |
+| **6** | [[TEST-FINDINGS#ISSUE-410]] triage of the 5 remaining in-code findings | cheap; prevents a second evaporation of the same kind |
+| **7** | [[TEST-FINDINGS#ISSUE-411]] 269 dead finding wikilinks | MED, zero functional risk, but it silently defeats ledger↔work traceability in the graph. `/campaign`-shaped mechanical sweep — do not hand-edit. |
+| **8** | [[TEST-FINDINGS#ISSUE-408]] · remaining Tier E/F items | LOW, local blast-radius |
+
+### 🚧 Parked at the decision gate — NOT auto-scheduled
+
+| item | the decision | my recommendation |
+|---|---|---|
+| [[TEST-FINDINGS#BUG-319]] | recipients: user-picker emitting GUIDs, or widen BE to validated emails | **user-picker** — an arbitrary email escapes tenant scoping and leaks employee data to whoever is typed in |
+| [[TEST-FINDINGS#BUG-322]] | widen `IShiftRequest` + edit form, or make those 5 fields patch-semantics | **widen the FE** — patch-semantics makes it impossible to ever clear an override back to tenant default, and silently changes PUT meaning for one subset of fields |
+| [[TEST-FINDINGS#BUG-320]] | FLEXIBLE shifts: require working days, or let the validator accept none | needs the domain rule stated before either side moves |
+| [[TEST-FINDINGS#ISSUE-409]] | `SubagentStop` hook: relocate the stray memory, or fail the stop and report | **relocate + report** — a warn-only hook has already been ignored 4 times |
+
 ## The queue
 
 ### Tier A — cheap, high-leverage, unblocks others
@@ -489,9 +531,37 @@ instances**, so probes 3–5 could not be observed end-to-end.
   finished), `hasSent` *false* (no implied consent for a duplicate mailing to every employee), enums are never
   coerced, and nullable money stays `null` — `0` on `slabTo` collapses the top tax band, `0` on
   `wageCeilingAnnual` means no EPF at all.
-  **Remaining, worst-first** (each its own slice + PR): attendance **35** · onboarding **20** · core **16** ·
-  benefits **12** · training **10** · core-hr **10** · recruitment **7** · reports **3** · leave **3** ·
-  notifications **2** · dashboard **1** · payroll **4** (blocked on BUG-315/316 + ISSUE-404).
+  **Slice 3 — attendance ✅ DONE (#571): 41 → 0.** Repo-wide 167 → **126**. (The queue said 35; the real
+  count was 41 — measure per slice, never trust the carried-forward figure.) **Four defects, two of them
+  invisible to any type checker:**
+  **BUG-322** — every shift edit silently **nulls five DF-56 work-minute overrides** (`ShiftService.cs:169-173`
+  assigns them unconditionally from a request `IShiftRequest` never populates). Pay-affecting, and no screen
+  renders the wiped fields, so nothing surfaces the loss. **BUG-321** — a multi-level regularization approval
+  tells the approver "approved" and drops the row while the server said `PENDING`; the component *discards*
+  the mapped decision, so the value is dropped rather than misread and neither `tsc` nor `strictTemplates`
+  can see it. Plus **BUG-319** (scheduled-report create always 400s: form collects emails, backend binds
+  `List<Guid>`) and **BUG-320** (`updateShift` sends a shift the validator rejects).
+  **⚠ ENH-005 is CONTRADICTED.** It claims multi-level approval is absent and `workflow_instance_id` stays
+  null; `RegularizationApprovalService.cs:439-450` returns `Status=Pending, Action=Approved`. Reported, not
+  corrected — and note that *reasoning from the ledger* is what first led this loop to rate BUG-321 as
+  latent-only. Second time this programme a ledger was wrong in the **pessimistic** direction.
+  **A default changed:** `averageAttendancePercent` now defaults to `null`, not `0` — on a percentage 0 is not
+  neutral, it is a headline claim that nobody attended.
+  **The mutation that mattered survived first.** A component-level arm *looked* like it guarded that default
+  but never crossed the mapper (the spec builds the banner directly), so reverting the mapper to `?? 0` went
+  undetected. Paired mapper-level arms fixed it. Three further arms exist only because `@test-authenticator`
+  found absence assertions with no positive twin — `mapRotation`/`mapRotationStep` could have been **deleted
+  outright** with all 94 tests still green. *An absence arm without its positive twin is not a test.*
+  **Remaining, worst-first** (each its own slice + PR): **auth 23** · benefits **12** · training **10** ·
+  onboarding **13** · core-hr **6** · recruitment **7** · notifications **13** · leave **4** · reports **4** ·
+  employees **6** · payroll **4** (blocked on BUG-315/316 + ISSUE-404) · misc **4**.
+  **Auth scoped (read-only, before starting):** field names match the contract exactly — *no* rename drift.
+  The real gap is that `roles`/`permissions` are `string[] | null` on the wire but non-optional in the FE
+  interface. **Corrected expectation:** `hydrateFromMe` (`auth.service.ts:249-250`) already does `?? []`, so
+  it fails closed today — the earlier "an undefined role becomes an authorization decision" framing was
+  inferred from the site count, not from reading the file. The slice is still worth doing (it makes the type
+  honest and 14 hand-written `??` defenses stop being load-bearing), but it is **not** the emergency the
+  ranking implied. Also: the wire carries `tenantMemberships`, which the FE interface does not declare.
   - *(original scoping note below)*
 - [ ] ~~D1 original~~ — **the 450 wire-adjacent interfaces + a drift guard.**
   Original text: module by module, worst-first. **669 hand-written interfaces vs 11 `Schema<>` uses** —
