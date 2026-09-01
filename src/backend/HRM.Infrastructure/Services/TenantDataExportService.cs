@@ -9,6 +9,8 @@ using HRM.Application.Features.DataExport.DTOs;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using HRM.Application.Common.Helpers;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Services;
@@ -44,6 +46,7 @@ public sealed class TenantDataExportService : ITenantDataExportService
     private readonly IFileStorage _fileStorage;
     private readonly IDataExportNotificationService _notifications;
     private readonly IExportJobScheduler? _scheduler;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<TenantDataExportService> _logger;
 
     public TenantDataExportService(
@@ -53,6 +56,7 @@ public sealed class TenantDataExportService : ITenantDataExportService
         IFileStorage fileStorage,
         IDataExportNotificationService notifications,
         ILogger<TenantDataExportService> logger,
+        IConfiguration configuration,
         IExportJobScheduler? scheduler = null)
     {
         _db = db;
@@ -62,6 +66,7 @@ public sealed class TenantDataExportService : ITenantDataExportService
         _notifications = notifications;
         _logger = logger;
         _scheduler = scheduler;
+        _configuration = configuration;
     }
 
     // ── Initiation (AC-1 / AC-6) ────────────────────────────────────────────────
@@ -261,7 +266,16 @@ public sealed class TenantDataExportService : ITenantDataExportService
 
             // AC-2/BR-6: dispatch the (stub) download-link email to the requester + billing contact.
             var recipients = await ResolveRecipientsAsync(export.RequestedByUserId, tenant, cancellationToken);
-            var downloadUrl = _fileStorage.GetSignedUrl(tenantId, relativePath, TimeSpan.FromHours(DownloadWindowHours));
+            // C5/GAP-028: the emailed link used to come from IFileStorage.GetSignedUrl, which despite its name
+            // signs nothing — it returns `/files/{tenantId}/{path}`, a scheme NO route has ever served (see
+            // LocalFileStorage: "Local dev: return a simple path (no real signing)"). So the "your export is
+            // ready" mail for a GDPR Art. 20 portability request led to a 404.
+            //
+            // It also cannot simply point at the authenticated API endpoint: a link clicked in a mail client
+            // carries no Authorization header, so `/api/v1/tenant/data-exports/{id}/download` would 401. The
+            // link therefore targets the tenant workspace PAGE, which authenticates the user and then
+            // downloads through that endpoint — the same reason B4's avatars had to be fetched, not linked.
+            var downloadUrl = BuildExportPageUrl(tenant?.Subdomain, export.Id);
             await _notifications.SendExportReadyAsync(tenantId, export.Id, recipients, downloadUrl, cancellationToken);
 
             _logger.LogInformation(
@@ -293,6 +307,37 @@ public sealed class TenantDataExportService : ITenantDataExportService
 
             return Result<ExportRequestDto>.Failure("Export generation failed.", 500, "export_failed");
         }
+    }
+
+    /// <summary>The tenant workspace route that lists exports and performs the authenticated download.</summary>
+    private const string ExportPagePath = "/admin/data-export";
+
+    /// <summary>
+    /// Builds the absolute link the "export ready" email points at:
+    /// <c>https://{subdomain}.{baseDomain}/admin/data-export?exportId={id}</c>.
+    ///
+    /// <para>
+    /// Base domain comes from <see cref="PortalLinkBuilder.NormalizeBaseDomain"/> — the existing helper —
+    /// rather than a fresh <c>_configuration["Platform:BaseDomain"]</c> read. That lookup is currently
+    /// hand-rolled at ~10 sites with three slightly different normalisations; adding an eleventh is how the
+    /// next one drifts. (The broader migration is filed, not done here.)
+    /// </para>
+    ///
+    /// <para>
+    /// Falls back to a relative path when the tenant has no subdomain, which is better than emitting
+    /// <c>https://./…</c> — a malformed absolute URL looks deliverable and is not.
+    /// </para>
+    /// </summary>
+    private string BuildExportPageUrl(string? subdomain, Guid exportId)
+    {
+        var query = $"{ExportPagePath}?exportId={exportId}";
+        if (string.IsNullOrWhiteSpace(subdomain))
+        {
+            return query;
+        }
+
+        var baseDomain = PortalLinkBuilder.NormalizeBaseDomain(_configuration["Platform:BaseDomain"]);
+        return $"https://{subdomain.Trim()}.{baseDomain}{query}";
     }
 
     /// <summary>
@@ -334,6 +379,36 @@ public sealed class TenantDataExportService : ITenantDataExportService
         {
             var (bytes, rowCount) = await SerializeAuditLogJsonlAsync(tenantId, cancellationToken);
             files.Add(("audit_log.jsonl", bytes, ExportEntityRegistry.AuditLogCode, rowCount));
+        }
+
+        // C5/GAP-028: schema.pdf — the human-readable data dictionary. Art. 20 requires an "intelligible
+        // form", and a folder of CSVs with columns like `fte` and `reports_to_employee_id` is machine-readable
+        // without being intelligible to the person exercising the right.
+        //
+        // Built from the header rows of the CSVs ALREADY SERIALIZED above, not from a second reflection pass
+        // over the EF model. A second pass would be a second description of one truth and would drift the
+        // first time a property was excluded from the CSV writer but not the renderer.
+        //
+        // Added BEFORE the manifest is computed, so it is checksummed and listed like every other artifact —
+        // an unlisted file in the ZIP is exactly the kind of thing an integrity check exists to catch.
+        if (files.Count > 0)
+        {
+            // EVERY file in the bundle, not only the CSVs. Describing just the CSVs meant an audit-log-only
+            // partial export shipped a schema.pdf reading "No files were included in this export." while
+            // audit_log.jsonl demonstrably was — a document contradicting the bundle it travels in, which is
+            // the one thing this renderer exists to prevent. Non-CSV files list no columns because they have
+            // none; that is a fact about the file, not an omission.
+            var schemas = files
+                .Select(f => new ExportSchemaPdfRenderer.FileSchema(
+                    f.Name, f.Entity, f.RowCount,
+                    f.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)
+                        ? ExportSchemaPdfRenderer.ReadHeaderColumns(f.Bytes, delimiter)
+                        : []))
+                .ToList();
+
+            var schemaPdf = ExportSchemaPdfRenderer.Render(
+                tenantName, export.Id, DateTime.UtcNow, export.Scope, schemas);
+            files.Add(("schema.pdf", schemaPdf, "Schema", 0));
         }
 
         var manifestFiles = files

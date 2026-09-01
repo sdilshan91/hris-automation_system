@@ -22,8 +22,17 @@ public static class PortalLinkBuilder
     /// trimming whitespace + a leading dot) exactly as the tenant base-URL precedent does. The signing secret /
     /// base domain are never hardcoded — callers pass <c>_configuration["Platform:BaseDomain"]</c>.
     /// </summary>
+    /// <remarks>
+    /// Falls back on null <b>or blank</b>. Null-only was the original, and it left a live edge: an env-var
+    /// override set to an empty string produced <c>https://acme./…</c> — a malformed absolute URL that looks
+    /// deliverable and is not. Every emitter that builds a tenant link runs through here, so the edge was
+    /// shared by all of them.
+    /// </remarks>
     public static string NormalizeBaseDomain(string? configuredBaseDomain)
-        => (configuredBaseDomain ?? DefaultBaseDomain).Trim().TrimStart('.');
+    {
+        var normalized = (configuredBaseDomain ?? string.Empty).Trim().TrimStart('.').Trim();
+        return normalized.Length == 0 ? DefaultBaseDomain : normalized;
+    }
 
     /// <summary>
     /// Builds <c>https://{subdomain}.{baseDomain}/portal?token={rawToken}</c>. <paramref name="baseDomain"/> is

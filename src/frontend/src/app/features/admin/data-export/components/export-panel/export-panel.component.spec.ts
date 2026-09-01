@@ -5,6 +5,7 @@ import {
 } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { ActivatedRoute } from '@angular/router';
 import { provideToastr, ToastrService } from 'ngx-toastr';
 import { provideTranslateService } from '@ngx-translate/core';
 import { ExportPanelComponent } from './export-panel.component';
@@ -47,7 +48,7 @@ describe('ExportPanelComponent', () => {
     downloadAvailable: false,
   };
 
-  function build(): void {
+  function build(exportIdParam: string | null = null): void {
     toastr = jasmine.createSpyObj<ToastrService>('ToastrService', [
       'success',
       'error',
@@ -63,6 +64,14 @@ describe('ExportPanelComponent', () => {
         provideTranslateService(),
         provideToastr(),
         { provide: ToastrService, useValue: toastr },
+        {
+          // C5: the export-ready email links here with ?exportId=. Stubbed rather than pulled in via
+          // provideRouter so each arm can choose the param without navigating.
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { queryParamMap: { get: (k: string) => (k === 'exportId' ? exportIdParam : null) } },
+          },
+        },
       ],
     });
 
@@ -86,6 +95,52 @@ describe('ExportPanelComponent', () => {
   });
 
   beforeEach(() => build());
+
+  // ── C5/GAP-028: the export-ready email links here with ?exportId= ──────────
+  //
+  // The email used to carry a `/files/…` URL no route served. It now links to this page and names the
+  // export. If the page ignored that name the link would only LOOK specific — the same class of half-truth
+  // the dead URL was, one layer up.
+
+  describe('linked export (C5)', () => {
+    it('highlights the row the email pointed at', () => {
+      TestBed.resetTestingModule();
+      build('exp-done');
+      init([completed, expired]);
+
+      expect(component.highlightedExportId()).toBe('exp-done');
+      expect(component.isHighlighted('exp-done')).toBeTrue();
+      expect(component.isHighlighted('exp-expired')).toBeFalse();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('[data-testid="history-row-highlighted"]'))
+        .withContext('a link that names an export must visibly land on it')
+        .not.toBeNull();
+    });
+
+    it('highlights nothing when the page is opened directly', () => {
+      TestBed.resetTestingModule();
+      build(null);
+      init([completed, expired]);
+
+      expect(component.highlightedExportId()).toBeNull();
+      expect((fixture.nativeElement as HTMLElement)
+        .querySelector('[data-testid="history-row-highlighted"]')).toBeNull();
+    });
+
+    it('tolerates an exportId that is not in the history', () => {
+      TestBed.resetTestingModule();
+      build('exp-missing');
+      init([completed]);
+
+      expect(component.isHighlighted('exp-done')).toBeFalse();
+      expect((fixture.nativeElement as HTMLElement)
+        .querySelector('[data-testid="history-row-highlighted"]'))
+        .withContext('an expired-and-purged export must not break the page the mail links to')
+        .toBeNull();
+    });
+  });
+
 
   it('defaults to a full export and can start immediately', () => {
     init();

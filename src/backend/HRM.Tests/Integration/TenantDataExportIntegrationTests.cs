@@ -26,6 +26,7 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -89,8 +90,12 @@ public sealed class TenantDataExportIntegrationTests
         user.Email.Returns("admin@acme.test");
         var ctx = new MutableTenantContext { TenantId = tenantId };
         var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options, ctx);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Platform:BaseDomain"] = "yourhrm.test" })
+            .Build();
         var service = new TenantDataExportService(
-            db, ctx, user, storage, notify, NullLogger<TenantDataExportService>.Instance, scheduler: null);
+            db, ctx, user, storage, notify, NullLogger<TenantDataExportService>.Instance,
+            configuration, scheduler: null);
         return (service, storage, notify);
     }
 
@@ -185,6 +190,75 @@ public sealed class TenantDataExportIntegrationTests
         var req = await db.ExportRequests.IgnoreQueryFilters().SingleAsync(r => r.Id == id);
         req.Status.Should().Be(ExportRequestStatus.Completed);
         req.ExpiresAt.Should().NotBeNull();
+    }
+
+    // ── C5 / GAP-028: the emailed link, and the schema document ─────────────
+
+    /// <summary>
+    /// THE ARM C5 EXISTS FOR. The "your export is ready" mail carried a link built by
+    /// <c>IFileStorage.GetSignedUrl</c>, which despite its name signs nothing — it returns
+    /// <c>/files/{tenantId}/{path}</c>, a scheme no route has ever served. So the notification for a GDPR
+    /// Art. 20 portability request led to a 404.
+    ///
+    /// <para>
+    /// It also cannot point at the authenticated API endpoint: a link clicked in a mail client carries no
+    /// Authorization header, so <c>/api/v1/tenant/data-exports/{id}/download</c> would 401. It targets the
+    /// tenant workspace page, which authenticates and then downloads.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ExportReadyEmail_LinksToTheTenantWorkspace_NotTheDeadFilesScheme_c5()
+    {
+        await SeedTenantAsync(_tenantA, "acme", TenantStatus.Active);
+        await SeedLeaveTypesAsync(_tenantA, 1);
+
+        var (service, _, notify) = Service(_tenantA);
+        var init = await service.InitiateAsync(FullScope());
+        init.IsSuccess.Should().BeTrue(init.Error);
+        (await service.GenerateAsync(init.Value!.ExportId)).IsSuccess.Should().BeTrue();
+
+        var url = (string?)notify.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IDataExportNotificationService.SendExportReadyAsync))
+            .GetArguments()[3];
+
+        url.Should().NotBeNull();
+        url!.Should().NotContain("/files/",
+            "that scheme is served by no route — it is the 404 this fix exists to remove");
+        url.Should().StartWith("https://acme.yourhrm.test/",
+            "the mail must reach the tenant's own workspace, built from Platform:BaseDomain");
+        url.Should().Contain("/admin/data-export");
+        url.Should().Contain(init.Value.ExportId.ToString(),
+            "the link must identify WHICH export, or it is just a link to a list");
+        url.Should().NotContain("/api/",
+            "a link clicked in a mail client sends no Authorization header, so pointing it at the API 401s");
+    }
+
+    /// <summary>
+    /// GAP-028: the bundle shipped 3 of 5 artifacts. <c>schema.pdf</c> is the human-readable data dictionary —
+    /// Art. 20 requires an "intelligible form", and CSV columns like <c>fte</c> are machine-readable without
+    /// being intelligible to the person exercising the right.
+    /// </summary>
+    [Fact]
+    public async Task FullExport_IncludesTheSchemaDocument_AndChecksumsIt_c5()
+    {
+        await SeedTenantAsync(_tenantA, "acme", TenantStatus.Active);
+        await SeedLeaveTypesAsync(_tenantA, 2);
+
+        var (_, zip) = await RunExportAsync(_tenantA, FullScope());
+        var entries = ReadZip(zip);
+
+        var schema = entries.Single(e => e.Key.EndsWith("schema.pdf")).Value;
+        Encoding.ASCII.GetString(schema, 0, 5).Should().Be("%PDF-",
+            "a file the bundle calls a PDF must actually be one");
+
+        // Listed in the manifest like every other artifact — an unlisted file in the ZIP is exactly what an
+        // integrity check exists to catch. (The checksum itself is verified by the manifest arm above, which
+        // now covers this file too.)
+        var manifestJson = Encoding.UTF8.GetString(entries.Single(e => e.Key.EndsWith("manifest.json")).Value);
+        using var manifest = JsonDocument.Parse(manifestJson);
+        manifest.RootElement.GetProperty("files").EnumerateArray()
+            .Select(f => f.GetProperty("filename").GetString())
+            .Should().Contain("schema.pdf");
     }
 
     // ── FR-1: partial export ────────────────────────────────────────────────
