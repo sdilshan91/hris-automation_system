@@ -6,6 +6,12 @@ import { environment } from '../../../../environments/environment';
 import {
   IPayslip,
   IPayslipGenerationStatus,
+  PayslipGenerationAcceptedWire,
+  PayslipGenerationStatusWire,
+  PayslipWire,
+  mapPayslip,
+  mapPayslipGenerationAccepted,
+  mapPayslipGenerationStatus,
 } from '../models/payslip.models';
 
 /**
@@ -43,44 +49,58 @@ export class PayslipService {
    */
   listPayslips(runId: string): Observable<IPayslip[]> {
     return this.http
-      .get<IPayslip[] | { data: IPayslip[] }>(
+      .get<PayslipWire[] | { data: PayslipWire[] }>(
         `${this.runsUrl}/${runId}/payslips`,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapPayslip)));
   }
 
   /**
    * Enqueue PDF generation for every payslip in the run (AC-1). The backend
    * enqueues a Hangfire job and returns the initial generation status; the FE then
    * polls `streamGenerationStatus` to drive the progress bar.
+   *
+   * WIRE: the 202 body is `PayrollPayslipGenerationAcceptedDto` (`{ runId, queuedCount,
+   * regenerated }`) — NOT the status shape this used to assert. See
+   * `mapPayslipGenerationAccepted` for why the enqueued count is not reported as "generated".
    */
   generatePayslips(runId: string): Observable<IPayslipGenerationStatus> {
-    return this.http.post<IPayslipGenerationStatus>(
-      `${this.runsUrl}/${runId}/payslips/generate`,
-      {},
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PayslipGenerationAcceptedWire>(
+        `${this.runsUrl}/${runId}/payslips/generate`,
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map(mapPayslipGenerationAccepted));
   }
 
   /**
    * Regenerate (overwrite) all payslip PDFs using the current template (AC-5).
    * Valid on both draft AND finalized runs — the backend allows regenerating a
    * finalized run's PDFs (e.g. after a template change); it enforces its own rules.
+   *
+   * WIRE: same `PayrollPayslipGenerationAcceptedDto` 202 body as `generatePayslips`.
    */
   regeneratePayslips(runId: string): Observable<IPayslipGenerationStatus> {
-    return this.http.post<IPayslipGenerationStatus>(
-      `${this.runsUrl}/${runId}/payslips/regenerate`,
-      {},
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PayslipGenerationAcceptedWire>(
+        `${this.runsUrl}/${runId}/payslips/regenerate`,
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map(mapPayslipGenerationAccepted));
   }
 
   /**
    * Retry PDF rendering for ONE employee's failed payslip (DF-31 / ISSUE-162 FR-8).
    * Re-enqueues rendering for a single slip whose `pdfStatus` is `Failed`. The
    * backend explicitly ALLOWS this on a Finalized run — retrying a failed slip on a
-   * finalized run is the main use case — and responds 202 (Accepted) with no body.
+   * finalized run is the main use case — and responds 202 (Accepted).
+   *
+   * WIRE: the 202 actually carries `PayrollPayslipGenerationAcceptedDto`. The caller only reacts to
+   * the enqueue succeeding and then polls `streamGenerationStatus`, so the body is deliberately
+   * discarded (`post<void>`) rather than mapped into a shape nothing reads.
    */
   retryPayslip(runId: string, employeeId: string): Observable<void> {
     return this.http.post<void>(
@@ -90,12 +110,20 @@ export class PayslipService {
     );
   }
 
-  /** A single point-in-time generation-status snapshot for the run (§8 progress bar). */
+  /**
+   * A single point-in-time generation-status snapshot for the run (§8 progress bar).
+   *
+   * WIRE: `PayrollPayslipGenerationStatusDto` — `{ runId, totalSlips, generated, pending, failed,
+   * isComplete }`. Every name differs from the view-model and `isComplete` is the inverse of
+   * `isGenerating`; `mapPayslipGenerationStatus` absorbs all of it.
+   */
   getGenerationStatus(runId: string): Observable<IPayslipGenerationStatus> {
-    return this.http.get<IPayslipGenerationStatus>(
-      `${this.runsUrl}/${runId}/payslips/status`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<PayslipGenerationStatusWire>(
+        `${this.runsUrl}/${runId}/payslips/status`,
+        { withCredentials: true },
+      )
+      .pipe(map(mapPayslipGenerationStatus));
   }
 
   /**
@@ -114,7 +142,10 @@ export class PayslipService {
   ): Observable<IPayslipGenerationStatus> {
     return timer(0, PayslipService.POLL_INTERVAL_MS).pipe(
       switchMap(() => this.getGenerationStatus(runId)),
-      // Keep emitting while generating; emit the first terminal snapshot, then complete.
+      // Keep emitting while generating; emit the first terminal snapshot, then complete. This
+      // depends entirely on `isGenerating` being real: the wire sends `isComplete`, so before the
+      // mapper existed `s.isGenerating` was `undefined` (falsy) and the loop completed after ONE
+      // emission — the UI announced "generation finished" the instant it started.
       takeWhile((s) => s.isGenerating, true),
     );
   }

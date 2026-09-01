@@ -8,6 +8,10 @@ import {
   ILeaveEncashmentRequest,
   ILeaveEncashmentResult,
   IReconciliationReport,
+  LeaveEncashmentResultWire,
+  ReconciliationReportWire,
+  mapLeaveEncashmentResult,
+  mapReconciliationReport,
 } from '../models/reconciliation.models';
 
 /**
@@ -44,11 +48,11 @@ export class ReconciliationService {
       .set('payYear', `${payYear}`)
       .set('payMonth', `${payMonth}`);
     return this.http
-      .get<IReconciliationReport | { data: IReconciliationReport }>(
+      .get<ReconciliationReportWire | { data: ReconciliationReportWire }>(
         this.reconciliationUrl,
         { params, withCredentials: true },
       )
-      .pipe(map((res) => this.unwrap(res)));
+      .pipe(map((res) => mapReconciliationReport(this.unwrap(res))));
   }
 
   /**
@@ -59,9 +63,11 @@ export class ReconciliationService {
   triggerLeaveEncashment(
     request: ILeaveEncashmentRequest,
   ): Observable<ILeaveEncashmentResult> {
-    return this.http.post<ILeaveEncashmentResult>(this.encashmentUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<LeaveEncashmentResultWire>(this.encashmentUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapLeaveEncashmentResult));
   }
 
   /** Accept either a bare payload or a `{ data }` envelope (defensive, US-PLT-001). */

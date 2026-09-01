@@ -25,6 +25,8 @@
  * JSON envelope (responseType: 'blob').
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Payslip list row (§8 table) ───────────────────────────────
 
 /**
@@ -133,4 +135,77 @@ export function hasYtd(detail: IMyPayslipDetail | null): boolean {
   return [...detail.earnings, ...detail.deductions].some(
     (line) => line.ytdAmount != null,
   );
+}
+
+// ─── Wire contract → view-model mappers (D1 payroll slice) ───────────────────
+//
+// The header above says "assumed REST contract". It is no longer assumed: these aliases bind the
+// view-models to the GENERATED contract, so `tsc` — not a runtime blank cell — reports a rename.
+//
+// On optionality: every generated property is `?` because Swashbuckle does not emit `required` for
+// non-nullable C# reference types (see core/api/index.ts). So `?? 0` on a server-COMPUTED total is
+// filling an artifact of the generator, not inventing an amount; `?? null` is used where the schema
+// itself says `nullable` and the UI has a real "no value" rendering (`ytdAmount`, `department`,
+// `designation`).
+//
+// DEFAULTING POLICY: `pdfAvailable` defaults to FALSE — an absent flag must not offer a Download
+// button for a PDF that was never rendered (a 404 in the employee's face).
+
+export type MyPayslipListWire = Schema<'PayrollMyPayslipListDto'>;
+export type MyPayslipListItemWire = Schema<'PayrollMyPayslipListItemDto'>;
+export type MyPayslipDetailWire = Schema<'PayrollMyPayslipDetailDto'>;
+export type MyPayslipComponentWire = Schema<'PayrollMyPayslipComponentDto'>;
+export type MyPayslipEmployeeWire = Schema<'PayrollMyPayslipEmployeeDto'>;
+
+export function mapMyPayslipListItem(w: MyPayslipListItemWire): IMyPayslipListItem {
+  return {
+    payslipId: w.payslipId ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    grossEarnings: w.grossEarnings ?? 0,
+    totalDeductions: w.totalDeductions ?? 0,
+    netSalary: w.netSalary ?? 0,
+    paidDays: w.paidDays ?? 0,
+    lopDays: w.lopDays ?? 0,
+    // Fail CLOSED: absent must not advertise a PDF that may not exist yet.
+    pdfAvailable: w.pdfAvailable ?? false,
+  };
+}
+
+export function mapMyPayslipComponent(
+  w: MyPayslipComponentWire,
+): IMyPayslipComponentLine {
+  return {
+    componentName: w.componentName ?? '',
+    amount: w.amount ?? 0,
+    // Genuinely nullable on the wire: null means "tenant YTD is off", which `hasYtd()`
+    // uses to hide the whole column. Coercing it to 0 would show a fake 0.00 YTD.
+    ytdAmount: w.ytdAmount ?? null,
+  };
+}
+
+export function mapMyPayslipEmployee(w: MyPayslipEmployeeWire): IMyPayslipEmployee {
+  return {
+    name: w.name ?? '',
+    employeeNo: w.employeeNo ?? '',
+    department: w.department ?? null,
+    designation: w.designation ?? null,
+  };
+}
+
+export function mapMyPayslipDetail(w: MyPayslipDetailWire): IMyPayslipDetail {
+  return {
+    payslipId: w.payslipId ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    employee: mapMyPayslipEmployee(w.employee ?? {}),
+    earnings: (w.earnings ?? []).map(mapMyPayslipComponent),
+    deductions: (w.deductions ?? []).map(mapMyPayslipComponent),
+    grossEarnings: w.grossEarnings ?? 0,
+    totalDeductions: w.totalDeductions ?? 0,
+    netSalary: w.netSalary ?? 0,
+    workingDays: w.workingDays ?? 0,
+    paidDays: w.paidDays ?? 0,
+    lopDays: w.lopDays ?? 0,
+  };
 }

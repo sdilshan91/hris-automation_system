@@ -9112,3 +9112,109 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Summary:** `FrontendWireContractDriftGuardTests` counted matches inside **comments**. Every migrated file gains a doc-comment explaining the `http.get<IFoo>` pattern it replaced, so finishing a module made its count go *up* unless the explanation was deleted — a guard that punishes documenting the defect it exists to prevent. It would also have let anyone trip the build by quoting the pattern.
 - **Fix:** strip line and block comments before matching. Repo-wide count corrected 267 → 218 (the 49 phantom matches were the migration's own comments plus pre-existing ones).
 - **Related:** D1
+
+### BUG-314
+
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (D1 payroll slice) · **Layer:** FE
+- **Module:** payroll (US-PAY-008) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** **The payroll approval screen's exceptions panel rendered blank rows.** `IApprovalSummary.exceptions` was declared `IPayrollException[]` (objects with `severity`/`message`/`employeeName`); the API sends **`string[]`** (`PayrollApprovalSummaryDto.Exceptions`, `IReadOnlyList<string>`). The unchecked cast asserted the shape, so `ex.message` and `ex.severity` were `undefined` on every row.
+- **What the approver saw:** a heading reading *"Exceptions (3)"* above three blank amber rows — the exact items they are meant to read before approving a payroll run. Amber because `undefined !== 'Error'` took the warning branch.
+- **Fix:** `mapPayrollException` wraps each sentence. Severity is mapped as `Warning` for all, because the backend carries none — it emits plain sentences (skipped employees, negative net salary, no employees processed). Inventing an Error/Warning split no data supports would put a judgement in the UI.
+- **Related:** GAP-S1 · D1 · BUG-312 · BUG-313
+
+### BUG-315
+
+- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** BE
+- **Module:** payroll (US-PAY-002) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** **The salary-component formula "Test" button calls an endpoint that does not exist.** `PayrollService.testFormula()` POSTs to `/payroll/salary-components/validate-formula`; that path is **absent from the contract and served by no controller** (`grep validate-formula src/backend/HRM.Api/Controllers` → nothing). The button is wired at `component-form.component.ts:245`.
+- **Why it matters:** the service comment claims *"the backend uses the same safe evaluator that runs payroll, so what the user tests is what payroll will compute (BR-6 syntax + circular-ref validation)."* None of that happens. An author writing a salary formula gets no validation before it is used to compute real pay.
+- **Not fixed here:** building the endpoint is backend work with a real design question — whether to expose the payroll formula evaluator to an interactive endpoint at all, and how to sandbox it. D1's lane is the type migration.
+- **Suggested fix:** implement `POST /payroll/salary-components/validate-formula` against the existing evaluator, or remove the Test button. Leaving a button that always fails is the worst of the three.
+- **Related:** GAP-S1 · D1
+
+### ISSUE-402
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE + FE
+- **Module:** payroll (US-PAY-008) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** The payroll **approval history timeline shows a dash instead of who approved.** `IApprovalHistoryEntry` declares `actorName`; `PayrollApprovalHistoryDto` carries only **`actorUserId`** (a GUID). The template renders `{{ h.actorName || '—' }}`, so every row has always shown `—`.
+- **Why it matters:** this is the audit trail for approving a payroll run. "Who approved this?" is the first question anyone asks of it, and the screen cannot answer.
+- **Note:** the D1 mapper sets `actorName: null` — honest about what the wire carries, and behaviour is unchanged. Resolving it needs the DTO to carry a display name (or a lookup).
+- **Same class as:** ISSUE-400 (the Linked Employee section) — a FE view model expecting a display name where the API sends only an id. Worth deciding both together.
+- **Related:** GAP-S1 · D1 · ISSUE-400
+
+### BUG-316
+
+- **Type:** BUG · **Severity:** **CRITICAL** · **Status:** OPEN · **Layer:** BE
+- **Module:** payroll (US-PAY-001) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** **A payroll run cannot be started from the UI at all.** `PayrollRunService.validateRun()` POSTs to `/api/v1/payroll/runs/validate`. **That path does not exist** — absent from the contract, no route on `PayrollRunsController`.
+- **The chain, verified end to end:**
+  1. `new-payroll-run.component.ts:284` — `ngOnInit` calls `validate()`.
+  2. `:308-312` — the 404 hits the error branch: `validation = null`, `validationError = true`.
+  3. `:275-281` — `canSubmit` requires `validation()?.canRun === true`, so it is **permanently false**.
+  4. `:318` — `submit()` returns early when `!canSubmit()`.
+  The "Start payroll run" button can never enable. There is no alternative entry point in the UI.
+- **Why nothing caught it:** `http.post<IPayrollRunValidation>` asserted a response type for an endpoint that has never existed, and the component spec mocks the service — so no test ever issued the request.
+- **Suggested fix:** implement `POST /payroll/runs/validate` (period-open, no duplicate run, employees present), **or** make `canSubmit` degrade gracefully when validation is unavailable rather than treating "cannot validate" as "cannot run".
+- **Related:** GAP-S1 · D1 · BUG-315 (the same "typed against a nonexistent endpoint" class)
+
+### BUG-317
+
+- **Type:** BUG · **Severity:** **CRITICAL** · **Status:** OPEN · **Layer:** FE
+- **Module:** payroll (US-PAY-006) · **Found:** 2026-08-23, D1 payroll migration (statutory sub-slice).
+- **Summary:** **The statutory editor can destroy a tenant's configured tax bands.** It hydrates its slab and EPF/ETF forms from `listRules()` → `GET /payroll/statutory-rules`, which returns `StatutoryRuleListItemDto` — a list projection carrying **no `taxSlabs` and no `socialSecurity`**. The editor therefore always opens **empty**, and saving writes that empty form over the real bands.
+- **Where:** `statutory-configuration.component.ts:691-702`.
+- **Suggested fix:** add `StatutoryService.getRule(id)` → `GET /statutory-rules/{id}` (the full DTO) and hydrate the editor from that before allowing edits.
+- **Related:** GAP-S1 · D1
+
+### ISSUE-403
+
+- **Type:** ISSUE · **Severity:** HIGH · **Status:** OPEN · **Layer:** FE
+- **Module:** payroll (US-PAY-006) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** Two more statutory gaps found alongside BUG-317:
+  - **Test-calculation always returns zeros.** The FE never sends `countryCode`, and `StatutoryDeductionResolver.ResolveAsync` deliberately resolves nothing without one ("NEVER apply an arbitrary country's rules"). So FR-5's preview cannot validate a slab config however it is set up.
+  - **Exemptions and cumulative PAYE are unreachable.** The backend has both fully built (`PayrollExemptionDto`, `ExemptionCalculationType`, `isCumulative`, with Postgres tests). The FE view models carry no field for either, so every rule is created non-cumulative with zero exemptions — a wrong tax deduction on a real payslip for any tenant needing them.
+- **Related:** BUG-317 · D1
+
+### ISSUE-404
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** FE
+- **Module:** payroll · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** Three smaller contract gaps the migration surfaced, each flagged rather than papered over:
+  - `cancelAdjustment` and `uploadDocument` are typed `Observable<IAdjustment>` but the endpoints return a bare `ApiResponse` with **no `data`**. Callers read `.id` off the result. Needs a component change to fix honestly.
+  - `IBankAdvicePreview` ignores the wire's `masked` flag, so the UI decides "masked vs revealed" purely from which method it called and never checks the server's own signal — a defence-in-depth gap on an audited sensitive path (NFR-3).
+  - The payroll history and audit views read only `page.items`, discarding `totalCount`/`page`/`pageSize`, then filter and sort client-side over the first page while the header calls itself "a complete history of every payroll run".
+- **Related:** D1
+
+### BUG-318
+
+- **Type:** BUG · **Severity:** **CRITICAL** · **Status:** RESOLVED (D1 payroll slice) · **Layer:** FE
+- **Module:** payroll (US-PAY-004) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** **Payslip PDF generation progress never actually polled.** The wire sends `isComplete`; the FE read `isGenerating`. `takeWhile(s => s.isGenerating, true)` therefore saw `undefined` (falsy), **completed after one poll**, toasted *"Payslip generation finished"* and reloaded the list while the Hangfire job was still rendering PDFs.
+- **Why nothing caught it:** the spec flushed `isGenerating` — a field the wire does not carry — **and** `generatedCount`, which exists on neither side. The fixture invented exactly what the unchecked cast asserted.
+- **Fix:** `mapPayslipGenerationStatus` inverts `isComplete` into `isGenerating`; an absent completion signal now means **still running**, because a missing flag must never tell an operator a mailing or render finished.
+- **Needs:** a regression TC bound to US-PAY-004 AC-1, verified against the running stack (the fix is unit-verified only).
+- **Related:** GAP-S1 · D1
+
+### ISSUE-405
+
+- **Type:** ISSUE · **Severity:** HIGH · **Status:** OPEN · **Layer:** FE
+- **Module:** payroll (US-PAY-007) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** **Two of the four adjustment filters have never worked.** The FE sends `type=` and `period=YYYY-MM`; the contract declares `adjustmentType`, `payMonth` (int) and `payYear` (int). ASP.NET ignores unknown query params, so selecting a Type or Period in the adjustments toolbar returns the **unfiltered** list with no error. (`status` and `employeeId` are correct.)
+- **Also:** the contract declares `page`/`pageSize` (default 25) which the FE never sends and whose `totalCount` it discards — the table silently shows only the first 25 adjustments while presenting itself as the full list.
+- **Why it is filed, not fixed:** renaming the params is a one-line service change, but it **activates two filters that have never run**, which is a behaviour change beyond a type migration and wants a QA pass. Paging needs a UI decision.
+- **Related:** D1 · ISSUE-404
+
+### ISSUE-406
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** FE
+- **Module:** payroll (US-PAY-007) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** Five wire fields the adjustments API sends have **no view-model home** and are dropped — flagged rather than silently nulled. Most important: **`negativeNetWarning`** (this adjustment drives an employee's net pay negative) and **`deferredToPayMonth`/`deferredToPayYear`** (the create silently moved the adjustment to a later period). Both are money-visible and the operator currently gets no signal at all. Also `generatedOccurrences`, `appliedInPayrollRunId`, `recurringSeriesId`.
+- **Related:** D1
+
+### ISSUE-407
+
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** FE
+- **Module:** platform (generated types) · **Found:** 2026-08-23, D1 payroll migration.
+- **Summary:** `core/api/index.ts` states that *"every generated property is optional (`?`) because Swashbuckle does not emit `required`."* **That is no longer universally true** — five payslip DTOs now carry `required` arrays, so their scalars are non-optional in the generated type, while the adjustment DTOs still have none. The behaviour is **per-schema**, and a migrator trusting the blanket note will mis-reason about which fields need defaults.
+- **Suggested fix:** soften the note to "most, not all — check the schema's `required` array".
+- **Related:** D1

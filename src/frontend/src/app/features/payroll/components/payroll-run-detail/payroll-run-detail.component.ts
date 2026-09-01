@@ -1049,8 +1049,14 @@ export class PayrollRunDetailComponent implements OnInit, OnDestroy {
    * failure surfaces a toast and re-enables the bar (the backend owns the real
    * state-machine + maker-checker enforcement, BR-5).
    */
+  /**
+   * D1: the parameter used to be `Observable<IPayrollRun>` — a claim the endpoints have never satisfied.
+   * They return `PayrollApprovalResultDto` (status + step position), which is why the `next` handler below
+   * already ignores the body and refetches. Typing it `unknown` states what this method actually needs:
+   * a signal that the action completed. The old signature was the only thing asserting otherwise.
+   */
   private runAction(
-    action$: Observable<IPayrollRun>,
+    action$: Observable<unknown>,
     successMessage: string,
   ): void {
     this.acting.set(true);

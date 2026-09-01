@@ -9,8 +9,13 @@ import { PayrollApprovalService } from './payroll-approval.service';
 import { environment } from '../../../../environments/environment';
 import { IPayrollRun } from '../models/payroll-run.models';
 import {
+  APPROVAL_ACTION_LABELS,
+  ApprovalHistoryWire,
+  ApprovalResultWire,
+  ApprovalSummaryWire,
   IApprovalHistoryEntry,
   IApprovalSummary,
+  PendingApprovalWire,
 } from '../models/approval.models';
 
 describe('PayrollApprovalService (US-PAY-008)', () => {
@@ -18,23 +23,41 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
   let httpMock: HttpTestingController;
   const runsUrl = `${environment.apiBaseUrl}/payroll/runs`;
 
-  const mockRun: IPayrollRun = {
-    id: 'r-1',
+  /**
+   * D1 wire-types slice: every flushed body below is now the WIRE shape from
+   * contracts/openapi/hrm-v1.json, not the view-model.
+   *
+   * The five action endpoints return `PayrollApprovalResultDto` — a result, NOT a run. The old spec
+   * flushed a full `IPayrollRun` for all five, which is a payload the server has never produced; that
+   * is precisely why `result.id === undefined` stayed green.
+   */
+  const wireActionResult: ApprovalResultWire = {
+    runId: 'r-1',
+    status: 'AwaitingApproval',
+    action: 'Submitted',
+    currentApprovalStep: 1,
+    totalApprovalSteps: 2,
+    workflowInstanceId: 'w-1',
+  };
+
+  /** `PayrollApprovalSummaryDto` — note `exceptions` is a STRING ARRAY on the wire. */
+  const wireSummary: ApprovalSummaryWire = {
+    runId: 'r-1',
     payMonth: 5,
     payYear: 2026,
     status: 'AwaitingApproval',
     totalEmployees: 250,
-    processedEmployees: 247,
-    skippedEmployees: 3,
     totalGross: 1000000,
     totalDeductions: 200000,
+    totalStatutory: 120000,
     totalNet: 800000,
-    initiatedByName: 'Alex HR',
-    initiatedAt: '2026-05-31T10:00:00Z',
-    completedAt: '2026-05-31T10:05:00Z',
+    previousMonthTotalNet: 760000,
+    variancePercentage: 5.26,
+    exceptions: ['3 payslip(s) have a negative net salary.'],
   };
 
-  const mockSummary: IApprovalSummary = {
+  /** What `mapApprovalSummary(wireSummary)` must produce. */
+  const mappedSummary: IApprovalSummary = {
     runId: 'r-1',
     totalEmployees: 250,
     totalGross: 1000000,
@@ -44,16 +67,37 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
     previousMonthTotalNet: 760000,
     variancePercentage: 5.26,
     exceptions: [
-      { severity: 'Warning', message: 'Negative net', employeeName: 'Sam' },
+      {
+        severity: 'Warning',
+        message: '3 payslip(s) have a negative net salary.',
+        employeeName: null,
+      },
     ],
   };
 
-  const mockHistory: IApprovalHistoryEntry[] = [
+  /** `PayrollApprovalHistoryDto` — carries `actorUserId`, never an actor NAME. */
+  const wireHistory: ApprovalHistoryWire[] = [
+    {
+      id: 'h-1',
+      payrollRunId: 'r-1',
+      workflowInstanceId: 'w-1',
+      stepNumber: 1,
+      action: 'Submitted',
+      actorUserId: '22222222-2222-2222-2222-222222222222',
+      comments: null,
+      actedAt: '2026-05-31T11:00:00Z',
+      ipAddress: '10.0.0.1',
+    },
+  ];
+
+  /** What `mapApprovalHistoryEntry` must produce for `wireHistory[0]`. */
+  const mappedHistory: IApprovalHistoryEntry[] = [
     {
       id: 'h-1',
       stepNumber: 1,
       action: 'Submitted',
-      actorName: 'Alex HR',
+      // No wire source — the DTO has only actorUserId. Must NOT be a GUID.
+      actorName: null,
       comments: null,
       actedAt: '2026-05-31T11:00:00Z',
       ipAddress: '10.0.0.1',
@@ -88,9 +132,29 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
     expect(req.request.method).toBe('POST');
     expect(req.request.withCredentials).toBeTrue();
     expect(req.request.body).toBeNull();
-    req.flush(mockRun);
+    req.flush(wireActionResult);
 
-    expect(result).toEqual(mockRun);
+    // The result DTO's `runId` must land on `id` — it is the only real field the
+    // caller could use, and it was `undefined` before this mapping.
+    expect(result!.id).toBe('r-1');
+    expect(result!.status).toBe('AwaitingApproval');
+  });
+
+  it('submit() never fabricates run totals from the action result', () => {
+    let result: IPayrollRun | undefined;
+    service.submit('r-1').subscribe((r) => (result = r));
+
+    httpMock.expectOne(`${runsUrl}/r-1/submit-for-approval`).flush({
+      runId: 'r-1',
+      status: 'AwaitingApproval',
+    } satisfies ApprovalResultWire);
+
+    // The result DTO carries no money — these are explicit placeholders, and the
+    // caller refetches the run. What matters is that nothing invents a total.
+    expect(result!.totalGross).toBe(0);
+    expect(result!.totalNet).toBe(0);
+    expect(result!.totalEmployees).toBe(0);
+    expect(result!.initiatedByName).toBeNull();
   });
 
   // ─── approve (AC-2) ───────────────────────────────────────
@@ -101,9 +165,21 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
 
     const req = httpMock.expectOne(`${runsUrl}/r-1/approve`);
     expect(req.request.method).toBe('POST');
-    req.flush({ ...mockRun, status: 'Approved' });
+    req.flush({ ...wireActionResult, status: 'Approved', action: 'Approved' });
 
     expect(result?.status).toBe('Approved');
+    expect(result?.id).toBe('r-1');
+  });
+
+  it('approve() does NOT report Approved when the server omits the status', () => {
+    let result: IPayrollRun | undefined;
+    service.approve('r-1').subscribe((r) => (result = r));
+
+    // A response with no status must not read as "this payroll run is approved".
+    httpMock.expectOne(`${runsUrl}/r-1/approve`).flush({ runId: 'r-1' });
+
+    expect(result!.status as string).toBe('Unknown');
+    expect(result!.status).not.toBe('Approved');
   });
 
   // ─── reject (AC-3) ────────────────────────────────────────
@@ -117,7 +193,7 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
     const req = httpMock.expectOne(`${runsUrl}/r-1/reject`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ comments: 'Wrong tax' });
-    req.flush({ ...mockRun, status: 'Rejected' });
+    req.flush({ ...wireActionResult, status: 'Rejected', action: 'Rejected' });
 
     expect(result?.status).toBe('Rejected');
   });
@@ -133,7 +209,11 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
     const req = httpMock.expectOne(`${runsUrl}/r-1/return`);
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ comments: 'Please re-check OT' });
-    req.flush({ ...mockRun, status: 'ReviewPending' });
+    req.flush({
+      ...wireActionResult,
+      status: 'ReviewPending',
+      action: 'Returned',
+    });
 
     expect(result?.status).toBe('ReviewPending');
   });
@@ -146,9 +226,21 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
 
     const req = httpMock.expectOne(`${runsUrl}/r-1/finalize`);
     expect(req.request.method).toBe('POST');
-    req.flush({ ...mockRun, status: 'Finalized' });
+    req.flush({ ...wireActionResult, status: 'Finalized', action: 'Approved' });
 
     expect(result?.status).toBe('Finalized');
+  });
+
+  it('finalize() does NOT report Finalized when the server omits the status', () => {
+    let result: IPayrollRun | undefined;
+    service.finalize('r-1').subscribe((r) => (result = r));
+
+    // The most dangerous possible coercion on this surface: an absent status must
+    // never present a run as finalized (payslips locked, money released).
+    httpMock.expectOne(`${runsUrl}/r-1/finalize`).flush({ runId: 'r-1' });
+
+    expect(result!.status).not.toBe('Finalized');
+    expect(result!.status as string).toBe('Unknown');
   });
 
   // ─── getApprovalSummary (FR-4) ────────────────────────────
@@ -159,9 +251,34 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
 
     const req = httpMock.expectOne(`${runsUrl}/r-1/approval-summary`);
     expect(req.request.method).toBe('GET');
-    req.flush(mockSummary);
+    req.flush(wireSummary);
 
-    expect(result).toEqual(mockSummary);
+    // REGRESSION (live defect): the wire sends `exceptions: string[]`, but the view-model
+    // declares objects. Unmapped, every `ex.message` in the approver's exceptions panel
+    // rendered blank — the items an approver must read before releasing payroll.
+    expect(result).toEqual(mappedSummary);
+    expect(result!.exceptions[0].message).toBe(
+      '3 payslip(s) have a negative net salary.',
+    );
+    expect(result!.exceptions[0].severity).toBe('Warning');
+    expect(result).not.toBe(wireSummary as unknown as IApprovalSummary);
+  });
+
+  it('getApprovalSummary() keeps an absent previous-month net as null, not 0', () => {
+    let result: IApprovalSummary | undefined;
+    service.getApprovalSummary('r-1').subscribe((s) => (result = s));
+
+    httpMock
+      .expectOne(`${runsUrl}/r-1/approval-summary`)
+      .flush({ runId: 'r-1', totalNet: 800000 });
+
+    // "No prior run to compare against" is not "the prior run paid nothing" — the
+    // variance card renders them differently.
+    expect(result!.previousMonthTotalNet).toBeNull();
+    expect(result!.variancePercentage).toBeNull();
+    // Server-computed totals absent from the payload default to 0.
+    expect(result!.totalGross).toBe(0);
+    expect(result!.exceptions).toEqual([]);
   });
 
   // ─── getApprovalHistory (FR-7) ────────────────────────────
@@ -172,9 +289,29 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
 
     const req = httpMock.expectOne(`${runsUrl}/r-1/approval-history`);
     expect(req.request.method).toBe('GET');
-    req.flush(mockHistory);
+    req.flush(wireHistory);
 
-    expect(result).toEqual(mockHistory);
+    expect(result).toEqual(mappedHistory);
+    // actorName has no wire source — it must stay null, never the actorUserId GUID.
+    expect(result![0].actorName).toBeNull();
+    expect(result![0]).not.toBe(
+      wireHistory[0] as unknown as IApprovalHistoryEntry,
+    );
+  });
+
+  it('getApprovalHistory() does not relabel an audit row whose action is absent', () => {
+    let result: IApprovalHistoryEntry[] | undefined;
+    service.getApprovalHistory('r-1').subscribe((h) => (result = h));
+
+    httpMock
+      .expectOne(`${runsUrl}/r-1/approval-history`)
+      .flush([{ id: 'h-9', stepNumber: 2 }]);
+
+    // This is the approval audit trail — an absent action must NOT be stamped
+    // 'Submitted' or 'Approved'. It stays blank so the row cannot lie.
+    expect(result![0].action as string).toBe('');
+    expect(APPROVAL_ACTION_LABELS[result![0].action]).toBeUndefined();
+    expect(result![0].stepNumber).toBe(2);
   });
 
   it('getApprovalHistory() unwraps a { data } envelope', () => {
@@ -183,9 +320,9 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
 
     httpMock
       .expectOne(`${runsUrl}/r-1/approval-history`)
-      .flush({ data: mockHistory });
+      .flush({ data: wireHistory });
 
-    expect(result).toEqual(mockHistory);
+    expect(result).toEqual(mappedHistory);
   });
 
   it('getApprovalHistory() defaults to [] for an unexpected shape', () => {
@@ -203,11 +340,11 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
 
   // The PendingApprovalDto returned by GET /payroll/approval/pending — note the
   // primary key is `runId` (not `id`) and it carries the approval-step position.
-  const mockPendingDto = {
+  const mockPendingDto: PendingApprovalWire = {
     runId: 'r-1',
     payMonth: 5,
     payYear: 2026,
-    status: 'AwaitingApproval' as const,
+    status: 'AwaitingApproval',
     processedEmployees: 247,
     totalEmployees: 250,
     totalGross: 1000000,
@@ -247,6 +384,23 @@ describe('PayrollApprovalService (US-PAY-008)', () => {
     expect(mapped.totalDeductions).toBe(200000);
     expect(mapped.skippedEmployees).toBe(3);
     expect(mapped.completedAt).toBeNull();
+  });
+
+  it('listPendingApprovals() defaults an absent pending row to the least-claiming values', () => {
+    let result: IPayrollRun[] | undefined;
+    service.listPendingApprovals().subscribe((r) => (result = r));
+
+    httpMock.expectOne(pendingUrl).flush([{ runId: 'r-7' }]);
+
+    const mapped = result![0];
+    expect(mapped.id).toBe('r-7');
+    // A queue row with no status must not present as Approved/Finalized.
+    expect(mapped.status as string).toBe('Unknown');
+    expect(mapped.initiatedByName).toBeNull();
+    expect(mapped.totalGross).toBe(0);
+    expect(mapped.totalNet).toBe(0);
+    expect(mapped.totalDeductions).toBe(0);
+    expect(mapped.skippedEmployees).toBe(0);
   });
 
   it('listPendingApprovals() unwraps a { data } envelope', () => {

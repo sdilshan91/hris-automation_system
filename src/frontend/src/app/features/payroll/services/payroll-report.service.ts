@@ -5,15 +5,23 @@ import { map } from 'rxjs/operators';
 
 import { environment } from '../../../../environments/environment';
 import {
+  BankAdvicePreviewWire,
   IBankAdvicePreview,
   IDashboardAnalytics,
   IPayrollAnalyticsResult,
   IReportFilters,
   IReportResult,
   IReportTypeMeta,
+  PayrollAnalyticsResultWire,
   PayrollChartType,
   PayrollReportType,
   ReportExportFormat,
+  ReportResultWire,
+  ReportTypeMetaWire,
+  mapBankAdvicePreview,
+  mapPayrollAnalyticsResult,
+  mapReportResult,
+  mapReportTypeMeta,
   splitPeriod,
 } from '../models/payroll-report.models';
 
@@ -51,10 +59,10 @@ export class PayrollReportService {
   /** The available report types for the Notion-style sidebar (§8, FR-1). */
   listReportTypes(): Observable<IReportTypeMeta[]> {
     return this.http
-      .get<IReportTypeMeta[] | { data: IReportTypeMeta[] }>(this.reportsUrl, {
+      .get<ReportTypeMetaWire[] | { data: ReportTypeMetaWire[] }>(this.reportsUrl, {
         withCredentials: true,
       })
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapReportTypeMeta)));
   }
 
   /**
@@ -65,10 +73,12 @@ export class PayrollReportService {
     reportType: PayrollReportType,
     filters: IReportFilters,
   ): Observable<IReportResult> {
-    return this.http.get<IReportResult>(`${this.reportsUrl}/${reportType}`, {
-      params: this.filterParams(filters),
-      withCredentials: true,
-    });
+    return this.http
+      .get<ReportResultWire>(`${this.reportsUrl}/${reportType}`, {
+        params: this.filterParams(filters),
+        withCredentials: true,
+      })
+      .pipe(map(mapReportResult));
   }
 
   /**
@@ -95,10 +105,12 @@ export class PayrollReportService {
     chartType: PayrollChartType,
     filters: IReportFilters,
   ): Observable<IPayrollAnalyticsResult> {
-    return this.http.get<IPayrollAnalyticsResult>(`${this.analyticsUrl}/${chartType}`, {
-      params: this.filterParams(filters),
-      withCredentials: true,
-    });
+    return this.http
+      .get<PayrollAnalyticsResultWire>(`${this.analyticsUrl}/${chartType}`, {
+        params: this.filterParams(filters),
+        withCredentials: true,
+      })
+      .pipe(map(mapPayrollAnalyticsResult));
   }
 
   /**
@@ -119,10 +131,12 @@ export class PayrollReportService {
    * to the last 4 digits; full numbers are only in the downloaded file.
    */
   getBankAdvicePreview(filters: IReportFilters): Observable<IBankAdvicePreview> {
-    return this.http.get<IBankAdvicePreview>(`${this.reportsUrl}/bank-advice/preview`, {
-      params: this.filterParams(filters),
-      withCredentials: true,
-    });
+    return this.http
+      .get<BankAdvicePreviewWire>(`${this.reportsUrl}/bank-advice/preview`, {
+        params: this.filterParams(filters),
+        withCredentials: true,
+      })
+      .pipe(map(mapBankAdvicePreview));
   }
 
   /**
@@ -149,10 +163,12 @@ export class PayrollReportService {
    * un-masked.
    */
   getBankAdviceFull(filters: IReportFilters): Observable<IBankAdvicePreview> {
-    return this.http.get<IBankAdvicePreview>(`${this.reportsUrl}/bank-advice/full`, {
-      params: this.filterParams(filters),
-      withCredentials: true,
-    });
+    return this.http
+      .get<BankAdvicePreviewWire>(`${this.reportsUrl}/bank-advice/full`, {
+        params: this.filterParams(filters),
+        withCredentials: true,
+      })
+      .pipe(map(mapBankAdvicePreview));
   }
 
   /**

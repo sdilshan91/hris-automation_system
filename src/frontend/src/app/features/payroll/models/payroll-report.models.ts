@@ -13,6 +13,8 @@
  *    numbers for the FE-drawn charts.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Report types (FR-1) ──────────────────────────────────────────
 
 /**
@@ -452,4 +454,166 @@ export function variancePercent(metric: IPayrollSummaryMetric): number | null {
     return null;
   }
   return round2((metric.variance / Math.abs(metric.previous)) * 100);
+}
+
+// ─── Wire contract → view-model mappers (D1 payroll slice) ───────────────────
+//
+// `http.get<IReportResult>(…)` was an unchecked ASSERTION, not a check: TypeScript believed the
+// hand-written interface while the server sent whatever it sent. These aliases bind the view-models
+// above to the GENERATED contract, so a backend rename becomes a compile error here instead of an
+// `undefined` cell in the report table or a blank KPI card.
+//
+// Every generated property is optional because Swashbuckle does not emit `required` for non-nullable
+// C# reference types, so most `??` below fill a GENERATOR ARTIFACT, not a real absence. Where the
+// SCHEMA itself marks a field nullable (`previous`, `variance`, `note`, `totalRow`, `summary`) the
+// default is `null` and that distinction is load-bearing.
+//
+// DEFAULTING POLICY (payroll is money — a default is a decision):
+//  - `deferred` defaults to FALSE. An absent flag must not mark a synchronous report as async.
+//  - `isCost` defaults to FALSE. An absent flag must not paint a metric with the red "cost went up"
+//    semantics of FR-3; neutral is the least-claiming colour.
+//  - `previous` / `variance` default to NULL, never 0. `null` means "no prior finalized run" and makes
+//    `varianceDirection()` return 'none'; a 0 would render a fabricated "0.0% vs last period" delta on
+//    a first-ever payroll run.
+//  - `totalRow` / `summary` default to NULL, not an empty object — absent means "no footer row" /
+//    "no KPI cards", and an empty shell would render an empty grey row and four blank KPI tiles.
+//  - Enum-ish strings (`reportType`, `chartType`, metric `key`, descriptor `id`) are kept RAW and only
+//    cast. The contract types all four as plain `string`, so there is nothing to validate against; the
+//    important part is that an unknown value must NOT be coerced into a known one. An unrecognised
+//    `reportType` simply makes `reportHasChart()` return false — no chart, no wrong chart.
+//  - Money/counts (`current`, `netAmount`, `totalNetAmount`, `totalCount`, `employeeCount`, chart
+//    `value`) default to 0: all are server-computed non-nullable numerics, and the view-models type
+//    them as plain `number` — there is no "not yet calculated" state the UI renders differently.
+
+export type ReportTypeMetaWire = Schema<'PayrollPayrollReportDescriptorDto'>;
+export type ReportRowWire = Schema<'PayrollPayrollReportRow'>;
+export type ReportResultWire = Schema<'PayrollPayrollReportResult'>;
+export type PayrollRunSummaryWire = Schema<'PayrollPayrollReportSummaryDto'>;
+export type PayrollSummaryMetricWire = Schema<'PayrollPayrollSummaryMetricDto'>;
+export type BankAdviceLineWire = Schema<'PayrollBankAdviceLineDto'>;
+export type BankAdvicePreviewWire = Schema<'PayrollBankAdvicePreviewDto'>;
+export type AnalyticsPointWire = Schema<'PayrollPayrollChartPoint'>;
+export type AnalyticsSeriesWire = Schema<'PayrollPayrollChartSeries'>;
+export type PayrollAnalyticsResultWire = Schema<'PayrollPayrollAnalyticsResult'>;
+
+/**
+ * `GET /payroll/reports` descriptor → sidebar entry. `id` is the `:reportType` route segment and is
+ * kept RAW (the wire types it `string`); when the name is missing we fall back to the id so the
+ * sidebar never renders a blank, unclickable row.
+ */
+export function mapReportTypeMeta(w: ReportTypeMetaWire): IReportTypeMeta {
+  const id = (w.id ?? '') as PayrollReportType;
+  return {
+    id,
+    name: w.name ?? id,
+    description: w.description ?? '',
+    // Least-claiming: absent must not flag a synchronous report as deferred/bulk.
+    deferred: w.deferred ?? false,
+  };
+}
+
+/** One report table row — cells are pre-formatted strings owned by the BE. */
+export function mapReportRow(w: ReportRowWire): IReportRow {
+  return { cells: w.cells ?? [] };
+}
+
+/** One KPI metric card (US-RPT-003 FR-3). */
+export function mapPayrollSummaryMetric(w: PayrollSummaryMetricWire): IPayrollSummaryMetric {
+  return {
+    // Kept RAW (wire type is `string`); used only as a track/data-test key, never coerced.
+    key: (w.key ?? '') as PayrollSummaryMetricKey,
+    label: w.label ?? '',
+    // Server-computed non-nullable double; the card renders "0" the same as "no value".
+    current: w.current ?? 0,
+    // SCHEMA-nullable: null == "no prior finalized run". A 0 would fabricate a variance.
+    previous: w.previous ?? null,
+    variance: w.variance ?? null,
+    // Least-claiming: absent must not apply the red "cost increased" semantics.
+    isCost: w.isCost ?? false,
+  };
+}
+
+/** The Payroll Run Summary block (KPI cards + month-over-month bars). */
+export function mapPayrollRunSummary(w: PayrollRunSummaryWire): IPayrollRunSummary {
+  return {
+    currency: w.currency ?? '',
+    currentLabel: w.currentLabel ?? '',
+    // SCHEMA-nullable: null == no previous period to label on the dual bar chart.
+    previousLabel: w.previousLabel ?? null,
+    metrics: (w.metrics ?? []).map(mapPayrollSummaryMetric),
+  };
+}
+
+/** `GET /payroll/reports/{reportType}` → the generic report table + optional KPI summary. */
+export function mapReportResult(w: ReportResultWire): IReportResult {
+  return {
+    // Kept RAW: an unknown report type makes reportHasChart() false (no chart), which is safe.
+    reportType: (w.reportType ?? '') as PayrollReportType,
+    title: w.title ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    columns: w.columns ?? [],
+    rows: (w.rows ?? []).map(mapReportRow),
+    // Absent footer row → null, NOT an empty row (which would render a blank total line).
+    totalRow: w.totalRow ? mapReportRow(w.totalRow) : null,
+    // Server-computed count; may exceed rows.length when paginated, so it is never derived FE-side.
+    totalCount: w.totalCount ?? 0,
+    note: w.note ?? null,
+    // Absent summary → null: the report renders the plain table with no KPI cards (US-PAY-009 behaviour).
+    summary: w.summary ? mapPayrollRunSummary(w.summary) : null,
+  };
+}
+
+/** One bank-advice line. `accountNumber` arrives masked from /preview and full from /full (BR-2). */
+export function mapBankAdviceLine(w: BankAdviceLineWire): IBankAdviceLine {
+  return {
+    employeeNo: w.employeeNo ?? '',
+    employeeName: w.employeeName ?? '',
+    bankName: w.bankName ?? '',
+    branchCode: w.branchCode ?? '',
+    // Never invent an account number: absent renders blank rather than a plausible-looking value.
+    accountNumber: w.accountNumber ?? '',
+    // Server-computed net pay for the disbursement line.
+    netAmount: w.netAmount ?? 0,
+    narration: w.narration ?? '',
+  };
+}
+
+/**
+ * `GET /payroll/reports/bank-advice/preview` (masked) and `.../full` (un-masked) share this shape.
+ *
+ * NOTE: the wire DTO also carries a `masked: boolean` that this view-model has no field for, so the
+ * FE decides "masked vs revealed" purely from which method it called. See the OUT-OF-LANE ISSUE
+ * raised with this migration — adding the field needs a component change and is out of lane here.
+ */
+export function mapBankAdvicePreview(w: BankAdvicePreviewWire): IBankAdvicePreview {
+  return {
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    lines: (w.lines ?? []).map(mapBankAdviceLine),
+    employeeCount: w.employeeCount ?? 0,
+    totalNetAmount: w.totalNetAmount ?? 0,
+    note: w.note ?? null,
+  };
+}
+
+/** One labelled chart datum. */
+export function mapAnalyticsPoint(w: AnalyticsPointWire): IAnalyticsPoint {
+  return { label: w.label ?? '', value: w.value ?? 0 };
+}
+
+/** One named chart series. */
+export function mapAnalyticsSeries(w: AnalyticsSeriesWire): IAnalyticsSeries {
+  return { name: w.name ?? '', points: (w.points ?? []).map(mapAnalyticsPoint) };
+}
+
+/** `GET /payroll/analytics/{chartType}` → one chart payload. */
+export function mapPayrollAnalyticsResult(w: PayrollAnalyticsResultWire): IPayrollAnalyticsResult {
+  return {
+    // The view-model already widens to `| string`, so the raw wire value passes through untouched.
+    chartType: w.chartType ?? '',
+    points: (w.points ?? []).map(mapAnalyticsPoint),
+    categories: w.categories ?? [],
+    series: (w.series ?? []).map(mapAnalyticsSeries),
+  };
 }

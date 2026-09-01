@@ -4,8 +4,13 @@ import {
   buildDiff,
   emptyAuditFilters,
   hasDiff,
+  mapAuditEntry,
+  mapAuditPage,
+  mapPayrollHistoryRun,
   parseSnapshot,
+  AuditEntryWire,
   IAuditEntry,
+  PayrollHistoryRunWire,
 } from './audit.models';
 
 describe('audit.models helpers', () => {
@@ -164,6 +169,137 @@ describe('audit.models helpers', () => {
       const a = emptyAuditFilters();
       const b = emptyAuditFilters();
       expect(a).not.toBe(b);
+    });
+  });
+
+  // ─── D1 wire → view-model mappers ────────────────────────────
+
+  describe('mapAuditEntry', () => {
+    it('maps every field of a full PayrollAuditEntryDto', () => {
+      const wire: AuditEntryWire = {
+        id: 'a-1',
+        tenantId: 't-1',
+        timestamp: '2026-05-31T10:00:00Z',
+        actorUserId: 'u-2',
+        actorEmployeeNo: 'EMP002',
+        action: 'PayrollRun.Finalized',
+        resourceType: 'PayrollRun',
+        resourceId: 'r-1',
+        before: '{"status":"Approved"}',
+        after: '{"status":"Finalized"}',
+        ipAddress: '10.0.0.1',
+        userAgent: 'jasmine',
+        traceId: 'tr-1',
+      };
+      expect(mapAuditEntry(wire)).toEqual({
+        id: 'a-1',
+        tenantId: 't-1',
+        timestamp: '2026-05-31T10:00:00Z',
+        actorUserId: 'u-2',
+        actorEmployeeNo: 'EMP002',
+        action: 'PayrollRun.Finalized',
+        resourceType: 'PayrollRun',
+        resourceId: 'r-1',
+        before: '{"status":"Approved"}',
+        after: '{"status":"Finalized"}',
+        ipAddress: '10.0.0.1',
+        userAgent: 'jasmine',
+        traceId: 'tr-1',
+      });
+    });
+
+    it('keeps every absent evidence field as null, never an empty string', () => {
+      // The audit trail is append-only evidence: '' would assert the server sent a blank value,
+      // which is a different claim from "the server sent nothing".
+      const mapped = mapAuditEntry({ id: 'a-2', action: 'PayrollRun.Initiated' });
+      expect(mapped.actorUserId).toBeNull();
+      expect(mapped.actorEmployeeNo).toBeNull();
+      expect(mapped.before).toBeNull();
+      expect(mapped.after).toBeNull();
+      expect(mapped.ipAddress).toBeNull();
+      expect(mapped.userAgent).toBeNull();
+      expect(mapped.traceId).toBeNull();
+      expect(mapped.resourceType).toBeNull();
+      expect(mapped.resourceId).toBeNull();
+      expect(mapped.tenantId).toBeNull();
+    });
+
+    it('produces an entry the diff helpers can consume', () => {
+      const mapped: IAuditEntry = mapAuditEntry({
+        id: 'a-3',
+        action: 'SalaryComponent.Updated',
+        before: '{"amount":100}',
+        after: '{"amount":200}',
+      });
+      expect(hasDiff(mapped)).toBeTrue();
+      expect(buildDiff(parseSnapshot(mapped.before), parseSnapshot(mapped.after))).toEqual([
+        { field: 'amount', before: '100', after: '200', kind: 'modified' },
+      ]);
+    });
+  });
+
+  describe('mapPayrollHistoryRun', () => {
+    it('maps a full PayrollRunHistoryItemDto', () => {
+      const wire: PayrollHistoryRunWire = {
+        runId: 'r-1',
+        payMonth: 5,
+        payYear: 2026,
+        period: '2026-05',
+        status: 'Finalized',
+        employeeCount: 250,
+        totalNet: 800000,
+        totalGross: 1000000,
+        totalDeductions: 200000,
+        initiatedBy: 'u-1',
+        initiatedAt: '2026-05-25T09:00:00Z',
+        approvedBy: 'u-2',
+        approvedAt: '2026-05-30T09:00:00Z',
+        finalizedAt: '2026-05-31T12:00:00Z',
+      };
+      const mapped = mapPayrollHistoryRun(wire);
+      expect(mapped.status).toBe('Finalized');
+      expect(mapped.totalNet).toBe(800000);
+      expect(mapped.finalizedAt).toBe('2026-05-31T12:00:00Z');
+    });
+
+    it('falls back to the Unknown status sentinel rather than a real lifecycle state', () => {
+      // Defaulting to e.g. 'Finalized' would paint a green "done" badge on a run whose status the
+      // server never sent (the admin slice shipped exactly this bug with 'terminated').
+      const mapped = mapPayrollHistoryRun({ runId: 'r-2' });
+      expect(mapped.status).toBe('Unknown' as never);
+    });
+
+    it('defaults absent server-computed totals to 0 and absent approval fields to null', () => {
+      const mapped = mapPayrollHistoryRun({ runId: 'r-3', payYear: 2026, payMonth: 6 });
+      expect(mapped.totalNet).toBe(0);
+      expect(mapped.totalGross).toBe(0);
+      expect(mapped.totalDeductions).toBe(0);
+      expect(mapped.employeeCount).toBe(0);
+      // Not-yet-approved / not-yet-finalized stay null, not ''.
+      expect(mapped.approvedBy).toBeNull();
+      expect(mapped.approvedAt).toBeNull();
+      expect(mapped.finalizedAt).toBeNull();
+    });
+  });
+
+  describe('mapAuditPage', () => {
+    it('maps the items and the page meta', () => {
+      const page = mapAuditPage({
+        items: [{ id: 'a-1', action: 'PayrollRun.Approved' }],
+        totalCount: 42,
+        page: 2,
+        pageSize: 50,
+      });
+      expect(page.items.length).toBe(1);
+      expect(page.items[0].action).toBe('PayrollRun.Approved');
+      expect(page.totalCount).toBe(42);
+      expect(page.page).toBe(2);
+      expect(page.pageSize).toBe(50);
+    });
+
+    it('returns an empty page for a null/absent body so the table renders an empty state', () => {
+      expect(mapAuditPage(null)).toEqual({ items: [], totalCount: 0, page: 1, pageSize: 0 });
+      expect(mapAuditPage({}).items).toEqual([]);
     });
   });
 });

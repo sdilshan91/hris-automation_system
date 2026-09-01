@@ -11,6 +11,9 @@ import {
   IMyPayslipDetail,
   IMyPayslipListItem,
   IMyPayslipPage,
+  MyPayslipDetailWire,
+  MyPayslipListItemWire,
+  MyPayslipListWire,
 } from '../models/my-payslip.models';
 
 describe('MyPayslipService', () => {
@@ -18,7 +21,9 @@ describe('MyPayslipService', () => {
   let httpMock: HttpTestingController;
   const baseUrl = `${environment.apiBaseUrl}/payroll/my-payslips`;
 
-  const items: IMyPayslipListItem[] = [
+  // WIRE shapes (PayrollMyPayslipListDto / PayrollMyPayslipDetailDto) — flushing the
+  // view-model instead would assert nothing about what the server actually sends.
+  const items: MyPayslipListItemWire[] = [
     {
       payslipId: 'p-1',
       payMonth: 5,
@@ -32,14 +37,14 @@ describe('MyPayslipService', () => {
     },
   ];
 
-  const page: IMyPayslipPage = {
+  const page: MyPayslipListWire = {
     items,
     totalCount: 24,
     page: 1,
     pageSize: 12,
   };
 
-  const detail: IMyPayslipDetail = {
+  const detail: MyPayslipDetailWire = {
     payslipId: 'p-1',
     payMonth: 5,
     payYear: 2026,
@@ -87,7 +92,7 @@ describe('MyPayslipService', () => {
     expect(req.request.withCredentials).toBeTrue();
     req.flush(page);
 
-    expect(result).toEqual(page);
+    expect(result).toEqual(page as IMyPayslipPage);
   });
 
   it('listMyPayslips appends the year filter when provided (FR-6)', () => {
@@ -126,7 +131,7 @@ describe('MyPayslipService', () => {
     const req = httpMock.expectOne((r) => r.url === baseUrl);
     req.flush(items);
 
-    expect(result?.items).toEqual(items);
+    expect(result?.items).toEqual(items as IMyPayslipListItem[]);
     expect(result?.totalCount).toBe(items.length);
     expect(result?.page).toBe(1);
     expect(result?.pageSize).toBe(12);
@@ -143,6 +148,40 @@ describe('MyPayslipService', () => {
     expect(result?.totalCount).toBe(0);
   });
 
+  it('listMyPayslips defaults an ABSENT pdfAvailable to false', () => {
+    let result: IMyPayslipPage | undefined;
+    service.listMyPayslips().subscribe((r) => (result = r));
+
+    // No `pdfAvailable` on the wire ⇒ do NOT offer a Download button for a PDF that
+    // may never have been rendered.
+    httpMock
+      .expectOne((r) => r.url === baseUrl)
+      .flush({ items: [{ payslipId: 'p-9' }], totalCount: 1, page: 1, pageSize: 12 });
+
+    expect(result?.items[0].pdfAvailable).toBeFalse();
+    expect(result?.items[0].netSalary).toBe(0);
+  });
+
+  it('getMyPayslip maps an absent ytdAmount to null, not 0 (FR-7 column gating)', () => {
+    let result: IMyPayslipDetail | undefined;
+    service.getMyPayslip('p-1').subscribe((r) => (result = r));
+
+    httpMock.expectOne(`${baseUrl}/p-1`).flush({
+      payslipId: 'p-1',
+      earnings: [{ componentName: 'Basic Salary', amount: 25000 }],
+    });
+
+    // null (YTD disabled) must stay distinguishable from a real 0.00 YTD.
+    expect(result?.earnings[0].ytdAmount).toBeNull();
+    expect(result?.deductions).toEqual([]);
+    expect(result?.employee).toEqual({
+      name: '',
+      employeeNo: '',
+      department: null,
+      designation: null,
+    });
+  });
+
   it('getMyPayslip GETs the detail by id', () => {
     let result: IMyPayslipDetail | undefined;
     service.getMyPayslip('p-1').subscribe((r) => (result = r));
@@ -152,7 +191,7 @@ describe('MyPayslipService', () => {
     expect(req.request.withCredentials).toBeTrue();
     req.flush(detail);
 
-    expect(result).toEqual(detail);
+    expect(result).toEqual(detail as IMyPayslipDetail);
   });
 
   it('downloadMyPayslipPdf requests a blob with the full response (FR-4)', () => {

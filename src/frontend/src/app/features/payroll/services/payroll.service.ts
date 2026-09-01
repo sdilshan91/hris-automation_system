@@ -11,6 +11,16 @@ import {
   IFormulaTestRequest,
   IFormulaTestResult,
   IComponentInUseError,
+  SalaryComponentListItemWire,
+  SalaryComponentPageWire,
+  SalaryComponentWire,
+  SalaryStructureListItemWire,
+  SalaryStructurePageWire,
+  SalaryStructureWire,
+  mapSalaryComponent,
+  mapSalaryComponentListItem,
+  mapSalaryStructure,
+  mapSalaryStructureListItem,
 } from '../models/payroll.models';
 
 /**
@@ -35,25 +45,32 @@ export class PayrollService {
 
   /**
    * All salary components for the tenant, sorted by processing order (AC-1).
-   * Tolerates either a bare array or a `{ data }`-style page so a backend
-   * pagination choice (NFR-3) doesn't break the inline table.
+   *
+   * The contract's `GET /payroll/salary-components` is PAGED
+   * (`PagedResultOfPayrollSalaryComponentListItemDto`, server default `pageSize` 25) and this call sends
+   * no `page`/`pageSize`, so a tenant with more than 25 components silently sees only the first page —
+   * flagged in the D1 report. `toArray` unwraps the page; the rows are `…ListItemDto`, which is a
+   * LEANER shape than the full DTO (no `formulaExpression`) — see `mapSalaryComponentListItem`.
    */
   listComponents(): Observable<ISalaryComponent[]> {
     return this.http
-      .get<ISalaryComponent[] | { data: ISalaryComponent[] }>(
-        this.componentsUrl,
-        { withCredentials: true },
-      )
-      .pipe(map((res) => this.toArray(res)));
+      .get<
+        | SalaryComponentPageWire
+        | SalaryComponentListItemWire[]
+        | { data: SalaryComponentListItemWire[] }
+      >(this.componentsUrl, { withCredentials: true })
+      .pipe(map((res) => this.toArray(res).map(mapSalaryComponentListItem)));
   }
 
   /** Create a salary component (AC-1). */
   createComponent(
     request: ISalaryComponentRequest,
   ): Observable<ISalaryComponent> {
-    return this.http.post<ISalaryComponent>(this.componentsUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<SalaryComponentWire>(this.componentsUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapSalaryComponent));
   }
 
   /** Update a salary component (AC-2). Historical payslips are unaffected (server). */
@@ -61,11 +78,11 @@ export class PayrollService {
     id: string,
     request: ISalaryComponentRequest,
   ): Observable<ISalaryComponent> {
-    return this.http.put<ISalaryComponent>(
-      `${this.componentsUrl}/${id}`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .put<SalaryComponentWire>(`${this.componentsUrl}/${id}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapSalaryComponent));
   }
 
   /**
@@ -81,23 +98,34 @@ export class PayrollService {
 
   /**
    * Persist a new processing order (AC-4) as an ordered list of component ids.
-   * Returns the re-sequenced components.
+   *
+   * ⚠ NO CONTRACT PATH. `POST /payroll/salary-components/reorder` does not exist in
+   * `contracts/openapi/hrm-v1.json` — this is a live 404 (GAP-010 / ISSUE-372). The only reorder route
+   * on the API is `POST /payroll/salary-structures/{id}/components/reorder`, which reorders components
+   * WITHIN one structure and takes `{ order: [{ salaryStructureComponentId, processingOrder }] }` — a
+   * different resource and a different body from the `{ orderedIds }` sent here. There is therefore no
+   * generated type to bind the response to; the request/response stay hand-written on purpose. Do not
+   * "fix" the types here — the endpoint has to be built (or the drag-reorder control removed) first.
    */
   reorderComponents(orderedIds: string[]): Observable<ISalaryComponent[]> {
     const body: IReorderRequest = { orderedIds };
     return this.http
-      .post<ISalaryComponent[] | { data: ISalaryComponent[] }>(
-        `${this.componentsUrl}/reorder`,
-        body,
-        { withCredentials: true },
-      )
-      .pipe(map((res) => this.toArray(res)));
+      .post<
+        | SalaryComponentPageWire
+        | SalaryComponentListItemWire[]
+        | { data: SalaryComponentListItemWire[] }
+      >(`${this.componentsUrl}/reorder`, body, { withCredentials: true })
+      .pipe(map((res) => this.toArray(res).map(mapSalaryComponentListItem)));
   }
 
   /**
    * Evaluate a formula against sample values for the "Test" button (FR-4, §8).
-   * The backend uses the same safe evaluator that runs payroll, so what the user
-   * tests is what payroll will compute (BR-6 syntax + circular-ref validation).
+   *
+   * ⚠ NO CONTRACT PATH. `POST /payroll/salary-components/validate-formula` does not exist in
+   * `contracts/openapi/hrm-v1.json` — zero paths, zero controller routes (GAP-010 / ISSUE-372). This is
+   * a live 404, so there is no generated type for `IFormulaTestRequest`/`IFormulaTestResult` to bind to
+   * and they stay hand-written on purpose. The claim in the old comment — that the backend runs the same
+   * evaluator payroll uses — is unverified, because there is no backend endpoint at all.
    */
   testFormula(
     request: IFormulaTestRequest,
@@ -114,20 +142,31 @@ export class PayrollService {
   /** All salary structures for the tenant (AC-3). Tolerates a `{ data }` envelope. */
   listStructures(): Observable<ISalaryStructure[]> {
     return this.http
-      .get<ISalaryStructure[] | { data: ISalaryStructure[] }>(
-        this.structuresUrl,
-        { withCredentials: true },
-      )
-      .pipe(map((res) => this.toArray(res)));
+      .get<
+        | SalaryStructurePageWire
+        | SalaryStructureListItemWire[]
+        | { data: SalaryStructureListItemWire[] }
+      >(this.structuresUrl, { withCredentials: true })
+      .pipe(map((res) => this.toArray(res).map(mapSalaryStructureListItem)));
   }
 
-  /** Clone an existing structure into a new Draft one (FR-6). */
+  /**
+   * Clone an existing structure into a new Draft one (FR-6).
+   *
+   * ⚠ The contract's body is `PayrollCloneSalaryStructureRequest { name, code }` and this posts `{}`, so
+   * the API binds `Name = ""` / `Code = ""`. There is no validator registered for the request, so the
+   * clone is persisted NAMELESS and CODELESS, and a second clone then 409s on the duplicate empty code.
+   * Sending real values needs the caller to prompt for a name/code — a component change, outside this
+   * task's lane. Flagged in the D1 report; the response IS bound (`PayrollSalaryStructureDto`).
+   */
   cloneStructure(id: string): Observable<ISalaryStructure> {
-    return this.http.post<ISalaryStructure>(
-      `${this.structuresUrl}/${id}/clone`,
-      {},
-      { withCredentials: true },
-    );
+    return this.http
+      .post<SalaryStructureWire>(
+        `${this.structuresUrl}/${id}/clone`,
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map(mapSalaryStructure));
   }
 
   // ─── Helpers ───────────────────────────────────────────────
@@ -157,19 +196,27 @@ export class PayrollService {
   }
 
   /**
-   * Accept a bare array, the new `{ items }` page envelope, or the legacy
-   * `{ data }` one; default to []. Items first, then data, then [].
+   * Accept a bare array, the `PagedResultOf…` `{ items }` envelope, or the legacy `{ data }` one;
+   * default to []. Items first, then data, then [].
+   *
+   * `items` / `data` are `T[] | null` (not just optional) because the generated contract marks the
+   * collections nullable — the hand-written envelope type here omitted the `| null` and the compiler
+   * caught it the moment these calls were bound to the real wire types.
    */
   private toArray<T>(
-    res: T[] | { items?: T[]; data?: T[] } | null | undefined,
+    res:
+      | T[]
+      | { items?: T[] | null; data?: T[] | null }
+      | null
+      | undefined,
   ): T[] {
     if (Array.isArray(res)) {
       return res;
     }
-    if (res && Array.isArray((res as { items?: T[] }).items)) {
+    if (res && Array.isArray((res as { items?: T[] | null }).items)) {
       return (res as { items: T[] }).items;
     }
-    if (res && Array.isArray((res as { data?: T[] }).data)) {
+    if (res && Array.isArray((res as { data?: T[] | null }).data)) {
       return (res as { data: T[] }).data;
     }
     return [];

@@ -1,13 +1,17 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, timer } from 'rxjs';
-import { switchMap, takeWhile } from 'rxjs/operators';
+import { map, switchMap, takeWhile } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IPayslipDistributionAccepted,
   IPayslipDistributionStatus,
   IResendRequest,
   ISendPayslipsRequest,
+  PayslipDistributionAcceptedWire,
+  PayslipDistributionStatusWire,
+  mapPayslipDistributionAccepted,
+  mapPayslipDistributionStatus,
 } from '../models/payslip-email.models';
 
 /**
@@ -24,6 +28,12 @@ import {
  * Envelope: the global ApiResponse unwrap interceptor (US-PLT-001) strips the
  * `{ data }` wrapper, so these methods consume BARE payloads. Delivery statuses
  * arrive as PascalCase STRINGS (US-PLT-003) — see payslip-email.models.ts.
+ *
+ * CONTRACT: all three routes and all five DTOs were verified against
+ * contracts/openapi/hrm-v1.json — this surface's hand-written interfaces agreed with the wire
+ * field-for-field, so the mappers below introduce NO renames. They pin that agreement (a backend
+ * rename now breaks the build here) and replace `undefined` with the documented defaults in
+ * payslip-email.models.ts.
  */
 @Injectable({ providedIn: 'root' })
 export class PayslipEmailService {
@@ -49,21 +59,25 @@ export class PayslipEmailService {
     confirm: boolean,
   ): Observable<IPayslipDistributionAccepted> {
     const body: ISendPayslipsRequest = { confirm };
-    return this.http.post<IPayslipDistributionAccepted>(
-      `${this.runsUrl}/${runId}/payslips/send-emails`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PayslipDistributionAcceptedWire>(
+        `${this.runsUrl}/${runId}/payslips/send-emails`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapPayslipDistributionAccepted));
   }
 
   /** A single point-in-time distribution-status snapshot (§8 progress + summary). */
   getDistributionStatus(
     runId: string,
   ): Observable<IPayslipDistributionStatus> {
-    return this.http.get<IPayslipDistributionStatus>(
-      `${this.runsUrl}/${runId}/payslips/distribution-summary`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<PayslipDistributionStatusWire>(
+        `${this.runsUrl}/${runId}/payslips/distribution-summary`,
+        { withCredentials: true },
+      )
+      .pipe(map(mapPayslipDistributionStatus));
   }
 
   /**
@@ -73,11 +87,13 @@ export class PayslipEmailService {
    */
   resendAllFailed(runId: string): Observable<IPayslipDistributionAccepted> {
     const body: IResendRequest = { onlyFailed: true };
-    return this.http.post<IPayslipDistributionAccepted>(
-      `${this.runsUrl}/${runId}/payslips/resend-emails`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PayslipDistributionAcceptedWire>(
+        `${this.runsUrl}/${runId}/payslips/resend-emails`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapPayslipDistributionAccepted));
   }
 
   /**
@@ -90,11 +106,13 @@ export class PayslipEmailService {
     employeeIds: string[],
   ): Observable<IPayslipDistributionAccepted> {
     const body: IResendRequest = { employeeIds };
-    return this.http.post<IPayslipDistributionAccepted>(
-      `${this.runsUrl}/${runId}/payslips/resend-emails`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PayslipDistributionAcceptedWire>(
+        `${this.runsUrl}/${runId}/payslips/resend-emails`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapPayslipDistributionAccepted));
   }
 
   /**
@@ -114,7 +132,9 @@ export class PayslipEmailService {
   ): Observable<IPayslipDistributionStatus> {
     return timer(0, PayslipEmailService.POLL_INTERVAL_MS).pipe(
       switchMap(() => this.getDistributionStatus(runId)),
-      // Keep emitting while sending; emit the first terminal snapshot, then complete.
+      // Keep emitting while sending; emit the first terminal snapshot, then complete. `isSending`
+      // is mapped to default TRUE on absence, so a payload that never says "still running" cannot
+      // end the poll and announce a finished distribution.
       takeWhile((s) => s.isSending, true),
     );
   }
