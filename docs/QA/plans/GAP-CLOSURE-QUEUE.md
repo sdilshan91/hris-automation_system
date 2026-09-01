@@ -450,7 +450,26 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > **B3/B4/B5 are NOT duplicates of D1** — this queue already says "Tier B items already migrate their own
 > module's files; D1 finishes each module." Checked before "fixing" a non-problem.
 
-- [ ] **D1 · S-1 migration** — **RE-SCOPED (see above): the 450 wire-adjacent interfaces + a drift guard.**
+- [~] **D1 · S-1 migration** — **guard DONE (#565); per-module migration in progress.**
+  **RE-MEASURED, and the queue's denominator was wrong.** "450 wire-adjacent interfaces" (and the 662/692
+  totals before it) count mostly view models that never cross the wire and therefore *cannot* drift. The
+  number that matters is **unchecked wire assertions** — `http.get<IFoo>`, an unchecked cast where a mismatch
+  is a silent `undefined`. There are **267 across 54 files**, and unlike the interface count it *moves*:
+  **performance is at ZERO**, because the D-perf slices genuinely finished.
+  **The guard came first because the migration cannot finish without it** — 99 call sites migrated while the
+  interface count moved by three, since new ones kept arriving. `FrontendWireContractDriftGuardTests` now
+  freezes the count: baseline may only shrink, a staleness arm forces cleaned files out of the list, and a
+  positive guardian stops the whole thing passing against an empty scan. 3/3 mutations RED.
+  Its first version **missed 67 real call sites** — not a differently-named field, but LINE-WRAPPED
+  `this.http` / `.get<IFoo>`. Second time this session a guard was coupled to formatting or a receiver name.
+  **DECIDED (human, 2026-08-23): per-module slices in this loop, worst-first** — not `/campaign`. The queue's
+  own measurement (≈1 field in 5 describes an endpoint that was never built) means these are *not* mechanical
+  edits, and a batch tool would produce wrong code silently, exactly as BUG-310 did.
+  **Remaining, worst-first** (each its own slice + PR): admin **43** · payroll **40** · attendance **35** ·
+  onboarding **20** · core **16** · benefits **12** · training **10** · core-hr **10** · recruitment **7** ·
+  reports **3** · leave **3** · notifications **2** · dashboard **1**.
+  - *(original scoping note below)*
+- [ ] ~~D1 original~~ — **the 450 wire-adjacent interfaces + a drift guard.**
   Original text: module by module, worst-first. **669 hand-written interfaces vs 11 `Schema<>` uses** —
   *both figures now stale; measured 692 and 109 on 2026-08-21.*
   Order by where it hurts: **performance (102) → admin-console (88) → leave (79) → payroll (75) → core-hr (71) →
@@ -511,6 +530,14 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23 (D1 guard)** — **D1's drift guard shipped (#565); Tier C closed just before it.** The
+  re-measurement matters more than the guard: the metric this queue has tracked all along ("N hand-written
+  interfaces") barely moves when work is done, because most of those interfaces never cross the wire.
+  **Unchecked wire assertions** is the number that responds to effort — 267 today, and performance already at
+  zero. Future slices should report against that.
+  The guard's first version missed 67 sites to line wrapping. Together with the three decoration bugs in the
+  C3 guard, that is **four** guards this session that could not fail when first written. Mutating the guard
+  itself is now non-optional.
 - **2026-08-23 (C5)** — **C5 shipped (#563).** Tier C is complete. The entry's "a route already exists" was
   half-true in the way that matters: the route exists and the email still could not use it, because a mail
   client sends no credentials. **Five for five now on prescriptions being unreliable.**
