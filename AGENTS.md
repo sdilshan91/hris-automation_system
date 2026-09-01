@@ -59,7 +59,9 @@ Backend:
 ```bash
 dotnet restore src/backend/HRM.sln
 dotnet build src/backend/HRM.sln
-dotnet test src/backend/HRM.sln --no-build
+# NEVER raw `dotnet test` (ISSUE-312: it exits 0 on an ABORTED run,
+# so a partial run is indistinguishable from a green suite).
+bash scripts/run-backend-tests.sh src/backend/HRM.sln
 ```
 
 Frontend:

@@ -59,10 +59,16 @@ deterministic.
 
 1. **File the finding.** Append to [docs/QA/TEST-FINDINGS.md](../../docs/QA/TEST-FINDINGS.md) with the
    full schema (type · severity · status OPEN · layer · module/US/TC · title · root-cause+confidence · repro ·
-   evidence · severity rationale · suggested direction). Assign the next free ID (`grep -oE 'BUG-[0-9]+|ISSUE-[0-9]+'`
-   → max+1). Cross-link the parent finding/PR with `[[wiki-links]]`. **De-dup first** — if it's the same defect
-   as an existing finding, extend that one instead of minting a new ID.
-2. **Fold it into the plan.** Add it to the single living plan [docs/QA/plans/COMPLETION-PLAN.md](../../docs/QA/plans/COMPLETION-PLAN.md)
+   evidence · severity rationale · suggested direction). Assign the next free ID by scanning **BOTH** ledger files
+   (`grep -hoE 'BUG-[0-9]+|ISSUE-[0-9]+|ENH-[0-9]+' docs/QA/TEST-FINDINGS*.md | sort -t- -k2 -n | tail -1` → +1) —
+   the ledger was split 2026-09-01 and scanning only the working file re-issues an archived id. Cross-link the parent finding/PR with `[[wiki-links]]`. **De-dup first, across BOTH files** — if it's the same defect as an existing finding, extend that
+   one instead of minting a new ID. A recurring regression's original is usually in the archive.
+2. **Fold it into the LIVE QUEUE.** Add it to [docs/QA/plans/GAP-CLOSURE-QUEUE.md](../../docs/QA/plans/GAP-CLOSURE-QUEUE.md)
+   — *the loop's source of truth*, executed top-down, one item per iteration. **This is the heal target
+   (decided 2026-09-01).** It used to be `COMPLETION-PLAN.md`, which the loop stopped reading around
+   2026-08-22: findings were being filed into a document nothing executed, which is the silent drop this
+   skill exists to prevent. `COMPLETION-PLAN.md` remains the broad living backlog, refreshed at
+   `/retro` and `/gap-analysis` cadence — not per-heal. Older guidance naming it here is superseded
    under the phase/theme it belongs to (or the "loop-discovered items" section), tagged `[NEW]` with its finding ID and a one-line
    disposition (build / remove / decision / infra).
 3. **Re-sort the priority order.** Recompute the execution order with:
@@ -75,7 +81,9 @@ deterministic.
    Update the plan's "recommended order / next" so the top of the queue reflects the new reality.
 4. **Respect the gates & boundaries.** Auto-heal **files and re-prioritizes**; it does **not** auto-implement
    decision/infra-gated work, and it never weakens/skips a test to go green, never crosses the report-only
-   boundary (`/test-all`, `@test-runner`), and never silently self-approves an outward-facing action.
+   boundary (`/test-all`, `@test-runner`). Merging its own PRs IS now authorized — bounded by the merge
+   gate in [pr-pipeline](pr-pipeline.md), which holds migrations, auth, tenant-isolation and CI/hook
+   diffs open for a human however green the run was.
 5. **Surface what matters.** If the new finding is **CRIT/HIGH**, **changes the critical path**, or **needs a
    decision/infra**, tell the user in the turn summary (with the re-prioritization); otherwise record it and keep
    moving. Never bury a severity ≥ HIGH discovery in a commit message alone.
@@ -92,7 +100,9 @@ deterministic.
 
 - **Feeds on** the out-of-lane contract in every `team/` + `review/` agent and the discoveries from the
   completeness sweep (integration-enforcer, contract-drift, US-AC audits).
-- **Writes to** `TEST-FINDINGS.md` (the ledger) and the `COMPLETION-PLAN` (the living plan).
+- **Writes to** `TEST-FINDINGS.md` (the ledger — live findings only; terminal ones live in
+  `TEST-FINDINGS-RESOLVED.md`) and `GAP-CLOSURE-QUEUE.md` (the live queue the loop executes).
+  `COMPLETION-PLAN.md` is the broad backlog and is NOT written per-heal.
 - **Complements** `/error-recovery` (stuck-loop breaker — retries), `/fault-diagnosis` (root-cause-before-fix),
   and the `/implement-all` remediation loop. Auto-heal is about *breadth* (don't lose discoveries); those are
   about *depth* (don't thrash on one fix).

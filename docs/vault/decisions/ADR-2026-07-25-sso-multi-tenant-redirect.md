@@ -49,7 +49,7 @@ Microsoft warns the `state`-carrying approach risks the **open-redirector threat
 `state` is **encrypted or verified**, and that raw URLs/secrets shouldn't sit in `state`. Our impl:
 - `state` is **encrypted + time-limited** (attacker can't forge/tamper it) and carries a **subdomain**, not an arbitrary URL; the return origin is server-issued, not attacker-supplied.
 - **`tid`/domain allow-list, fail-closed** — a valid Entra user from a non-allow-listed directory is rejected (US-AUTH-013), so the `organizations` authority can't be abused for cross-tenant entry.
-- **PKCE (S256)** + **nonce ↔ id_token** binding; the OAuth **authorization code is single-use** (Entra), so a replayed callback fails code exchange (`sso_token_validation_failed`, audited — [[TEST-FINDINGS#ISSUE-328|ISSUE-328]]).
+- **PKCE (S256)** + **nonce ↔ id_token** binding; the OAuth **authorization code is single-use** (Entra), so a replayed callback fails code exchange (`sso_token_validation_failed`, audited — [[TEST-FINDINGS-RESOLVED#ISSUE-328|ISSUE-328]]).
 - **No tokens in the redirect URL** — session handed back via httpOnly refresh cookie + `/auth/refresh`.
 
 ## Consequences / notes

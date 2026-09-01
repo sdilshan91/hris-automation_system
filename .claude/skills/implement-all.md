@@ -75,7 +75,11 @@ This pacing matches the "pause for review" PR strategy: each PR can be reviewed 
     update the Tally counters, commit `chore(status): mark US-XXX done`, push to main.
     (The status flip lives on main so future runs see the latest state immediately,
     even before the PR merges. The PR itself doesn't need to merge to unblock the next story.)
-15. Print: "PR #N opened for US-XXX. Review and merge, then run /implement-all again."
+15. **Apply the merge gate** — [pr-pipeline](pr-pipeline.md). Clear (verify gate green · no
+    CRIT/HIGH from `@integration-enforcer` / `@test-authenticator` / `/security-audit` · diff
+    touches no migration, auth/JWT, tenant-isolation or CI/hook/settings path) → **squash-merge
+    and delete the branch**. Any miss → leave the PR open and say which condition held it.
+16. Print the outcome: "PR #N merged for US-XXX" or "PR #N held open for review — <reason>".
 ```
 
 ## Remediation loop (autonomous bug-fixing)
@@ -241,7 +245,7 @@ If the user wants to chain multiple stories in a single session without manual r
 /loop /implement-all auth
 ```
 
-The built-in `/loop` skill will re-fire `/implement-all auth` after each completion. Stops automatically when the module reports "all done". Use only when you trust the agents to run unattended and don't need to review each PR before the next branch is cut.
+The built-in `/loop` skill will re-fire `/implement-all auth` after each completion. Stops automatically when the module reports "all done". PRs that clear the merge gate are merged autonomously; the ones held back ([pr-pipeline](pr-pipeline.md)) are what you review.
 
 ## State machine
 

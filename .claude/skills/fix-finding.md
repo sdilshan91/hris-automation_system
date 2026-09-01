@@ -73,7 +73,10 @@ before the next — do not stack colliding branches.)
    ```
 10. **Push + PR** — `mcp__github__push_files` + `mcp__github__create_pull_request`. PR body links the
     finding, the affected TCs, the new regression TC, and any `/security-audit` verdict.
-11. **Return** — print the PR URL and remind: **run `/verify-fix {ID}` after this merges** to close the
+11. **Merge gate** — [pr-pipeline](pr-pipeline.md). Clear → squash-merge, then run `/verify-fix {ID}`
+    to close the finding. Held (a fix for a tenant-isolation or auth finding usually IS held, by
+    design) → leave the PR open and say why.
+12. **Return** — print the PR URL and, if it was held, the reminder: **run `/verify-fix {ID}` after this merges** to close the
     finding and flip the tracker.
 
 ## Guardrails (non-negotiable)

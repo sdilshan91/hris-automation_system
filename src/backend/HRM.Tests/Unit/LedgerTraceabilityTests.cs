@@ -95,7 +95,8 @@ public sealed class LedgerTraceabilityTests
 
             var ids = FindingIdPattern.Matches(segment).Select(m => m.Value)
                 .Where(status.ContainsKey).ToList();
-            if (ids.Count > 0 && ids.TrueForAll(id => status[id] == "RESOLVED"))
+            if (ids.Count > 0 && ids.TrueForAll(id => status[id] == "RESOLVED")
+                && !StoriesContradictingResolvedFindings_2026_09_01.Contains(story))
             {
                 contradictions.Add($"{story} ({string.Join(",", ids)})");
             }
@@ -104,6 +105,45 @@ public sealed class LedgerTraceabilityTests
         string.Join(", ", contradictions).Should().BeEmpty(
             "these stories are marked [!] tested-with-findings, but every finding they name is RESOLVED. "
             + "Re-test and flip them to [x], or the ledger keeps reporting closed work as open.");
+    }
+
+    /// <summary>
+    /// Stories marked [!] tested-with-findings in TEST-STATUS.md whose every named finding is RESOLVED —
+    /// the pessimistic contradiction, which makes finished work look outstanding.
+    ///
+    /// Recorded 2026-09-01, when normalising the findings ledger made its statuses machine-readable for
+    /// the first time. These nine were ALWAYS contradictory; they were invisible because their status
+    /// lines did not parse, so the guard above silently skipped them. Clearing one means re-running its
+    /// TCs via /verify-fix and flipping the row to [x] — NOT editing the row to make a test go green.
+    /// The list may only shrink; TheContradictionBaseline_HasNoStaleEntries enforces that.
+    /// </summary>
+    private static readonly HashSet<string> StoriesContradictingResolvedFindings_2026_09_01 =
+        new(StringComparer.Ordinal)
+        {
+            "US-ADM-002", "US-ADM-003", "US-ADM-004", "US-ADM-005",
+            "US-AUTH-001", "US-AUTH-003", "US-AUTH-004", "US-AUTH-012", "US-AUTH-016",
+        };
+
+    [Fact]
+    public void TheContradictionBaseline_HasNoStaleEntries()
+    {
+        var status = FindingStatuses();
+        var stillContradicting = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (story, segment, marker) in StoryRows())
+        {
+            if (marker != '!') continue;
+            var ids = FindingIdPattern.Matches(segment).Select(m => m.Value).Where(status.ContainsKey).ToList();
+            if (ids.Count > 0 && ids.TrueForAll(id => status[id] == "RESOLVED")) stillContradicting.Add(story);
+        }
+
+        var stale = StoriesContradictingResolvedFindings_2026_09_01
+            .Where(s => !stillContradicting.Contains(s))
+            .OrderBy(s => s, StringComparer.Ordinal).ToList();
+
+        string.Join(", ", stale).Should().BeEmpty(
+            "these baseline entries no longer contradict — the story was re-tested, or a finding re-opened. "
+            + "Remove them; the baseline must only shrink, or it becomes a place real regressions hide.");
     }
 
     [Fact]
@@ -171,21 +211,104 @@ public sealed class LedgerTraceabilityTests
         }
     }
 
+    /// <summary>
+    /// The split's two structural invariants. Both were chosen because violating either silently
+    /// corrupts the ledger rather than failing loudly:
+    ///
+    ///  1. **No ID may appear in both files.** A finding's history must live in one place — a
+    ///     [[TEST-FINDINGS#BUG-292]] anchor has to resolve unambiguously, and a live extension hiding
+    ///     behind an archived parent is exactly the "wrong in both directions" failure the ledger rule
+    ///     already warns about. Systemic findings (BUG-003) carry sub-entries, so the whole ID family
+    ///     moves together or not at all.
+    ///  2. **No live finding may sit in the archive.** OPEN/DEFERRED work in an append-only archive is
+    ///     work nobody will look at again. The reverse (a resolved entry lingering in the working file)
+    ///     is harmless and deliberately NOT asserted — the split errs toward visibility.
+    /// </summary>
+    [Fact]
+    public void TheSplitLedger_KeepsEachIdInOneFile_AndNoLiveFindingInTheArchive()
+    {
+        var archivePath = Path.Combine(RepoRoot(), "docs", "QA", "TEST-FINDINGS-RESOLVED.md");
+        if (!File.Exists(archivePath)) return;   // split not in place; nothing to guard
+
+        static HashSet<string> Ids(string text) =>
+            Regex.Matches(text, @"^### ((?:BUG|ISSUE|ENH|GAP)-\d+)", RegexOptions.Multiline)
+                .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+
+        var working = Read("docs", "QA", "TEST-FINDINGS.md");
+        var archive = File.ReadAllText(archivePath);
+
+        var spanning = Ids(working).Intersect(Ids(archive)).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        spanning.Should().BeEmpty(
+            "a finding's entries must all live in one file — an anchor pointing at an id in both is "
+            + "ambiguous, and a live extension behind an archived parent is invisible work. Move the "
+            + "whole id family. Spanning: {0}", string.Join(", ", spanning));
+
+        var live = new[] { "OPEN", "DEFERRED" };
+        var stranded = Regex.Split(archive, @"\n### ")
+            .Select(b => (id: Regex.Match(b, @"^((?:BUG|ISSUE|ENH|GAP)-\d+)"),
+                          st: Regex.Match(b, @"\*\*Type / Severity / Status:\*\*[^\n]*?·[^\n]*?·\s*\**`?([A-Z]+)")))
+            .Where(x => x.id.Success && x.st.Success && live.Contains(x.st.Groups[1].Value))
+            .Select(x => $"{x.id.Groups[1].Value}={x.st.Groups[1].Value}")
+            .ToList();
+
+        stranded.Should().BeEmpty(
+            "TEST-FINDINGS-RESOLVED.md is an append-only archive of terminal findings; a live one filed "
+            + "there is work the team will never see again. Move it back to TEST-FINDINGS.md. Stranded: {0}",
+            string.Join(", ", stranded));
+    }
+
+    /// <summary>
+    /// The findings ledger is SPLIT (2026-09-01): live findings in TEST-FINDINGS.md, terminal ones in
+    /// TEST-FINDINGS-RESOLVED.md. Every guard here reads the UNION, because a story row may legitimately
+    /// blame a finding that has since been archived — resolving it against the working file alone would
+    /// report a false "unknown finding id" the moment a fix closes out.
+    /// </summary>
+    private static string LedgerCorpus()
+    {
+        var parts = new List<string> { Read("docs", "QA", "TEST-FINDINGS.md") };
+        var archive = Path.Combine(RepoRoot(), "docs", "QA", "TEST-FINDINGS-RESOLVED.md");
+        if (File.Exists(archive)) parts.Add(File.ReadAllText(archive));
+        return string.Join("\n", parts);
+    }
+
+    /// <summary>OPEN/DEFERRED (2) &gt; any terminal status (1) &gt; UNKNOWN (0).</summary>
+    private static int Rank(string status) => status switch
+    {
+        "OPEN" or "DEFERRED" or "WIP" => 2,
+        "UNKNOWN" => 0,
+        _ => 1,
+    };
+
     private static HashSet<string> FindingIds() =>
-        Regex.Matches(Read("docs", "QA", "TEST-FINDINGS.md"), @"^### ((?:BUG|ISSUE|ENH)-\d+)", RegexOptions.Multiline)
+        Regex.Matches(LedgerCorpus(), @"^### ((?:BUG|ISSUE|ENH)-\d+)", RegexOptions.Multiline)
             .Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
 
-    /// <summary>First declared status per finding — the block's own '**Status:**' line.</summary>
+    /// <summary>
+    /// Status per finding id. A systemic id (BUG-003) has MANY entries — a parent plus
+    /// `(EXTENDED to X)` / `NOTE` sub-entries — and they do not all share a status. **Any live entry
+    /// makes the whole finding live**: reporting BUG-003 as RESOLVED because its historical
+    /// pre-fix entry says so would tell every reader a cross-tenant leak is closed while live
+    /// extensions of it are still open. Naive dictionary assignment did exactly that once the ledger
+    /// split put the archived parent after the live extensions in the corpus.
+    /// </summary>
     private static Dictionary<string, string> FindingStatuses()
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var block in Regex.Split(Read("docs", "QA", "TEST-FINDINGS.md"), @"\n### "))
+        foreach (var block in Regex.Split(LedgerCorpus(), @"\n### "))
         {
             var id = Regex.Match(block, @"^((?:BUG|ISSUE|ENH)-\d+)");
             if (!id.Success) continue;
 
-            var status = Regex.Match(block, @"\*\*Status:\*\*\s*\**`?([A-Z]+)");
-            result[id.Groups[1].Value] = status.Success ? status.Groups[1].Value : "UNKNOWN";
+            var status = Regex.Match(block, @"\*\*Type / Severity / Status:\*\*[^\n]*?·[^\n]*?·\s*\**`?([A-Z]+)")
+                is { Success: true } combined ? combined
+                : Regex.Match(block, @"\*\*Status:\*\*\s*\**`?([A-Z]+)");
+            var value = status.Success ? status.Groups[1].Value : "UNKNOWN";
+            var key = id.Groups[1].Value;
+            // live beats terminal beats unknown, regardless of the order entries appear in
+            if (!result.TryGetValue(key, out var seen) || Rank(value) > Rank(seen))
+            {
+                result[key] = value;
+            }
         }
 
         return result;

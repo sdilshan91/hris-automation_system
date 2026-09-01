@@ -13,7 +13,7 @@ architecture form one graph.
 
 1. **Wikilinks resolve by NOTE NAME, never by path.** `[[authentication-sso]]` works;
    `[[../modules/authentication-sso]]` is permanently broken. 21 of the 38 were this mistake.
-2. **A ledger ID is a HEADING, not a note.** Use `[[TEST-FINDINGS#BUG-292]]`, never `[[BUG-292]]`.
+2. **A ledger ID is a HEADING, not a note.** Use `[[TEST-FINDINGS-RESOLVED#BUG-292]]`, never `[[BUG-292]]`.
 3. **Targets outside `docs/` need a markdown link** — `[CLAUDE.md](../../CLAUDE.md)`.
 4. **Never wikilink another memory store** (see below).
 5. **An unresolved link to a note that SHOULD exist is fine** — that is Obsidian's "create me"

@@ -25,7 +25,7 @@ also seeds a default admin tenant, roles, and admin user. **Never hand-write a m
 
 ## Tests
 
-`src/backend/HRM.Tests` (xUnit + FluentAssertions + NSubstitute) — 360 unit and 215 integration test
+`src/backend/HRM.Tests` (xUnit + FluentAssertions + NSubstitute) — ~365 unit and ~215 integration test
 files. Integration tests run against a **real PostgreSQL via Testcontainers**;
 `Microsoft.EntityFrameworkCore.InMemory` is also referenced but is a known root-cause class for false
 greens (InMemory masks Postgres behaviour — see `/fault-diagnosis`), so prefer the Testcontainers path

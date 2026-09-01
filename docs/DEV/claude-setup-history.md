@@ -11,14 +11,14 @@
 > `/retro`'s setup-drift pass is the recurring check that these claims are still true.
 
 > **Locally-vendored discipline skills.** `/fault-diagnosis` and `/error-recovery` live in
-> [`.claude/skills/`](.claude/skills/) (adapted from third-party MIT skill definitions, retargeted to
+> [`.claude/skills/`](../../.claude/skills/) (adapted from third-party MIT skill definitions, retargeted to
 > this stack — Serilog/`RequestId`, EF/Postgres, xUnit/Karma/Playwright). They are guidance protocols,
 > not pipeline drivers; invoke them explicitly or let them fire on bug/stuck-loop triggers. They defer to
 > the `test-integrity-guard` hook and the `/implement-all` remediation loop rather than competing with them.
 
 > **.NET reference skills — VENDORED, not a plugin (changed 2026-08-23).** 16 on-stack skills from the
 > MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) v1.5.0 now live directly in
-> [.claude/skills/](.claude/skills/): **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only
+> [.claude/skills/](../../.claude/skills/): **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only
 > migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test
 > approach), `database-performance`, `csharp-api-design`/`-coding-standards`, `csharp-nullable-reference-types`
 > (every project sets `<Nullable>enable</Nullable>` and the build emits CS8602/CS8604), the
@@ -36,7 +36,7 @@
 > `dotnet-skills` marketplace entry are both **removed** — they were dead config.
 >
 > **Trade-off:** frozen at v1.5.0, no auto-update. Refresh instructions and the full skipped-skill list are in
-> [.claude/skills/_vendor/README.md](.claude/skills/_vendor/README.md); upstream LICENSE preserved alongside.
+> [.claude/skills/_vendor/README.md](../../.claude/skills/_vendor/README.md); upstream LICENSE preserved alongside.
 
 > ⚠️ **`enabledPlugins` is a declaration, not an installer.** Adding a key there does **not** fetch the
 > plugin — you must also `claude plugin install <name>@<marketplace> --scope project`. This repo has hit
@@ -46,9 +46,34 @@
 > `~/.claude/plugins/installed_plugins.json` — must match exactly, in both directions. `/retro`'s
 > setup-drift pass checks this.
 >
-> **Official Anthropic plugins (project-scoped, in [.claude/settings.json](.claude/settings.json)).** Enabled 2026-08-22 alongside `frontend-design`. They auto-update and are **inert until the session restarts** after enabling:
+> ⚠️ **Matching names is not enough — check `projectPath` too.** Every entry in
+> `installed_plugins.json` carries the absolute path it was installed against, and a project-scoped
+> plugin is only offered to a session whose repo sits at that exact path. **Hit on 2026-09-01:** all
+> 13 plugins were installed against `/run/media/sachithra-dilshan/D/WORK/hris-automation_system`, but
+> the same disk (`/dev/sda5`) had since been remounted at `/mnt/d`. Names matched 13/13 in both
+> directions, so the check above passed — and all 13 plugins were silently inert: no
+> `/claude-automation-recommender`, no `/revise-claude-md`, no `silent-failure-hunter`, no LSP agents.
+> A remount, a re-clone, or a move to a different machine reproduces it.
+>
+> **Verify with:**
+> ```bash
+> python3 -c "
+> import json,os
+> d=json.load(open(os.path.expanduser('~/.claude/plugins/installed_plugins.json')))['plugins']
+> here=os.path.realpath('.')
+> for n,insts in d.items():
+>     for i in insts:
+>         if i.get('scope')=='project' and os.path.realpath(i['projectPath'])!=here:
+>             print('STALE PATH:',n,'->',i['projectPath'])
+> "
+> ```
+> **Fix:** re-run `claude plugin install <name>@<marketplace> --scope project` from the current path.
+> Symptom to recognise without running anything: `enabledPlugins` lists a plugin, but none of its
+> skills or agents appear in the session.
+>
+> **Official Anthropic plugins (project-scoped, in [.claude/settings.json](../../.claude/settings.json)).** Enabled 2026-08-22 alongside `frontend-design`. They auto-update and are **inert until the session restarts** after enabling:
 > - **`claude-code-setup`** — `/claude-automation-recommender`. A read-only scan of the repo that recommends hooks/skills/agents/MCP servers. Calibrated for projects with little setup, so most of its output is already-have here; its yield is *defects in existing config*. The 2026-08-22 run found the two that produced `ClaudeMdAccuracyTests` and ISSUE-389. Run it after a significant setup change, not on a cadence — the recurring version lives in `/retro`'s setup-drift pass.
-> - **`claude-md-management`** — `/revise-claude-md` + `claude-md-improver`. Audits CLAUDE.md quality and folds session learnings back in. **Complements, does not duplicate, [ClaudeMdAccuracyTests](src/backend/HRM.Tests/Unit/ClaudeMdAccuracyTests.cs):** the test catches *mechanical* drift (dead links, missing scripts, the ISSUE-312 warning); this catches *prose* rot, which no test can. Neither is sufficient alone.
+> - **`claude-md-management`** — `/revise-claude-md` + `claude-md-improver`. Audits CLAUDE.md quality and folds session learnings back in. **Complements, does not duplicate, [ClaudeMdAccuracyTests](../../src/backend/HRM.Tests/Unit/ClaudeMdAccuracyTests.cs):** the test catches *mechanical* drift (dead links, missing scripts, the ISSUE-312 warning); this catches *prose* rot, which no test can. Neither is sufficient alone.
 > - **`pr-review-toolkit`** — six review agents. **`silent-failure-hunter`** and **`type-design-analyzer`** are the net-new ones: they map onto this repo's two documented defect classes (swallowed errors; blind `as` casts hiding contract drift — see BUG-311/BUG-127). `code-reviewer` / `code-simplifier` overlap `/code-review` and `/simplify`; `pr-test-analyzer` overlaps `@test-authenticator`. Prefer the local agents where they overlap — they know the tenant-isolation rules.
 > - **`hookify`** — `/hookify` + `conversation-analyzer`, generates hooks from observed friction. Lower marginal value here (11 custom hooks already hand-written with rationale), but useful as the *authoring* step for whatever `/retro`'s skill-friction pass proposes turning into structural enforcement.
 > - **`security-guidance`** — pattern warnings on edit, an LLM diff review on `Stop`, and an agentic commit reviewer. Heavy overlap with `secret-guard`, `gitleaks.yml`, `semgrep.yml` and `/security-audit`; the **`Stop`-time diff review is the net-new layer**. Watch for duplicate findings — if it just re-reports what semgrep already caught, mute it via `skillOverrides` rather than living with the noise.
@@ -60,9 +85,9 @@
 > **Optional — Angular reference skills.** The Angular team's official [`angular/skills`](https://github.com/angular/skills) package (`npx skills add https://github.com/angular/skills`) gives `@frontend-dev` current, idiomatic Angular reference knowledge — `angular-developer` (signals/`linkedSignal`/`resource`, standalone components, forms, DI, routing, SSR, a11y, testing) and `angular-new-app`. It tracks the latest Angular, matching our Angular 20 + signals + OnPush stack, and is **version-aware** (its rule #1 makes the agent check the project's Angular version before applying guidance — e.g. Signal Forms is gated to v21+, so it won't force v21 features on our v20). The frontend counterpart to `dotnet-skills` above. (Note: prefer this over the now-deprecated `analogjs/angular-skills`.) **`angular-developer` is now vendored** (see below); `angular-new-app` was skipped as greenfield `ng new` scaffolding, irrelevant to our existing app.
 
 > **Vendored loose skills (`.claude/skills/`, manual-update — FROZEN).** Unlike the marketplace plugins above, these third-party MIT skills have **no marketplace manifest**, so they are **copied into the repo** and pinned at the vendored version — they do **not** auto-update. To refresh, re-copy from upstream (there is no auto-update path for loose skills):
-> - **`karma-skill`** — [`.claude/skills/karma-skill/`](.claude/skills/karma-skill/), from [`LambdaTest/agent-skills`](https://github.com/LambdaTest/agent-skills). Angular-aware Karma + Jasmine unit-test patterns (`TestBed`, `ComponentFixture`, `HttpTestingController`, `fakeAsync/tick/flush`, `createSpyObj`) matching our Angular 20 + Karma/Jasmine FE test stack. (The sibling `jasmine-skill` was **deliberately not** vendored — generic Jasmine, no Angular, redundant with baseline knowledge.)
-> - **`excalidraw-diagram`** — [`.claude/skills/excalidraw-diagram/`](.claude/skills/excalidraw-diagram/), from [`coleam00/excalidraw-diagram-skill`](https://github.com/coleam00/excalidraw-diagram-skill). Generates architecture/flow diagrams as `.excalidraw` JSON for `docs/`, ADRs, and the Obsidian vault. Diagram generation has **zero deps**; the optional PNG self-render/validation pipeline (`references/render_excalidraw.py`) needs Python `uv` + a Chromium and is intentionally **not** set up. Brand colors live in `references/color-palette.md`.
-> - **`angular-developer`** — [`.claude/skills/angular-developer/`](.claude/skills/angular-developer/), from the official [`angular/skills`](https://github.com/angular/skills) (Google/Angular team, MIT). SKILL.md + **37 reference files** covering components, signals/`linkedSignal`/`resource`, DI, routing, reactive + signal forms, SSR/rendering strategies, testing (fundamentals + harnesses + e2e + router), ARIA, animations, CLI, and **Tailwind** — the reference brain for `@frontend-dev`. Version-aware (checks project Angular version first). Only `angular-developer` was vendored; `angular-new-app` (greenfield scaffolding) was skipped.
+> - **`karma-skill`** — [`.claude/skills/karma-skill/`](../../.claude/skills/karma-skill/), from [`LambdaTest/agent-skills`](https://github.com/LambdaTest/agent-skills). Angular-aware Karma + Jasmine unit-test patterns (`TestBed`, `ComponentFixture`, `HttpTestingController`, `fakeAsync/tick/flush`, `createSpyObj`) matching our Angular 20 + Karma/Jasmine FE test stack. (The sibling `jasmine-skill` was **deliberately not** vendored — generic Jasmine, no Angular, redundant with baseline knowledge.)
+> - **`excalidraw-diagram`** — [`.claude/skills/excalidraw-diagram/`](../../.claude/skills/excalidraw-diagram/), from [`coleam00/excalidraw-diagram-skill`](https://github.com/coleam00/excalidraw-diagram-skill). Generates architecture/flow diagrams as `.excalidraw` JSON for `docs/`, ADRs, and the Obsidian vault. Diagram generation has **zero deps**; the optional PNG self-render/validation pipeline (`references/render_excalidraw.py`) needs Python `uv` + a Chromium and is intentionally **not** set up. Brand colors live in `references/color-palette.md`.
+> - **`angular-developer`** — [`.claude/skills/angular-developer/`](../../.claude/skills/angular-developer/), from the official [`angular/skills`](https://github.com/angular/skills) (Google/Angular team, MIT). SKILL.md + **37 reference files** covering components, signals/`linkedSignal`/`resource`, DI, routing, reactive + signal forms, SSR/rendering strategies, testing (fundamentals + harnesses + e2e + router), ARIA, animations, CLI, and **Tailwind** — the reference brain for `@frontend-dev`. Version-aware (checks project Angular version first). Only `angular-developer` was vendored; `angular-new-app` (greenfield scaffolding) was skipped.
 
 ## Why agent-memory is tracked in git (2026-08-22)
 

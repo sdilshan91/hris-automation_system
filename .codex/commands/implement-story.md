@@ -29,7 +29,7 @@ Use this when the user asks Codex to run `/implement-story US-XXX-000`, `impleme
 9. Verify:
    - `dotnet build src/backend/HRM.sln`
    - `npm.cmd run build` in `src/frontend` on Windows, otherwise `npm run build`
-   - `dotnet test src/backend/HRM.sln --no-build` if a test project exists; report failures but do not hide them.
+   - `bash scripts/run-backend-tests.sh src/backend/HRM.sln` (**never raw `dotnet test`** — ISSUE-312: it exits 0 on an ABORTED run, so a partial run reads as a full pass); report failures but do not hide them.
 10. Commit all story work as one commit using the message format in `.claude/skills/implement-story.md`.
 11. Push and open a PR using GitHub MCP if available, otherwise `git push` and `gh pr create` if configured.
 12. Return the PR URL.

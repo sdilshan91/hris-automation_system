@@ -32,7 +32,7 @@ Use this when the user asks Codex to run `/implement-all`, `implement-all`, "nex
 10. Verify:
    - `dotnet build src/backend/HRM.sln`
    - `npm.cmd run build` in `src/frontend` on Windows, otherwise `npm run build`
-   - `dotnet test src/backend/HRM.sln --no-build` if a test project exists; report failures but do not hide them.
+   - `bash scripts/run-backend-tests.sh src/backend/HRM.sln` (**never raw `dotnet test`** — ISSUE-312: it exits 0 on an ABORTED run, so a partial run reads as a full pass); report failures but do not hide them.
 11. Commit all story work as one commit using the message format in `.claude/skills/implement-all.md`.
 12. Push and open a PR using GitHub MCP if available, otherwise `git push` and `gh pr create` if configured.
 13. Switch back to `main`, mark `[~]` -> `[x]`, update tally counters, commit `chore(status): mark US-XXX done`, and push.
