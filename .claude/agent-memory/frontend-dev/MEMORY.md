@@ -35,3 +35,5 @@
 - [esbuild host-build platform mismatch](esbuild-host-build-platform-mismatch.md) — host-Linux FE build/test fails on win32 esbuild binary (NTFS shared drive); fix with `npm install --no-save @esbuild/linux-x64@<ver>`, no full npm ci
 - [Child/parent circular import](child-parent-circular-import.md) — a child cmp importing a helper from its parent cmp (which imports the child) = runtime "Cannot access X before initialization" (ng test only, build passes); inline the helper
 - [Sentry ESM inject seam](sentry-esm-inject-seam.md) — @sentry/angular exports are frozen ESM; spyOn(Sentry,'init') throws; expose an injectable SentryApi seam (default realSentry) to unit-test init/setTag wiring
+- [Payroll defaulting rule](feedback-payroll-defaulting.md) — on money paths a mapper default must be the least-claiming value; never assert money moved, consent given, or work finished
+- [Payroll statutory contract traps](project-payroll-statutory-contract-traps.md) — the list DTO carries no taxSlabs/socialSecurity; hydrating the editor from it opens empty and saving destroys the bands
