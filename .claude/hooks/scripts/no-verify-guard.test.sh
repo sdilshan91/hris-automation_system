@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
-# Self-test for no-verify-guard.py. Every DENY case below was a live BYPASS on
-# 2026-09-01: the guard only inspected the first token of a command segment, so any
-# wrapper — env, nice, time, sudo, or a `bash -c` payload — hid the `git` from it and a
-# --no-verify commit sailed straight through a hook whose whole job is to stop that.
+# Self-test for no-verify-guard.py.
+#
+# EIGHT of the thirteen DENY cases below were live BYPASSES on 2026-09-01 (marked
+# `# was-bypass`): the guard only inspected the first token of a command segment, so any
+# wrapper — env, nice, time, sudo, a FOO=1 assignment, or a `bash -c` payload — hid the
+# `git` from it and a --no-verify commit sailed straight through a hook whose whole job
+# is to stop that. The other five already worked and are here as regression cover.
+#
+# The distinction is written down because an earlier draft of this header claimed ALL
+# thirteen were bypasses. That was false, and nothing would have contradicted it: a
+# comment asserting an invariant is not evidence the code holds it. Verified by replaying
+# every case against the pre-fix guard — 8 allowed, 5 denied.
 #
 # The ALLOW cases matter just as much. A deny-guard with false positives gets disabled,
 # and then it protects nothing: `git log -n 5` must not be mistaken for `commit -n`, and
@@ -15,11 +23,15 @@ guard="$here/no-verify-guard.py"
 pass=0; fail=0
 
 verdict() { # $1 = command string -> prints allow|deny
-  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' \
+  # No `|| echo allow` fallback here: under `set -o pipefail` a failing guard makes the
+  # parser print its own "allow" default AND the fallback fire, doubling the output so
+  # every comparison fails — including cases that should pass. Capture once, default once.
+  local out
+  out="$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' \
     "$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$1")" \
   | python3 "$guard" 2>/dev/null \
-  | python3 -c 'import json,sys;d=sys.stdin.read().strip();print(json.loads(d).get("hookSpecificOutput",{}).get("permissionDecision","allow") if d else "allow")' 2>/dev/null \
-  || echo allow
+  | python3 -c 'import json,sys;d=sys.stdin.read().strip();print(json.loads(d).get("hookSpecificOutput",{}).get("permissionDecision","allow") if d else "allow")' 2>/dev/null)"
+  printf '%s' "${out:-allow}"
 }
 
 expect() { # $1 = allow|deny, $2 = command
@@ -34,14 +46,14 @@ expect() { # $1 = allow|deny, $2 = command
 # --- must DENY: hook bypasses, however they are dressed up ---
 expect deny "git commit --no-verify -m x"
 expect deny "git commit -n -m x"
-expect deny "env git commit --no-verify -m x"
-expect deny "nice git commit --no-verify -m x"
-expect deny "nice -n 10 git commit --no-verify -m x"
-expect deny "time git commit --no-verify -m x"
-expect deny "sudo git commit --no-verify -m x"
-expect deny "FOO=1 git commit --no-verify -m x"
-expect deny "env FOO=1 nice git push --no-verify"
-expect deny "bash -c 'git commit --no-verify -m x'"
+expect deny "env git commit --no-verify -m x"   # was-bypass
+expect deny "nice git commit --no-verify -m x"   # was-bypass
+expect deny "nice -n 10 git commit --no-verify -m x"   # was-bypass
+expect deny "time git commit --no-verify -m x"   # was-bypass
+expect deny "sudo git commit --no-verify -m x"   # was-bypass
+expect deny "FOO=1 git commit --no-verify -m x"   # was-bypass
+expect deny "env FOO=1 nice git push --no-verify"   # was-bypass
+expect deny "bash -c 'git commit --no-verify -m x'"   # was-bypass
 expect deny "true; git commit --no-verify -m x"
 expect deny "cd /tmp && git commit -n -m x"
 expect deny "git -c core.hooksPath=/dev/null commit -m x"
