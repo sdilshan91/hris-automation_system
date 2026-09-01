@@ -5,6 +5,9 @@
 > loop free of conflicts and duplicates. If reality changes, re-sort this file *before* starting the next item,
 > and say why in the changelog.
 >
+> **Per-item fix recipes, verification steps and traps: [`COMPLETION-GUIDE.md`](COMPLETION-GUIDE.md).**
+> This file holds the ORDER and the STATUS; the guide holds the HOW. Do not tick items in the guide.
+>
 > **This is `/auto-heal`'s fold target (decided 2026-09-01).** Every out-of-lane finding is filed to
 > `TEST-FINDINGS.md` and folded in here, then this file is re-sorted
 > (severity × blast-radius × unblocks-others; decision/infra-gated items park at the decision-gate).
