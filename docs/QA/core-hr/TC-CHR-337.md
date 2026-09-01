@@ -4,7 +4,7 @@ user_story: US-CHR-005
 module: Core HR
 priority: high
 type: functional
-status: automated
+status: pass
 created: 2026-07-20
 defect:
   - ISSUE-021
