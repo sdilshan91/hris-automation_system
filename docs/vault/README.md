@@ -53,7 +53,7 @@ The vault is for **knowledge that survives a conversation** — the *why* behind
 (except `workspace.json`, which is per-machine window layout and would churn every session).
 
 Rooting at `docs/vault/` made a 34-note island next to the documentation that actually matters. With
-the root at `docs/`, `[[US-PLT-005]]` resolves to the BA story, `[[TEST-FINDINGS#BUG-292]]` jumps to
+the root at `docs/`, `[[US-PLT-005]]` resolves to the BA story, `[[TEST-FINDINGS-RESOLVED#BUG-292]]` jumps to
 the finding, and the BA stories + QA ledgers + ADRs + architecture become one graph. The archive
 folders are excluded via `userIgnoreFilters` so they stay out of search and the graph.
 
@@ -64,7 +64,7 @@ folders are excluded via `userIgnoreFilters` so they stay out of search and the 
 relative markdown link — that mistake accounted for 21 of the 38.
 
 **2. A ledger ID is a HEADING, not a note.** `BUG-292` and `ISSUE-328` live inside
-`docs/QA/TEST-FINDINGS.md`. Link them as `[[TEST-FINDINGS#BUG-292]]`. A bare `[[BUG-292]]` can never
+`docs/QA/TEST-FINDINGS.md`. Link them as `[[TEST-FINDINGS-RESOLVED#BUG-292]]`. A bare `[[BUG-292]]` can never
 resolve, because no such file exists.
 
 **3. Targets outside `docs/` need a markdown link.** `CLAUDE.md` sits at the repo root, outside every

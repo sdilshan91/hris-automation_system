@@ -10,14 +10,18 @@ Repo: `sdilshan91/hris-automation_system`
 These behavioral rules apply to **all** agents and skills, in addition to the
 project rules below. They exist to cut wasted diff, rework, and late surprises.
 
-1. **Think before coding — ask when unsure, and seek the best approach.** Don't
-   assume. Whenever you have doubts or low confidence about any task — while
-   **planning, checking, or executing** — pause and ask clarifying questions, and
-   pair each question with **your recommendation**. Surface tradeoffs and name
-   competing interpretations instead of silently picking one. Proactively propose a
-   **better way, method, or technology** when you see one, and converge on the best
-   approach *before* you plan or execute. Don't hide confusion; a question — or a
-   better idea — up front is cheaper than a rewrite after.
+1. **Research the challenge, then ask with a recommendation.** Don't assume. When a
+   task presents a real challenge, **research it properly before choosing** — compare
+   actual options, then rank them and state an explicit **confidence** on each, and decide.
+   Whenever you have doubts, a decision to put to the user, a clarification to request, or
+   a suggestion — while **planning, checking, or executing** — ask via **`AskUserQuestion`**,
+   and pair every question with **your recommendation**. **Recommend the most suitable
+   option, never the easiest or the lowest-effort one**: if the right answer is the
+   expensive one, say so and defend it — a recommendation optimised for your own effort is
+   worse than no recommendation. Surface tradeoffs and name competing interpretations
+   instead of silently picking one. Proactively propose a better way, method, or technology
+   when you see one, and converge on the best approach *before* you plan or execute.
+   A question — or a better idea — up front is cheaper than a rewrite after.
 2. **Simplicity first.** Write the minimal code that solves the stated problem.
    No speculative abstractions, unrequested flexibility, or error handling for
    impossible cases. Self-check: *would a senior engineer call this overcomplicated?*
@@ -41,10 +45,12 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    *(As of 2026-08-22 `backend-dev`, `frontend-dev`, `qa-engineer`, `business-analyst` and
    `requirements-auditor` hold the `Agent` tool and can actually do this. The remaining agents
    deliberately cannot — narrow single-pass audits where fan-out adds cost, not coverage.)*
-   *Parallelism:* run independent sub-agents concurrently (multiple `Agent` calls in
-   one message) to speed things up — but **never parallelize dependent steps**
-   (where one's output feeds the next) **or concurrent writes to the same file**
-   (use `isolation: worktree` if parallel edits are unavoidable).
+   *Parallelism — default to it.* Where a task splits into independent lanes, run them
+   **concurrently** (multiple `Agent` calls in one message) rather than serially; serial
+   execution of independent work is a choice you should have to justify. The two hard
+   limits stand: **never parallelize dependent steps** (where one's output feeds the next)
+   **or concurrent writes to the same file** (use `isolation: worktree` if parallel edits
+   are unavoidable).
 6. **Auto-heal: never silently drop an out-of-lane discovery.** Work constantly surfaces
    things outside the current task's lane — a new bug, an adjacent-module dependency, a
    broken sibling test, a missing endpoint the FE already calls, a licensing/infra snag.
@@ -52,12 +58,43 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    these in a structured `OUT-OF-LANE:` block (type · severity · where · what · why-out-of-lane
    · suggested action) and do **not** scope-creep to fix them (a trivial, clearly-correct,
    same-file correction is the only exception, and it's still noted). The **orchestrator HEALS**:
-   files the finding to `docs/QA/TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and
+   files the finding to `docs/QA/TEST-FINDINGS.md`, folds it into the **live queue**
+   (`docs/QA/plans/GAP-CLOSURE-QUEUE.md` — what the loop actually executes; **not** `COMPLETION-PLAN.md`,
+   which the loop stopped reading in 2026-08), and
    **re-sorts the priority order** (severity × blast-radius × unblocks-others; decision/infra-gated
    items park at the decision-gate). The completion plan is a **living document** — it changes every
    time reality does. Protocol: [`/auto-heal`](.claude/skills/auto-heal.md). This does **not** bypass
    the report-only boundary, the test-integrity rule, or the decision-gate — it *tracks and ranks*;
    the human still decides gated work.
+   **Mandatory inside any loop or long task** — `/implement-all`, `/test-all`, `/campaign`,
+   `/loop` — and it covers **everything** surfaced, not just defects: nice-to-haves and gaps
+   are filed too, as `ENH` in the same `TEST-FINDINGS.md` (one ledger keeps the shared ID
+   sequence and the de-dup step working; a second file silently breaks both). A discovery
+   that only ever appears in a transcript was not tracked. When an out-of-lane finding lands
+   at **CRIT or HIGH**, re-order the live task queue on the spot — that finding may
+   legitimately outrank the story you are mid-way through; say so in the turn summary rather
+   than finishing the lower-value item first out of momentum.
+
+7. **Plan it, track it, and finish the pipeline yourself.** Break every non-trivial task
+   into sub-tasks with a real plan *before* starting, and keep a **todo list** you update
+   as each sub-task completes — not retroactively at the end. Put the plan to the user when
+   an item genuinely needs their input; otherwise proceed. You are **authorized to commit,
+   push, open PRs, and merge them** to carry a loop or long task to completion without
+   asking each time. That authority is bounded by the **merge gate** in
+   [`/pr-pipeline`](.claude/skills/pr-pipeline.md): auto-merge only on a green verify gate
+   with no CRIT/HIGH from the three audit agents, and **never** for a PR touching EF
+   migrations, auth/JWT, tenant isolation, or CI/hook/settings config — those stay open for
+   a human however green they are. *When an unattended loop hits a genuine doubt:* file it
+   as a `DECISION` finding, park that item at the decision-gate, and **continue with the
+   next unblocked item**. Never halt the whole queue over one ambiguity, and never resolve
+   it by quietly guessing — report every parked question in the turn summary.
+8. **One session, one worktree, one branch.** Concurrent Claude sessions on this repo must
+   not share a working tree. Each takes its **own git worktree on its own branch**
+   (`isolation: worktree` for sub-agents) and rebases on fresh `origin/main` before opening
+   a PR. For the shared ledgers — `STATUS.md`, `TEST-STATUS.md`, `TEST-FINDINGS.md`,
+   `GAP-CLOSURE-QUEUE.md`, `COMPLETION-PLAN.md` — **re-read immediately before every write**: another session may
+   have appended since you last looked, and writing back a copy you cached earlier in the
+   turn silently deletes their work.
 
 ## Advisor Stance (how to talk to the user)
 
@@ -152,7 +189,8 @@ Setup steps, capability flags and the plugin-collision history: [docs/DEV/mcp-se
 | `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical advisory — REPORT-ONLY.** Dependency currency, ADR-drift, complexity/dead-code → one ranked advisory in `docs/Architecture/advisory-reports/`. Never edits `src/`, deletes, or bumps deps. |
 | `/gap-analysis [module\|--nfr\|--reverse\|--arch\|--rollup]` | Local | **Implemented-vs-documented tracing — REPORT-ONLY.** Traces every documented requirement to real code; passes only with code **+ wired + test-bound**, so a strong backend behind a broken FE contract is `PARTIAL`. **Never corrects a false ledger line — it reports the contradiction.** |
 | `/campaign {name}` | Local + MCP | **Batch driver for a large, homogeneous, mechanical backlog.** Phase 1 is a **mandatory survey**: >20% non-mechanical **stops the campaign** (this is how BUG-310 shipped wrong code). Then pilot the smallest module, then one PR per module batch. Parks decision-required items; never closes a finding. |
-| `/auto-heal` | Local | **Living-plan self-healing.** On any `OUT-OF-LANE:` flag: files it to `TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, re-sorts priority (severity × blast-radius × unblocks-others). Encodes Engineering-Discipline rule #6. Never bypasses report-only or the decision-gate. |
+| `/pr-pipeline` | Local + MCP | **Autonomous commit → push → PR → merge, and the gate that bounds it.** Merge only on a green verify gate with no CRIT/HIGH from the three audit agents, and never for a diff touching EF migrations, auth/JWT, tenant isolation, or CI/hook/settings config. Encodes Engineering-Discipline rule #7. |
+| `/auto-heal` | Local | **Living-plan self-healing.** On any `OUT-OF-LANE:` flag: files it to `TEST-FINDINGS.md`, folds it into the live `GAP-CLOSURE-QUEUE.md`, re-sorts priority (severity × blast-radius × unblocks-others). Encodes Engineering-Discipline rule #6. Never bypasses report-only or the decision-gate. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
 > **Setup history — plugins, vendored skills, and the traps already hit.** Why `dotnet-skills` was
@@ -170,7 +208,7 @@ Source of truth: [.claude/skills/implement-all.md](.claude/skills/implement-all.
 3. **Verify gate:** `dotnet build` → `scripts/run-backend-tests.sh` (never raw `dotnet test` — ISSUE-312) → `npm run build` → `ng test` (headless). Any failure enters the **remediation loop** — up to 3 attempts that hand the verbatim errors to the owning dev agent and re-run the whole gate. It may **never** weaken/skip a test to go green; if it can't fix cleanly in 3 attempts it reverts the story to `[ ]` and stops without a PR.
 4. On green: commits `feat(US-XXX)`, pushes, opens a PR, flips STATUS.md `[~]`→`[x]` on `main`.
 
-Run continuously with `/loop /implement-all [scope]` — it re-fires until the scope reports "all done." Requires a **clean working tree on `main`**; only run unattended when you're willing to review the stacked PRs after the fact (they are opened, not auto-merged).
+Run continuously with `/loop /implement-all [scope]` — it re-fires until the scope reports "all done." Requires a **clean working tree** on its own worktree/branch (rule #8). PRs are **opened and merged autonomously** when they clear the merge gate in [`/pr-pipeline`](.claude/skills/pr-pipeline.md); anything touching migrations, auth, tenant isolation or CI/hook config is left open for you, as is any PR with a CRIT/HIGH from the audit agents. Expect to review held PRs and parked `DECISION` findings, not a stack of everything.
 
 ### `/test-all` — autonomous test-execution loop (REPORT-ONLY)
 
@@ -232,7 +270,7 @@ directly. Start at [docs/vault/Home.md](docs/vault/Home.md) and follow conventio
 
 > **Open the Obsidian vault at `docs/`, not `docs/vault/`** (config committed in `docs/.obsidian/`). Rooted at
 > `docs/vault/` it is a 34-note island; rooted at `docs/` the BA stories, QA ledgers, ADRs and architecture
-> are one graph — `[[US-PLT-005]]` resolves to the story and `[[TEST-FINDINGS#BUG-292]]` to the finding.
+> are one graph — `[[US-PLT-005]]` resolves to the story and `[[TEST-FINDINGS-RESOLVED#BUG-292]]` to the finding.
 > **Wikilinks resolve by note NAME, never by path** — `[[authentication-sso]]`, never
 > `[[../modules/authentication-sso]]`. That single mistake produced 21 of the 38 broken links found on
 > 2026-08-22.

@@ -92,36 +92,80 @@ public sealed class ClaudeMdAccuracyTests
     }
 
     /// <summary>
-    /// Every relative markdown link target in CLAUDE.md must resolve. CLAUDE.md links out to the
-    /// skills, agents, hooks and ledgers that define how this repo is worked on; a dead link there
-    /// points an agent at a protocol it then cannot read.
+    /// Every relative markdown link must resolve — in CLAUDE.md AND in the local markdown it
+    /// delegates to (one hop). CLAUDE.md links out to the skills, rules, agents and setup docs that
+    /// define how this repo is worked on; a dead link there points an agent at a protocol it cannot
+    /// read.
+    ///
+    /// The one-hop walk is not gold-plating, it is the fix for an observed regression: on 2026-09-01
+    /// commit 9219b9b9 trimmed CLAUDE.md 398→309 lines by moving the plugin/vendoring history into
+    /// docs/DEV/claude-setup-history.md — and carried the link targets over verbatim. Paths written
+    /// relative to the repo root are wrong from docs/DEV/, so 8 targets broke instantly. This guard
+    /// read only CLAUDE.md, so it stayed green through the whole thing. Delegating content out of
+    /// CLAUDE.md is now the normal way this file shrinks, which makes the destination exactly where
+    /// the next dead link will appear.
+    ///
+    /// Each file's links resolve against ITS OWN directory, which is the detail the move got wrong.
     /// </summary>
     [Fact]
     public void EveryRelativeMarkdownLink_Resolves()
     {
-        var targets = Regex
-            .Matches(ClaudeMd(), @"\]\(([^)\s#]+)(?:#[^)]*)?\)")
+        var root = RepoRoot();
+        var broken = new List<string>();
+        var checkedAny = false;
+
+        foreach (var file in LinkCheckedFiles())
+        {
+            var baseDir = Path.GetDirectoryName(file)!;
+
+            foreach (var target in LocalLinkTargets(File.ReadAllText(file)))
+            {
+                checkedAny = true;
+                var resolved = Path.GetFullPath(Path.Combine(
+                    baseDir, target.Replace('/', Path.DirectorySeparatorChar)));
+
+                if (!File.Exists(resolved) && !Directory.Exists(resolved))
+                {
+                    broken.Add($"{Relative(file)} -> {target}");
+                }
+            }
+        }
+
+        checkedAny.Should().BeTrue("CLAUDE.md links to the skills and ledgers it describes");
+
+        broken.Should().BeEmpty(
+            "these files point agents at the source of truth for how to work in this repo; a link "
+            + "that does not resolve is a protocol an agent cannot follow. Note that a link is "
+            + "relative to the file it is WRITTEN IN — moving prose out of CLAUDE.md means rewriting "
+            + "its targets. Broken: {0}",
+            string.Join(" | ", broken));
+    }
+
+    /// <summary>CLAUDE.md plus the local markdown it links to (one hop) — the delegated surface.</summary>
+    private static IEnumerable<string> LinkCheckedFiles()
+    {
+        var root = RepoRoot();
+        var claudeMd = Path.Combine(root, "CLAUDE.md");
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { claudeMd };
+
+        foreach (var target in LocalLinkTargets(File.ReadAllText(claudeMd)))
+        {
+            if (!target.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var hop = Path.GetFullPath(Path.Combine(root, target.Replace('/', Path.DirectorySeparatorChar)));
+            if (File.Exists(hop)) seen.Add(hop);
+        }
+
+        return seen.OrderBy(f => f, StringComparer.Ordinal);
+    }
+
+    /// <summary>Relative markdown link targets, fragment and external schemes stripped.</summary>
+    private static IEnumerable<string> LocalLinkTargets(string markdown) =>
+        Regex.Matches(markdown, @"\]\(([^)\s#]+)(?:#[^)]*)?\)")
             .Select(m => m.Groups[1].Value)
             .Where(t => !t.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             .Where(t => !t.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        targets.Should().NotBeEmpty("CLAUDE.md links to the skills and ledgers it describes");
-
-        var broken = targets
-            .Where(t =>
-            {
-                var p = Path.Combine(RepoRoot(), t.Replace('/', Path.DirectorySeparatorChar));
-                return !File.Exists(p) && !Directory.Exists(p);
-            })
-            .ToList();
-
-        broken.Should().BeEmpty(
-            "CLAUDE.md points agents at these files as the source of truth for how to work in this "
-            + "repo; a link that does not resolve is a protocol an agent cannot follow. Broken: {0}",
-            string.Join(", ", broken));
-    }
+            .Distinct(StringComparer.Ordinal);
 
     /// <summary>
     /// The backend test project must be documented, and must never again be described as absent.
@@ -153,7 +197,7 @@ public sealed class ClaudeMdAccuracyTests
     public void RawDotnetTest_IsNeverPresentedAsTheBackendTestCommand()
     {
         var offending = InstructionFiles()
-            .SelectMany(f => File.ReadAllLines(f).Select((line, i) => (line, no: $"{Path.GetFileName(f)}:{i + 1}")))
+            .SelectMany(f => File.ReadAllLines(f).Select((line, i) => (line, no: $"{Relative(f)}:{i + 1}")))
             .Where(x => x.line.Contains("dotnet test", StringComparison.Ordinal))
             // A line is fine when it names the wrapper or explicitly warns against the raw command.
             .Where(x => !x.line.Contains("run-backend-tests", StringComparison.Ordinal)
@@ -193,17 +237,44 @@ public sealed class ClaudeMdAccuracyTests
         return string.Join("\n", parts);
     }
 
+    /// <summary>
+    /// The agent-facing instruction surface, for guards that must hold wherever an agent is TOLD to
+    /// run something. Wider than <see cref="InstructionCorpus"/> on purpose: it also covers AGENTS.md
+    /// and <c>.codex/commands/</c>, which drive Codex the way CLAUDE.md and the skills drive Claude.
+    ///
+    /// Why this exists: on 2026-09-01 AGENTS.md and both .codex command wrappers still instructed
+    /// `dotnet test src/backend/HRM.sln --no-build` — the exact command the ISSUE-312 rule forbids.
+    /// AGENTS.md even names CLAUDE.md as its source of truth, then contradicted it three lines later.
+    /// It survived because the guard below only ever read CLAUDE.md and .claude/rules/. A rule that
+    /// binds one agent runtime and not the other is not a rule; it is a coin flip on which tool ran.
+    /// </summary>
     private static IEnumerable<string> InstructionFiles()
     {
-        yield return Path.Combine(RepoRoot(), "CLAUDE.md");
-        var rulesDir = Path.Combine(RepoRoot(), ".claude", "rules");
-        if (!Directory.Exists(rulesDir)) yield break;
-        foreach (var f in Directory.EnumerateFiles(rulesDir, "*.md", SearchOption.AllDirectories)
-                     .OrderBy(f => f, StringComparer.Ordinal))
+        var root = RepoRoot();
+
+        yield return Path.Combine(root, "CLAUDE.md");
+
+        var agentsMd = Path.Combine(root, "AGENTS.md");
+        if (File.Exists(agentsMd)) yield return agentsMd;
+
+        foreach (var dir in new[]
+                 {
+                     Path.Combine(root, ".claude", "rules"),
+                     Path.Combine(root, ".codex", "commands"),
+                 })
         {
-            yield return f;
+            if (!Directory.Exists(dir)) continue;
+            foreach (var f in Directory.EnumerateFiles(dir, "*.md", SearchOption.AllDirectories)
+                         .OrderBy(f => f, StringComparer.Ordinal))
+            {
+                yield return f;
+            }
         }
     }
+
+    /// <summary>Repo-relative path, so `implement-story.md` in .claude/rules and .codex/commands are told apart.</summary>
+    private static string Relative(string full) =>
+        Path.GetRelativePath(RepoRoot(), full).Replace(Path.DirectorySeparatorChar, '/');
 
     private static string Read(params string[] parts)
     {

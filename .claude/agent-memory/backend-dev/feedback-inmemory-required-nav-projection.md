@@ -11,8 +11,9 @@ tenant+soft-delete `HasQueryFilter`), the **EF Core InMemory provider returns an
 silently, no exception. This bit US-PRF-007: the whole dashboard population came back as 0 scored
 employees and every aggregation test failed with count 0 / KeyNotFound.
 
-**Why:** the verify gate runs `dotnet test` on the InMemory provider (no Postgres/Docker — see
-[[integration-tests-inmemory]]). InMemory's handling of a required navigation whose related entity has
+**Why:** 120 test files still build their context on the InMemory provider (no Postgres/Docker — see
+[[integration-tests-inmemory]]), so the verify gate — `bash scripts/run-backend-tests.sh`, never raw
+`dotnet test` (ISSUE-312) — exercises them there. InMemory's handling of a required navigation whose related entity has
 a query filter differs from Npgsql and effectively filters out all rows in the projection.
 
 **How to apply:** in any read/aggregation service that runs under InMemory tests, do NOT project

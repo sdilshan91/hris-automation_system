@@ -5,6 +5,12 @@
 > loop free of conflicts and duplicates. If reality changes, re-sort this file *before* starting the next item,
 > and say why in the changelog.
 >
+> **This is `/auto-heal`'s fold target (decided 2026-09-01).** Every out-of-lane finding is filed to
+> `TEST-FINDINGS.md` and folded in here, then this file is re-sorted
+> (severity × blast-radius × unblocks-others; decision/infra-gated items park at the decision-gate).
+> The broad backlog lives in [`COMPLETION-PLAN.md`](COMPLETION-PLAN.md) and is refreshed at `/retro`
+> and `/gap-analysis` cadence — not per-heal.
+>
 > **Source:** [`Architecture/gap-analysis/REFRESH-2026-08-17.md`](../../Architecture/gap-analysis/REFRESH-2026-08-17.md) §7,
 > plus the iteration-0 runtime probe (below). Base branch: `test/local-subdomains`.
 
@@ -160,6 +166,97 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | [[TEST-FINDINGS#BUG-322]] | widen `IShiftRequest` + edit form, or make those 5 fields patch-semantics | **widen the FE** — patch-semantics makes it impossible to ever clear an override back to tenant default, and silently changes PUT meaning for one subset of fields |
 | [[TEST-FINDINGS#BUG-320]] | FLEXIBLE shifts: require working days, or let the validator accept none | needs the domain rule stated before either side moves |
 | [[TEST-FINDINGS#ISSUE-409]] | `SubagentStop` hook: relocate the stray memory, or fail the stop and report | **relocate + report** — a warn-only hook has already been ignored 4 times |
+
+## 🔁 AUTO-HEAL 2026-09-01 (2) — the COMPLETION-PLAN audit's discoveries, folded in
+
+> Source: the full code-verified audit of 2026-09-01 (10 parallel `@requirements-auditor` passes over
+> 38 live findings, a 30-item sample of the 188 terminal ones, and all 40 GAP rows). Every item below
+> carries `file:line` evidence in [`COMPLETION-PLAN.md`](COMPLETION-PLAN.md); none is taken on an
+> agent's word alone. **30 out-of-lane discoveries** were surfaced; the schedulable ones are here.
+
+### Re-sorted to the TOP — severity × blast-radius (two are money/compliance)
+
+- [ ] **G1 · Part-time overtime is paid on a full-time base** — `PayrollRunProcessor.cs:977-978` calls
+      `PayrollOvertimeCalculator.Compute` with **4 of 7** args, so `fte=1.0` always. `FteScaledOvertimeBase`
+      is persisted, settable and **inert**. Add the FTE thread-through + an integration arm that proves it
+      end-to-end (`OvertimeFteBaseTests.cs:10-13` admits it only proves the math). **Money defect.** (GAP-022)
+- [ ] **G2 · Blank `Jwt:PrivateKey` in Production yields an ephemeral per-process key** — add
+      `IValidateOptions`/`ValidateOnStart` for `JwtKeyRingOptions`; today `JwtService.cs:41-47` silently
+      generates one, so every restart invalidates all tokens and multi-instance deploys reject each other's.
+      Belongs to no GAP row. **Fail loudly at startup, as `A2` did for the other secrets.**
+- [ ] **G3 · Three live user-facing breaks whose specs mock the broken shape** — one branch, three fixes,
+      and **fix the specs in the same PR or the detector stays broken**:
+      (a) careers detail 404 — list links `v.id` (GUID), route matches `{slug}` (`careers-page.component.ts:141`
+          vs `CareersController.cs:53`); spec feeds `'vac-1'`.
+      (b) team-goals dashboard always empty — BE sends `{cycleId, members}`, service expects
+          `ITeamGoalStatus[]|{data}` and `toArray()` yields `[]` (`performance-goal.service.ts:53-56`);
+          spec flushes a shape the endpoint never returns.
+      (c) onboarding `/preview` route does not exist + activate/deactivate use `PATCH` against `[HttpPost]`
+          → 405 (`onboarding-template.service.ts:94,103`); specs assert the wrong verb.
+- [ ] **G4 · No DSAR / right-to-erasure path** — `IAuditAnonymizationService` is DI-registered
+      (`DependencyInjection.cs:781`) and called by nothing. **Compliance.** Needs a story before build —
+      see the decision gate. (GAP-036)
+
+### Isolation invariants held by convention — schedule the cheap mitigations
+
+- [ ] **G5 · HTTP-level negative test for an unresolved tenant** — layers 1/2/4 of the tenant off-switch are
+      fail-open by construction; only ~494 hand-written `!IsResolved` guards across 104 service files
+      prevent a leak. The missing negative test in `HRM.Tests/Integration/Http/` is the cheapest thing that
+      would catch the first omitted guard. (GAP-001)
+- [ ] **G6 · Make audit append-only true, or stop claiming it** — nothing runs `roles.sql` (not the app, EF,
+      `ops/`, `scripts/` or CI), and `RlsIsolationPostgresTests.cs:431` hand-mirrors the revoke in its fixture.
+      Either wire the file into a documented apply step, or correct `AuditLogController.cs:21-23`, which
+      states append-only is "ENFORCED rather than merely conventional". (GAP-005)
+- [ ] **G7 · Triage the 354 `IgnoreQueryFilters()` sites** — measured 354 in non-test `src/backend` (the
+      register said 270); **zero** carry `// nosemgrep`. Campaign-shaped. Note the "RLS backstops them"
+      rationale does not hold in dev/CI, where `Rls:Enabled=false`. (GAP-007)
+
+### Cheap wins the audit found already half-done
+
+- [ ] **G8 · `ISSUE-379` row 5 + the two sibling rows — FE-mapper only** — `availableExportFormats`,
+      `ratingScaleMax`/`finalScore`/`cycleName`, `scoreScaleMax`/`cycleLabel` **all ship on the wire**;
+      the mappers hardcode `[]`/`0`/`''`/`null` under comments asserting the wire lacks them. ~10 lines,
+      closes several HIGH-rated symptoms. **Correct the comments in the same PR — they are the mechanism
+      by which the ledger and the code drifted.**
+- [ ] **G9 · `/verify-fix` the 11 verified-fixed findings** — `BUG-003`, `BUG-056`, `BUG-298`, `BUG-301`,
+      `BUG-307`, `ISSUE-021`, `ISSUE-232`, `ISSUE-280`, `ISSUE-362`, `ISSUE-364`, `BUG-003 (ATT-004 ext)`.
+      Each has `file:line` proof. **Not work — corrections.** `ISSUE-364`'s header says OPEN while its own
+      body says RESOLVED; `BUG-307`'s entry still claims nine sites remain when all ten were migrated.
+- [ ] **G10 · `/test-us US-PRF-005`** — `ISSUE-377` is **QA-execution debt, not code**: the release endpoint
+      shipped, but `TC-PRF-005-04/05/14` are still `status: draft`. **Do not close it by editing frontmatter.**
+- [ ] **G11 · Correct the GAP register's four wrong rows** — `GAP-006` (only 3 of 6 entities were holes; the
+      "add 6 lines" framing **would have regressed** — the other 3 are deliberately allow-listed with RLS
+      policies), `GAP-030` ("zero test cases" is false), `GAP-034` (there are **zero** axe assertions, not
+      non-executing ones), `GAP-020` (rotation exists and is tested — reword to "no *online* lever").
+- [ ] **G12 · Fix queue item `E2`** — it references `HRM.ArchitectureTests`, a project that does not exist. (GAP-040)
+
+### Test-health items (the suites that hid the breaks above)
+
+- [ ] **G13 · Two pieces of test theater** — `PlanModulesEntitlementTests.cs:118-126` assigns
+      `seeded = PlanModules.All` then asserts it equals `PlanModules.All`; `DbInitializer.cs:446` cites a
+      guard `PlanModulesSeedDriftTests` that does not exist. Also `ISSUE-286`'s fix has only a negative arm,
+      so dropping `LocationId` on import would leave the suite green.
+- [ ] **G14 · `GAP-024` sweep-job tenant logging** — ~19 multi-tenant sweep jobs get no `tenant_id`;
+      `TenantJobRunner.cs:31-40` sets `ITenantContext` but never `LogContext.PushProperty`, and
+      `JobLogContextFilterTests.cs:72-77` pins that as intended. Isolation forensics are blind on the
+      *higher-risk* job class.
+- [ ] **G15 · `GAP-015` Production email guard has no test** — `EmailSenderDiRegistrationTests` never sets an
+      environment name, so the Production branch is never entered; a regression dropping the throw is caught
+      by nothing.
+
+### 🚧 Parked at the decision gate — NOT auto-scheduled
+
+- **GAP-019** — 11 platform capabilities absent (revenue/MRR, billing ops, platform-staff management,
+  maintenance mode, broadcasts, growth/churn, platform report definitions + scheduling, Google/Apple
+  sign-in). **No story exists for any of them.** Author or record the deferral.
+- **GAP-037** — outbound webhooks: documented Phase-2 deferral, but tech-doc `:639`'s NFR table reads as built.
+- **GAP-020** — no *online* JWT rotation lever and no global revocation cutoff; containment needs a rolling restart.
+- **GAP-030** — two BA stories are stubs (their code IS test-covered).
+- `ISSUE-289`, `ISSUE-301`, `ISSUE-400`, `ISSUE-380` items 2–4 — product calls, not build work.
+- **`ISSUE-365`** — pick one: add the `/api` proxy to `nginx.conf`, or stop publishing `4200:80`. **Do not**
+  implement the shared `storageState` the finding proposes; `playwright.config.ts:15` forbids it (2026-08-11).
+
+---
 
 ## The queue
 

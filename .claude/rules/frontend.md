@@ -35,8 +35,10 @@ ng test --include='**/auth.service.spec.ts'   # run a single spec
 - **Never hand-edit it**, and never let `eslint --fix` touch it — it is excluded in `eslint.config.js`
   for exactly this reason (it accounted for 1,433 of the first run's 1,749 findings; auto-fixing them
   would have broken the contract gate).
-- **FE/BE contract drift is this repo's dominant defect class.** 657 hand-written interfaces across 83
-  `*.models.ts` files still need migrating to generated types — the decision is made, the work is not.
+- **FE/BE contract drift is this repo's dominant defect class.** ~660 hand-written `interface`s across
+  ~77 `*.models.ts` files still need migrating to generated types — the decision is made, the work is
+  not. Those files also hold **~443 `export type` declarations**, so size the work off ~1,100
+  declarations, not 660: an earlier count that saw only `interface` undershot the surface by ~40%.
 - **A blind `as` cast in a mapper is usually hiding the bug, not solving it** (BUG-127, BUG-311). If a
   mapper needs a cast to compile, check the wire shape before adding one.
 
