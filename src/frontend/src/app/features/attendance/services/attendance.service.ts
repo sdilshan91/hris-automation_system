@@ -19,7 +19,6 @@ import {
   IRegularization,
   IRegularizationErrorResponse,
   IPendingRegularization,
-  IPendingRegularizationQueueResult,
   IPendingRegularizationQuery,
   IApproveRegularizationRequest,
   IRejectRegularizationRequest,
@@ -37,7 +36,6 @@ import {
   IOvertime,
   IOvertimePreApprovalRequest,
   IOvertimeQueueItem,
-  IOvertimeQueueResult,
   IOvertimeApproveRequest,
   IOvertimeRejectRequest,
   IOvertimeDecision,
@@ -64,6 +62,71 @@ import {
   CustomReportExportFormat,
   ITrendsResult,
   IScheduledReportConfig,
+  // ── D1 slice 3: generated wire contract + the explicit mappers to the view models. Every
+  //    every request below used to name a hand-written `I…` type — an unchecked CAST, not a check,
+  //    so the compiler accepted whatever the server sent. These `…Wire` aliases are derived from
+  //    the API's own OpenAPI document, so a DTO rename is now a compile error here instead of an
+  //    `undefined` on screen. See the mapper block at the foot of attendance.models.ts.
+  ClockStatusWire,
+  AttendanceLogWire,
+  ClockOutResultWire,
+  MonthlySummaryResultWire,
+  EmployeeDailyBreakdownResultWire,
+  SummaryGenerationStatusWire,
+  mapClockStatus,
+  mapAttendanceLog,
+  mapClockOutResult,
+  mapMonthlySummaryResult,
+  mapEmployeeDailyBreakdownResult,
+  mapSummaryGenerationStatus,
+  RegularizationWire,
+  PendingRegularizationQueueWire,
+  RegularizationDecisionWire,
+  BulkApproveRegularizationWire,
+  mapRegularization,
+  mapPendingRegularization,
+  mapRegularizationDecision,
+  mapBulkApproveResult,
+  ShiftWire,
+  ResolvedShiftWire,
+  AssignmentResultWire,
+  mapShift,
+  mapResolvedShift,
+  mapAssignmentResult,
+  OvertimeWire,
+  OvertimeQueueResultWire,
+  OvertimeDecisionWire,
+  OvertimeReportResultWire,
+  mapOvertime,
+  mapOvertimeList,
+  mapOvertimeQueue,
+  mapOvertimeDecision,
+  mapOvertimeReportResult,
+  LatePolicyWire,
+  LateEarlyReportResultWire,
+  LatenessScoreWire,
+  AttendancePayrollResultWire,
+  PeriodLockWire,
+  ReconciliationResultWire,
+  mapLatePolicy,
+  mapLateEarlyReportResult,
+  mapLatenessScore,
+  mapAttendancePayrollResult,
+  mapPeriodLock,
+  mapReconciliationResult,
+  DashboardKpiWire,
+  LiveBoardResultWire,
+  DeptComparisonResultWire,
+  CustomReportResultWire,
+  TrendsResultWire,
+  ScheduledReportConfigWire,
+  mapDashboardKpi,
+  mapLiveBoardResult,
+  mapDeptComparisonResult,
+  mapCustomReportResult,
+  mapTrendsResult,
+  mapScheduledReportConfig,
+  toScheduledReportConfigWire,
 } from '../models/attendance.models';
 
 /**
@@ -94,18 +157,22 @@ export class AttendanceService {
    * `requireGeolocation` -> AC-3 vs AC-4 branch, shift name/start -> context.
    */
   getStatus(): Observable<IClockStatus> {
-    return this.http.get<IClockStatus>(`${this.baseUrl}/status`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<ClockStatusWire>(`${this.baseUrl}/status`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapClockStatus));
   }
 
   // --- Write -------------------------------------------------
 
   /** Submit a clock-in (FR-1, AC-1). Returns the created attendance log. */
   clockIn(request: IClockInRequest): Observable<IAttendanceLog> {
-    return this.http.post<IAttendanceLog>(`${this.baseUrl}/clock-in`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<AttendanceLogWire>(`${this.baseUrl}/clock-in`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapAttendanceLog));
   }
 
   /**
@@ -115,9 +182,11 @@ export class AttendanceService {
    * AC-5: coordinates are included only when the tenant geo policy requires them.
    */
   clockOut(request: IClockOutRequest): Observable<IClockOutResult> {
-    return this.http.post<IClockOutResult>(`${this.baseUrl}/clock-out`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<ClockOutResultWire>(`${this.baseUrl}/clock-out`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapClockOutResult));
   }
 
   // --- US-ATT-003: Regularization ----------------------------
@@ -131,11 +200,13 @@ export class AttendanceService {
   submitRegularization(
     request: ICreateRegularizationRequest,
   ): Observable<IRegularization> {
-    return this.http.post<IRegularization>(
-      `${this.baseUrl}/regularizations`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<RegularizationWire>(
+        `${this.baseUrl}/regularizations`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map(mapRegularization));
   }
 
   /**
@@ -144,9 +215,11 @@ export class AttendanceService {
    * via the tenantInterceptor; the employee is resolved from the JWT server-side.
    */
   listRegularizations(): Observable<IRegularization[]> {
-    return this.http.get<IRegularization[]>(`${this.baseUrl}/regularizations`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<RegularizationWire[]>(`${this.baseUrl}/regularizations`, {
+        withCredentials: true,
+      })
+      .pipe(map((rows) => (rows ?? []).map(mapRegularization)));
   }
 
   // --- US-ATT-004: Manager approval queue -------------------
@@ -172,11 +245,11 @@ export class AttendanceService {
       params = params.set('toDate', query.toDate);
     }
     return this.http
-      .get<IPendingRegularizationQueueResult>(
+      .get<PendingRegularizationQueueWire>(
         `${this.baseUrl}/regularizations/pending`,
         { withCredentials: true, params },
       )
-      .pipe(map((res) => res?.items ?? []));
+      .pipe(map((res) => (res?.items ?? []).map(mapPendingRegularization)));
   }
 
   /**
@@ -206,11 +279,13 @@ export class AttendanceService {
     comment?: string,
   ): Observable<IRegularizationDecisionDto> {
     const body: IApproveRegularizationRequest = comment ? { comment } : {};
-    return this.http.post<IRegularizationDecisionDto>(
-      `${this.baseUrl}/regularizations/${regularizationId}/approve`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<RegularizationDecisionWire>(
+        `${this.baseUrl}/regularizations/${regularizationId}/approve`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapRegularizationDecision));
   }
 
   /**
@@ -223,11 +298,13 @@ export class AttendanceService {
     reason: string,
   ): Observable<IRegularizationDecisionDto> {
     const body: IRejectRegularizationRequest = { reason };
-    return this.http.post<IRegularizationDecisionDto>(
-      `${this.baseUrl}/regularizations/${regularizationId}/reject`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<RegularizationDecisionWire>(
+        `${this.baseUrl}/regularizations/${regularizationId}/reject`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapRegularizationDecision));
   }
 
   /**
@@ -242,11 +319,13 @@ export class AttendanceService {
     const body: IBulkApproveRequest = comment
       ? { regularizationIds: ids, comment }
       : { regularizationIds: ids };
-    return this.http.post<IBulkApproveResult>(
-      `${this.baseUrl}/regularizations/bulk-approve`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<BulkApproveRegularizationWire>(
+        `${this.baseUrl}/regularizations/bulk-approve`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapBulkApproveResult));
   }
 
   /**
@@ -283,10 +362,10 @@ export class AttendanceService {
    */
   getShifts(): Observable<IShift[]> {
     return this.http
-      .get<IShift[]>(`${this.baseUrl}/shifts`, {
+      .get<ShiftWire[]>(`${this.baseUrl}/shifts`, {
         withCredentials: true,
       })
-      .pipe(map((res) => res ?? []));
+      .pipe(map((res) => (res ?? []).map(mapShift)));
   }
 
   /**
@@ -295,9 +374,11 @@ export class AttendanceService {
    *   POST /api/v1/attendance/shifts  body ShiftRequest -> ApiResponse<ShiftDto>
    */
   createShift(request: IShiftRequest): Observable<IShift> {
-    return this.http.post<IShift>(`${this.baseUrl}/shifts`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<ShiftWire>(`${this.baseUrl}/shifts`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapShift));
   }
 
   /**
@@ -305,9 +386,11 @@ export class AttendanceService {
    *   PUT /api/v1/attendance/shifts/{id}  body ShiftRequest -> ApiResponse<ShiftDto>
    */
   updateShift(id: string, request: IShiftRequest): Observable<IShift> {
-    return this.http.put<IShift>(`${this.baseUrl}/shifts/${id}`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .put<ShiftWire>(`${this.baseUrl}/shifts/${id}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapShift));
   }
 
   /**
@@ -328,9 +411,11 @@ export class AttendanceService {
    *   POST /api/v1/attendance/shifts/{id}/clone -> ApiResponse<ShiftDto>
    */
   cloneShift(id: string): Observable<IShift> {
-    return this.http.post<IShift>(`${this.baseUrl}/shifts/${id}/clone`, {}, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<ShiftWire>(`${this.baseUrl}/shifts/${id}/clone`, {}, {
+        withCredentials: true,
+      })
+      .pipe(map(mapShift));
   }
 
   /**
@@ -344,11 +429,13 @@ export class AttendanceService {
     id: string,
     request: IShiftAssignmentRequest,
   ): Observable<IAssignmentResult> {
-    return this.http.post<IAssignmentResult>(
-      `${this.baseUrl}/shifts/${id}/assign`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<AssignmentResultWire>(
+        `${this.baseUrl}/shifts/${id}/assign`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map(mapAssignmentResult));
   }
 
   /**
@@ -360,10 +447,12 @@ export class AttendanceService {
    */
   getResolvedShift(employeeId: string, date: string): Observable<IResolvedShift> {
     const params = new HttpParams().set('date', date);
-    return this.http.get<IResolvedShift>(
-      `${this.baseUrl}/employees/${employeeId}/shift`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<ResolvedShiftWire>(
+        `${this.baseUrl}/employees/${employeeId}/shift`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapResolvedShift));
   }
 
   /**
@@ -391,11 +480,13 @@ export class AttendanceService {
   submitOvertimePreApproval(
     request: IOvertimePreApprovalRequest,
   ): Observable<IOvertime> {
-    return this.http.post<IOvertime>(
-      `${this.baseUrl}/overtime/pre-approval`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<OvertimeWire>(
+        `${this.baseUrl}/overtime/pre-approval`,
+        request,
+        { withCredentials: true },
+      )
+      .pipe(map(mapOvertime));
   }
 
   /**
@@ -406,10 +497,10 @@ export class AttendanceService {
    */
   getMyOvertime(): Observable<IOvertime[]> {
     return this.http
-      .get<IOvertime[]>(`${this.baseUrl}/overtime/my`, {
+      .get<OvertimeWire[]>(`${this.baseUrl}/overtime/my`, {
         withCredentials: true,
       })
-      .pipe(map((res) => res ?? []));
+      .pipe(map(mapOvertimeList));
   }
 
   /**
@@ -420,11 +511,11 @@ export class AttendanceService {
    */
   getPendingOvertime(): Observable<IOvertimeQueueItem[]> {
     return this.http
-      .get<IOvertimeQueueResult>(
+      .get<OvertimeQueueResultWire>(
         `${this.baseUrl}/overtime/pending`,
         { withCredentials: true },
       )
-      .pipe(map((res) => res?.items ?? []));
+      .pipe(map(mapOvertimeQueue));
   }
 
   /**
@@ -446,11 +537,13 @@ export class AttendanceService {
     if (comment) {
       body.comment = comment;
     }
-    return this.http.post<IOvertimeDecision>(
-      `${this.baseUrl}/overtime/${id}/approve`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<OvertimeDecisionWire>(
+        `${this.baseUrl}/overtime/${id}/approve`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapOvertimeDecision));
   }
 
   /**
@@ -460,11 +553,13 @@ export class AttendanceService {
    */
   rejectOvertime(id: string, reason: string): Observable<IOvertimeDecision> {
     const body: IOvertimeRejectRequest = { reason };
-    return this.http.post<IOvertimeDecision>(
-      `${this.baseUrl}/overtime/${id}/reject`,
-      body,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<OvertimeDecisionWire>(
+        `${this.baseUrl}/overtime/${id}/reject`,
+        body,
+        { withCredentials: true },
+      )
+      .pipe(map(mapOvertimeDecision));
   }
 
   /**
@@ -475,10 +570,12 @@ export class AttendanceService {
    */
   getOvertimeReport(month: string): Observable<IOvertimeReportResult> {
     const params = new HttpParams().set('month', month);
-    return this.http.get<IOvertimeReportResult>(
-      `${this.baseUrl}/overtime/report`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<OvertimeReportResultWire>(
+        `${this.baseUrl}/overtime/report`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapOvertimeReportResult));
   }
 
   /**
@@ -520,10 +617,12 @@ export class AttendanceService {
     if (query.status) {
       params = params.set('status', query.status);
     }
-    return this.http.get<IMonthlySummaryResult>(
-      `${this.baseUrl}/summary/monthly`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<MonthlySummaryResultWire>(
+        `${this.baseUrl}/summary/monthly`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapMonthlySummaryResult));
   }
 
   /**
@@ -537,10 +636,12 @@ export class AttendanceService {
     month: string,
   ): Observable<IEmployeeDailyBreakdownResult> {
     const params = new HttpParams().set('month', month);
-    return this.http.get<IEmployeeDailyBreakdownResult>(
-      `${this.baseUrl}/summary/monthly/${employeeId}`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<EmployeeDailyBreakdownResultWire>(
+        `${this.baseUrl}/summary/monthly/${employeeId}`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapEmployeeDailyBreakdownResult));
   }
 
   /**
@@ -552,11 +653,13 @@ export class AttendanceService {
    */
   generateMonthlySummary(month: string): Observable<ISummaryGenerationStatus> {
     const params = new HttpParams().set('month', month);
-    return this.http.post<ISummaryGenerationStatus>(
-      `${this.baseUrl}/summary/monthly/generate`,
-      {},
-      { withCredentials: true, params },
-    );
+    return this.http
+      .post<SummaryGenerationStatusWire>(
+        `${this.baseUrl}/summary/monthly/generate`,
+        {},
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapSummaryGenerationStatus));
   }
 
   /**
@@ -598,9 +701,11 @@ export class AttendanceService {
    *   GET /api/v1/attendance/late-policy -> ApiResponse<LatePolicyDto>
    */
   getLatePolicy(): Observable<ILatePolicy> {
-    return this.http.get<ILatePolicy>(`${this.baseUrl}/late-policy`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<LatePolicyWire>(`${this.baseUrl}/late-policy`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapLatePolicy));
   }
 
   /**
@@ -609,9 +714,14 @@ export class AttendanceService {
    *   PUT /api/v1/attendance/late-policy  body LatePolicyDto -> ApiResponse<LatePolicyDto>
    */
   updateLatePolicy(policy: ILatePolicy): Observable<ILatePolicy> {
-    return this.http.put<ILatePolicy>(`${this.baseUrl}/late-policy`, policy, {
-      withCredentials: true,
-    });
+    // `policy satisfies LatePolicyWire` pins the REQUEST shape at compile time. This is the
+    // only write in the module that ships a view model straight back as the body, so without
+    // it a future DTO rename would break the PUT silently while the response type still passed.
+    return this.http
+      .put<LatePolicyWire>(`${this.baseUrl}/late-policy`, policy satisfies LatePolicyWire, {
+        withCredentials: true,
+      })
+      .pipe(map(mapLatePolicy));
   }
 
   /**
@@ -634,10 +744,12 @@ export class AttendanceService {
     if (query.scope) {
       params = params.set('scope', query.scope);
     }
-    return this.http.get<ILateEarlyReportResult>(
-      `${this.baseUrl}/late-early/report`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<LateEarlyReportResultWire>(
+        `${this.baseUrl}/late-early/report`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapLateEarlyReportResult));
   }
 
   /**
@@ -648,10 +760,12 @@ export class AttendanceService {
    */
   getMyLatenessScore(month: string): Observable<ILatenessScore> {
     const params = new HttpParams().set('month', month);
-    return this.http.get<ILatenessScore>(
-      `${this.baseUrl}/late-early/my-score`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<LatenessScoreWire>(
+        `${this.baseUrl}/late-early/my-score`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapLatenessScore));
   }
 
   // --- US-ATT-009: Attendance integration with payroll -------
@@ -672,10 +786,12 @@ export class AttendanceService {
     if (employeeIds && employeeIds.length > 0) {
       params = params.set('employeeIds', employeeIds.join(','));
     }
-    return this.http.get<IAttendancePayrollResult>(
-      `${this.baseUrl}/payroll-data`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<AttendancePayrollResultWire>(
+        `${this.baseUrl}/payroll-data`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapAttendancePayrollResult));
   }
 
   /**
@@ -686,11 +802,15 @@ export class AttendanceService {
   getPeriodLock(month: string): Observable<IPeriodLock | null> {
     const params = new HttpParams().set('month', month);
     return this.http
-      .get<IPeriodLock | null>(
+      .get<PeriodLockWire | null>(
         `${this.baseUrl}/period-lock`,
         { withCredentials: true, params },
       )
-      .pipe(map((res) => res ?? null));
+      // A `null` body means this period has NEVER been locked, and it must stay null. Running
+      // it through mapPeriodLock would fabricate a lock row whose fail-closed `isLocked ?? true`
+      // default announces an open period as locked — which hides the "Lock Attendance" button
+      // and leaves a dead "Unlock" in its place (the id would be ''). NOT map(mapPeriodLock).
+      .pipe(map((res) => (res ? mapPeriodLock(res) : null)));
   }
 
   /**
@@ -700,11 +820,13 @@ export class AttendanceService {
    *     -> ApiResponse<PeriodLockDto>
    */
   lockPeriod(periodStart: string, periodEnd: string): Observable<IPeriodLock> {
-    return this.http.post<IPeriodLock>(
-      `${this.baseUrl}/period-lock`,
-      { periodStart, periodEnd },
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PeriodLockWire>(
+        `${this.baseUrl}/period-lock`,
+        { periodStart, periodEnd },
+        { withCredentials: true },
+      )
+      .pipe(map(mapPeriodLock));
   }
 
   /**
@@ -714,11 +836,13 @@ export class AttendanceService {
    *   POST /api/v1/attendance/period-lock/{id}/unlock -> ApiResponse<PeriodLockDto>
    */
   unlockPeriod(id: string): Observable<IPeriodLock> {
-    return this.http.post<IPeriodLock>(
-      `${this.baseUrl}/period-lock/${id}/unlock`,
-      {},
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PeriodLockWire>(
+        `${this.baseUrl}/period-lock/${id}/unlock`,
+        {},
+        { withCredentials: true },
+      )
+      .pipe(map(mapPeriodLock));
   }
 
   /**
@@ -730,10 +854,12 @@ export class AttendanceService {
    */
   getReconciliation(month: string): Observable<IReconciliationResult> {
     const params = new HttpParams().set('month', month);
-    return this.http.get<IReconciliationResult>(
-      `${this.baseUrl}/reconciliation`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<ReconciliationResultWire>(
+        `${this.baseUrl}/reconciliation`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapReconciliationResult));
   }
 
   // --- US-ATT-010: HR Dashboard & Reports --------------------
@@ -749,10 +875,12 @@ export class AttendanceService {
     scope: AttendanceScope = 'all',
   ): Observable<IDashboardKpi> {
     const params = new HttpParams().set('date', date).set('scope', scope);
-    return this.http.get<IDashboardKpi>(`${this.baseUrl}/dashboard`, {
-      withCredentials: true,
-      params,
-    });
+    return this.http
+      .get<DashboardKpiWire>(`${this.baseUrl}/dashboard`, {
+        withCredentials: true,
+        params,
+      })
+      .pipe(map(mapDashboardKpi));
   }
 
   /**
@@ -767,10 +895,12 @@ export class AttendanceService {
     scope: AttendanceScope = 'all',
   ): Observable<ILiveBoardResult> {
     const params = new HttpParams().set('date', date).set('scope', scope);
-    return this.http.get<ILiveBoardResult>(
-      `${this.baseUrl}/dashboard/live-board`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<LiveBoardResultWire>(
+        `${this.baseUrl}/dashboard/live-board`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapLiveBoardResult));
   }
 
   /**
@@ -780,10 +910,12 @@ export class AttendanceService {
    */
   getDepartmentComparison(month: string): Observable<IDeptComparisonResult> {
     const params = new HttpParams().set('month', month);
-    return this.http.get<IDeptComparisonResult>(
-      `${this.baseUrl}/reports/department-comparison`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<DeptComparisonResultWire>(
+        `${this.baseUrl}/reports/department-comparison`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapDeptComparisonResult));
   }
 
   /**
@@ -793,13 +925,15 @@ export class AttendanceService {
    *     -> ApiResponse<{ from, to, rows: CustomReportRowDto[] }>
    */
   getCustomReport(filters: ICustomReportFilters): Observable<ICustomReportResult> {
-    return this.http.get<ICustomReportResult>(
-      `${this.baseUrl}/reports/custom`,
-      {
-        withCredentials: true,
-        params: this.customReportParams(filters),
-      },
-    );
+    return this.http
+      .get<CustomReportResultWire>(
+        `${this.baseUrl}/reports/custom`,
+        {
+          withCredentials: true,
+          params: this.customReportParams(filters),
+        },
+      )
+      .pipe(map(mapCustomReportResult));
   }
 
   /**
@@ -848,10 +982,12 @@ export class AttendanceService {
    */
   getTrends(months = 12): Observable<ITrendsResult> {
     const params = new HttpParams().set('months', months.toString());
-    return this.http.get<ITrendsResult>(
-      `${this.baseUrl}/reports/trends`,
-      { withCredentials: true, params },
-    );
+    return this.http
+      .get<TrendsResultWire>(
+        `${this.baseUrl}/reports/trends`,
+        { withCredentials: true, params },
+      )
+      .pipe(map(mapTrendsResult));
   }
 
   /**
@@ -860,11 +996,11 @@ export class AttendanceService {
    */
   getScheduledReports(): Observable<IScheduledReportConfig[]> {
     return this.http
-      .get<IScheduledReportConfig[]>(
+      .get<ScheduledReportConfigWire[]>(
         `${this.baseUrl}/reports/scheduled`,
         { withCredentials: true },
       )
-      .pipe(map((res) => res ?? []));
+      .pipe(map((res) => (res ?? []).map(mapScheduledReportConfig)));
   }
 
   /**
@@ -875,11 +1011,13 @@ export class AttendanceService {
   createScheduledReport(
     config: IScheduledReportConfig,
   ): Observable<IScheduledReportConfig> {
-    return this.http.post<IScheduledReportConfig>(
-      `${this.baseUrl}/reports/scheduled`,
-      config,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ScheduledReportConfigWire>(
+        `${this.baseUrl}/reports/scheduled`,
+        toScheduledReportConfigWire(config),
+        { withCredentials: true },
+      )
+      .pipe(map(mapScheduledReportConfig));
   }
 
   /**
@@ -891,11 +1029,13 @@ export class AttendanceService {
     id: string,
     config: IScheduledReportConfig,
   ): Observable<IScheduledReportConfig> {
-    return this.http.put<IScheduledReportConfig>(
-      `${this.baseUrl}/reports/scheduled/${id}`,
-      config,
-      { withCredentials: true },
-    );
+    return this.http
+      .put<ScheduledReportConfigWire>(
+        `${this.baseUrl}/reports/scheduled/${id}`,
+        toScheduledReportConfigWire(config),
+        { withCredentials: true },
+      )
+      .pipe(map(mapScheduledReportConfig));
   }
 
   /**

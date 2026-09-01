@@ -9154,7 +9154,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
   4. `:318` — `submit()` returns early when `!canSubmit()`.
   The "Start payroll run" button can never enable. There is no alternative entry point in the UI.
 - **Why nothing caught it:** `http.post<IPayrollRunValidation>` asserted a response type for an endpoint that has never existed, and the component spec mocks the service — so no test ever issued the request.
-- **Suggested fix:** implement `POST /payroll/runs/validate` (period-open, no duplicate run, employees present), **or** make `canSubmit` degrade gracefully when validation is unavailable rather than treating "cannot validate" as "cannot run".
+- **Verified further (2026-08-23):** `PayrollRunsController` exposes only `POST runs`, `runs/{id}/cancel`, `runs/{id}/rerun` and three GETs — no `validate` under any name. A repo-wide grep for `ValidateRun`/`CanRun` across `HRM.Application` and `HRM.Infrastructure` returns **nothing**. So this is not a routing mismatch: **the validation capability does not exist at any layer**, and the frontend was built against a service that was never written.
+- **Suggested fix:** the cheap, safe move is to make `canSubmit` degrade gracefully — treat "cannot validate" as "proceed with a warning" rather than "cannot run", since the server already enforces its own rules on `POST runs`. Building `POST /payroll/runs/validate` (period open, no duplicate run, employees present) is the fuller fix but is net-new backend work, not a wiring correction.
 - **Related:** GAP-S1 · D1 · BUG-315 (the same "typed against a nonexistent endpoint" class)
 
 ### BUG-317
@@ -9162,8 +9163,13 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Type:** BUG · **Severity:** **CRITICAL** · **Status:** OPEN · **Layer:** FE
 - **Module:** payroll (US-PAY-006) · **Found:** 2026-08-23, D1 payroll migration (statutory sub-slice).
 - **Summary:** **The statutory editor can destroy a tenant's configured tax bands.** It hydrates its slab and EPF/ETF forms from `listRules()` → `GET /payroll/statutory-rules`, which returns `StatutoryRuleListItemDto` — a list projection carrying **no `taxSlabs` and no `socialSecurity`**. The editor therefore always opens **empty**, and saving writes that empty form over the real bands.
-- **Where:** `statutory-configuration.component.ts:691-702`.
-- **Suggested fix:** add `StatutoryService.getRule(id)` → `GET /statutory-rules/{id}` (the full DTO) and hydrate the editor from that before allowing edits.
+- **Where:** `statutory-configuration.component.ts:691-702` (hydrate), `:782` / `:816` (save).
+- **Verified end to end (2026-08-23), not taken on report:**
+  1. Contract: `StatutoryRuleListItemDto` has `{countryCode, effectiveFrom, effectiveTo, fiscalYear, id, isActive, ruleName, ruleType, ruleTypeName, slabCount}` — **no `taxSlabs`, no `socialSecurity`**. `StatutoryRuleDto` (the by-id DTO) has both.
+  2. `hydrateForms()` reads `tax?.taxSlabs` and `…?.socialSecurity` off the LIST results → slabs become `[]` and every EPF rate becomes `null`.
+  3. `saveTaxSlabs` sends `taxSlabs: this.taxSlabs()` (`:782`) and the EPF save sends `socialSecurity` (`:816`) straight to `updateRule`.
+  So opening the editor and pressing Save writes an **empty slab array** over the tenant's real income-tax bands. The destructive path needs no unusual input — just open and save.
+- **Suggested fix:** add `StatutoryService.getRule(id)` → `GET /statutory-rules/{id}` (the full DTO) and hydrate from that before allowing edits. Until then the editor is dangerous to open.
 - **Related:** GAP-S1 · D1
 
 ### ISSUE-403
@@ -9218,3 +9224,92 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Summary:** `core/api/index.ts` states that *"every generated property is optional (`?`) because Swashbuckle does not emit `required`."* **That is no longer universally true** — five payslip DTOs now carry `required` arrays, so their scalars are non-optional in the generated type, while the adjustment DTOs still have none. The behaviour is **per-schema**, and a migrator trusting the blanket note will mis-reason about which fields need defaults.
 - **Suggested fix:** soften the note to "most, not all — check the schema's `required` array".
 - **Related:** D1
+
+### BUG-319
+- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** FE↔BE contract
+- **Module:** Attendance · **US:** US-ATT-009 (FR-8 scheduled reports) · **Found by:** D1 attendance wire migration
+- **Summary:** Creating a scheduled attendance report always 400s — the UI collects **email addresses**, the backend binds **GUIDs**.
+- **Evidence (verified directly, 2026-09-01):**
+  - `src/backend/HRM.Domain/Entities/ScheduledReportConfig.cs:25` — `public List<Guid> Recipients { get; set; } = new();`
+  - `attendance-reports.component.ts:351-352` — label `Recipients (comma-separated)`, placeholder `hr@acme.com, ops@acme.com`.
+  The generated wire type agrees with the backend (`uuid[]`), so this is not a mapper defect — the **form collects the wrong kind of value**.
+- **Root cause (confidence 90%):** the feature was specified as "email the report to people" and built as "reference existing users by id"; nobody reconciled the two. Model binding rejects `"hr@acme.com"` as a `Guid` before any handler runs, so it fails for every input.
+- **Repro:** Attendance → Reports → Scheduled → add any recipient → Save → 400.
+- **Decision required (do NOT guess):** either (a) the form becomes a **user picker** emitting GUIDs — correct if recipients must be tenant users with report entitlements, or (b) `Recipients` becomes `List<string>` of validated emails — correct if reports may go to non-users (auditors, external payroll). **(a) is the defensible default on a multi-tenant HRM**: an arbitrary email escapes tenant scoping and leaks employee data to whoever is typed in. Parked at the decision gate.
+- **Note:** the spec fixtures deliberately keep emails and carry a `// KNOWN DEFECT (FR-8 create)` comment (`attendance.service.spec.ts:1735,1789`). Changing them to GUIDs would make a green test certify a broken flow.
+
+### BUG-320
+- **Type:** BUG · **Severity:** MED · **Status:** OPEN · **Layer:** FE↔BE contract
+- **Module:** Attendance · **US:** US-ATT-005 (shifts) · **Found by:** D1 attendance wire migration
+- **Summary:** `updateShift` sends a FLEXIBLE shift with `workingDays: []`, which `ShiftRequestValidator` rejects — the edit dialog cannot save a flexible shift.
+- **Root cause (confidence 70%):** the component omits working days when the type is FLEXIBLE, but the validator requires at least one regardless of type. Needs the component and the validator fixed **together** — deciding which side is right is the actual work.
+- **Note:** left untouched with a `// NOTE:` in the spec rather than fixed inside a type-migration PR.
+
+### ISSUE-408
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** FE
+- **Module:** Attendance · **Found by:** D1 attendance wire migration
+- **Summary:** `IAttendanceLog.tenantId` has no wire source; the mapper emits `''`.
+- **Detail:** `IRegularization.tenantId` was deleted during the migration because the wire never carried it. This sibling still exists and no component reads it. It is now **pinned by a test** (`tenantId === ''`) so nobody "repairs" the placeholder into a fabricated tenant key — which would be the dangerous fix on a multi-tenant product.
+- **Suggested fix:** delete the field. Deferred: a models change outside the migrating agent's file.
+
+### ISSUE-409
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** Tooling / agent infra
+- **Module:** — (cross-cutting) · **Found by:** D1 loop, 4th recurrence
+- **Summary:** Sub-agents keep writing `agent-memory` into **nested** `.claude/` directories under `src/`, where it is never loaded — the notes are silently lost.
+- **Evidence:** stray dirs found again on 2026-09-01 at `src/frontend/.claude`, `src/backend/HRM.Api/.claude`, `src/frontend/src/app/features/admin/.claude`, `src/frontend/src/app/features/attendance/.claude`. Only one held a real file (`agent-memory/test-runner/us-adm-002-monitoring-run.md`), relocated to the repo root. Previous recurrences this programme: 3 (payroll, admin, frontend slices).
+- **Root cause (confidence 85%):** `memory: project` in agent frontmatter resolves relative to the **repo root**, but a sub-agent launched with `cwd` inside `src/…` writes its memory relative to *its own* cwd. Nothing warns; the write succeeds and the note is simply never read again.
+- **Impact:** the cost is invisible — an agent records a hard-won gotcha, and the next run does not see it. That silently defeats the built-in memory store for every agent that runs with a narrowed cwd.
+- **Suggested fix (do not apply blind):** a `SubagentStop` hook that fails the stop when `git status` shows a new `.claude/` path outside the repo root, or that relocates it and reports. The advisory `vault-compliance-advisor` hook is the natural place — it already inspects what a sub-agent changed. Wants a human decision on relocate-vs-warn.
+
+### BUG-321
+- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** FE
+- **Module:** Attendance · **US:** US-ATT-004 (AC-4 multi-level approval) · **Found by:** D1 attendance wire migration (integration-enforcer + test-authenticator)
+- **Summary:** On a multi-level regularization workflow the approver is told **"Regularization approved"** and the row leaves the queue, when the server actually said the request is still **PENDING** at the next level.
+- **Evidence (verified directly, 2026-09-01):**
+  - Backend really does return this: `RegularizationApprovalService.cs:439-450` — `WorkflowDecisionOutcome.StepAdvanced` / `StepRecorded` → `Status = RegularizationStatus.Pending, Action = RegularizationApprovalAction.Approved`.
+  - FE discards it: `regularization-approvals.component.ts:582-585` — `next: () => this.onActionSuccess(id, mode)` ignores the mapped `IRegularizationDecisionDto` entirely.
+  - `onActionSuccess` (`:588-600`) branches on the **locally chosen** `mode`, so `:591` `removeFromQueue(id)` and `:596` `Regularization approved for ${who}` fire unconditionally.
+  - The mapper is correct — `attendance.models.ts` widens the status union and sets it. Nothing reads it.
+- **Impact:** the approver believes a decision is final when it is not, and loses the row from their queue. Neither `tsc` nor `strictTemplates` can catch this: the value is **discarded**, not misread.
+- **Suggested fix:** subscribe to the decision and branch on `decision.status` — only remove the row and claim approval on `APPROVED`; on `PENDING` keep the row and report that it advanced to the next level.
+- **⚠ Ledger contradiction — ENH-005 is WRONG (pessimistic direction).** ENH-005 states "AC-4 multi-level approval (workflow engine) absent … approve/reject is single-level … `workflow_instance_id` stays null." The code at `RegularizationApprovalService.cs:439-465` disproves this. Per the gap-analysis rule the false line is **reported, not silently corrected**. This matters beyond bookkeeping: reasoning from ENH-005 leads directly to rating this bug as latent-only, which is how it stays unfixed.
+
+### BUG-322
+- **Type:** BUG · **Severity:** HIGH · **Status:** OPEN · **Layer:** FE↔BE contract
+- **Module:** Attendance · **US:** US-ATT-005 (shifts, DF-56) · **Found by:** D1 attendance wire migration (in-code `FINDING SHIFT-01`, verified 2026-09-01)
+- **Summary:** Editing any shift through the UI **silently wipes the five per-shift work-minute overrides**.
+- **Evidence (traced end to end):**
+  - Backend update assigns them unconditionally: `ShiftService.cs:169-173` — `shift.StandardWorkMinutes = request.StandardWorkMinutes;` and likewise `MinimumWorkMinutes`, `AutoBreakMinutes`, `AutoBreakThresholdMinutes`, `OvertimeThresholdMinutes`.
+  - The request DTO does accept them: `ShiftDtos.cs:98` — `public int? StandardWorkMinutes { get; init; }`.
+  - The frontend request interface does **not** declare any of them: `IShiftRequest` (`attendance.models.ts:533-544`) has name/type/times/break/grace/minimumHours/workingDays/rotation only.
+  So `PUT /shifts/{id}` always sends them absent → they bind as `null` → all five are nulled on the entity. No screen renders them, so nothing shows the loss.
+- **Impact:** a tenant configures per-shift overtime and auto-break thresholds; the next unrelated shift edit (renaming it, say) silently reverts all five to tenant-derived resolution. Overtime and auto-break then compute against different numbers — and this is a **pay-affecting** path.
+- **Root cause (confidence 95%):** the update handler was written as a full replace, but the FE contract was built from the fields the edit form renders. Absent ≠ unchanged, and nothing in the type system says so.
+- **Suggested fix (needs a decision):** either (a) add the five fields to `IShiftRequest` and the edit form so a round-trip preserves them, or (b) make the backend patch-semantics for these five (only assign when the property was supplied). **(a) is the defensible fix** — (b) makes it impossible to ever clear an override back to tenant default, and silently changes PUT semantics for one subset of fields.
+
+### ISSUE-410
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** Process / traceability
+- **Module:** Attendance · **Found by:** D1 test-authenticator audit
+- **Summary:** Seven findings raised during the attendance migration exist **only as code comments** with report-local IDs that are not in this ledger — they become dangling references the moment the branch merges.
+- **The orphaned IDs, and where they live** (all in `features/attendance/models/attendance.models.ts`):
+  | in-code ID | line | subject | disposition |
+  |---|---|---|---|
+  | `F-01` | 3162, 3179 | scheduled-report recipients: emails vs `Guid[]` | **now BUG-319** |
+  | `SHIFT-01` | 2345 | DF-56 overrides wiped on every PUT | **now BUG-322** |
+  | `SHIFT-05` | 2436 | `ResolvedShiftDto.EffectiveFrom` null coerced to `''` — a blank date asserting "no window" | still comment-only |
+  | `SHIFT-07` | 2340 | a wrongly-zeroed break/grace would be written back on the next save | still comment-only |
+  | `ISSUE-OT-UNAPPROVED` | 2643 | overtime report row | still comment-only |
+  | `F-04` | 2974 | doc drift on a bare-`string` field | still comment-only |
+  | `F-06` | 2937, 3003 | KPI absent value renders a confident `0`; widening `IDashboardKpi` to `number \| null` would touch every KPI binding | still comment-only |
+  | `F-07` | 2961 | enum values cast without an explicit `UNKNOWN` member — "a cast is still a cast" | still comment-only |
+- **Why it matters:** a comment is not a guard and not a work item. The five still comment-only entries are recorded here so they survive the merge; each needs its own triage rather than a severity invented in bulk.
+- **Suggested fix:** rewrite the code comments to cite the ledger IDs (done for F-01 and SHIFT-01), and triage the remaining five.
+
+### ISSUE-411
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** Docs / vault integrity
+- **Module:** — (cross-cutting) · **Found by:** D1 auto-heal fold, 2026-09-01
+- **Summary:** **269 finding wikilinks across the docs do not resolve.** Every `[[BUG-N]]` / `[[ISSUE-N]]` is a dead link — no note of that name exists.
+- **Evidence:** repo-wide count on 2026-09-01 — `[[ISSUE-N]]` ×192, `[[BUG-N]]` ×77, versus the documented resolving form `[[TEST-FINDINGS#BUG-N]]` ×2. Findings are **headings inside** `docs/QA/TEST-FINDINGS.md`, not standalone notes, so a bare `[[BUG-322]]` resolves to nothing. `find docs -name "BUG-*.md"` returns only `QA/BUG-STATUS.md` and an archived report — neither is a finding note.
+- **Why it matters:** CLAUDE.md already documents the correct form (`[[TEST-FINDINGS#BUG-292]]`) and records that wikilink-form mistakes produced 21 of the 38 broken links found on 2026-08-22. This is the same error class at 7× the scale. In Obsidian the graph shows no backlinks from a finding to the work that references it, which is exactly the traceability the ledger exists to provide.
+- **Root cause (confidence 90%):** the bare form reads naturally and nothing validates wikilinks, so every agent copied the neighbouring (broken) convention. I did the same in this session's auto-heal block before catching it — mine are now corrected to `[[TEST-FINDINGS#…]]`.
+- **Suggested fix:** a mechanical sweep rewriting `[[BUG-N]]`/`[[ISSUE-N]]` → `[[TEST-FINDINGS#BUG-N]]`, plus a link-check in the `/retro` setup-drift pass so it cannot silently regrow. **Do not hand-edit 269 sites** — this is `/campaign` shaped (homogeneous + mechanical), and its Phase-1 survey should confirm no finding IDs live in a different ledger before rewriting.

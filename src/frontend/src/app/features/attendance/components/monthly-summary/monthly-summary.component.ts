@@ -154,7 +154,9 @@ const HIGH_ABSENT_THRESHOLD = 3;
           </div>
           <div class="stat-card">
             <span class="stat-label">Avg attendance</span>
-            <span class="stat-value text-green-700">{{ b.averageAttendancePercent }}%</span>
+            <span class="stat-value text-green-700">{{
+              b.averageAttendancePercent === null ? '—' : b.averageAttendancePercent + '%'
+            }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">Total LOP days</span>

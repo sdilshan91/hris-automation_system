@@ -20,7 +20,6 @@ describe('RegularizationComponent', () => {
 
   const existing: IRegularization = {
     regularizationId: 'reg-0',
-    tenantId: 'tenant-1',
     employeeId: 'emp-1',
     attendanceLogId: null,
     date: '2026-06-10',
@@ -34,7 +33,6 @@ describe('RegularizationComponent', () => {
 
   const created: IRegularization = {
     regularizationId: 'reg-1',
-    tenantId: 'tenant-1',
     employeeId: 'emp-1',
     attendanceLogId: null,
     date: '2026-06-12',

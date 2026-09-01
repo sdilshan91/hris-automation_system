@@ -53,7 +53,12 @@ describe('RegularizationApprovalsComponent', () => {
   ): IRegularizationDecisionDto => ({
     regularizationId: id,
     status,
-    action: status === 'APPROVED' ? 'APPROVE' : 'REJECT',
+    // The backend emits the PAST-tense literals (RegularizationApprovalHistory.Approved =
+    // "APPROVED" / .Rejected = "REJECTED"), never the imperative form this fixture used to
+    // encode. Nothing renders `decision.action` today and the VM types it as a bare `string`,
+    // so no compiler caught it — the same wrong-shaped-fixture class that hid the `id` →
+    // `regularizationId` rename this migration fixed.
+    action: status === 'APPROVED' ? 'APPROVED' : 'REJECTED',
     approvalLevel: 1,
     attendanceLogId: status === 'APPROVED' ? 'log-1' : null,
     totalWorkMinutes: status === 'APPROVED' ? 480 : null,
