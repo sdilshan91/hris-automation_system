@@ -7,7 +7,7 @@
 // self-assessment throw and the recommendation workspace's permanently-empty table all happened.
 //
 // The fix for an EXISTING one is to consume the generated contract type (`Schema<'…Dto'>`) with an explicit
-// mapper. There are 167 left, and migrating them is the long tail of D1. This guard is the other half: it
+// mapper. There are 103 left, and migrating them is the long tail of D1. This guard is the other half: it
 // stops the count going UP while that work proceeds. Without it D1 never finishes — measured across two
 // commits, 99 call sites were migrated while the hand-written interface count moved by three, because new
 // ones kept arriving.
@@ -48,7 +48,7 @@ public sealed class FrontendWireContractDriftGuardTests
         RegexOptions.Compiled);
 
     /// <summary>
-    /// The unmigrated call sites, per file. 267 at D1's start; 218 after admin (49 -> 0); 167 after payroll (55 -> 4). Payroll's residual four are NOT unmigrated work — each targets an endpoint that does not exist (BUG-315, BUG-316) or returns no body to map (ISSUE-404), and each is documented at the call site.
+    /// The unmigrated call sites, per file. 267 at D1's start; 218 after admin (49 -> 0); 167 after payroll (55 -> 4); 126 after attendance (41 -> 0); 103 after auth (23 -> 0). Payroll's residual four are NOT unmigrated work — each targets an endpoint that does not exist (BUG-315, BUG-316) or returns no body to map (ISSUE-404), and each is documented at the call site.
     ///
     /// <para><b>This list may only ever SHRINK.</b> A new file appearing here means a fresh unchecked wire
     /// assertion was written; a count going up means one was added to a file that already had them. Either
@@ -60,7 +60,6 @@ public sealed class FrontendWireContractDriftGuardTests
     /// </summary>
     private static readonly IReadOnlyDictionary<string, int> KnownUnmigrated = new Dictionary<string, int>(StringComparer.Ordinal)
     {
-        ["core/auth/auth.service.ts"] = 23,
         ["features/benefits/services/benefit.service.ts"] = 12,
         ["features/core-hr/custom-fields/services/custom-field.service.ts"] = 6,
         ["features/core-hr/employees/services/bulk-import.service.ts"] = 1,

@@ -9312,4 +9312,78 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Evidence:** repo-wide count on 2026-09-01 — `[[ISSUE-N]]` ×192, `[[BUG-N]]` ×77, versus the documented resolving form `[[TEST-FINDINGS#BUG-N]]` ×2. Findings are **headings inside** `docs/QA/TEST-FINDINGS.md`, not standalone notes, so a bare `[[BUG-322]]` resolves to nothing. `find docs -name "BUG-*.md"` returns only `QA/BUG-STATUS.md` and an archived report — neither is a finding note.
 - **Why it matters:** CLAUDE.md already documents the correct form (`[[TEST-FINDINGS#BUG-292]]`) and records that wikilink-form mistakes produced 21 of the 38 broken links found on 2026-08-22. This is the same error class at 7× the scale. In Obsidian the graph shows no backlinks from a finding to the work that references it, which is exactly the traceability the ledger exists to provide.
 - **Root cause (confidence 90%):** the bare form reads naturally and nothing validates wikilinks, so every agent copied the neighbouring (broken) convention. I did the same in this session's auto-heal block before catching it — mine are now corrected to `[[TEST-FINDINGS#…]]`.
-- **Suggested fix:** a mechanical sweep rewriting `[[BUG-N]]`/`[[ISSUE-N]]` → `[[TEST-FINDINGS#BUG-N]]`, plus a link-check in the `/retro` setup-drift pass so it cannot silently regrow. **Do not hand-edit 269 sites** — this is `/campaign` shaped (homogeneous + mechanical), and its Phase-1 survey should confirm no finding IDs live in a different ledger before rewriting.
+- **Coverage today: NONE — confirmed with the session that owns `ClaudeMdAccuracyTests` (2026-09-01).** Do not assume a partial check exists. `ClaudeMdAccuracyTests` (PR #573) asserts only that seven load-bearing rules still appear in an auto-loaded file (`CLAUDE.md` + `.claude/rules/**`); its sibling test checks that **relative markdown links** resolve in `CLAUDE.md` only. **Nothing checks wikilinks anywhere, and nothing reads `docs/QA/` at all.**
+- **Suggested fix:** a mechanical sweep rewriting `[[BUG-N]]`/`[[ISSUE-N]]` → `[[TEST-FINDINGS#BUG-N]]`, plus a link-check in the `/retro` setup-drift pass so it cannot silently regrow. If the check is built as an arm of `ClaudeMdAccuracyTests`, **verify it fails against a real broken link before trusting it** — the D1 drift guard's first version silently missed 67 of the call sites it was written to catch. **Do not hand-edit 269 sites** — this is `/campaign` shaped (homogeneous + mechanical), and its Phase-1 survey should confirm no finding IDs live in a different ledger before rewriting.
+
+### BUG-412
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (D1 auth slice) · **Layer:** FE
+- **Module:** authentication (US-ADM-005, US-AUTH-009) · **Found:** 2026-09-01, D1 auth migration.
+- **Summary:** **The tenant user list was always empty.** `GET /tenant/users` returns `ApiResponse<PagedResult<TenantUserListItemDto>>`, but the FE asserted `http.get<ITenantUser[]>` — so the body that arrived was the **PagedResult object**, not an array.
+- **Evidence:** `TenantUsersController.cs:68,83` declares and returns `ApiResponse<PagedResult<TenantUserListItemDto>>`. `apiEnvelopeInterceptor` unwraps only an OUTER `{ success, data }` (it requires BOTH own-properties, `api-envelope.interceptor.ts:75`), and `PagedResult` has neither — so the paging envelope `{ items, page, pageSize, totalCount, totalPages }` reaches the caller untouched. Both consumers — `admin-user-lockout.component.ts:350` and `sso-settings.component.ts:937` — then treated that object as an array.
+- **Why it matters:** two admin screens are affected. The **admin user-lockout console** (US-AUTH-009) could never list a user to unlock, and the **SSO break-glass admin picker** (`sso-settings`) had no candidates — which is the control that stops an `sso_only` tenant locking itself out entirely.
+- **Root cause (confidence 100%):** an unchecked wire assertion. `http.get<ITenantUser[]>` is a cast, so TypeScript accepted the PagedResult and called it an array; there was no error at any layer.
+- **Why no test caught it:** both component specs mock `AuthService.getTenantUsers` at the service boundary and return a hand-built array (`admin-user-lockout.component.spec.ts:68`, `sso-settings.component.spec.ts:79`). The mock asserted the shape the FE *wished* for, so the suite was green against a contract the server never spoke. Test theater of exactly the class `@test-authenticator` exists to flag.
+- **Fix:** `getTenantUsers()` now requests `Schema<'PagedResultOfUsersTenantUserListItemDto'>` and maps through `mapTenantUserPage`, which reads `w?.items`. Pinned by a spec that feeds a real paged envelope.
+- **Related:** GAP-S1 · D1 · [[TEST-FINDINGS#BUG-414]]
+
+### BUG-413
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (D1 auth slice) · **Layer:** FE
+- **Module:** authentication / platform (tenant switcher) · **Found:** 2026-09-01, D1 auth migration.
+- **Summary:** **`tenant.status === 'active'` has never matched a real response.** The backend serializes `TenantStatus` as **PascalCase** enum names; the FE union has always been lowercase snake_case. Nothing translated between them.
+- **Evidence:** `Program.cs:215-221` registers a bare `JsonStringEnumConverter` (no naming policy), so `TenantStatus` (`Tenant.cs:334-342`: `Trial, Active, PastDue, Suspended, Terminating, Terminated`) goes out as `"Active"`, `"PastDue"`, `"Suspended"`. The FE `TenantStatus` union is `'trial' | 'active' | 'past_due' | …`. The comment above the converter even claims it is "matching what the Angular frontend consumes" — it is not, and that false comment is why nobody looked.
+- **Why it matters:** every FE comparison against a tenant status silently failed, so status-derived UI was dead rather than wrong-but-visible. `past_due` could never render because the wire form is `PastDue` and no case existed for it at all.
+- **Root cause (confidence 95%):** two enum spellings agreed on in different places and never reconciled; an unchecked cast let the mismatch through without a compile error.
+- **Fix:** `narrowTenantStatus()` decodes case-insensitively and covers all six members (`"PastDue".toLowerCase()` → `pastdue` → `past_due`). Unrecognised/absent resolves to **`'suspended'`, never `'active'`** — the only consumer is an allow-list switch gate, so an unknown status must block rather than claim a healthy tenant. Server-side `POST /auth/switch-tenant` remains the real authority.
+- **Not fixed here:** the misleading comment at `Program.cs:217` is backend-side and out of this slice's lane. **Other modules very likely share this defect** — any FE union compared against a C# enum crosses the same PascalCase boundary. Not surveyed; see the queue fold.
+- **Related:** GAP-S1 · D1
+
+### BUG-414
+- **Type:** BUG · **Severity:** MED · **Status:** RESOLVED (D1 auth slice) · **Layer:** FE
+- **Module:** authentication (US-ADM-005) · **Found:** 2026-09-01, D1 auth migration.
+- **Summary:** **`ITenantUser.roles` was declared `string[]` but the wire sends objects.** `TenantUserListItemDto.Roles` is `IReadOnlyList<TenantUserRoleDto>` — `{ roleId, name }` records, not strings.
+- **Evidence:** `UserManagementDtos.cs:6-17`. Templates deref `roles.length` / `roles.join()` and the SSO break-glass filter calls `roles.some(...)` against string values, so each row rendered `[object Object]` or matched nothing.
+- **Why it matters:** compounds [[TEST-FINDINGS#BUG-412]] — even once the list populated, the role column and the break-glass eligibility filter would still have been wrong.
+- **Fix:** `mapTenantUser` projects `roles: (w.roles ?? []).map(r => r.name ?? '').filter(n => n.length > 0)`. `[]` denies rather than grants.
+- **Related:** GAP-S1 · D1 · [[TEST-FINDINGS#BUG-412]]
+
+### ISSUE-415
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE (missing wire fields)
+- **Module:** authentication (US-AUTH-009) · **Found:** 2026-09-01, D1 auth migration.
+- **Summary:** **The admin lockout console can never show a locked user** — `UsersTenantUserListItemDto` carries no lockout state at all, so `lockedUntil` and `failedLoginCount` have **no wire source**.
+- **Evidence:** `UserManagementDtos.cs:6-14` is `(UserTenantId, UserId, Email, DisplayName, Status, Roles, LastLoginAt, LinkedEmployeeId)`. The FE declared `lockedUntil: string | null` and `failedLoginCount: number`, and `admin-user-lockout.component.ts:114` renders "Failed attempts: {{ user.failedLoginCount }}".
+- **Why it matters:** `isLocked()` is permanently false, so the screen whose entire purpose is finding and unlocking locked accounts shows every user as healthy. The Unlock action itself works — the *discovery* path does not. The lockout state exists in the backend (`AuthService.RunFailedAttemptAsync`); it is simply not projected into this DTO.
+- **Root cause (confidence 90%):** the FE interface was written from the story's ACs rather than from the DTO, and the unchecked cast meant the absent fields surfaced as `undefined` instead of a compile error.
+- **Fix applied here (partial, honest-only):** the mapper emits `lockedUntil: null` (the only value the type allows) and leaves `failedLoginCount` **optional/absent** rather than inventing `0` — a `0` would be a fresh false claim that the account has had zero failed attempts. `undefined` renders blank, which is what the screen already showed.
+- **Suggested fix (needs backend work — NOT done here):** add `LockedUntil` and `FailedLoginCount` to `TenantUserListItemDto` and project them in `ListTenantUsersQuery`. That is a backend DTO + query change, out of the type-migration lane.
+- **Related:** GAP-S1 · D1 · [[TEST-FINDINGS#BUG-412]]
+
+### ISSUE-416
+- **Type:** ISSUE · **Severity:** MED · **Status:** RESOLVED (D1 auth slice) · **Layer:** FE
+- **Module:** authentication (US-AUTH-005) · **Found:** 2026-09-01, D1 auth migration.
+- **Summary:** **A read-modify-write hazard could silently disable tenant MFA enforcement.** `mfaPolicy` is read by `getTenantAuthSettings()` and written back by three separate screens that PUT `{ ...currentSettings, ...formValue }`.
+- **Evidence:** session-policy, lockout-policy and sso-settings all spread the previously-read settings into their PUT. `TenantAuthSettingsRequest.MfaPolicy` is a **non-nullable** string defaulting to `"off"`, so an absent/undefined value on the way out is written as `off` — disabling enforcement and wiping `MfaRequiredRoles` as a side effect of saving an unrelated form.
+- **Why it matters:** `off` and `undefined` are the same destructive answer on this field, so the usual "leave it undefined" strategy is not neutral here. It is a silent downgrade of an authorization control.
+- **Fix:** `narrowMfaPolicy()` resolves an unrecognised/absent value to **`'required'`, never `'off'`** — the only non-permissive option left. This fires only on a genuine contract break; the backend's own default is a real `"off"` string that round-trips faithfully. The other settings unions deliberately stay `undefined` (their request counterparts are nullable = "leave unchanged", and each read site applies its own restrictive fallback).
+- **Related:** GAP-S1 · D1
+
+### ISSUE-417
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** Docs (code comment)
+- **Module:** platform (HTTP interceptors) · **Found:** 2026-09-01, D1 auth migration.
+- **Summary:** `apiEnvelopeInterceptor`'s doc comment describes the paging envelope as `{ data, total, page, pageSize }`. The real `PagedResult<T>` is `{ items, page, pageSize, totalCount, totalPages }` (`PagedResult.cs:8-15`) — three of the four names are wrong.
+- **Why it matters:** the interceptor's *behaviour* is correct (it keys off `success` + `data` own-properties, and `PagedResult` has neither, so pages are correctly left alone). Only the comment is wrong — but it is the comment a developer reads when deciding what shape reaches their `.subscribe()`, and reading it is one way to arrive at exactly [[TEST-FINDINGS#BUG-412]].
+- **Suggested fix:** correct the comment to name the real `PagedResult` fields. One-line docs change; deliberately not made here (different file, different lane).
+- **Related:** [[TEST-FINDINGS#BUG-412]]
+
+### ISSUE-418
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** TEST (flake) + BE (UX of the losing path)
+- **Module:** admin-console / workflow runtime (US-ADM-011 AC-12) · **Found:** 2026-09-01, triaging PR #574's red gate.
+- **Summary:** **`WorkflowRuntimeConcurrencyPostgresTests.ConcurrentApprovals_SameStep_ExactlyOneWins_NoDoubleAdvance_AC12` is timing-dependent** and failed CI with `Expected loser.StatusCode to be 409, but found 403`. 5558 passed, this one failed. **It is unrelated to PR #574**, which changes only `.claude/hooks/` (a Python guard + a shell test) and cannot touch backend behaviour.
+- **Evidence:** run 33504747946, job "Backend (build + test)". Nineteen prior `ci-gate.yml` runs on other branches were green, so this is a first observed occurrence, not a standing red.
+- **Root cause (confidence 90%):** in `WorkflowRuntimeService.DecideCoreAsync` the **instance is loaded BEFORE the `FOR UPDATE` row lock is taken**, so `instance.CurrentStepOrder` can be stale-forward. Two interleavings:
+  - *A (asserted, 409):* the loser reads `CurrentStepOrder = 1`, blocks on the lock, reloads, sees step 1 decided **by itself** → the idempotency check fires → `409 step_already_decided`.
+  - *B (observed, 403):* the winner commits **before** the loser's `WorkflowInstances` read. The loser then reads `CurrentStepOrder = 2`, locks and loads the **step-2** group. The idempotency check inspects only the current group, so it does not fire; `IsAuthorizedApproverAsync` then fails because step 2's approver is a different user → `403 not_step_approver`.
+- **What did NOT break:** the AC-12 invariant held in both interleavings — exactly one winner, one step-1 row, exactly one step-2 row, no double-advance. Only the **loser's status code** is non-deterministic. This is a flaky *assertion*, not a broken concurrency guarantee.
+- **Why it is still worth fixing rather than just re-running:** it will recur on any PR, and the 403 is also poor product behaviour — a user who double-clicks Approve is told "You are not the assigned approver for the current step" rather than "This step has already been actioned."
+- **Suggested fix (prefer the production fix over loosening the assertion):** broaden the idempotency check to ask whether the acting user already decided **any** row on this instance, not only in the currently-active group, and return `409 step_already_decided` when so. That makes the losing path deterministic **and** gives the better message. **Do NOT simply relax the test to accept `409 || 403`** — that would freeze the confusing UX and hide the real ordering defect.
+- **Immediate action taken:** re-ran the failed job on PR #574 (the failure is unrelated to that PR's diff). Filed rather than fixed — the fix is backend workflow-runtime work, out of the D1 auth slice's lane.
+- **Related:** ISSUE-275 (the earlier flake in this same file, fixed by matching prod's `EnableRetryOnFailure`)

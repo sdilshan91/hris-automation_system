@@ -1,3 +1,5 @@
+import type { Schema } from '@core/api';
+
 /** Login request payload */
 export interface ILoginRequest {
   email: string;
@@ -77,7 +79,17 @@ export interface ITenantInfo {
   name: string;
   logoUrl?: string;
   primaryColor?: string;
-  status: TenantStatus;
+  /**
+   * D1 slice 4: OPTIONAL, because the auth wire does not carry it. `AuthTenantDto`
+   * (login / switch-tenant / the nested tenant on /auth/me) is `{ tenantId, subdomain, name }`
+   * and nothing else — no status, no logoUrl, no primaryColor.
+   *
+   * It MUST stay optional. `TenantService.setTenantFromAuth` resolves
+   * `status: tenant.status ?? previousContext.status ?? 'active'`, so an invented `'active'`
+   * here would OVERWRITE a `suspended` status already resolved from `/tenant/context` and
+   * silently un-suspend the tenant for the `tenantGuard`. Absent must stay absent.
+   */
+  status?: TenantStatus;
 }
 
 /** Tenant lifecycle status enum */
@@ -295,9 +307,18 @@ export interface ITenantUser {
   avatarUrl?: string;
   roles: string[];
   isActive: boolean;
-  /** Null when not locked; ISO timestamp of lockout expiry when locked */
+  /**
+   * Null when not locked; ISO timestamp of lockout expiry when locked.
+   * D1 slice 4: NO WIRE SOURCE — `UsersTenantUserListItemDto` carries no lockout state, so the
+   * mapper can only ever emit `null` and `isLocked()` is permanently false. See the report.
+   */
   lockedUntil: string | null;
-  failedLoginCount: number;
+  /**
+   * D1 slice 4: OPTIONAL — no wire source either. Emitting `0` would be a fresh false claim
+   * ("this account has had zero failed attempts"); `undefined` renders blank, which is what
+   * the screen already shows today.
+   */
+  failedLoginCount?: number;
   lastLoginAt: string | null;
 }
 
@@ -309,4 +330,357 @@ export interface ILoginErrorResponse {
   message: string;
   code?: 'account_locked' | 'invalid_credentials' | string;
   lockoutMinutesRemaining?: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+// D1 slice 4 — WIRE CONTRACT → VIEW-MODEL MAPPERS  (core/auth)
+//
+// Before this slice every AuthService HTTP call named a hand-written `I…` type. `http.get<IFoo>()`
+// is a CAST, not a check: TypeScript accepted whatever the server actually sent, and a shape
+// mismatch surfaced as a silent `undefined` on screen. This is the AUTHORIZATION surface, so the
+// field-by-field comparison against the generated contract found the most in any slice so far.
+//
+// Each `…Wire` alias below is a `Schema<'…'>` generated from the API's own OpenAPI document, so a
+// backend DTO rename is now a compile error here instead of a runtime blank.
+//
+// `apiEnvelopeInterceptor` already unwraps `{ success, data }`, so these alias the INNER dto.
+// The NON-generic `ApiResponse` has no `data` property at all (HRM.Application/DTOs/ApiResponse.cs),
+// so it is passed through by the interceptor untouched — hence `MessageResponseWire`.
+//
+// Every generated property is optional (Swashbuckle emits no `required`), so every field is
+// defaulted deliberately. THE GOVERNING RULE ON THIS SURFACE: a default may never grant, and may
+// never assert that a protection is in place. Absent roles/permissions are `[]` (deny), an absent
+// token is `''` (the interceptor then sends no Authorization header → 401), an absent
+// `success`/`isCurrent`/`isActive` is `false`.
+//
+// ── FIELDS WITH NO WIRE SOURCE AT ALL (emitted as the least-claiming value, all flagged) ───────
+//   IUser.mfaEnabled          `AuthUserDto` is {userId, email, displayName}. Hardcoded `false`:
+//                             claims MFA is NOT set up, so the UI offers enrollment. `true` would
+//                             tell an unprotected user they are protected. Only /auth/me is
+//                             authoritative (`AuthCurrentUserDto.mfaEnabled`).
+//   IUser.avatarUrl           omitted.
+//   ITenantInfo.status        left `undefined` — see the banner on ITenantInfo. Inventing
+//   ITenantInfo.logoUrl       `'active'` would un-suspend a suspended tenant.
+//   ITenantInfo.primaryColor  omitted (branding comes from /tenant/context).
+//   ITenantUser.lockedUntil   `null`; `UsersTenantUserListItemDto` has no lockout state.
+//   ITenantUser.failedLoginCount / avatarUrl   omitted.
+//
+// ── WIRE FIELDS DELIBERATELY NOT MAPPED ───────────────────────────────────────────────────────
+//   AuthLoginResponse.refreshToken / AuthSwitchTenantResponse.refreshToken
+//       NEVER mapped. The refresh token lives in an httpOnly cookie by design; copying it into a
+//       JS-reachable view model would widen the XSS blast radius. (The backend already nulls it at
+//       AuthController.cs:77 — this is the second lock, not the first.)
+//   AuthCurrentUserDto.tenantMemberships
+//       Real, populated, and not declared on ICurrentUserResponse. Left unmapped — inventing UI for
+//       it is out of lane. `getMyTenants()` already serves the switcher from the same DTO.
+//   UsersTenantUserListItemDto.userTenantId / linkedEmployeeId / status(raw)
+//       No FE home; `status` is consumed only to derive `isActive`.
+// ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+export type LoginResponseWire = Schema<'AuthLoginResponse'>;
+export type UserWire = Schema<'AuthUserDto'>;
+export type TenantInfoWire = Schema<'AuthTenantDto'>;
+export type RefreshResponseWire = Schema<'AuthRefreshTokenResponse'>;
+export type CurrentUserWire = Schema<'AuthCurrentUserDto'>;
+export type UserTenantWire = Schema<'AuthTenantMembershipDto'>;
+export type SwitchTenantResponseWire = Schema<'AuthSwitchTenantResponse'>;
+export type SessionWire = Schema<'AuthSessionDto'>;
+export type MfaEnrollResponseWire = Schema<'AuthMfaEnrollResponse'>;
+export type MfaVerifyResponseWire = Schema<'AuthMfaVerifyResponse'>;
+export type TenantAuthSettingsWire = Schema<'AuthTenantAuthSettingsResponse'>;
+export type TenantUserWire = Schema<'UsersTenantUserListItemDto'>;
+export type TenantUserPageWire = Schema<'PagedResultOfUsersTenantUserListItemDto'>;
+/** The NON-generic envelope: `{ success, message, code, errors, timestamp }`, no `data` key. */
+export type MessageResponseWire = Schema<'ApiResponse'>;
+
+// ─── narrowing helpers (guarded lookups, never a blind `as`) ──────────────────
+
+/**
+ * The backend serializes the `TenantStatus` ENUM with `JsonStringEnumConverter`, i.e. PascalCase
+ * names — `"Active"`, `"PastDue"`, `"Suspended"` (Program.cs:215-221). The FE union has always been
+ * lowercase snake_case. Nothing translated between them, so `tenant.status === 'active'` has never
+ * matched a real response. Decoding here is what makes the declared FE semantics reachable at all.
+ *
+ * Unrecognised / absent → `'suspended'`, never `'active'`: on this field the only consumer is an
+ * allow-list switch gate, so an unknown status must block the switch rather than claim a healthy
+ * tenant. (Server-side `POST /auth/switch-tenant` remains the real authority — it returns 403.)
+ */
+const TENANT_STATUS_BY_WIRE: Readonly<Partial<Record<string, TenantStatus>>> = {
+  trial: 'trial',
+  active: 'active',
+  pastdue: 'past_due',
+  past_due: 'past_due',
+  suspended: 'suspended',
+  terminating: 'terminating',
+  terminated: 'terminated',
+};
+
+function narrowTenantStatus(value: string | null | undefined): TenantStatus {
+  return TENANT_STATUS_BY_WIRE[(value ?? '').toLowerCase()] ?? 'suspended';
+}
+
+const MFA_POLICIES: readonly ITenantAuthSettings['mfaPolicy'][] = [
+  'off',
+  'optional',
+  'required',
+];
+const CONCURRENT_SESSION_STRATEGIES: readonly ConcurrentSessionStrategy[] = [
+  'deny_new',
+  'revoke_oldest',
+];
+const SSO_ENFORCEMENT_MODES: readonly SsoEnforcementMode[] = ['optional', 'sso_only'];
+const SSO_ONBOARDING_STATUSES: readonly SsoOnboardingStatus[] = [
+  'not_started',
+  'consent_pending',
+  'consented',
+  'enabled',
+];
+
+/**
+ * Unrecognised / absent → `'required'`, NEVER `'off'`.
+ *
+ * `mfaPolicy` is the one settings field that is read-modify-WRITTEN: session-policy, lockout-policy
+ * and sso-settings all PUT `{ ...currentSettings, ...formValue }`, and the backend's
+ * `TenantAuthSettingsRequest.MfaPolicy` is a NON-nullable string defaulting to `"off"`. So an
+ * absent/undefined/null value on the way out silently DISABLES tenant MFA enforcement and wipes
+ * `MfaRequiredRoles`. `'off'` and `undefined` are therefore the same, destructive answer; the only
+ * non-permissive one left is `'required'`. This fires only on a genuine contract break — the
+ * backend's own default is a real `"off"` string that round-trips faithfully.
+ */
+function narrowMfaPolicy(
+  value: string | null | undefined,
+): ITenantAuthSettings['mfaPolicy'] {
+  return MFA_POLICIES.includes(value as ITenantAuthSettings['mfaPolicy'])
+    ? (value as ITenantAuthSettings['mfaPolicy'])
+    : 'required';
+}
+
+/**
+ * The remaining settings unions stay OPTIONAL and resolve to `undefined` when unrecognised. That is
+ * deliberate and is NOT a missing default: their backend request counterparts are all nullable
+ * ("null = leave unchanged"), and every read site already applies its own restrictive fallback
+ * (`concurrentSessionStrategy ?? 'deny_new'`, `enforcementMode ?? 'optional'`,
+ * `ssoOnboardingStatus ?? 'not_started'`). Preserving `undefined` keeps those decisions where they
+ * are visible instead of freezing an invented value into the next PUT.
+ */
+function narrowFrom<T extends string>(
+  allowed: readonly T[],
+  value: string | null | undefined,
+): T | undefined {
+  return allowed.includes(value as T) ? (value as T) : undefined;
+}
+
+// ─── login / refresh / current user ──────────────────────────────────────────
+
+export function mapUser(w: UserWire | undefined): IUser {
+  return {
+    userId: w?.userId ?? '',
+    email: w?.email ?? '',
+    displayName: w?.displayName ?? '',
+    // NO WIRE SOURCE on the login DTO. `false` = "MFA is not set up" → the UI prompts enrollment.
+    // `true` would claim a protection the user may not have. /auth/me is the authoritative read.
+    mfaEnabled: false,
+  };
+}
+
+export function mapTenantInfo(w: TenantInfoWire | undefined): ITenantInfo {
+  return {
+    tenantId: w?.tenantId ?? '',
+    subdomain: w?.subdomain ?? '',
+    name: w?.name ?? '',
+    // status / logoUrl / primaryColor: no wire source. Left absent ON PURPOSE — see ITenantInfo.
+  };
+}
+
+export function mapLoginResponse(w: LoginResponseWire): ILoginResponse {
+  return {
+    // Fails CLOSED: authInterceptor attaches no Authorization header for a falsy token, so an
+    // absent token yields an unauthenticated session, never an unauthorized one.
+    accessToken: w.accessToken ?? '',
+    user: mapUser(w.user),
+    tenant: mapTenantInfo(w.tenant),
+    // Fails CLOSED: no permissions → hasPermission()/hasAnyPermission() are false everywhere.
+    permissions: w.permissions ?? [],
+    // `false` cannot bypass MFA: on a real challenge the server withholds the access token, so a
+    // wrong `false` lands the user unauthenticated. A wrong `true` would strand EVERY login on an
+    // MFA prompt — a total outage — and still grants nothing. Only the server enforces MFA.
+    mfaChallenge: w.mfaChallenge ?? false,
+    mfaMethod: w.mfaMethod === 'totp' ? 'totp' : undefined,
+    // NOT defaulted on purpose: `undefined` is what makes handleLoginResponse fall back to its
+    // `!user.mfaEnabled` proxy, which resolves to "enrollment required". Defaulting it to `false`
+    // would suppress the enrollment prompt.
+    mfaEnrollmentRequired: w.mfaEnrollmentRequired,
+    // `undefined` = unknown, NOT 0 = "you have no recovery codes left" (a false alarm).
+    recoveryCodesRemaining: w.recoveryCodesRemaining ?? undefined,
+    shouldRegenerateRecoveryCodes: w.shouldRegenerateRecoveryCodes,
+    // w.refreshToken is deliberately NOT mapped — see the banner.
+  };
+}
+
+export function mapRefreshResponse(w: RefreshResponseWire): IRefreshResponse {
+  // Same fail-closed reasoning as login: '' → no Authorization header → 401 → normal re-login.
+  return { accessToken: w.accessToken ?? '' };
+}
+
+export function mapCurrentUser(w: CurrentUserWire): ICurrentUserResponse {
+  return {
+    userId: w.userId ?? '',
+    email: w.email ?? '',
+    displayName: w.displayName ?? '',
+    tenant: mapTenantInfo(w.tenant),
+    // FAIL CLOSED. The wire type is `string[] | null`; an absent list must mean "no authority",
+    // never "unrestricted". hydrateFromMe keeps its own `?? []` as a second lock.
+    roles: w.roles ?? [],
+    permissions: w.permissions ?? [],
+    // `false` does not claim a protection the account may not have.
+    mfaEnabled: w.mfaEnabled ?? false,
+    // w.tenantMemberships is real but undeclared here — see the banner.
+  };
+}
+
+// ─── tenant switcher / switch-tenant ─────────────────────────────────────────
+
+export function mapUserTenant(w: UserTenantWire): IUserTenant {
+  return {
+    tenantId: w.tenantId ?? '',
+    subdomain: w.subdomain ?? '',
+    name: w.name ?? '',
+    logoUrl: w.logoUrl ?? undefined,
+    status: narrowTenantStatus(w.status),
+    // `[]` is safe for `primaryRole()` (`roles[0] || 'Member'`) and denies nothing that was granted.
+    roles: w.roles ?? [],
+    // `false` = "not the tenant you are in". A wrong `true` would mislabel a tenant as current AND
+    // disable switching to it; `false` at worst offers a switch the server re-checks.
+    isCurrentTenant: w.isCurrentTenant ?? false,
+  };
+}
+
+export function mapSwitchTenantResponse(
+  w: SwitchTenantResponseWire,
+): ISwitchTenantResponse {
+  return {
+    accessToken: w.accessToken ?? '',
+    tenant: mapTenantInfo(w.tenant),
+    // '' reloads the current page. This value is assigned to `window.location.href`, so any
+    // invented fallback would be an open-redirect primitive. Claim nothing.
+    redirectUrl: w.redirectUrl ?? '',
+    // w.refreshToken deliberately NOT mapped.
+  };
+}
+
+// ─── sessions ────────────────────────────────────────────────────────────────
+
+export function mapSession(w: SessionWire): ISession {
+  return {
+    // '' makes the revoke URL 404 — it can never revoke the WRONG session.
+    sessionId: w.sessionId ?? '',
+    device: w.device ?? '',
+    browser: w.browser ?? '',
+    os: w.os ?? '',
+    ipAddress: w.ipAddress ?? '',
+    issuedAt: w.issuedAt ?? '',
+    // Nullable on the wire; '' is falsy exactly like the null the cast used to let through.
+    lastActiveAt: w.lastActiveAt ?? '',
+    // `false` keeps the Revoke button ENABLED. A wrong `true` disables revoke for that row, which
+    // is how a hijacked session would become un-killable. Worst case of `false` is self-logout.
+    isCurrent: w.isCurrent ?? false,
+  };
+}
+
+// ─── MFA ─────────────────────────────────────────────────────────────────────
+
+export function mapMfaEnrollResponse(w: MfaEnrollResponseWire): IMfaEnrollResponse {
+  return {
+    secret: w.secret ?? '',
+    qrCodeDataUrl: w.qrCodeDataUrl ?? '',
+    // `[]` shows no codes rather than inventing any; a visible failure, not a silent one.
+    recoveryCodes: w.recoveryCodes ?? [],
+  };
+}
+
+export function mapMfaVerifyResponse(w: MfaVerifyResponseWire): IMfaVerifyResponse {
+  return {
+    // THE fail-closed default on this surface. verifyMfaEnrollment() flips the local user to
+    // `mfaEnabled: true` and clears `mfaRequiresEnrollment` on `success`. Defaulting to `true`
+    // would mark an account as MFA-protected without the server ever confirming the code.
+    success: w.success ?? false,
+    recoveryCodes: w.recoveryCodes ?? undefined,
+  };
+}
+
+// ─── tenant auth settings ────────────────────────────────────────────────────
+
+export function mapTenantAuthSettings(
+  w: TenantAuthSettingsWire,
+): ITenantAuthSettings {
+  return {
+    mfaPolicy: narrowMfaPolicy(w.mfaPolicy),
+    // Backend request counterpart is non-nullable and defaults to []; [] is the same answer.
+    mfaRequiredRoles: w.mfaRequiredRoles ?? [],
+    // Everything below is a FAITHFUL PASSTHROUGH of `undefined`. Each read site already applies
+    // its own restrictive fallback, and on the write side `undefined` means "leave unchanged"
+    // (all of these are nullable on TenantAuthSettingsRequest). Inventing a value here would
+    // freeze it into the next read-modify-write PUT.
+    idleTimeoutMinutes: w.idleTimeoutMinutes,
+    absoluteTimeoutHours: w.absoluteTimeoutHours,
+    maxConcurrentSessions: w.maxConcurrentSessions,
+    concurrentSessionStrategy: narrowFrom(
+      CONCURRENT_SESSION_STRATEGIES,
+      w.concurrentSessionStrategy,
+    ),
+    maxFailedAttempts: w.maxFailedAttempts,
+    lockoutDurationMinutes: w.lockoutDurationMinutes,
+    progressiveLockoutEnabled: w.progressiveLockoutEnabled,
+    ssoEnabled: w.ssoEnabled,
+    allowedEntraTenantIds: w.allowedEntraTenantIds ?? undefined,
+    allowedEmailDomains: w.allowedEmailDomains ?? undefined,
+    jitEnabled: w.jitEnabled,
+    jitDefaultRole: w.jitDefaultRole,
+    enforcementMode: narrowFrom(SSO_ENFORCEMENT_MODES, w.enforcementMode),
+    breakGlassAdminUserIds: w.breakGlassAdminUserIds ?? undefined,
+    ssoOnboardingStatus: narrowFrom(SSO_ONBOARDING_STATUSES, w.ssoOnboardingStatus),
+    // ssoEntitled is a read-only ENTITLEMENT flag and the SSO card gates on `=== true`.
+    // Passed through untouched so an absent flag stays absent and stays fail-closed.
+    ssoEntitled: w.ssoEntitled,
+  };
+}
+
+// ─── admin: tenant users ─────────────────────────────────────────────────────
+
+export function mapTenantUser(w: TenantUserWire): ITenantUser {
+  return {
+    userId: w.userId ?? '',
+    email: w.email ?? '',
+    displayName: w.displayName ?? '',
+    // SHAPE FIX: the wire sends `TenantUserRoleDto[]` ({roleId, name}) — the FE has always
+    // declared and rendered `string[]`. `[]` denies (the break-glass admin filter uses
+    // `roles.some(...)`), and templates deref `.length` / `.join()` unguarded.
+    roles: (w.roles ?? [])
+      .map((r) => r.name ?? '')
+      .filter((name) => name.length > 0),
+    // Derived from the ENUM-as-PascalCase `status` ("Active" | "Disabled" | "Suspended").
+    // Strict `=== 'Active'` fails CLOSED: anything unknown is treated as not-active, which
+    // EXCLUDES the user from the sso_only break-glass admin candidate list.
+    isActive: w.status === 'Active',
+    // NO WIRE SOURCE — no lockout state on this DTO. `null` = "not locked" is the only value the
+    // type allows; it cannot be trusted. See the report.
+    lockedUntil: null,
+    // failedLoginCount / avatarUrl: no wire source, omitted rather than invented.
+    lastLoginAt: w.lastLoginAt ?? null,
+  };
+}
+
+/**
+ * `GET /tenant/users` returns `ApiResponse<PagedResult<TenantUserListItemDto>>`. The envelope
+ * interceptor unwraps only the OUTER `{ success, data }` — it explicitly leaves a paging envelope
+ * alone — so the body that reaches here is the PagedResult, not an array. Both callers
+ * (`admin-user-lockout`, `sso-settings`) treat the result as a plain array.
+ */
+export function mapTenantUserPage(w: TenantUserPageWire | null): ITenantUser[] {
+  return (w?.items ?? []).map(mapTenantUser);
+}
+
+export function mapMessageResponse(w: MessageResponseWire | null): IMessageResponse {
+  // `ApiResponse.Ok(message: null)` is a real backend call, so '' is the honest default.
+  return { message: w?.message ?? '' };
 }
