@@ -350,8 +350,27 @@ instances**, so probes 3–5 could not be observed end-to-end.
   4/4 mutations killed on real Postgres, **including the over-block mutation** (`!= Active`, i.e. the
   register's own prescription) — so the arm that stops the fix over-reaching is demonstrably load-bearing
   rather than assumed. Gate 5543/5543.
-- [ ] **C5 · GAP-028 export bundle** — fix the emailed link first (**S**, a route already exists); documents ZIP +
-  schema PDF are the M–L remainder.
+- [x] **C5 · GAP-028 export bundle** ✅ **DONE (#563)** — link fixed, schema PDF shipped, documents ZIP deferred
+  by decision.
+  **"A route already exists" was half-true and misleading.** An authenticated `/data-exports/{id}/download`
+  does exist — but the email could never use it: a link clicked in a mail client carries no `Authorization`
+  header, so pointing there 401s. The old link came from `GetSignedUrl`, which despite its name **signs
+  nothing** and returns the dead `/files/…` scheme. It now targets the tenant workspace page, which
+  authenticates and then downloads.
+  **DECIDED (human):** schema PDF now; documents ZIP as its own slice. `IFileStorage` has **no enumerate
+  method** and `BuildBundleAsync` returns an in-memory `byte[]` a real tenant's documents would OOM — filed
+  with those reasons as **ISSUE-396** rather than smuggled into a link fix.
+  **The audit caught my fix being half-inert.** The link named an export via `?exportId=` and the page ignored
+  it; my own arm asserted the id was present while the product dropped users into an unfiltered list — *a test
+  locking in a contract the frontend did not honour*. Fixing it then broke four sibling specs, revealing the
+  panel is also rendered in a **dialog** with no route: `ActivatedRoute` is now optional.
+  **Schema PDF is derived from the bytes actually exported** — columns read from the header row of the CSV in
+  the same ZIP, never a second reflection pass. Checksummed in the manifest like every other artifact.
+  **One real bug in a shared helper:** `NormalizeBaseDomain` fell back on `null` only, so an empty
+  `Platform:BaseDomain` produced `https://acme./…` for **every** tenant email.
+  6 mutations, 6 killed. Gate 5556/5556 + 4166/4166.
+  **Spawned:** ISSUE-396 (documents ZIP) · ISSUE-397 · ISSUE-398 · ISSUE-399 · and the auditor's find that
+  **three other jobs email a local temp path as an `<a href>`** — the same dead-link class, still live.
 
 > ### 🔁 AUTO-HEAL 2026-08-23 (B5) — what its audit surfaced
 >
@@ -376,6 +395,19 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > *promise* — `IAuditExempt` is a marker whose meaning ("something else audits this") nothing verifies. That is
 > the same shape as a hand-written interface claiming to match a wire contract. A marker that asserts a fact
 > about code elsewhere needs a guard, or it is a comment with a compiler-checked name.
+
+> ### 🔁 AUTO-HEAL 2026-08-23 (C5) — the dead-link class is wider than GAP-027/028
+>
+> | item | sev | why it waits |
+> |---|---|---|
+> | **Three jobs email a local temp path as a link** | HIGH | `ScheduledReportJob:92,123` · `LeaveReportExportJob:70,106` · `AttendanceSummaryExportJob:60,96` render `IReportExportStorage.SaveAsync`'s *opaque locator* straight into `{{report.downloadUrl}}`. Same class as GAP-027/028, three features over, still live. Not filed under an existing gap — it belongs to leave/attendance/scheduled reports. |
+> | **ISSUE-396 — documents ZIP** | MED | Deferred by decision. Needs a storage enumerate path AND streaming assembly; the bundle is an in-memory `byte[]` today. |
+> | ISSUE-397 · ISSUE-398 · ISSUE-399 | LOW–MED | Base-domain duplication · `GetSignedUrl` signs nothing · C2's orphaned download chain (my own mess; removing it needs the auth/audit arms ported first). |
+>
+> **What C5 adds to the pattern file:** an emailed link is a *different contract* from an in-app one, and the
+> difference is authentication. C2's fix — fetch it through the auth interceptor — cannot transfer to a mail
+> client. Any future "make this link work" item should ask **who clicks it, and what credentials do they
+> carry** before choosing the shape.
 
 ### Tier D — the structural item (the only one whose cost grows)
 
@@ -479,6 +511,13 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23 (C5)** — **C5 shipped (#563).** Tier C is complete. The entry's "a route already exists" was
+  half-true in the way that matters: the route exists and the email still could not use it, because a mail
+  client sends no credentials. **Five for five now on prescriptions being unreliable.**
+  The audit earned its keep twice — it found my link was *inert* (the page ignored the id the link named, and
+  my own test asserted the id while the product ignored it), and that the schema document would contradict its
+  own bundle on a partial export. Both are the same failure shape: **a change that is correct one layer up and
+  does nothing where the user is.**
 - **2026-08-23 (C4)** — **C4 shipped (#561), diverging from its own prescription.** `Status == Active` would
   have blocked probation and suspension — a regression dressed as a fix. **That is now the fourth prescription
   in this queue that was wrong**, after A2 (two-thirds wrong), C2 (named a route that does not exist) and B4
