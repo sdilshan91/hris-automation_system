@@ -13,6 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpErrorResponse, HttpResponse } from '@angular/common/http';
 import { TranslateModule, TranslateService } from '@ngx-translate/core';
 import { trigger, transition, style, animate } from '@angular/animations';
+import { ActivatedRoute } from '@angular/router';
 import { ToastrService } from 'ngx-toastr';
 import { Subscription } from 'rxjs';
 import { DataExportService } from '../../services/data-export.service';
@@ -80,6 +81,13 @@ import {
   ],
 })
 export class ExportPanelComponent implements OnInit, OnDestroy {
+  /**
+   * OPTIONAL on purpose. This panel is rendered in two places: the routed /admin/data-export page, where the
+   * export-ready email's `?exportId=` is meaningful, and the system-admin dialog, where there is no route
+   * context and a query param would be meaningless. A required dependency here forced every non-routed host
+   * to fabricate an ActivatedRoute just to construct the component.
+   */
+  private readonly route = inject(ActivatedRoute, { optional: true });
   private readonly service = inject(DataExportService);
   private readonly toastr = inject(ToastrService);
   private readonly translate = inject(TranslateService);
@@ -117,6 +125,18 @@ export class ExportPanelComponent implements OnInit, OnDestroy {
 
   private pollSub: Subscription | null = null;
 
+  /**
+   * C5/GAP-028: the export-ready email links here with `?exportId=`. Without reading it the link would
+   * identify an export the page then ignored — a link that only *looks* specific, which is the same class
+   * of half-truth as the `/files/…` URL this whole item replaced.
+   */
+  readonly highlightedExportId = signal<string | null>(null);
+
+  /** True when this row is the export the email linked to. */
+  isHighlighted(recordId: string): boolean {
+    return this.highlightedExportId() === recordId;
+  }
+
   /** Whether the Start button is allowed (full export, or ≥1 entity chosen). */
   readonly canStart = computed(
     () => !this.submitting() && (this.fullExport() || this.selected().size > 0)
@@ -133,6 +153,11 @@ export class ExportPanelComponent implements OnInit, OnDestroy {
   );
 
   ngOnInit(): void {
+    // Chained the whole way: an OPTIONAL convenience param must never be able to break the panel. Hosts
+    // that render this outside a route provide partial ActivatedRoute stubs, and a missing queryParamMap
+    // would otherwise throw in ngOnInit and take the whole export page down with it.
+    const requested = this.route?.snapshot?.queryParamMap?.get('exportId') ?? null;
+    this.highlightedExportId.set(requested && requested.length > 0 ? requested : null);
     this.loadHistory();
   }
 

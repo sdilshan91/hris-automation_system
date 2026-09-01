@@ -209,7 +209,12 @@
       <!-- Card list (responsive — NFR-5: stacks on mobile) -->
       <ul class="divide-y divide-neutral-100" data-testid="history-list">
         @for (record of history(); track record.id) {
-          <li class="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <!-- C5: the row the "your export is ready" email pointed at. -->
+          <li
+            class="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+            [class.bg-amber-50]="isHighlighted(record.id)"
+            [attr.data-testid]="isHighlighted(record.id) ? 'history-row-highlighted' : null"
+          >
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="text-sm font-medium text-neutral-800">{{ record.scope }}</span>

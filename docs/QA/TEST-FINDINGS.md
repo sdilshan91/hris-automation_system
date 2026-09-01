@@ -9034,3 +9034,45 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Summary:** `OffboardingService.CompleteAsync` terminates an employee by hand-assigning `Status`/`IsActive` rather than routing through `EmployeeStatusService`, so it also writes **no `EmploymentHistory` row**. C3 added the missing `audit_logs` row, so the termination is now traceable — but the **employment timeline still misses it**, which is a separate user-visible gap from the audit one.
 - **Why not fixed in C3:** C3's lane was audit pairing. Adding history writes is a behaviour change to the employment-timeline feature and deserves its own slice (the clean fix is routing the whole path through `EmployeeStatusService`, which also removes the duplication).
 - **Related:** C3 · GAP-025
+
+### ISSUE-396
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN (deferred by decision) · **Layer:** BE
+- **Module:** admin-console (US-ADM-010) · **Found:** 2026-08-23, C5 / GAP-028.
+- **Summary:** The tenant export bundle now ships **4 of 5** artifacts (CSVs, `audit_log.jsonl`, `manifest.json`, and — new in C5 — `schema.pdf`). The **documents ZIP** remains absent, so a GDPR Art. 20 export still omits every uploaded file the tenant holds: employee documents, onboarding/offboarding attachments, interview attachments, self-assessment evidence, offer letters.
+- **Why it was deferred, explicitly (human decision, 2026-08-23):** two blockers make it its own slice rather than a rider on the link fix.
+  1. **`IFileStorage` has no enumerate method** (`UploadAsync`/`OpenReadAsync`/`GetSignedUrl`/`DeleteAsync` only). Including documents needs either a new `ListAsync(tenantId, prefix)` on the seam — which then also exports orphaned files — or DB-side enumeration of storage keys across ~8 entity types, which is the more faithful reading of Art. 20 (export what the tenant's *records* reference) but touches every one of them.
+  2. **`BuildBundleAsync` returns an in-memory `byte[]`** and `PackageZip` builds the whole ZIP in a `MemoryStream`. A real tenant's documents are plausibly gigabytes; adding them as-is would OOM the export worker. Doing this properly means changing bundle assembly to stream to a temp file, which needs its own memory/perf verification on a realistic tenant.
+- **Suggested fix:** one slice — DB-side key enumeration + streaming assembly + a size/perf arm. Sequence it after any other work touching `TenantDataExportService` to avoid conflicting on the same method.
+- **Note:** the manifest already checksums every artifact it lists, so a documents ZIP added later is covered by the existing integrity arm for free.
+- **Related:** GAP-028 · C5 · ISSUE-397
+
+### ISSUE-397
+
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE
+- **Module:** platform · **Found:** 2026-08-23, C5.
+- **Summary:** `Platform:BaseDomain` is read and normalised at **~10 call sites with three different normalisations** — some `.Trim().TrimStart('.')`, some `.Trim()`, some raw — despite `PortalLinkBuilder.NormalizeBaseDomain` existing for exactly this and being used by only 2 of them.
+- **Instances:** `AuthService.cs:738,3169` · `ImpersonationService.cs:204` · `RealTenantWelcomeEmailService.cs:42` · `LogOnlyTenantWelcomeEmailService.cs:41` · `RealUserManagementNotificationService.cs:127` · `ApplicantConversionService.cs:647` · `Program.cs:522` · `TenantResolutionMiddleware.cs:71`. (C5 used the helper rather than adding an eleventh copy.)
+- **Why it matters:** a base domain configured as `.example.com` normalises differently depending on which code path builds the link, so the same tenant can receive two different URLs from two different emails. Exactly the duplicated-description class this programme has been closing.
+- **Suggested fix:** campaign-shaped — migrate all sites to `NormalizeBaseDomain`, then a usage guard (the `PlanLimitLookupUsageGuardTests` / `EmployeeFieldAuditPairingGuardTests` pattern) so the eleventh copy cannot appear.
+- **Related:** C5 · ISSUE-396
+
+### ISSUE-398
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE
+- **Module:** platform · **Found:** 2026-08-23, C5.
+- **Summary:** `IFileStorage.GetSignedUrl` **signs nothing**. `LocalFileStorage` returns `$"/files/{tenantId}/{relativePath}"` with the comment *"Local dev: return a simple path (no real signing). In production, this would generate a pre-signed URL with expiration."* It also takes an `expiresIn` parameter it ignores entirely.
+- **Why it matters:** the name and signature promise a time-limited, tamper-evident URL. Every caller that trusted that promise emitted a 404 — C2 removed five such call sites and C5 removed the sixth (the export email). It remains on the interface, so the next person wanting a shareable link will call it and inherit the same bug.
+- **One production caller remains:** `EmployeeDocumentService.GetDownloadUrlAsync` (`:375`), which returns a `SignedUrl` plus an `ExpiresAt` of *now + 5 minutes* — a expiry that is pure fiction, since nothing is signed and nothing expires. See ISSUE-399: that method is itself orphaned.
+- **Suggested fix:** resolve ISSUE-399 first (it is the only caller), then either delete `GetSignedUrl` from `IFileStorage` or implement genuine HMAC signing plus an anonymous validating endpoint. Deleting is the honest default — **a capability that does not exist should not have a method**, and this one has cost six live 404s.
+- **Related:** GAP-027 (C2) · GAP-028 (C5) · ISSUE-399
+
+### ISSUE-399
+
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE + TEST
+- **Module:** core-hr · **Found:** 2026-08-23, C5 (tracing ISSUE-398's callers).
+- **Summary:** C2 (#552) replaced the employee-document download with a streaming endpoint and left the **old chain orphaned**: `IEmployeeDocumentService.GetDownloadUrlAsync`, `EmployeeDocumentService.cs:355-400`, `GetDocumentDownloadQuery` + its handler, and the `DocumentDownloadResult` DTO. **No controller dispatches the query** (`grep GetDocumentDownloadQuery HRM.Api` → nothing) and the frontend no longer reads `signedUrl`.
+- **Self-reported:** this is dead code my own C2 change created, found while tracing ISSUE-398.
+- **Why it is not just deleted:** ~10 test arms exercise `GetDownloadUrlAsync`, including the FR-10/BR-1/BR-2/BR-3 **authorization** arms and the ISSUE-024 **PII access-audit** arm. Deleting them to remove dead code would be a coverage loss dressed as cleanup — unless C2's streaming route (`GET /api/v1/tenant/employees/{employeeId}/documents/{documentId}/download`) already has equivalent authorization and audit arms. **Verify that first; migrate the arms if it does not.**
+- **Suggested fix:** one slice — confirm/port the auth + audit coverage onto the streaming path, then remove the orphaned chain, which also unblocks ISSUE-398.
+- **Related:** GAP-027 (C2) · ISSUE-398
