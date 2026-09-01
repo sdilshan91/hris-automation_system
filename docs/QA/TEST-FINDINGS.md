@@ -111,7 +111,8 @@
 - **Suggested direction (needs-decision, NOT applied):** convert Employment dept/title/type/status to id/enum-backed `<select>`s; add address-detail fields to `ContactInfoUpdate`+`Employee` (or drop them from the FE); decide if dateOfJoining is editable; parse the customFields JSON on the read view (→ DF-38). Report only.
 
 ### ISSUE-021 — Job title `gradeId` is accepted with NO validation: any arbitrary GUID is persisted as the grade link (no SalaryGrade subsystem / FK exists) — AC-4 grade-link integrity unverifiable
-- **Type / Severity / Status:** ISSUE · MED · DEFERRED (feature-blocked: no SalaryGrade entity — see reports-archive/PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
+- **Type / Severity / Status:** ISSUE · MED · OPEN (partially discharged 2026-09-02)
+- **Re-verification (2026-09-02, /verify-fix):** **The `DEFERRED (feature-blocked: no SalaryGrade entity)` reason is STALE** — the entity shipped (#389, migration `20260719152434_AddSalaryGradeEntity`). **TC-CHR-005-48 PASS · TC-CHR-337 PASS**: the FK-validation half of AC-4 is met (`JobTitleService.cs:242-253`, 422 `invalid_grade`). **TC-CHR-063 FAIL**: AC-4's second clause — the grade displayed on the employee profile — was never built; `EmployeeProfileDto` has no grade field and the FE has no grade element. Filed as **BUG-419**. This finding stays OPEN until that half lands.
 - **Layer:** BE
 - **Module / US / TC:** Core HR · US-CHR-005 · TC-CHR-037 (create job title with salary-grade link; AC-4)
 - **Title:** `POST /api/v1/tenant/job-titles` (and PUT) stores the `gradeId` field verbatim with **zero validation** — no existence check, no tenant-scope check, no FK constraint. A wholly fabricated GUID (`00000000-0000-0000-0000-0000000000ff`) is accepted and returned on the created record (HTTP 201). There is no SalaryGrade entity, DbSet, controller, or `grade_id` foreign key anywhere in the backend, so AC-4 ("link to an existing salary grade") cannot be satisfied or verified, and any value the client sends becomes a dangling reference.
@@ -319,7 +320,8 @@
 > REPORT-ONLY API-layer run (curl + JWT) against the running stack on `acme` (tenant `019ef3ba-ffb7-7eec-b24f-7ad806ca1cb9`). FE :4200 down + platform-bound → all UI/a11y TCs BLOCKED. **Real routes:** `/api/v1/recruitment/vacancies` (list/get/create/update + `/{id}/publish`,`/{id}/close`,`/{id}/status`, `/status` bulk); public `/api/v1/careers/vacancies` (+ `/{slug}`). **Real permissions (differ from the TC text `Recruitment.Create.All`/`Read.All`):** reads = `Recruitment.View`, all writes = `Recruitment.Manage`. ID buffer chosen above the concurrent attendance run.
 
 ### BUG-056 — AC-3 / FR-3 "weights must total exactly 100%" is NOT enforced server-side: an under-allocated (<100%) goal set persists silently and the AC-3 error string is never emitted
-- **Type / Severity / Status:** BUG · MED · DEFERRED (feature-blocked: no goal-set finalize seam — see reports-archive/PRODUCT-DECISIONS-NEEDED-2026-07-05.md)
+- **Type / Severity / Status:** BUG · MED · RESOLVED (verified 2026-09-02, /verify-fix — TCs re-run live)
+- **Resolution (2026-09-02):** `GoalService.cs:462-468` enforces the exact-100 gate (422 `weight_not_100`), routed via `GoalsController.cs:167`. **TC-PRF-001-14 PASS · TC-PRF-001-15 PASS** on a live re-run 2026-09-02. **The `DEFERRED (feature-blocked: no goal-set finalize seam)` reason was stale — that seam shipped 2026-07-19 (commit `de3dccfa`).**
 - **Layer:** BE
 - **Module / US / TC:** Performance · US-PRF-001 · TC-PRF-001-02 (also weakens the AC-2 "weights summing to 100%" guarantee)
 - **Title:** AC-3/FR-3 require that goal weights for an employee+cycle sum to **exactly** 100%, with the validation error "Goal weights must total 100%" on violation. The server only enforces the **upper** bound (running total > 100% → 422 `weight_exceeds_100`); it never enforces the lower bound. A manager can create goals summing to 95% (or any value < 100%) and every create returns 201 — the employee is left with an under-weighted goal set indefinitely, and the AC-3 message "Goal weights must total 100%" is **never produced by any endpoint**. The exact-100 invariant is delegated entirely to the (currently-down, untestable) UI via the `EmployeeGoalsDto.TotalWeight` rollup.
@@ -1167,7 +1169,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 - **Suggested:** add the GRANT (or schema pre-provision) to the greenfield path of the runbook. Report only.
 
 ### ISSUE-280 — Codebase is split on how it identifies the BASIC salary component (by Code vs by display Name); `PayrollSlipLine` drops `Code`, forcing post-slip consumers to re-string-match names
-- **Type / Severity / Status:** ISSUE · LOW · DEFERRED (2026-07-19 — payroll-model pass, DF-37) (deferred — durable refactor)
+- **Type / Severity / Status:** ISSUE · LOW · RESOLVED (verified 2026-09-02, /verify-fix)
+- **Resolution (2026-09-02):** `PayrollSlipLine.Code` (`PayrollSlipCalculator.cs:45-55`) is persisted as `PayrollSlipDetail.ComponentCode` (`:26`) with migration `20260721163054_Payroll_SlipDetailComponentCode`; `PayrollReportService.IsBasic` keys on Code (`:1731-1736`). Evidence `PayrollBasicResolutionTests.cs:58-61`. The name heuristic survives only as a deliberate fallback for pre-DF-37 rows.
 - **Layer:** BE
 - **Module / US / TC:** Payroll / US-PAY-003/006/010 / (auto-healed from BUG-078 OUT-OF-LANE OL-3)
 - **Title:** BASIC is identified correctly-by-Code in `PayrollSlipCalculator` (LOP base), `CtcResidualBalancer`, `CtcBreakdownCalculator`, `LeaveEncashmentService`, but was wrongly-by-Name in `PayrollRunProcessor` (BUG-078/BUG-280, now fixed) and via a name/basis heuristic in `PayrollReportService`. The root enabler is that `PayrollSlipLine`/`PayrollSlipDetail` carry only `Name`+`ComponentId`, not `Code`, so every consumer downstream of the slip has to re-identify BASIC.
@@ -1222,7 +1225,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 ---
 
 ### BUG-298 — SSO tenant isolation is appsettings-backed, not DB-backed; the BR-5 production gate is claimed satisfied and is not
-- **Type / Severity / Status:** BUG · HIGH · OPEN `
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (verified 2026-09-02, /verify-fix)
+- **Resolution (2026-09-02):** `SsoIsolationGuard.cs:53-96` reads the tenant's own `SsoSettingsSnapshot`; `EntraSsoOptions.TenantAllowList` has zero read sites on any login path. Bound: **TC-AUTH-161** (US-AUTH-013 AC-7), evidence `SsoIsolationGuardTests.cs` 17 arms, green in the 5561-pass suite. **Residual filed separately, NOT part of this close:** the fail-closed deny (`EntraSsoService.cs:222-231`) and `IsEmailVerified` claim extraction (`:536-548`) have no test of their own.
 - **Status update:** **`RESOLVED` 2026-08-08 (with GAP-017 bundled, as the finding recommended).** `EntraSsoService.CheckIsolation` now evaluates the tenant's own record via the existing cache-aside `SsoSettingsSnapshot`, reached by a new `IAuthService.GetSsoSettingsBySubdomainAsync` (the callback knows the tenant only by the subdomain on its signed state, and reusing `GetSsoSettingsAsync` underneath keeps one cache entry rather than a second divergent path). **All three consequences are closed:** the `SsoEnabled` gate now runs FIRST, so a tenant that disables SSO is refused before any allow-list is read; the allow-lists are the tenant's `AllowedEntraTenantIds`/`AllowedEmailDomains`, so the admin UI and admin-consent onboarding finally affect who can sign in; and JIT is gated on the tenant's `JitEnabled`/`JitDefaultRole`. The appsettings `TenantAllowList` is now `[Obsolete]`, read by nothing, and retained only so existing config still binds. **A tenant whose settings cannot be loaded is DENIED** (the guard has no input, so there is nothing to permit on).
   - **GAP-017 / AC-7 closed:** a domain match is honoured only when the id_token asserts a verified email (`xms_edov`, or `email_verified` for the generic-OIDC reuse path). Absence of the claim means *unknown*, so it falls back to the directory-id rule rather than refusing — `tid` is bound to the issuing directory and cannot be self-asserted, whereas an email address in a permissive directory can be. JIT additionally requires the verified domain rule; a tid-only match can never auto-create an account.
   - **The two missing audit events now exist:** `sso_isolation_rejected` and `sso_misconfigured` (previously zero occurrences repo-wide), plus `sso_disabled_for_tenant`, written through the existing `RecordSsoFailureAsync` so they land in the in-app audit search rather than only in Serilog.
@@ -1251,7 +1255,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 ---
 
 ### BUG-301 — Audit log is append-only by convention only; the runtime DB role holds UPDATE and DELETE
-- **Type / Severity / Status:** BUG · MED · OPEN `
+- **Type / Severity / Status:** BUG · MED · RESOLVED (verified 2026-09-02, /verify-fix)
+- **Resolution (2026-09-02):** `roles.sql:70-71` REVOKEs UPDATE/DELETE on both audit tables from `hrm_app`. Bound: **TC-ADM-008-22**, evidence `RlsIsolationPostgresTests.cs:431`. **Limitation recorded on the TC, not hidden:** the fixture hand-mirrors the REVOKE (`:132-137`), and `roles.sql` is executed by nothing in the repo — so this proves the intended privilege set, not that `roles.sql` produces it. `TC-ADM-008-18` stays `blocked`; see G6.
 - **Status update:** **`RESOLVED` 2026-08-08.** `Rls/roles.sql` now revokes `UPDATE, DELETE` on `audit_logs` and `employee_field_audit_logs` from `hrm_app`, after the broad grant it must override. **Verified safe before revoking, not after:** `AuditLogPurgeService` is the only code that deletes audit rows and its job calls `SetSystemContext()` (→ privileged `hrm_owner`); `TenantDataDeletionService` only appends and likewise runs system-context; no FK into `audit_logs` cascades a delete. **Verified empirically on the live RLS-on dev database:** as `hrm_app`, `SELECT` returns rows and `UPDATE`/`DELETE` both raise `42501 permission denied`, while `hrm_owner` deletes fine; a real login through the running API still wrote its audit row with no permission errors in the log. **Regression guard:** `AuditTables_AreAppendOnly_ForTheRuntimeRole_ButPurgeableByOwner_GAP005` in `RlsIsolationPostgresTests` asserts the privilege bits BOTH ways (app: SELECT+INSERT yes, UPDATE/DELETE no; owner: DELETE yes) and additionally asserts a real `UPDATE` throws `42501`, so a future `GRANT` cannot make the bits lie. Mutation-verified by removing the revoke from the suite's setup — the arm goes red. Ops verification step (d2) added to `PRODUCTION-CHECKLIST.md`. **⚠ Noted while doing this:** the RLS suite hand-mirrors `roles.sql` (psql `\gexec`/`:'var'` cannot be run through Npgsql), so the two must be changed together — flagged in a comment at the mirror site; the new arm is what keeps that half honest.
 - **Layer:** DB
 - **Module / US / TC:** Admin-Console / US-ADM-008 AC-5 (NFR-3) / — — found 2026-08-08 by `/gap-analysis` Pass A1 and Pass C
@@ -1268,7 +1273,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 ---
 
 ### ISSUE-362 — `xunit.runner.json` fails to parse, so `maxParallelThreads: 4` has NEVER been in effect
-- **Type / Severity / Status:** ISSUE · MED · OPEN `
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (verified 2026-09-02, /verify-fix)
+- **Resolution (2026-09-02):** `src/backend/HRM.Tests/xunit.runner.json` is pure ASCII with `maxParallelThreads: 4` and a KEEP-PURE-ASCII constraint comment. **No IEEE-829 TC authored, deliberately:** this is a TEST-infra finding about a runner config file — a user-facing test case would be theatre. Evidence is the file itself plus the suite running clean (5561/5561, no encoding warning).
 - **Status update:** **`RESOLVED` 2026-08-10.** The escaped em dash is gone and the file is now pure ASCII with no backslash escapes at all; the "Couldn't parse config file" warning no longer appears on any run, so the cap finally loads. The comment now states the constraint explicitly (*"KEEP THIS FILE PURE ASCII WITH NO BACKSLASH ESCAPES"*) with the reason, because the trap is invisible — the file is valid JSON by every normal tool, and only xUnit's hand-rolled reader rejects it. **Amusing confirmation of how easy the trap is:** my first fix re-introduced it, by writing the literal text `\uXXXX` into the explanatory comment.
 - **Layer:** BE (test infra)
 - **Module / US / TC:** — / — / — — found 2026-08-08 while running the full backend suite for the GAP-S2 verification (out-of-lane discovery, filed per Engineering-Discipline rule #6)
@@ -1286,7 +1292,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 ---
 
 ### ISSUE-364 — `DepartmentDto` returns no employee count or manager name, so two UI surfaces were rendering nothing
-- **Type / Severity / Status:** ISSUE · MED · OPEN `
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (verified 2026-09-02, /verify-fix)
+- **Resolution (2026-09-02):** `DepartmentDto.cs:21,29` carry ManagerName + EmployeeCount, populated batched at `DepartmentService.cs:306-323`. Bound: **TC-CHR-340**, evidence `DepartmentServiceTests.cs:680,695,706`. **This entry self-contradicted** — its header read OPEN while its own body said RESOLVED 2026-08-10; the code confirms resolved.
 - **Status update:** **`RESOLVED` 2026-08-10.** `EmployeeCount` and `ManagerName` added to `DepartmentDto` and populated **batched** — one grouped count query and one manager-name lookup for the whole list, mirroring `JobTitleService.GetAllAsync`, so a department list is not turned into an N+1. `GetByIdAsync` uses two scalar reads (single row, no N+1 risk). The FE surfaces are restored: the count badge, the manager line, and the deactivate dialog's active-employee warning. **One deliberate change from the original:** the warning is now PRE-FLIGHT only and the deactivate button stays **enabled** — the server remains the authority. The old version disabled the button on `employeeCount > 0`, which read `undefined > 0` and therefore never fired; re-adding that disable would move an invariant the server already enforces into the client. 3 arms: active-only counting (an inactive employee and another department's employee must not count), the manager display name, and the null-manager/zero-count case.
 - **Layer:** BE (+ the FE surfaces that were removed pending it)
 - **Module / US / TC:** Core HR / US-CHR-004 / — — found 2026-08-08 while fixing GAP-014
@@ -1612,7 +1619,8 @@ identified is itself defective, so it must be fixed before it is copied.
 ---
 
 ### BUG-307 — tenant plan limits are silently unenforced: `tenants.plan_id` values match no `subscription_plans` row
-- **Type / Severity / Status:** BUG · HIGH · OPEN `
+- **Type / Severity / Status:** BUG · HIGH · RESOLVED (verified 2026-09-02, /verify-fix)
+- **Resolution (2026-09-02):** Three layers: seeder repointed (`DbInitializer.cs:49`), startup reconciler (`:735-757`, invoked `:711`), shared `PlanLimitLookup.cs:48-64` distinguishing `IsConfigurationError` from `IsUnlimited`, adopted by all 10 call sites. Bound: **TC-ADM-009-19**, evidence `PlanLimitLookupPostgresTests.cs:111,128,144,160,193,221,250` + build-breaking guard `PlanLimitLookupUsageGuardTests.cs:76,103` (allowlist empty). **This entry previously claimed "only the nine sites remain" — that was stale by a full closure (#536/#539/#540).**
 - **Layer:** Data / BE
 - **Module / US / TC:** Admin Console / plan limits, BR-3 (US-REC-010 TC-010-10 exercised it) — found 2026-08-18 during the A1c test run, **filed late 2026-08-21**
 - **Title:** The `e2e` tenant's `plan_id` is `'default'`, which matches **no row** in `subscription_plans` (whose codes are `starter`/`professional`/`enterprise`). Plan-based `MaxEmployees` therefore resolves to `NULL` = **unlimited**.
@@ -2325,6 +2333,7 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 
 ### BUG-003 — Cross-tenant settings WRITE: any authenticated Tenant Admin can read AND mutate ANOTHER tenant's company settings (token `tenant_id` never validated against the resolved tenant) — AC-5 / Critical-Rule-#1 isolation bypass
 - **Type / Severity / Status:** BUG · CRIT · RESOLVED (PR #119, verified 2026-07-02)
+- **/verify-fix 2026-09-02 — PARKED, not closed:** the code fix is verified (`TenantAccessGuardMiddleware.cs:36-56` rejects token-tenant ≠ resolved-tenant with 403 `cross_tenant_denied`, registered post-auth at `Program.cs:740`, 6 arms in `TenantAccessGuardMiddlewareTests.cs`, green in the 5561-pass suite). **But `verify-fix.md` requires `--iso` scope for a systemic isolation finding, and ISSUE-422 shows the running stack is a container built 2026-08-11 (~12 days behind `main`).** Running the cross-module ISO suite against a stale image would produce a verdict that is unreliable in both directions on the single most consequential invariant in this platform. **Close this only after the stack is rebuilt and the ISO suite re-run.**
 - **✅ GAP-L7 reconciled 2026-08-10 — this entry contradicted itself and a reader could not tell which line was current.** The header said RESOLVED while the next line said STILL PRESENT, and the resolving code was cited nowhere. **The dates settle it:** the "STILL PRESENT" re-test is dated **2026-06-27**, which PREDATES the 2026-07-02 verification — it is a historical observation, not a live status. **The fix is in the tree and was read directly:** `HRM.Api/Middleware/TenantAccessGuardMiddleware.cs:38-53` refuses any authenticated request whose token `tenant_id` differs from the subdomain-resolved tenant, returning 403 `cross_tenant_denied` and logging `"Cross-tenant access blocked (BUG-003)"`. Everything below this line is the pre-fix narrative, retained deliberately as history.
 - **↓ HISTORICAL (pre-fix, 2026-06-27) — REGRESSION RE-TEST (REPORT-ONLY; READ-ONLY probe only — no cross-tenant WRITE per 2026-06-27 safety policy): STILL PRESENT — unchanged at root locus US-AUTH-007 / TenantResolutionMiddleware.** As `tenantadmin@acme.test` (JWT `tenant_id=acme` `019ef3ba-…`) + header `X-Tenant-Subdomain: techoneglobal`: `GET /api/v1/tenant/users?pageSize=50` → **HTTP 200** returning techoneglobal's user `sachithra@techoneglobal.org` (count=1), NOT acme's 8 users; same token with correct `X-Tenant-Subdomain: acme` returns acme's own 8 users. Missing `CurrentUser.TenantId == ITenantContext.TenantId` invariant unchanged; PRs #110/#111/#112 neither fixed nor regressed it. Canonical TC-AUTH-054 remains FAIL.
 - **Layer:** BE
@@ -2393,3 +2402,149 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
   4. **NOT run (by instruction):** the cross-tenant WRITE arm — the preview is read-only and BUG-003's write bypass is already confirmed/documented elsewhere; no write probe was performed, so there is **no acme/techoneglobal residue from this run**.
 - **Evidence:** HTTP 200 + `data:[]` captured 2026-06-25T11:35Z; Serilog `hrm-20260625.log` RequestId `0HNMIFE5GI292:00000001` (`tenant_id/TenantId = 019ef3c3-…techoneglobal`, EF filter bound to techoneglobal); DB confirms techoneglobal has 0 carry-forward-eligible leave types and 1 active employee (so `[]` = no eligible data, not proof the filter blocked acme rows). The preview endpoint has no write path, so isolation here is read-only by construction.
 - **Severity rationale:** CRIT (inherited from canonical BUG-003) — the token-vs-subdomain check is absent platform-wide; on read surfaces with foreign data present this is a cross-tenant disclosure (a full GDPR-relevant dump was demonstrated on other surfaces). Here it happens to disclose nothing because the foreign tenant has no eligible data, but the missing authorization boundary is identical. Not re-filed as a new number per policy (systemic, referenced as EXTENDED).
+
+---
+
+## Verification re-run 2026-09-02 (`@test-runner`, ISSUE-021 + BUG-056 fix-verification scope)
+
+> REPORT-ONLY re-run of the five TCs bound to **ISSUE-021** (job-title grade validation) and **BUG-056**
+> (goal weights must total exactly 100% to finalize). Both findings were carrying
+> `DEFERRED (feature-blocked)`; the 2026-09-01 code audit found both blockers gone. Verdicts:
+> **TC-CHR-005-48 PASS · TC-CHR-337 PASS · TC-PRF-001-14 PASS · TC-PRF-001-15 PASS · TC-CHR-063 FAIL.**
+> Backend arms run via `scripts/run-backend-tests.sh` (ISSUE-312 wrapper) on commit `eee39372`; live-API
+> arms run against `http://localhost:5000`, tenant `platform` (`admin@hrm.local`) — note **ISSUE-422**
+> below: the running container is a stale build, so live-API verdicts were cross-checked against HEAD source.
+>
+> Both parent findings stay **OPEN/DEFERRED** in this file — only `/verify-fix` may close them. The
+> ISSUE-021 grade-validation contract is now met at the service and API layers; the **AC-4 grade-on-profile
+> half is not** (BUG-419 below), so ISSUE-021 is *not* fully discharged by this run.
+
+### BUG-419 — US-CHR-005 AC-4's second half is unimplemented: the salary grade linked to an employee's job title is NOT displayed on the employee profile (no grade field exists anywhere on the profile contract)
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** BE (+ FE — neither side has the field)
+- **Module / US / TC:** Core HR · US-CHR-005 · **TC-CHR-063 (FAIL)**; AC-4, FR-3. Related: ISSUE-021 (the FK-validation half of AC-4, which now passes — see TC-CHR-337).
+- **Title:** AC-4 states verbatim: *"When this job title is assigned to an employee, the associated grade is displayed on the employee profile."* With the `SalaryGrade` entity now shipped (#389, migration `20260719152434_AddSalaryGradeEntity`) and a job title correctly linked to an **active** grade, `GET /api/v1/tenant/employees/{id}/profile` returns **200 with `jobTitleName` but zero grade-bearing fields** — there is no `gradeId`, no `gradeName`, and no nested grade object. TC-CHR-063 steps 3-6 (grade shown on the profile; the profile re-resolving the grade after the job title's grade is changed) therefore cannot succeed. **This TC was previously marked BLOCKED with the justification "Grade entity deferred / not built"; that justification no longer holds, so the same observation is now a defect, not a blocker.**
+- **Root cause (~98%, source-confirmed, no log needed — the write path succeeds cleanly):** `EmployeeProfileDto` (`src/backend/HRM.Application/Features/Employees/DTOs/EmployeeProfileDto.cs:9-90`) declares `JobTitleId` + `JobTitleName` but **no grade property at all**; nothing in `src/backend/HRM.Application/Features/Employees/**` references `GradeId`/`GradeName` (`grep -rn "GradeId\|GradeName" HRM.Application/Features/Employees/` → 0 hits). The join that would resolve it exists and works one level up: `JobTitleService.ToDto(..., gradeName)` populates `JobTitleDto.GradeName` on the job-title reads, so the projection is simply never carried through to the employee profile. On the FE, `employee-profile.component.ts` and `features/core-hr/employees/models/*.ts` contain **no** occurrence of "grade" (case-insensitive), so even if the API added the field there is no UI element to render it.
+- **Reproduction steps (live-confirmed 2026-09-02, API layer):**
+  1. `POST /api/v1/v1/auth/login` → use `admin@hrm.local` / `Admin@123!` with header `X-Tenant-Subdomain: platform` (canonical path is `POST /api/v1/auth/login`).
+  2. `POST /api/v1/tenant/salary-grades` `{"code":"L5","name":"L5 - Senior","minAmount":100000,"midAmount":120000,"maxAmount":140000,"currency":"usd"}` → **201**, id `01a05eaa-a93b-7459-87a2-35cb6ea30913`, `isActive:true`.
+  3. `POST /api/v1/tenant/job-titles` `{"titleName":"Senior Developer","gradeId":"<L5 id>"}` → **201**.
+  4. `GET /api/v1/tenant/job-titles/<id>` → **200**, `"gradeName":"L5 - Senior"` — the link resolves correctly at the job-title layer.
+  5. `POST /api/v1/tenant/departments` `{"name":"Engineering","code":"ENG"}` → 201; `POST /api/v1/tenant/employees` `{"firstName":"John","lastName":"Doe",...,"jobTitleId":"<jt id>"}` → **201** (`EMP-0001`).
+  6. `GET /api/v1/tenant/employees/<emp id>/profile` → **200**.
+- **Evidence:** the step-6 response's full top-level key set is
+  `[address, city, country, createdAt, customFields, dateOfBirth, dateOfJoining, departmentId, departmentName, dependents, education, email, emergencyContacts, employeeNo, employmentHistory, employmentType, firstName, fte, gender, id, isActive, jobTitleId, jobTitleName, lastName, locationId, locationName, managerName, nationalId, personalEmail, phone, postalCode, profilePhotoUrl, reportsToEmployeeId, rowVersion, state, status, updatedAt, userId, workArrangement, workHistory]` — keys matching `grade` (case-insensitive): **`[]`**. `jobTitleName = "Senior Developer"`, whose `gradeName` is `"L5 - Senior"` per step 4. Re-fetching the profile after mutating the job title's grade link returns the same key set (no grade key appears/changes), so steps 4-6 of the TC are moot rather than merely wrong. Deployed-vs-HEAD cross-check: `EmployeeProfileDto.cs` was last modified 2026-07-19, before the running image's 2026-08-11 build, so the live response matches HEAD source (see ISSUE-422).
+- **Severity rationale:** MED — one half of one AC on a read-only display surface. No data loss, no isolation risk, and the *integrity* half of AC-4 (FK validation) is now correct, so grade links themselves are trustworthy. It is not LOW because AC-4 states the display requirement explicitly and TC-CHR-063 is a `high`-priority TC that has now been unexecutable for three consecutive runs (2026-06-30, 2026-07-01, 2026-09-02) — the ledger has been recording it as "feature deferred" when the deferred feature has in fact shipped.
+- **Suggested direction (NOT applied):** none — report only.
+
+### ISSUE-420 — JobTitles and SalaryGrades controllers drop `Result.ErrorCode`, so the documented machine-readable codes (`invalid_grade`, `duplicate_code`, `invalid_amount_range`) never reach an HTTP client — every error body is `"code": null`; the unit tests stay green because they assert the code at the *service* layer
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** BE (FE↔BE contract)
+- **Module / US / TC:** Core HR / Payroll · US-CHR-005 · **TC-CHR-337** (which specifies "rejected **409 `duplicate_code`**", "**422 `invalid_amount_range`**", "all rejected **`invalid_grade`**") and ISSUE-021 (whose contract is "422 `invalid_grade`").
+- **Title:** The service layer sets the codes correctly — `JobTitleService.cs:58,110` return `Result<JobTitleDto>.Failure(gradeError, 422, "invalid_grade")` and `SalaryGradeService.cs:49,58,106,115` return `invalid_amount_range` / `duplicate_code`. But **all ten** failure paths in `JobTitlesController.cs` (`:43,61,83,109,128`) and `SalaryGradesController.cs` (`:42,60,85,114,133`) call `ApiResponse.Fail(result.Error!)` **without the second `errorCode` argument**, so the code is discarded before serialization. A client receives the right HTTP status but `"code": null`, and can only distinguish the failure reasons by string-matching the English prose. This is inconsistent within the same codebase: `GoalsController.cs:172,199` correctly calls `ApiResponse.Fail(result.Error!, result.ErrorCode)`, which is why the BUG-056 `weight_not_100` / `goals_finalized` codes *do* reach the wire.
+- **Root cause (~99%, source + live confirmed):** a dropped argument at the controller boundary — `ApiResponse.Fail` has an optional `errorCode` overload that these two controllers never pass. The reason it survived review is a **test-visibility gap**: `JobTitleServiceTests.cs:143,177,223,466` and `SalaryGradeServiceTests.cs:145` assert `result.ErrorCode.Should().Be("invalid_grade" / "duplicate_code")` against the **service** return value, never against an HTTP response, so the entire trait-`TC-CHR-337` suite (34/34 green) passes while the contract it documents is unmet on the wire.
+- **Reproduction steps (live-confirmed 2026-09-02, tenant `platform`):**
+  1. `POST /api/v1/tenant/job-titles` `{"titleName":"QA Bogus Grade","gradeId":"00000000-0000-0000-0000-0000000000ff"}`.
+  2. `POST /api/v1/tenant/salary-grades` with a code that already exists (`L5`).
+  3. `POST /api/v1/tenant/salary-grades` `{"code":"L9","name":"Bad range","minAmount":3000,"maxAmount":2000,"currency":"USD"}`.
+- **Evidence:**
+  1. → **HTTP 422** `{"success":false,"message":"The selected salary grade does not exist or is not active.","code":null,"errors":["The selected salary grade does not exist or is not active."],...}` — expected `code:"invalid_grade"`.
+  2. → **HTTP 409** `{"success":false,"message":"A salary grade with this code already exists.","code":null,...}` — expected `code:"duplicate_code"`.
+  3. → **HTTP 422** `{"success":false,"message":"Minimum amount cannot be greater than maximum amount.","code":null,...}` — expected `code:"invalid_amount_range"`.
+  Contrast (same run, different controller): the Goals surface does emit its code, per `GoalsController.cs:172`. `grep -rn "invalid_grade\|duplicate_code\|invalid_amount_range" --include=*.cs src/backend` finds the codes only in `*Service.cs` and `*Tests.cs` — never in a controller or an API-level assertion.
+- **Severity rationale:** MED, not LOW — the statuses are right, so nothing is silently accepted and there is no data or isolation risk; a client can still branch on 409-vs-422. But it is more than cosmetic: `invalid_grade` and `duplicate_code` **both** arrive as bare 422/409 on the same endpoint pair, so a UI that wants to attach the error to the correct form field, or to localise it, has to string-match server English. It also means the green `TC-CHR-337` suite overstates what is verified — the documented code contract is asserted nowhere at the HTTP boundary.
+- **Suggested direction (NOT applied):** none — report only.
+
+### ISSUE-421 — `gradeName` is null on job-title **write** responses (POST/PUT) even for a valid active grade, while GET populates it — a client that renders the create/update response shows a grade-less row until it refetches
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Core HR · US-CHR-005 · TC-CHR-337 step 8 ("GradeName populated on detail + list" — the write responses are outside that assertion, which is why it is green).
+- **Title:** `POST /api/v1/tenant/job-titles` and `PUT /api/v1/tenant/job-titles/{id}` return `"gradeName": null` alongside a correct non-null `gradeId`; the immediately-following `GET /{id}` and `GET /` return `"gradeName": "L5 - Senior"` for the same record. The write path returns a DTO built without the grade-name lookup.
+- **Root cause (~85%, source-consistent):** `JobTitleService.ToDto(JobTitle j, int? employeeCount = null, string? gradeName = null)` (`JobTitleService.cs:255`) takes the grade name as an optional parameter; the read paths pass it, the create/update paths call `ToDto` without it and get the `null` default. Not log-confirmed — no error is logged because nothing fails.
+- **Reproduction steps (live-confirmed 2026-09-02, tenant `platform`):** create grade `L5` → `POST /api/v1/tenant/job-titles {"titleName":"Senior Developer","gradeId":"<L5 id>"}` → inspect `data.gradeName`; then `GET /api/v1/tenant/job-titles/<new id>` → inspect `data.gradeName`.
+- **Evidence:** POST 201 → `{"id":"01a05eaa-ee58-7f63-aedb-47a70692b21b","titleName":"Senior Developer","gradeId":"01a05eaa-a93b-7459-87a2-35cb6ea30913","gradeName":null,...}`. GET 200 on the same id → `{...,"gradeId":"01a05eaa-a93b-...","gradeName":"L5 - Senior",...}`. Same asymmetry reproduced on PUT (`"gradeName":null` in the 200 body, `"L5 - Senior"` on the next GET).
+- **Severity rationale:** LOW — cosmetic/contract-shape only, self-healing on the next read, and the authoritative `gradeId` is always correct. Flagged because the same DTO type is returned from both verbs, so a client reasonably assumes the field is populated on both.
+- **Suggested direction (NOT applied):** none — report only.
+
+### ISSUE-422 — INFRA: the running dev stack serves a container image built 2026-08-11, ~12 days behind `main` — live-API test verdicts taken on this stack can be false in either direction
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** INFRA
+- **Module / US / TC:** cross-cutting (affects every API-layer TC executed against `http://localhost:5000`). Surfaced while executing TC-CHR-063 / TC-CHR-337.
+- **Title:** `docker image inspect hris-backend` reports `Created = 2026-08-11T19:00:49+05:30`, and the container `hris-backend-1` was last started 2026-09-01T14:58Z from that same image. At least one source file in the ISSUE-021 surface has changed since: `SalaryGradesController.cs` was last modified **2026-08-23** by "fix(B5): two silent no-ops" (`29279413`). The running API therefore does not implement B5's `UpdateSalaryGradeRequest.IsActive` field, and a live probe against it produces a *false defect*: `PUT /api/v1/tenant/salary-grades/{id}` with `{"isActive":true}` on a deactivated grade returns **HTTP 200** with `"isActive":false` in the body and leaves `salary_grades.is_active = f` and `updated_at` untouched in the DB — which looks exactly like a reactivation bug but is only the stale build.
+- **Root cause (~95%, verified):** the compose stack was never rebuilt after the 2026-08-23 merge; `docker inspect` image-created date vs `git log -1 --format=%ad -- <file>` disagree by 12 days. No application defect is implied.
+- **Reproduction steps:** `docker image inspect hris-backend --format '{{.Created}}'` → `2026-08-11T19:00:49+05:30`; `git log -1 --format='%ad %s' -- src/backend/HRM.Api/Controllers/SalaryGradesController.cs` → `Sun Aug 23 03:33:23 2026 ... fix(B5)`. Then the PUT probe above.
+- **Evidence:** `PUT /api/v1/tenant/salary-grades/01a05eaa-ca96-7a0c-8121-77481fddf38d` body `{"code":"L6","name":"L6 - Staff","minAmount":140000,"midAmount":160000,"maxAmount":180000,"currency":"USD","description":"Staff band","isActive":true}` → **HTTP 200** `{"success":true,"data":{...,"isActive":false,"updatedAt":"2026-09-01T20:31:38.255383Z"}}` (the `updatedAt` is the earlier DELETE's timestamp — no write occurred). DB: `select code,is_active from salary_grades` → `L6 | f`. HEAD source `SalaryGradeService.cs:129-133` *does* handle `request.IsActive is bool active` correctly and the unit arm `Update_CanReactivate_AGradeThatWasDeactivated` is green — confirming the divergence is deployment, not code. **This is why the BUG-419 / ISSUE-420 / ISSUE-421 evidence above was each cross-checked against the last-modified date of the relevant source file before being filed.**
+- **Severity rationale:** MED — no user-facing defect, but it directly threatens verdict integrity: an agent or human probing this stack will file phantom bugs against fixed code (as nearly happened here) and, worse, will record `PASS` for behaviour the merged code no longer has. It silently invalidates the API-layer half of every `/test-us` run until the stack is rebuilt.
+- **Suggested direction (NOT applied):** none — report only. (Operationally: rebuild the compose images before an API-layer test run, and consider surfacing the build SHA on `/health` so a test run can assert it.)
+
+> **Test-data residue (tenant `platform`, created 2026-09-02 for TC-CHR-063/TC-CHR-337 execution — safe to delete):**
+> salary grades `L5` (`01a05eaa-a93b-7459-87a2-35cb6ea30913`, active) and `L6` (`01a05eaa-ca96-7a0c-8121-77481fddf38d`, deactivated);
+> job title `Senior Developer` (`01a05eaa-ee58-7f63-aedb-47a70692b21b`); department `Engineering`/`ENG` (`01a05eac-2fa1-7a2c-9ad0-1e8984dc4bbd`);
+> employee `John Doe` / `EMP-0001` (`01a05eac-4ccc-781a-b875-dad3015e7e05`, `john.doe.chr063@hrm.local`). No cross-tenant writes were performed.
+
+### ISSUE-423 — `BUG-298`'s fail-closed deny and the `IsEmailVerified` claim extraction have NO test; the SSO guard is proven but its shell is not
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Layer:** BE (TEST)
+- **Module / US / TC:** Authentication · US-AUTH-013 (AC-7) · TC-AUTH-161 (documents the covered half). Parent: BUG-298 (closed 2026-09-02 on its 17 green guard arms).
+- **Title:** `SsoIsolationGuard` has 17 arms, but two behaviours *credited to the same fix* are untested: the fail-closed deny when `SsoSettingsSnapshot` cannot be loaded (`EntraSsoService.cs:222-231`), and `IsEmailVerified`'s `xms_edov` / `email_verified` extraction including the "claim absent ⇒ false" case (`:536-548`) — which is the exact input AC-7's verified-domain rule depends on.
+- **Root cause + confidence (~95%):** repo-wide, `GetSsoSettingsBySubdomainAsync`, `xms_edov` and `sso_isolation_rejected` appear in no test file outside `SsoIsolationGuardTests.cs`. The guard is unit-tested in isolation; the shell that feeds it is not.
+- **Evidence:** `grep -rn "xms_edov\|GetSsoSettingsBySubdomainAsync" src/backend/HRM.Tests` → 0 hits.
+- **Severity rationale:** HIGH — a regression in claim parsing degrades toward *allowing* an unverified-domain impostor, and nothing would catch it.
+- **Suggested direction (NOT applied):** shell-level arms over a crafted `JsonWebToken` and a failing settings load.
+
+### ISSUE-424 — the new finding-regression TCs are not runner-selectable: no `[Trait("TC",…)]`, so the traceability authored on 2026-09-02 is documentation-only
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST
+- **Module / US / TC:** cross-module · TC-AUTH-161, TC-ADM-008-22
+- **Title:** `SsoIsolationGuardTests` carries no `[Trait("TC",…)]`, and the GAP-005 arm at `RlsIsolationPostgresTests.cs:431` inherits the class-level `[Trait("TC","TC-PLT-002-RLS")]` — so it reports under a Platform TC, not `TC-ADM-008-22`. The TC↔test bindings created during G9 are prose links a human must honour, not selectors a runner can resolve.
+- **Root cause + confidence (~98%):** traits were never added; precedent for the correct shape exists at `TC-ATT-162` (`:564`).
+- **Severity rationale:** MED — it silently weakens the traceability that was just restored, and the "% of TCs past draft" KPI stays hand-maintained.
+- **Suggested direction (NOT applied):** class-level `[Trait("TC","TC-AUTH-161")]`; arm-level `[Trait("TC","TC-ADM-008-22")]` on the GAP-005 fact.
+
+### ISSUE-425 — a THIRD ledger failure mode: `DEFERRED` entries carry stale BLOCKER REASONS, invisible because nobody re-reads a deferred item
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** cross-module · TEST-FINDINGS.md
+- **Title:** The 2026-09-01 audit measured status wrong in both directions (29% pessimistic, ≤10% optimistic). This is neither: the **status is correct and the justification is dead**. `ISSUE-021` was parked "feature-blocked: no SalaryGrade entity" and `BUG-056` "no goal-set finalize seam" — both shipped (#389 / `de3dccfa`). A `DEFERRED` item reads as settled, so nothing re-opens it and no drift check looks at it.
+- **Root cause + confidence (~90%):** no process re-validates a deferral's premise; `LedgerTraceabilityTests` checks status consistency, never the stated reason.
+- **Evidence:** both entries corrected 2026-09-02 during G9; `BUG-056` closed, `ISSUE-021` partially discharged.
+- **Severity rationale:** MED — two findings sat parked as impossible while the blocking work was delivered. Unknown how many more.
+- **Suggested direction (NOT applied):** sweep every `DEFERRED` reason in both ledger files against current code; consider a guard asserting a deferral cites a still-true blocker.
+
+### ISSUE-426 — the department list/tree render of `managerName` + `employeeCount` is code-verified only; no Karma arm asserts it
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** TEST (FE)
+- **Module / US / TC:** Core HR · US-CHR-004 · TC-CHR-340 (steps 4-6 marked code-verified). Parent: ISSUE-364.
+- **Title:** No spec in `department-list.component.spec.ts` / `department-tree.component.spec.ts` asserts the two fields actually render — the exact surface ISSUE-364 was reported against.
+- **Severity rationale:** LOW — the BE contract is test-bound; only the render regression is unguarded.
+- **Suggested direction (NOT applied):** fix-in-frontend.
+
+### ISSUE-427 — the ISSUE-364 backend arms run on EF InMemory, so the batched projection is never proven to translate to PostgreSQL
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** TEST (BE)
+- **Module / US / TC:** Core HR · US-CHR-004 · TC-CHR-340
+- **Title:** `DepartmentServiceTests.cs:673-714` asserts the batched `GroupBy`/`ToDictionaryAsync` population behaviourally on InMemory. Sibling money/quota paths got real-Postgres arms (DF-3, DF-48); this one did not.
+- **Severity rationale:** LOW today; it is the class of gap DF-48/DF-49 were filed for.
+- **Suggested direction (NOT applied):** a Testcontainers arm.
+
+### ISSUE-428 — US-CHR-004 has NO acceptance criterion covering the department list's Manager and Employee Count columns
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (needs-decision)
+- **Layer:** DATA (BA)
+- **Module / US / TC:** Core HR · US-CHR-004 · TC-CHR-340
+- **Title:** The two columns exist only in FR-8 and §8 UI/UX Notes. No AC states them — which is **why ISSUE-364 could ship with no acceptance criterion visibly unmet**. AC-5 owns only the display half of the active-employee count.
+- **Severity rationale:** LOW functionally, but it is the mechanism by which a whole surface escaped AC traceability.
+- **Suggested direction (NOT applied):** BA decision — promote the columns into an AC, or accept §8 as the binding source and say so.
+
+### ISSUE-429 — US-AUTH-013 AC-8, FR-6 and NFR-4 have no test case at all
+- **Type / Severity / Status:** ISSUE · LOW · OPEN (needs-decision)
+- **Layer:** TEST
+- **Module / US / TC:** Authentication · US-AUTH-013 · (none)
+- **Title:** AC-8 (the resolved tenant, not the token `tid`, is used downstream), FR-6 (isolation decisions persisted as audit events) and NFR-4 (rejection timing is not an enumeration oracle) are recorded "Not covered" in the traceability matrix. The story sits at 6/8 AC coverage and the matrix now says so rather than papering over it.
+- **Suggested direction (NOT applied):** accept as residual risk, or schedule with an SSO integration-test harness.
+
+### ISSUE-430 — `docs/QA/authentication/TEST-MATRIX.md` summary claims "Status: All Draft", which is false
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** Authentication · TEST-MATRIX.md
+- **Title:** The module holds `automated` and `blocked` TCs. Reported rather than corrected in place, per the ledger rule that a contradiction is surfaced, not silently fixed.
+- **Suggested direction (NOT applied):** recount and correct the summary block.

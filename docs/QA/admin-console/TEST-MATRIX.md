@@ -603,6 +603,7 @@ status: complete
 | TC-ADM-008-19 | [DEFERRED] Large export >10k via Hangfire + emailed link | Integration | Medium | AC-4, FR-5 | Deferred placeholder | blocked |
 | TC-ADM-008-20 | [DEFERRED] PII-read events logged + visible | Security | Medium | BR-6, FR-1/2 | Deferred placeholder | blocked |
 | TC-ADM-008-21 | [DEFERRED] First-page <2s at millions of records | Performance | Medium | NFR-1, NFR-2, NFR-4 | Deferred placeholder | blocked |
+| TC-ADM-008-22 | Runtime role hrm_app cannot UPDATE/DELETE audit tables (42501); hrm_owner can purge | Security | High | AC-5, NFR-3, FR-6 | Negative / security | automated |
 | TC-ADM-ISO-021 | List/detail tenant-scoped; A cannot see B's audit rows | Security | Critical | AC-1, FR-1, BR-3 | Multi-tenant isolation | draft |
 | TC-ADM-ISO-022 | Cross-tenant audit_id injection on detail/export -> 404 not 403 | Security | Critical | AC-1/3/4, BR-3 | Multi-tenant isolation | draft |
 | TC-ADM-ISO-023 | Audit endpoints require tenant context + read role; export-audit stamped | Security | Critical | AC-1/4, BR-1/3 | Multi-tenant isolation | draft |
@@ -616,7 +617,7 @@ status: complete
 | AC-2 (filters: date/actor/action/resource/keyword; AND logic; pagination+sort) | TC-ADM-008-03, -04, -05, -06, -07, -08 |
 | AC-3 (detail before/after + diff + IP/UA/trace; sensitive masked) | TC-ADM-008-09, -10, -16 |
 | AC-4 (export CSV/JSON, filters respected, masked, self-audited "AuditLog.Export"; large=email) | TC-ADM-008-11, -12, TC-ADM-ISO-022, -023 (+ -19 DEFERRED async large-export) |
-| AC-5 (audit append-only; modify/delete rejected; DB role lacks UPDATE/DELETE) | TC-ADM-008-17 (code convention, real) + TC-ADM-008-18 (DEFERRED DB-role grant) |
+| AC-5 (audit append-only; modify/delete rejected; DB role lacks UPDATE/DELETE) | TC-ADM-008-17 (code convention, real) + **TC-ADM-008-22 (DB-role REVOKE, automated on real Postgres — BUG-301/GAP-005)** + TC-ADM-008-18 (still DEFERRED: deployed-environment enforcement + security-event log) |
 
 ## BR / FR / NFR Coverage (US-ADM-008)
 
@@ -633,11 +634,11 @@ status: complete
 | FR-3 (visual diff between before/after — FE-computed) | TC-ADM-008-16 | FE-verified |
 | FR-4 (sensitive fields masked `***REDACTED***`, recursive + camelCase) | TC-ADM-008-10, -11 | Direct |
 | FR-5 (export respects filters; >10k -> Hangfire + emailed link) | TC-ADM-008-11 (sync) + -19 (DEFERRED async) | Sync real; async deferred |
-| FR-6 (retention purge by AuditLogRetentionDays; purge logged) | TC-ADM-008-14 | Direct (purge audit to system context) |
+| FR-6 (retention purge by AuditLogRetentionDays; purge logged) | TC-ADM-008-14, -22 | Direct (purge audit to system context); -22 asserts `hrm_owner` keeps DELETE so the revoke did not break the purge |
 | FR-7 (Auditor read-only, cannot export/other admin) | TC-ADM-008-12 | Direct |
 | NFR-1 (<2s first page at scale) | TC-ADM-008-21 (DEFERRED) | Needs perf env; correctness -01..08 |
 | NFR-2 (composite indexes) | TC-ADM-008-21 (DEFERRED perf) | Indexes added; perf validation deferred |
-| NFR-3 (immutable; DB role no UPDATE/DELETE) | TC-ADM-008-17 (code convention) + -18 (DEFERRED DB grant) | Convention real; DB grant deferred |
+| NFR-3 (immutable; DB role no UPDATE/DELETE) | TC-ADM-008-17 (code convention) + **-22 (REVOKE proven on real Postgres)** + -18 (DEFERRED) | REVOKE shipped in `roles.sql:70-71`; the test hand-mirrors it and `roles.sql` is a manual DBA bootstrap, so live enforcement stays an ops check |
 | NFR-4 (audit queries don't slow writes) | TC-ADM-008-21 (DEFERRED step 4) | Needs perf env |
 | NFR-5 (responsive UI 360px-4K) | TC-ADM-008-16 (FE-verified) | FE-verified |
 
@@ -646,13 +647,13 @@ status: complete
 | Metric | Value |
 |--------|-------|
 | User stories covered | 1 (US-ADM-008) |
-| Total test cases | 25 (17 functional/security/e2e/integration + 4 DEFERRED + 4 isolation, 1 of which DEFERRED) |
-| AC coverage | 5/5 (AC-4/AC-5 have DEFERRED sub-parts: async large-export, DB-role grant) |
+| Total test cases | 26 (17 functional/security/e2e/integration + 1 automated regression (-22) + 4 DEFERRED + 4 isolation, 1 of which DEFERRED) |
+| AC coverage | 5/5 (AC-4 has a DEFERRED sub-part: async large-export. AC-5 DB layer now automated in -22; -18 stays deferred for deployed-environment enforcement + security-event log) |
 | BR coverage | 6/6 (BR-1..BR-6; BR-6 PII-read deferred) |
 | FR coverage | 7/7 (FR-1..FR-7; FR-5 async deferred) |
-| Run-green now | 20 (TC-ADM-008-01..17 + TC-ADM-ISO-021, -022, -023) |
+| Run-green now | 21 (TC-ADM-008-01..17, -22 + TC-ADM-ISO-021, -022, -023) |
 | Deferred (status: blocked) | 5 (TC-ADM-008-18, -19, -20, -21 + TC-ADM-ISO-024) |
-| Functional ID range | TC-ADM-008-01 .. TC-ADM-008-21 |
+| Functional ID range | TC-ADM-008-01 .. TC-ADM-008-22 |
 | ISO ID range | TC-ADM-ISO-021 .. TC-ADM-ISO-024 |
 
 ---

@@ -15,7 +15,7 @@ multi-tenant isolation TCs.
 filename number carries no US semantics.
 
 **How to apply:** before adding auth TCs, find the max `TC-AUTH-{NNN}` and max `TC-AUTH-ISO-{NNN}`, then
-continue both counters. As of 2026-07-24: functional counter reached **136**, ISO counter reached **006**.
+continue both counters. As of 2026-09-02: functional counter reached **161**, ISO counter reached **008**. TC-AUTH-161 = US-AUTH-013 (the FIRST TC ever bound to that story) — an `status: automated` doc for the 17 already-green arms of `HRM.Tests/Unit/SsoIsolationGuardTests` (pure `SsoIsolationGuard.Evaluate`), authored to close the BUG-298/GAP-017 traceability gap. That file carries NO `[Trait("TC",…)]`, so the binding is by test NAME; TC-AUTH-142/143 remain the blocked callback-level arms.
 US-AUTH-012 SSO = TC-AUTH-115..125 + TC-AUTH-ISO-005. US-AUTH-016 (SSO enforcement/break-glass/admin-consent
 onboarding) = TC-AUTH-126..136 + TC-AUTH-ISO-006. US-AUTH-016 endpoints beyond auth-settings GET/PUT:
 break-glass reuses POST /api/v1/auth/login; new onboarding endpoints GET /api/v1/tenant/sso/admin-consent-url

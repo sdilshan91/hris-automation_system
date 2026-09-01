@@ -273,7 +273,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 | # | Item | Merge gate | Note |
 |---|---|---|---|
-| 1 | `G9` `/verify-fix` the 11 already-fixed | auto | −29% of the live backlog, no code |
+| 1 | ~~`G9` `/verify-fix` the 11 already-fixed~~ | ✅ | **7 closed · 1 partial · 1 parked** — see below |
 | 2 | `G10` `/test-us US-PRF-005` | auto | QA-execution debt |
 | 3 | `G11` correct 3 register rows | auto | GAP-006 / GAP-030 / GAP-034 |
 | 4 | `G1` part-time overtime on a full-time base | auto | **money, live** |
@@ -296,6 +296,37 @@ written (decided 2026-09-01): a human reviews every auth/JWT and tenant-isolatio
 (`E2`) being misread. Confirm the premise against `src/` before spending on the build.
 
 **Parked at the decision gate:** `G4` (DSAR) needs a story authored before it needs code.
+
+---
+
+## ✅ G9 outcome (2026-09-02) — and 8 new findings it surfaced
+
+**Closed (7):** `BUG-298` · `BUG-301` · `BUG-307` · `ISSUE-364` · `ISSUE-362` · `ISSUE-280` · `BUG-056`.
+Each cites its green xUnit arm; four gained the IEEE-829 TC they never had —
+**TC-AUTH-161** (US-AUTH-013 had *zero* TCs before), **TC-ADM-008-22**, **TC-ADM-009-19**, **TC-CHR-340**.
+`ISSUE-232` was already archived. `ISSUE-362` deliberately has **no** TC: it is a runner-config finding
+and a user-facing test case would be theatre.
+
+**Partial (1) — `ISSUE-021`.** Its `DEFERRED (no SalaryGrade entity)` reason was stale; the entity shipped.
+`TC-CHR-005-48` and `TC-CHR-337` now **PASS**. But `TC-CHR-063` **FAILS**: AC-4's second clause — the grade
+shown on the employee profile — was never built. **The 2026-09-01 audit called this ALREADY-FIXED; it
+verified the validation code and did not check the AC's second half.** Filed as `BUG-419`. Stays OPEN.
+
+**Parked (1) — `BUG-003`.** The code fix is verified, but `verify-fix.md` requires `--iso` scope for a
+systemic isolation finding and `ISSUE-422` shows the running stack is a container built 2026-08-11,
+~12 days behind `main`. **Rebuild the stack, then re-run the ISO suite.** Not closing the platform's most
+consequential invariant on a stale image.
+
+**New findings folded in:** `BUG-419` (AC-4 display half unbuilt) · `ISSUE-420` (10 controller paths drop
+`Result.ErrorCode`, so documented codes never reach the wire — unit tests stay green because they assert at
+the *service* layer) · `ISSUE-421` (`gradeName` null on write responses) · `ISSUE-422` (stale dev stack) ·
+`ISSUE-423` **HIGH** (BUG-298's fail-closed deny and `IsEmailVerified` untested) · `ISSUE-424` (the new TCs
+are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is documentation-only) ·
+`ISSUE-425` (**a third ledger failure mode: `DEFERRED` entries carry stale blocker reasons**) ·
+`ISSUE-426`–`ISSUE-430`.
+
+**Re-sorted:** `ISSUE-423` (HIGH) enters above the remaining MED work. `ISSUE-422` is a **prerequisite for
+`BUG-003` and for any live-API verdict in this queue** — rebuild the dev stack before trusting one.
 
 ---
 
