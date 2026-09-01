@@ -7,6 +7,8 @@
  */
 
 /** Request body for POST /system/impersonation (FR-1). */
+import type { Schema } from '@core/api';
+
 export interface IStartImpersonationRequest {
   targetUserId: string;
   targetTenantId: string;
@@ -49,3 +51,46 @@ export interface IImpersonationTarget {
 /** Reason field constraints (BR-4 / AC-1). */
 export const IMPERSONATION_REASON_MIN = 10;
 export const IMPERSONATION_REASON_MAX = 500;
+
+// ─── Wire contract → view-model mappers (D1 admin slice) ─────────────────────
+//
+// Impersonation is the highest-privilege action in the product: a platform operator acting AS a tenant user.
+// `http.post<IStartImpersonationResponse>(…)` asserted the response shape rather than checking it, so a
+// renamed field would have arrived as `undefined` on the path that mints an impersonation token — and
+// `isReadOnly` defaulting wrongly is the difference between a read-only session and a writable one.
+//
+// That is why `isReadOnly` defaults to TRUE below. Every other field defaults to an empty value; this one
+// defaults to the SAFE value, because an absent flag must not silently grant write access.
+
+export type StartImpersonationWire = Schema<'ImpersonationStartImpersonationResultDto'>;
+export type EndImpersonationWire = Schema<'ImpersonationEndImpersonationResultDto'>;
+export type ImpersonationTargetWire = Schema<'ImpersonationImpersonationTargetDto'>;
+
+export function mapStartImpersonation(w: StartImpersonationWire): IStartImpersonationResponse {
+  return {
+    sessionId: w.sessionId ?? '',
+    token: w.token ?? '',
+    redirectUrl: w.redirectUrl ?? '',
+    expiresAt: w.expiresAt ?? '',
+    // Fail CLOSED: a missing flag must not be read as "this session may write".
+    isReadOnly: w.isReadOnly ?? true,
+  };
+}
+
+export function mapEndImpersonation(w: EndImpersonationWire): IEndImpersonationResponse {
+  return {
+    sessionId: w.sessionId ?? '',
+    status: (w.status ?? 'ended') as IEndImpersonationResponse['status'],
+    actionsCount: w.actionsCount ?? 0,
+    endedAt: w.endedAt ?? '',
+  };
+}
+
+export function mapImpersonationTarget(w: ImpersonationTargetWire): IImpersonationTarget {
+  return {
+    userId: w.userId ?? '',
+    email: w.email ?? '',
+    displayName: w.displayName ?? '',
+    roles: w.roles ?? [],
+  };
+}

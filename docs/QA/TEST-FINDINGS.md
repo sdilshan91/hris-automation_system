@@ -9076,3 +9076,39 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Why it is not just deleted:** ~10 test arms exercise `GetDownloadUrlAsync`, including the FR-10/BR-1/BR-2/BR-3 **authorization** arms and the ISSUE-024 **PII access-audit** arm. Deleting them to remove dead code would be a coverage loss dressed as cleanup — unless C2's streaming route (`GET /api/v1/tenant/employees/{employeeId}/documents/{documentId}/download`) already has equivalent authorization and audit arms. **Verify that first; migrate the arms if it does not.**
 - **Suggested fix:** one slice — confirm/port the auth + audit coverage onto the streaming path, then remove the orphaned chain, which also unblocks ISSUE-398.
 - **Related:** GAP-027 (C2) · ISSUE-398
+
+### BUG-312
+
+- **Type:** BUG · **Severity:** HIGH · **Status:** RESOLVED (D1 admin slice) · **Layer:** FE
+- **Module:** admin-console · **Found:** 2026-08-23, D1 admin migration.
+- **Summary:** **Company Settings' first tab bound to a field the server has never sent.** `ICompanySettings` declares `org`; the API sends `orgProfile` (`TenantSettingsDto.OrgProfile`). `http.get<ICompanySettings>(…)` asserted the shape rather than checking it, so `settings.org` was `undefined` and the template's `[value]="s.org"` handed the org-profile section nothing.
+- **Why it survived:** the service spec flushed the **view-model** shape (`{ org: … }`), so both sides agreed on a fiction and the suite was green.
+- **Fix:** `mapCompanySettings` translates `orgProfile → org` once, at the seam; the spec now flushes the wire shape.
+- **Related:** GAP-S1 · D1
+
+### BUG-313
+
+- **Type:** BUG · **Severity:** MED · **Status:** RESOLVED (D1 admin slice) · **Layer:** FE
+- **Module:** admin-console · **Found:** 2026-08-23, D1 admin migration.
+- **Summary:** **Every row of the System-Admin tenant list tracked by `undefined`.** `ITenantSummary` declares `tenantId`; the API sends `id` (`TenantListItemDto.Id`). The list uses it as the `@for` **track key** (`track t.tenantId`), so all rows shared one undefined key.
+- **Why it matters more than a blank cell:** a track key tells Angular which DOM node belongs to which row. The failure mode is wrong or duplicated rows on re-render (sort, filter, refresh), not a missing value.
+- **Fix:** `mapTenantSummary` maps `id → tenantId`.
+- **Related:** GAP-S1 · D1 · BUG-312
+
+### ISSUE-400
+
+- **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** BE + FE
+- **Module:** admin-console (US-ADM-005) · **Found:** 2026-08-23, D1 admin migration.
+- **Summary:** The user-detail screen's **Linked Employee** section renders a name, job title and department that the API has never sent. `TenantUserDetailDto` carries a bare **`linkedEmployeeId`**; the FE's `ILinkedEmployee` declares `{ employeeId, fullName, jobTitle, department }`.
+- **Consequence:** the section can only ever show its empty state against the real API. Its spec passed because the fixture invented the same shape the unchecked cast asserted — the defect and its test agreed.
+- **Options (needs a decision):** expand `TenantUserDetailDto` to include the employee summary; or have the FE resolve the employee with a follow-up request; or reduce the section to a link by id. Expanding the DTO is the cheapest for the UI but adds employee PII to a user-admin payload, which is a deliberate call rather than an obvious one.
+- **Note:** the D1 mapper leaves `linkedEmployee: null` — honest about what the wire carries. The spec now asserts the empty state and says why.
+- **Related:** GAP-S1 · D1 · BUG-312 · BUG-313
+
+### ISSUE-401
+
+- **Type:** ISSUE · **Severity:** LOW · **Status:** RESOLVED (D1 admin slice) · **Layer:** TEST
+- **Module:** platform (guards) · **Found:** 2026-08-23, D1 admin migration.
+- **Summary:** `FrontendWireContractDriftGuardTests` counted matches inside **comments**. Every migrated file gains a doc-comment explaining the `http.get<IFoo>` pattern it replaced, so finishing a module made its count go *up* unless the explanation was deleted — a guard that punishes documenting the defect it exists to prevent. It would also have let anyone trip the build by quoting the pattern.
+- **Fix:** strip line and block comments before matching. Repo-wide count corrected 267 → 218 (the 49 phantom matches were the migration's own comments plus pre-existing ones).
+- **Related:** D1

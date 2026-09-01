@@ -13,6 +13,16 @@ import {
   IInviteResult,
   IEditRolesRequest,
   IInvitation,
+  TenantUserPageWire,
+  TenantUserDetailWire,
+  InvitationWire,
+  InviteResultWire,
+  RoleWire,
+  mapUserListResponse,
+  mapUserDetail,
+  mapAssignableRole,
+  mapInvitation,
+  mapInviteResults,
 } from '../models/user-management.models';
 
 /**
@@ -66,18 +76,22 @@ export class UserManagementService {
       httpParams = httpParams.set('roleId', params.roleId);
     }
 
-    return this.http.get<IUserListResponse>(this.usersUrl, {
-      params: httpParams,
-      withCredentials: true,
-    });
+    return this.http
+      .get<TenantUserPageWire>(this.usersUrl, {
+        params: httpParams,
+        withCredentials: true,
+      })
+      .pipe(map(mapUserListResponse));
   }
 
   /** Full user detail view (profile, roles, employee, audit, sessions, invites). */
   getUserDetail(userTenantId: string): Observable<IUserDetail> {
     // GAP-009: the detail view is /{userTenantId}/detail; the bare /{userTenantId} route does not exist.
-    return this.http.get<IUserDetail>(`${this.usersUrl}/${userTenantId}/detail`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<TenantUserDetailWire>(`${this.usersUrl}/${userTenantId}/detail`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapUserDetail));
   }
 
   /**
@@ -89,12 +103,8 @@ export class UserManagementService {
    */
   getAssignableRoles(): Observable<IAssignableRole[]> {
     return this.http
-      .get<IAssignableRole[]>(`${environment.apiBaseUrl}/tenant/roles`, { withCredentials: true })
-      .pipe(
-        map((roles) =>
-          roles.map((r) => ({ id: r.id, name: r.name, description: r.description ?? '' }))
-        )
-      );
+      .get<RoleWire[]>(`${environment.apiBaseUrl}/tenant/roles`, { withCredentials: true })
+      .pipe(map((roles) => (roles ?? []).map(mapAssignableRole)));
   }
 
   // ─── Invitations (AC-2, FR-2, FR-3) ──────────────────────
@@ -113,33 +123,44 @@ export class UserManagementService {
       return of([]);
     }
 
+    // Each call answers with ONE `UsersInviteResultDto` `{ created[], errors[] }`;
+    // `mapInviteResults` flattens it into the per-address rows the modal renders.
     return forkJoin(
       request.emails.map((email) =>
-        this.http.post<IInviteResult>(
+        this.http.post<InviteResultWire>(
           `${this.usersUrl}/invite`,
           { email, roleIds: request.roleIds },
           { withCredentials: true }
         )
       )
-    );
+    ).pipe(map((results) => results.flatMap(mapInviteResults)));
   }
 
-  /** Bulk invite from parsed CSV rows (email + role names). */
+  /**
+   * Bulk invite from parsed CSV rows (email + role names).
+   *
+   * D1: this declared `IInviteResult[]` but the endpoint returns a SINGLE
+   * `UsersInviteResultDto` object. The modal then called `res.filter(…)` on a
+   * non-array, so a successful CSV invite threw a TypeError instead of rendering
+   * the per-row outcomes.
+   */
   inviteFromCsv(rows: ICsvInviteRow[]): Observable<IInviteResult[]> {
     const body: IBulkCsvInviteRequest = { rows };
-    return this.http.post<IInviteResult[]>(
-      // GAP-009: the endpoint is invite/bulk; invite/csv has never existed.
-      `${this.usersUrl}/invite/bulk`,
-      body,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<InviteResultWire>(
+        // GAP-009: the endpoint is invite/bulk; invite/csv has never existed.
+        `${this.usersUrl}/invite/bulk`,
+        body,
+        { withCredentials: true }
+      )
+      .pipe(map(mapInviteResults));
   }
 
   /** Pending invitations for the current tenant. */
   getInvitations(): Observable<IInvitation[]> {
-    return this.http.get<IInvitation[]>(this.invitationsUrl, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<InvitationWire[]>(this.invitationsUrl, { withCredentials: true })
+      .pipe(map((rows) => (rows ?? []).map(mapInvitation)));
   }
 
   /** Resend an invitation (issues a fresh 72h token). */

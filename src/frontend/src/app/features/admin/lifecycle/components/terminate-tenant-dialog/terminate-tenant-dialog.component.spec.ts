@@ -156,7 +156,8 @@ describe('TerminateTenantDialogComponent', () => {
       reason: 'Account closed at customer request',
       graceDays: 45,
     });
-    req.flush(result);
+    // Wire shape: the API sends PascalCase status; the view model lowercases it.
+    req.flush({ ...result, status: 'Terminating' });
 
     expect(toastrSuccess).toHaveBeenCalled();
     expect(emitted).toEqual(result);

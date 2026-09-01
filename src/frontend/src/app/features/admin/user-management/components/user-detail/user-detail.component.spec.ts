@@ -79,11 +79,27 @@ describe('UserDetailComponent', () => {
     expect(component.loading()).toBeFalse();
   });
 
-  it('renders the linked employee section', () => {
+  /**
+   * CORRECTED (D1 admin slice). This asserted the section renders 'HR Lead' from a `linkedEmployee` object
+   * carrying `fullName`/`jobTitle`/`department`. **The API has never sent that.** `TenantUserDetailDto`
+   * carries a bare `linkedEmployeeId` and nothing else, so the old assertion only passed because the fixture
+   * invented the same shape the un-migrated `http.get<IUserDetail>` cast asserted — both sides agreeing on a
+   * fiction.
+   *
+   * The section therefore shows its empty state today. Whether it should instead resolve the employee (an
+   * expanded DTO, or a follow-up fetch) is a real gap — filed, not papered over here.
+   */
+  it('shows the empty linked-employee state, because the API sends only an id', () => {
     fixture.detectChanges();
-    httpMock.expectOne(`${usersUrl}/ut-1/detail`).flush(detail);
+    httpMock
+      .expectOne(`${usersUrl}/ut-1/detail`)
+      .flush({ ...detail, linkedEmployee: undefined, linkedEmployeeId: 'e-1' });
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('HR Lead');
+
+    expect(component.user()?.linkedEmployee)
+      .withContext('the mapper cannot synthesise a name the wire does not carry')
+      .toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('noEmployee');
   });
 
   it('shows an error state on failure', () => {

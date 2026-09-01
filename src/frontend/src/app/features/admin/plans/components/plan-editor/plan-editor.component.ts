@@ -7,6 +7,7 @@ import {
   OnInit,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Observable } from 'rxjs';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   ReactiveFormsModule,
@@ -284,7 +285,10 @@ export class PlanEditorComponent implements OnInit {
     const payload = this.buildPayload();
     const id = this.planId();
 
-    const request$ = id
+    // D1: `update` completes with no payload and `create` answers with only
+    // `{ id, code }` — the two response types differ, and this handler discards
+    // both, so the union is widened rather than pretended away.
+    const request$: Observable<unknown> = id
       ? this.service.update(id, payload)
       : this.service.create(payload);
 

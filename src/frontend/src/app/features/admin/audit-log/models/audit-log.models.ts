@@ -11,6 +11,8 @@
  * X-Tenant-Subdomain header (added by the tenantInterceptor).
  */
 
+import type { Schema } from '@core/api';
+
 /** Export file formats offered to the user (AC-4 / Data Requirements §7). */
 export type AuditExportFormat = 'csv' | 'json';
 
@@ -19,14 +21,26 @@ export interface IAuditLogEntry {
   id: string;
   /** ISO-8601 UTC timestamp of the event. */
   timestamp: string;
-  /** Display name of the actor who performed the action. */
+  /**
+   * Display name of the actor who performed the action. Nullable on the wire —
+   * system / unauthenticated events have no actor — and the list template calls
+   * `initials(entry.actorName)`, so the mapper substitutes `''`, never `undefined`.
+   */
   actorName: string;
-  /** Email of the actor (shown under the name). */
+  /** Email of the actor (shown under the name). Nullable on the wire. */
   actorEmail: string;
   /** Dotted action key, e.g. "Employee.Create", "Leave.Approve". */
   action: string;
-  /** Resource type acted upon, e.g. "Employee", "LeaveRequest". */
+  /** Resource type acted upon, e.g. "Employee", "LeaveRequest". Nullable on the wire. */
   resourceType: string;
+  /**
+   * The actor's user id — on the wire all along, previously dropped by this model.
+   * OPTIONAL, matching the contract: `AuditLogAuditLogListItemDto` marks it
+   * optional and a system-generated event genuinely has no actor. Nothing renders
+   * it today; it is captured so the actor filter has a contract-derived source
+   * instead of an invented one.
+   */
+  actorUserId?: string | null;
   /** Id of the affected resource (may be null for non-entity events). */
   resourceId: string | null;
   /** Originating IP address. */
@@ -40,9 +54,24 @@ export interface IAuditLogEntry {
  * `before` / `after` arrive as JSON strings, already sensitive-masked
  * server-side as "***REDACTED***" (FR-4) — the FE renders them verbatim.
  */
-export interface IAuditLogDetail extends IAuditLogEntry {
+export interface IAuditLogDetail extends Omit<IAuditLogEntry, 'summary'> {
+  /**
+   * ⚠ NO WIRE SOURCE. `AuditLogDetailDto` has no `summary` field at all — only
+   * the LIST DTO carries one. This used to be inherited as a required `string`
+   * via `extends IAuditLogEntry`, so the detail panel seeded `summary` from the
+   * clicked row and then overwrote the whole object with the detail response,
+   * silently wiping it and hiding the Summary block. Made optional so the caller
+   * has to decide (merge the row in, or render the empty state) rather than
+   * being handed an `undefined` typed as `string`.
+   */
+  summary?: string;
   userAgent: string | null;
   traceId: string | null;
+  /**
+   * The actor's employee number. OPTIONAL for the same reason as `actorUserId`:
+   * the wire marks it optional, and an actor with no employee record has none.
+   */
+  actorEmployeeNo?: string | null;
   /** JSON string of the pre-change state (or null for create/auth events). */
   before: string | null;
   /** JSON string of the post-change state (or null for delete events). */
@@ -113,6 +142,7 @@ export interface IActorOption {
  */
 export interface IActorSearchResult {
   userId: string;
+  /** Nullable on the wire; the mapper substitutes `''` for the picker label. */
   name: string;
   email: string;
 }
@@ -223,4 +253,90 @@ export function diffAuditRaw(
   afterRaw: string | null | undefined
 ): IDiffEntry[] {
   return diffAuditJson(parseAuditJson(beforeRaw), parseAuditJson(afterRaw));
+}
+
+// ─── Wire contract → view-model mappers (D1 admin slice 1) ────────────────────
+//
+// All five audit-log routes EXIST — the drift here is purely field-level:
+// `actorName` / `actorEmail` / `resourceType` are nullable on the wire but were
+// declared non-null; `actorUserId` and `actorEmployeeNo` are sent and were dropped;
+// and the detail DTO has no `summary` at all (see `IAuditLogDetail`).
+
+export type AuditLogListItemWire = Schema<'AuditLogAuditLogListItemDto'>;
+export type AuditLogPageWire = Schema<'AuditLogAuditLogPageDto'>;
+export type AuditLogDetailWire = Schema<'AuditLogAuditLogDetailDto'>;
+export type AuditLogActorWire = Schema<'AuditLogAuditLogActorDto'>;
+export type AuditLogFilterOptionsWire = Schema<'AuditLogAuditLogFilterOptionsDto'>;
+export type TenantUserPageWire = Schema<'PagedResultOfUsersTenantUserListItemDto'>;
+
+export function mapAuditLogEntry(w: AuditLogListItemWire): IAuditLogEntry {
+  return {
+    id: w.id ?? '',
+    timestamp: w.timestamp ?? '',
+    actorName: w.actorName ?? '',
+    actorEmail: w.actorEmail ?? '',
+    actorUserId: w.actorUserId ?? null,
+    action: w.action ?? '',
+    resourceType: w.resourceType ?? '',
+    resourceId: w.resourceId ?? null,
+    ipAddress: w.ipAddress ?? null,
+    summary: w.summary ?? '',
+  };
+}
+
+export function mapAuditLogPage(w: AuditLogPageWire): IAuditLogPage {
+  return {
+    items: (w.items ?? []).map(mapAuditLogEntry),
+    totalCount: w.totalCount ?? 0,
+    page: w.page ?? 1,
+    pageSize: w.pageSize ?? 0,
+    retentionDays: w.retentionDays ?? 0,
+  };
+}
+
+/** `summary` is deliberately absent — the detail DTO does not carry one. */
+export function mapAuditLogDetail(w: AuditLogDetailWire): IAuditLogDetail {
+  return {
+    id: w.id ?? '',
+    timestamp: w.timestamp ?? '',
+    actorName: w.actorName ?? '',
+    actorEmail: w.actorEmail ?? '',
+    actorUserId: w.actorUserId ?? null,
+    actorEmployeeNo: w.actorEmployeeNo ?? null,
+    action: w.action ?? '',
+    resourceType: w.resourceType ?? '',
+    resourceId: w.resourceId ?? null,
+    ipAddress: w.ipAddress ?? null,
+    userAgent: w.userAgent ?? null,
+    traceId: w.traceId ?? null,
+    before: w.before ?? null,
+    after: w.after ?? null,
+  };
+}
+
+/** RENAMES: `id` ← `userId`, `displayName` ← `name`. */
+export function mapActorOption(w: AuditLogActorWire): IActorOption {
+  return {
+    id: w.userId ?? '',
+    displayName: w.name ?? '',
+    email: w.email ?? '',
+  };
+}
+
+export function mapFilterOptions(
+  w: AuditLogFilterOptionsWire,
+): IFilterOptions {
+  return {
+    actions: w.actions ?? [],
+    resourceTypes: w.resourceTypes ?? [],
+  };
+}
+
+/** RENAME: the option's `id` is the membership's `userTenantId`. */
+export function mapUserActorOptions(w: TenantUserPageWire): IActorOption[] {
+  return (w.items ?? []).map((u) => ({
+    id: u.userTenantId ?? '',
+    displayName: u.displayName ?? '',
+    email: u.email ?? '',
+  }));
 }

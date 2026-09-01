@@ -117,8 +117,14 @@ describe('InviteUsersModalComponent', () => {
     expect(reqs[0].request.method).toBe('POST');
     expect(reqs[0].request.body).toEqual({ email: 'a@acme.com', roleIds: ['r-1'] });
     expect(reqs[1].request.body).toEqual({ email: 'b@acme.com', roleIds: ['r-1'] });
-    reqs[0].flush({ email: 'a@acme.com', status: 'invited' });
-    reqs[1].flush({ email: 'b@acme.com', status: 'error', error: 'Already a member' });
+    // WIRE shape: the API returns `InviteResultDto { created, errors }` per request. The per-address
+    // `{ email, status }` row this used to flush is DERIVED by the mapper and has never been sent by the
+    // server — the old fixture invented exactly what the un-migrated cast asserted.
+    reqs[0].flush({ created: [{ email: 'a@acme.com' }], errors: [] });
+    reqs[1].flush({
+      created: [],
+      errors: [{ email: 'b@acme.com', error: 'Already a member' }],
+    });
 
     expect(component.results()?.length).toBe(2);
     expect(component.invitedCount()).toBe(1);
@@ -170,10 +176,11 @@ describe('InviteUsersModalComponent', () => {
         { email: 'y@acme.com', roleNames: ['Manager'] },
       ],
     });
-    req.flush([
-      { email: 'x@acme.com', status: 'invited' },
-      { email: 'y@acme.com', status: 'invited' },
-    ]);
+    // WIRE shape: /invite/bulk returns the same InviteResultDto { created, errors }, not a per-address array.
+    req.flush({
+      created: [{ email: 'x@acme.com' }, { email: 'y@acme.com' }],
+      errors: [],
+    });
     expect(component.invitedCount()).toBe(2);
   });
 

@@ -24,6 +24,7 @@ describe('WorkflowListComponent', () => {
   const workflows: IWorkflowSummary[] = [
     {
       id: 'wf-1',
+      lineageId: 'lin-1',
       name: 'Standard Leave',
       entityType: 'Leave',
       version: 2,
@@ -34,6 +35,7 @@ describe('WorkflowListComponent', () => {
     },
     {
       id: 'wf-2',
+      lineageId: 'lin-2',
       name: 'Expense Approval',
       entityType: 'Expense',
       version: 1,

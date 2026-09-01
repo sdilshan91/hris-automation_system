@@ -5,7 +5,13 @@ import {
 } from '@angular/common/http/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { RolesService } from './roles.service';
-import { IRole, ICreateRoleRequest, IUserWithRoles } from '../models/role.models';
+import {
+  IRole,
+  ICreateRoleRequest,
+  IUserWithRoles,
+  RoleWire,
+  TenantUserDetailWire,
+} from '../models/role.models';
 import { environment } from '../../../../../environments/environment';
 
 describe('RolesService', () => {
@@ -15,7 +21,8 @@ describe('RolesService', () => {
   const baseUrl = `${environment.apiBaseUrl}/tenant/roles`;
   const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
-  const mockRole: IRole = {
+  /** D1 — WIRE fixtures (`Schema<'RolesRoleDto'>`), not view models. */
+  const mockRoleWire: RoleWire = {
     id: 'role-1',
     name: 'HR Officer',
     description: 'Manages HR operations',
@@ -25,20 +32,22 @@ describe('RolesService', () => {
     createdAt: '2026-01-01T00:00:00Z',
   };
 
-  const mockUser: IUserWithRoles = {
+  /**
+   * `UsersTenantUserDetailDto`. Note the role entries carry `{ roleId, name }` —
+   * there is no `roleName`, and no `isBuiltIn`/`assignedAt`/`assignedBy` at all.
+   * The previous fixture invented all four.
+   */
+  const mockUserDetailWire: TenantUserDetailWire = {
     userId: 'user-1',
     userTenantId: 'ut-1',
     email: 'john@example.com',
     displayName: 'John Doe',
-    roles: [
-      {
-        roleId: 'role-1',
-        roleName: 'HR Officer',
-        isBuiltIn: true,
-        assignedAt: '2026-01-01T00:00:00Z',
-        assignedBy: 'admin',
-      },
-    ],
+    status: 'Active',
+    lastLoginAt: '2026-02-01T09:00:00Z',
+    linkedEmployeeId: null,
+    roles: [{ roleId: 'role-1', name: 'HR Officer' }],
+    activeSessions: [],
+    invitationHistory: [],
   };
 
   beforeEach(() => {
@@ -71,7 +80,7 @@ describe('RolesService', () => {
 
       const req = httpMock.expectOne(baseUrl);
       expect(req.request.method).toBe('GET');
-      req.flush([mockRole]);
+      req.flush([mockRoleWire]);
     });
   });
 
@@ -84,7 +93,7 @@ describe('RolesService', () => {
 
       const req = httpMock.expectOne(`${baseUrl}/role-1`);
       expect(req.request.method).toBe('GET');
-      req.flush(mockRole);
+      req.flush(mockRoleWire);
     });
   });
 
@@ -103,7 +112,7 @@ describe('RolesService', () => {
       const req = httpMock.expectOne(baseUrl);
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(request);
-      req.flush({ ...mockRole, name: 'Custom Role', isBuiltIn: false });
+      req.flush({ ...mockRoleWire, name: 'Custom Role', isBuiltIn: false });
     });
   });
 
@@ -121,7 +130,7 @@ describe('RolesService', () => {
 
       const req = httpMock.expectOne(`${baseUrl}/role-1`);
       expect(req.request.method).toBe('PUT');
-      req.flush({ ...mockRole, name: 'Updated Role' });
+      req.flush({ ...mockRoleWire, name: 'Updated Role' });
     });
   });
 
@@ -137,29 +146,64 @@ describe('RolesService', () => {
 
   describe('getUserWithRoles', () => {
     it('should return a user with their role assignments', () => {
-      service.getUserWithRoles('ut-1').subscribe((user) => {
-        expect(user.displayName).toBe('John Doe');
-        expect(user.roles.length).toBe(1);
-      });
+      let user: IUserWithRoles | undefined;
+      service.getUserWithRoles('ut-1').subscribe((u) => (user = u));
 
       const req = httpMock.expectOne(`${usersUrl}/ut-1`);
       expect(req.request.method).toBe('GET');
-      req.flush(mockUser);
+      req.flush(mockUserDetailWire);
+
+      expect(user?.displayName).toBe('John Doe');
+      // RENAME asserted: the wire sends `name`, the view-model exposes `roleName`.
+      expect(user?.roles).toEqual([
+        { roleId: 'role-1', roleName: 'HR Officer' },
+      ]);
+    });
+
+    it('defaults every optional wire field on a sparse detail payload', () => {
+      let user: IUserWithRoles | undefined;
+      service.getUserWithRoles('ut-1').subscribe((u) => (user = u));
+
+      httpMock.expectOne(`${usersUrl}/ut-1`).flush({ userTenantId: 'ut-1' });
+
+      expect(user).toEqual({
+        userId: '',
+        userTenantId: 'ut-1',
+        email: '',
+        displayName: '',
+        roles: [],
+      });
     });
   });
 
   describe('assignRoles', () => {
-    it('should assign roles to a user', () => {
+    it('completes with no payload — the PATCH returns a bare envelope', () => {
+      let completed = false;
       service
         .assignRoles('ut-1', { roleIds: ['role-1', 'role-2'] })
-        .subscribe((user) => {
-          expect(user.displayName).toBe('John Doe');
-        });
+        .subscribe(() => (completed = true));
 
       const req = httpMock.expectOne(`${usersUrl}/ut-1`);
       expect(req.request.method).toBe('PATCH');
       expect(req.request.body).toEqual({ roleIds: ['role-1', 'role-2'] });
-      req.flush(mockUser);
+      req.flush(null);
+
+      expect(completed).toBeTrue();
+    });
+  });
+
+  describe('mapRole', () => {
+    it('defaults the narrowed id/name instead of asserting them', () => {
+      let roles: IRole[] | undefined;
+      service.getRoles().subscribe((r) => (roles = r));
+
+      // `RolesRoleDto` marks every property optional; the UI cannot render a row
+      // without id/name, so the mapper — not a cast — is what supplies them.
+      httpMock.expectOne(baseUrl).flush([{ description: 'orphan' }]);
+
+      expect(roles?.[0].id).toBe('');
+      expect(roles?.[0].name).toBe('');
+      expect(roles?.[0].description).toBe('orphan');
     });
   });
 });

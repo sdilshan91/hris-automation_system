@@ -19,6 +19,8 @@
  */
 
 /** Status marker the BE returns for deferred (not-yet-instrumented) metrics. */
+import type { Schema } from '@core/api';
+
 export const REQUIRES_OBSERVABILITY = 'RequiresObservabilityPipeline';
 
 /** Overall platform health roll-up (PlatformHealthStatus enum, serialized as a string). */
@@ -228,4 +230,119 @@ export function needsAttention(tenant: ITenantUsageSummary): boolean {
     return true;
   }
   return tenant.usagePercent !== null && tenant.usagePercent >= 80;
+}
+
+// ─── Wire contract → view-model mappers (D1 admin slice) ─────────────────────
+//
+// `http.get<IPlatformHealth>(…)` was an unchecked cast: TypeScript accepted whatever the server sent and
+// called it an IPlatformHealth, so a renamed or dropped field arrived as a silent `undefined` on the
+// system-admin monitoring dashboard — the screen an operator looks at precisely when something is wrong.
+//
+// All three payloads match the contract field-for-field, so these mappers do one job: default the
+// all-optional wire fields. That is not busywork — it is the step that turns an assertion into a check.
+
+export type PlatformHealthWire = Schema<'MonitoringPlatformHealthDto'>;
+export type TenantUsageDashboardWire = Schema<'MonitoringTenantUsageDashboardDto'>;
+export type TenantMonitoringDetailWire = Schema<'MonitoringTenantMonitoringDetailDto'>;
+export type JobQueueSnapshotWire = Schema<'MonitoringJobQueueSnapshotDto'>;
+export type TenantStatusCountWire = Schema<'MonitoringTenantStatusCountDto'>;
+export type UsageGaugeWire = Schema<'MonitoringUsageGaugeDto'>;
+export type TenantUsageSummaryWire = Schema<'MonitoringTenantUsageSummaryDto'>;
+
+function mapJobQueue(w: JobQueueSnapshotWire | undefined): IJobQueueSnapshot {
+  return {
+    available: w?.available ?? false,
+    enqueued: w?.enqueued ?? null,
+    processing: w?.processing ?? null,
+    scheduled: w?.scheduled ?? null,
+    succeeded: w?.succeeded ?? null,
+    failed: w?.failed ?? null,
+  };
+}
+
+function mapStatusCount(w: TenantStatusCountWire): ITenantStatusCount {
+  return { status: w.status ?? '', count: w.count ?? 0 };
+}
+
+function mapGauge(w: UsageGaugeWire): IUsageGauge {
+  return {
+    resource: w.resource ?? '',
+    available: w.available ?? false,
+    used: w.used ?? null,
+    limit: w.limit ?? null,
+    usagePercent: w.usagePercent ?? null,
+    band: (w.band ?? null) as UsageBand | null,
+  };
+}
+
+function mapUsageSummary(w: TenantUsageSummaryWire): ITenantUsageSummary {
+  return {
+    tenantId: w.tenantId ?? '',
+    name: w.name ?? '',
+    subdomain: w.subdomain ?? '',
+    status: w.status ?? '',
+    plan: w.plan ?? '',
+    activeEmployees: w.activeEmployees ?? 0,
+    employeeLimit: w.employeeLimit ?? null,
+    usagePercent: w.usagePercent ?? null,
+    band: (w.band ?? null) as UsageBand | null,
+    limitKnown: w.limitKnown ?? false,
+    gauges: (w.gauges ?? []).map(mapGauge),
+  };
+}
+
+export function mapPlatformHealth(w: PlatformHealthWire): IPlatformHealth {
+  return {
+    overallStatus: (w.overallStatus ?? 'unknown') as PlatformHealthStatus,
+    activeTenantCount: w.activeTenantCount ?? 0,
+    totalActiveUsers: w.totalActiveUsers ?? 0,
+    tenantsByStatus: (w.tenantsByStatus ?? []).map(mapStatusCount),
+    databaseHealth: (w.databaseHealth ?? 'unknown') as DependencyHealthStatus,
+    redisHealth: (w.redisHealth ?? 'unknown') as DependencyHealthStatus,
+    jobQueue: mapJobQueue(w.jobQueue),
+    aggregateErrorRatePercent: w.aggregateErrorRatePercent ?? null,
+    p95LatencyMs: w.p95LatencyMs ?? null,
+    metricsStatus: w.metricsStatus ?? '',
+    generatedAtUtc: w.generatedAtUtc ?? '',
+  };
+}
+
+export function mapTenantUsageDashboard(w: TenantUsageDashboardWire): ITenantUsageDashboard {
+  return {
+    tenants: (w.tenants ?? []).map(mapUsageSummary),
+    quotaBreachQueue: (w.quotaBreachQueue ?? []).map(mapUsageSummary),
+    attentionRequiredQueue: (w.attentionRequiredQueue ?? []).map(mapUsageSummary),
+    attentionQueueStatus: w.attentionQueueStatus ?? '',
+    generatedAtUtc: w.generatedAtUtc ?? '',
+  };
+}
+
+/**
+ * Maps the tenant detail, lowercasing `status`.
+ *
+ * The backend serializes the lifecycle status as a PascalCase enum string ("Active", "Suspended"), while the
+ * lifecycle module's quick-action gates and the template's `status === 'terminated'` checks are
+ * case-sensitive against LOWERCASE. That normalisation already existed as a `.pipe(map(...))` in the
+ * service; it belongs here with the rest of the translation, where it is visible next to the field it
+ * changes rather than hidden behind the call.
+ */
+export function mapTenantMonitoringDetail(w: TenantMonitoringDetailWire): ITenantMonitoringDetail {
+  return {
+    tenantId: w.tenantId ?? '',
+    name: w.name ?? '',
+    subdomain: w.subdomain ?? '',
+    status: (w.status ?? '').toLowerCase(),
+    plan: w.plan ?? '',
+    ownerEmail: w.ownerEmail ?? null,
+    createdAt: w.createdAt ?? '',
+    lastActivityAt: w.lastActivityAt ?? null,
+    employeeUsage: mapGauge(w.employeeUsage ?? {}),
+    jobQueue: mapJobQueue(w.jobQueue),
+    errorRateTrend24h: w.errorRateTrend24h ?? [],
+    latencyTrend24h: w.latencyTrend24h ?? [],
+    topErrors: w.topErrors ?? [],
+    slaUptimePercent: w.slaUptimePercent ?? null,
+    metricsStatus: w.metricsStatus ?? '',
+    generatedAtUtc: w.generatedAtUtc ?? '',
+  };
 }

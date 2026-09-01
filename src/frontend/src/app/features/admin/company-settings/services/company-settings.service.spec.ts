@@ -92,7 +92,10 @@ describe('CompanySettingsService', () => {
     const req = httpMock.expectOne(baseUrl);
     expect(req.request.method).toBe('GET');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockSettings);
+    // THE WIRE SHAPE, not the view model. The API sends `orgProfile`; the view model calls it `org`, and
+    // flushing the view model here is what let the rename go unnoticed — the spec asserted the service
+    // handled a body the server has never sent.
+    req.flush({ ...mockSettings, orgProfile: mockSettings.org, org: undefined });
   });
 
   it('PUTs the org profile sub-object', () => {

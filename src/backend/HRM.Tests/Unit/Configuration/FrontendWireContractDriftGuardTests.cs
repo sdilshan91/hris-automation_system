@@ -7,7 +7,7 @@
 // self-assessment throw and the recommendation workspace's permanently-empty table all happened.
 //
 // The fix for an EXISTING one is to consume the generated contract type (`Schema<'…Dto'>`) with an explicit
-// mapper. There are 198 left, and migrating them is the long tail of D1. This guard is the other half: it
+// mapper. There are 218 left, and migrating them is the long tail of D1. This guard is the other half: it
 // stops the count going UP while that work proceeds. Without it D1 never finishes — measured across two
 // commits, 99 call sites were migrated while the hand-written interface count moved by three, because new
 // ones kept arriving.
@@ -48,7 +48,7 @@ public sealed class FrontendWireContractDriftGuardTests
         RegexOptions.Compiled);
 
     /// <summary>
-    /// The unmigrated call sites, per file, as of 2026-08-23 (D1).
+    /// The unmigrated call sites, per file. 267 at D1's start; 218 after the admin slice took its 49 to ZERO.
     ///
     /// <para><b>This list may only ever SHRINK.</b> A new file appearing here means a fresh unchecked wire
     /// assertion was written; a count going up means one was added to a file that already had them. Either
@@ -61,17 +61,6 @@ public sealed class FrontendWireContractDriftGuardTests
     private static readonly IReadOnlyDictionary<string, int> KnownUnmigrated = new Dictionary<string, int>(StringComparer.Ordinal)
     {
         ["core/auth/auth.service.ts"] = 23,
-        ["features/admin/audit-log/services/audit-log.service.ts"] = 5,
-        ["features/admin/company-settings/services/company-settings.service.ts"] = 2,
-        ["features/admin/data-export/services/data-export.service.ts"] = 3,
-        ["features/admin/impersonation/services/impersonation.service.ts"] = 3,
-        ["features/admin/lifecycle/services/tenant-lifecycle.service.ts"] = 5,
-        ["features/admin/monitoring/services/platform-monitoring.service.ts"] = 3,
-        ["features/admin/plans/services/subscription-plan.service.ts"] = 6,
-        ["features/admin/roles/services/roles.service.ts"] = 6,
-        ["features/admin/tenants/services/tenant-provisioning.service.ts"] = 4,
-        ["features/admin/user-management/services/user-management.service.ts"] = 6,
-        ["features/admin/workflows/services/workflow.service.ts"] = 6,
         ["features/attendance/services/attendance.service.ts"] = 41,
         ["features/benefits/services/benefit.service.ts"] = 12,
         ["features/core-hr/custom-fields/services/custom-field.service.ts"] = 6,
@@ -147,7 +136,7 @@ public sealed class FrontendWireContractDriftGuardTests
                 continue;
             }
 
-            var matches = UncheckedWireAssertion.Matches(File.ReadAllText(file)).Count;
+            var matches = UncheckedWireAssertion.Matches(StripComments(File.ReadAllText(file))).Count;
             if (matches > 0)
             {
                 counts[relative] = matches;
@@ -155,6 +144,29 @@ public sealed class FrontendWireContractDriftGuardTests
         }
 
         return counts;
+    }
+
+    /// <summary>
+    /// Removes line and block comments before matching.
+    ///
+    /// <para>
+    /// Found while doing the admin migration: every migrated file gains a doc-comment EXPLAINING the old
+    /// <c>http.get&lt;IFoo&gt;</c> pattern it replaced, and the guard counted those as violations. So finishing a
+    /// module made its count go UP unless the explanation was deleted — a guard that punishes documenting the
+    /// very defect it exists to prevent. It would also have let someone trip the build by quoting the pattern
+    /// in a comment.
+    /// </para>
+    ///
+    /// <para>
+    /// Deliberately naive: it does not understand strings containing <c>//</c>. That is safe here because the
+    /// pattern being matched is a type argument, which cannot appear inside a URL or message literal in a way
+    /// this would hide — and the alternative is a TypeScript parser for a text scan.
+    /// </para>
+    /// </summary>
+    private static string StripComments(string source)
+    {
+        var withoutBlocks = Regex.Replace(source, @"/\*[\s\S]*?\*/", string.Empty);
+        return Regex.Replace(withoutBlocks, @"//[^\n]*", string.Empty);
     }
 
     /// <summary>

@@ -10,6 +10,14 @@ import {
   IUpdateWorkflowRequest,
   IApproverRoleOption,
   IApproverUserOption,
+  WorkflowListItemWire,
+  WorkflowDetailWire,
+  RoleWire,
+  TenantUserPageWire,
+  mapWorkflowSummary,
+  mapWorkflowDefinition,
+  mapApproverRoleOption,
+  mapApproverUserOptions,
 } from '../models/workflow.models';
 
 /**
@@ -27,7 +35,7 @@ import {
  *   GET    /api/v1/tenant/workflows                 — grouped list summaries (AC-1)
  *   GET    /api/v1/tenant/workflows/:id             — full definition (editor)
  *   POST   /api/v1/tenant/workflows                 — create (AC-2 / plan-limit AC-4)
- *   PUT    /api/v1/tenant/workflows/:id             — update → new version (AC-3)
+ *   PUT    /api/v1/tenant/workflows/:lineageId      — update → new version (AC-3)
  *   POST   /api/v1/tenant/workflows/:id/archive     — archive (FR-6)
  *   POST   /api/v1/tenant/workflows/:id/restore     — restore (FR-6)
  *   DELETE /api/v1/tenant/workflows/:id             — delete (BR-6)
@@ -35,6 +43,12 @@ import {
  * Approver pickers REUSE existing tenant sources rather than inventing new ones:
  *   GET    /api/v1/tenant/roles                     — role options (US-AUTH-006)
  *   GET    /api/v1/users?pageSize=…                 — user options (US-ADM-005)
+ *
+ * ⚠ REPORTED, NOT FIXED HERE (D1 is a types-only pass): the UPDATE route keys on
+ * `lineageId` (`WorkflowService.UpdateAsync` filters `w.LineageId == lineageId`),
+ * but the list navigates and the editor saves with the VERSION `id`. Every path
+ * segment below is left exactly as it was; the wire's `lineageId` is now captured
+ * on `IWorkflowSummary`/`IWorkflowDefinition` so the fix has a value to use.
  */
 @Injectable({ providedIn: 'root' })
 export class WorkflowService {
@@ -47,16 +61,18 @@ export class WorkflowService {
 
   /** Grouped-in-UI list of workflow summaries for the current tenant (AC-1). */
   getWorkflows(): Observable<IWorkflowSummary[]> {
-    return this.http.get<IWorkflowSummary[]>(this.baseUrl, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<WorkflowListItemWire[]>(this.baseUrl, { withCredentials: true })
+      .pipe(map((rows) => (rows ?? []).map(mapWorkflowSummary)));
   }
 
   /** Full workflow definition (with ordered steps) for the editor (AC-2/3). */
   getWorkflow(id: string): Observable<IWorkflowDefinition> {
-    return this.http.get<IWorkflowDefinition>(`${this.baseUrl}/${id}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<WorkflowDetailWire>(`${this.baseUrl}/${id}`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapWorkflowDefinition));
   }
 
   /**
@@ -67,9 +83,11 @@ export class WorkflowService {
   createWorkflow(
     request: ICreateWorkflowRequest
   ): Observable<IWorkflowDefinition> {
-    return this.http.post<IWorkflowDefinition>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<WorkflowDetailWire>(this.baseUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapWorkflowDefinition));
   }
 
   /** Update a workflow → server creates a NEW version (AC-3, FR-3). */
@@ -77,11 +95,11 @@ export class WorkflowService {
     id: string,
     request: IUpdateWorkflowRequest
   ): Observable<IWorkflowDefinition> {
-    return this.http.put<IWorkflowDefinition>(
-      `${this.baseUrl}/${id}`,
-      request,
-      { withCredentials: true }
-    );
+    return this.http
+      .put<WorkflowDetailWire>(`${this.baseUrl}/${id}`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapWorkflowDefinition));
   }
 
   /** Archive a workflow — marks inactive; restorable (FR-6). */
@@ -110,8 +128,8 @@ export class WorkflowService {
   /** Role options for the approver/escalation picker (reuses tenant roles). */
   getApproverRoles(): Observable<IApproverRoleOption[]> {
     return this.http
-      .get<IApproverRoleOption[]>(this.rolesUrl, { withCredentials: true })
-      .pipe(map((roles) => roles.map((r) => ({ id: r.id, name: r.name }))));
+      .get<RoleWire[]>(this.rolesUrl, { withCredentials: true })
+      .pipe(map((roles) => (roles ?? []).map(mapApproverRoleOption)));
   }
 
   /**
@@ -121,23 +139,10 @@ export class WorkflowService {
    */
   getApproverUsers(): Observable<IApproverUserOption[]> {
     return this.http
-      .get<IUserListEnvelope>(this.usersUrl, {
+      .get<TenantUserPageWire>(this.usersUrl, {
         params: { page: '1', pageSize: '200', status: 'active' },
         withCredentials: true,
       })
-      .pipe(
-        map((res) =>
-          (res.items ?? []).map((u) => ({
-            id: u.userTenantId,
-            displayName: u.displayName,
-            email: u.email,
-          }))
-        )
-      );
+      .pipe(map(mapApproverUserOptions));
   }
-}
-
-/** Minimal projection of the US-ADM-005 user-list response we consume here. */
-interface IUserListEnvelope {
-  items: { userTenantId: string; displayName: string; email: string }[];
 }

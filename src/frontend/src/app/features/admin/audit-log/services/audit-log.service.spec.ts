@@ -8,6 +8,8 @@ import { AuditLogService } from './audit-log.service';
 import {
   IAuditLogDetail,
   IAuditLogPage,
+  AuditLogPageWire,
+  AuditLogDetailWire,
 } from '../models/audit-log.models';
 import { environment } from '../../../../../environments/environment';
 
@@ -18,11 +20,13 @@ describe('AuditLogService', () => {
   const baseUrl = `${environment.apiBaseUrl}/tenant/audit-logs`;
   const usersUrl = `${environment.apiBaseUrl}/tenant/users`;
 
-  const mockPage: IAuditLogPage = {
+  /** D1 — the WIRE shape (`AuditLogAuditLogPageDto`), not the view model. */
+  const mockPageWire: AuditLogPageWire = {
     items: [
       {
         id: 'a-1',
         timestamp: '2026-06-16T10:00:00Z',
+        actorUserId: 'u-7',
         actorName: 'Jane Doe',
         actorEmail: 'jane@acme.com',
         action: 'Employee.Create',
@@ -38,8 +42,43 @@ describe('AuditLogService', () => {
     retentionDays: 365,
   };
 
-  const mockDetail: IAuditLogDetail = {
-    ...mockPage.items[0],
+  const expectedPage: IAuditLogPage = {
+    items: [
+      {
+        id: 'a-1',
+        timestamp: '2026-06-16T10:00:00Z',
+        actorUserId: 'u-7',
+        actorName: 'Jane Doe',
+        actorEmail: 'jane@acme.com',
+        action: 'Employee.Create',
+        resourceType: 'Employee',
+        resourceId: 'e-1',
+        ipAddress: '10.0.0.1',
+        summary: 'Created employee John',
+      },
+    ],
+    totalCount: 1,
+    page: 1,
+    pageSize: 50,
+    retentionDays: 365,
+  };
+
+  /**
+   * `AuditLogAuditLogDetailDto`. Note it has NO `summary` — only the list DTO
+   * carries one. The old fixture spread the list row in, which made the detail
+   * endpoint look like it returned a summary it has never sent.
+   */
+  const mockDetailWire: AuditLogDetailWire = {
+    id: 'a-1',
+    timestamp: '2026-06-16T10:00:00Z',
+    actorUserId: 'u-7',
+    actorName: 'Jane Doe',
+    actorEmail: 'jane@acme.com',
+    actorEmployeeNo: 'EMP-007',
+    action: 'Employee.Create',
+    resourceType: 'Employee',
+    resourceId: 'e-1',
+    ipAddress: '10.0.0.1',
     userAgent: 'Mozilla/5.0',
     traceId: 'trace-123',
     before: null,
@@ -59,7 +98,7 @@ describe('AuditLogService', () => {
   it('lists with pagination params', () => {
     service
       .getAuditLog({ page: 2, pageSize: 50 })
-      .subscribe((res) => expect(res).toEqual(mockPage));
+      .subscribe((res) => expect(res).toEqual(expectedPage));
 
     const req = httpMock.expectOne(
       (r) => r.url === baseUrl && r.method === 'GET'
@@ -67,7 +106,7 @@ describe('AuditLogService', () => {
     expect(req.request.params.get('page')).toBe('2');
     expect(req.request.params.get('pageSize')).toBe('50');
     expect(req.request.withCredentials).toBeTrue();
-    req.flush(mockPage);
+    req.flush(mockPageWire);
   });
 
   it('passes every filter as a query param', () => {
@@ -92,7 +131,7 @@ describe('AuditLogService', () => {
     expect(p.get('action')).toBe('Leave.Approve');
     expect(p.get('resourceType')).toBe('LeaveRequest');
     expect(p.get('search')).toBe('john');
-    req.flush(mockPage);
+    req.flush(mockPageWire);
   });
 
   it('omits empty filters from the query', () => {
@@ -103,17 +142,38 @@ describe('AuditLogService', () => {
     const req = httpMock.expectOne((r) => r.url === baseUrl);
     expect(req.request.params.has('action')).toBeFalse();
     expect(req.request.params.has('search')).toBeFalse();
-    req.flush(mockPage);
+    req.flush(mockPageWire);
   });
 
   it('fetches a single record detail', () => {
-    service
-      .getAuditDetail('a-1')
-      .subscribe((res) => expect(res).toEqual(mockDetail));
+    let detail: IAuditLogDetail | undefined;
+    service.getAuditDetail('a-1').subscribe((res) => (detail = res));
 
     const req = httpMock.expectOne(`${baseUrl}/a-1`);
     expect(req.request.method).toBe('GET');
-    req.flush(mockDetail);
+    req.flush(mockDetailWire);
+
+    expect(detail?.traceId).toBe('trace-123');
+    expect(detail?.actorEmployeeNo).toBe('EMP-007');
+    // NO WIRE SOURCE: the detail DTO carries no summary, so the mapper must not
+    // manufacture one. A caller that needs it merges in the list row.
+    expect(detail?.summary).toBeUndefined();
+  });
+
+  it('substitutes empty strings for the nullable actor fields', () => {
+    let detail: IAuditLogDetail | undefined;
+    service.getAuditDetail('a-2').subscribe((res) => (detail = res));
+
+    // A system-generated event has no actor at all. `actorName` was declared a
+    // non-null `string`, and the list template calls `initials(actorName)`.
+    httpMock
+      .expectOne(`${baseUrl}/a-2`)
+      .flush({ id: 'a-2', actorName: null, actorEmail: null, resourceType: null });
+
+    expect(detail?.actorName).toBe('');
+    expect(detail?.actorEmail).toBe('');
+    expect(detail?.resourceType).toBe('');
+    expect(detail?.actorUserId).toBeNull();
   });
 
   it('exports with the chosen format and current filters as a blob', () => {
@@ -160,7 +220,7 @@ describe('AuditLogService', () => {
       'Employee',
       'LeaveRequest',
     ]);
-    req.flush(mockPage);
+    req.flush(mockPageWire);
   });
 
   it('omits empty multi-select arrays from the query (FR-2)', () => {
@@ -171,7 +231,7 @@ describe('AuditLogService', () => {
     const req = httpMock.expectOne((r) => r.url === baseUrl);
     expect(req.request.params.has('actions')).toBeFalse();
     expect(req.request.params.has('resourceTypes')).toBeFalse();
-    req.flush(mockPage);
+    req.flush(mockPageWire);
   });
 
   it('searches actors via the dedicated endpoint and maps the shape (FR-2)', () => {
@@ -187,6 +247,16 @@ describe('AuditLogService', () => {
     expect(req.request.params.get('search')).toBe('jan');
     expect(req.request.withCredentials).toBeTrue();
     req.flush([{ userId: 'u-7', name: 'Jane Doe', email: 'jane@acme.com' }]);
+  });
+
+  it('defaults a nameless actor rather than rendering undefined (FR-2)', () => {
+    let opts: { id: string; displayName: string; email: string }[] | undefined;
+    service.searchActors('x').subscribe((o) => (opts = o));
+
+    httpMock.expectOne((r) => r.url === `${baseUrl}/actors`).flush([{ userId: 'u-8' }]);
+
+    // RENAMES asserted: id <- userId, displayName <- name.
+    expect(opts).toEqual([{ id: 'u-8', displayName: '', email: '' }]);
   });
 
   it('omits a blank actor search term', () => {

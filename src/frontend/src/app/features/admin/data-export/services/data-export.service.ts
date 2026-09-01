@@ -1,11 +1,16 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { environment } from '../../../../../environments/environment';
 import {
   IExportRecord,
   IInitiateExportRequest,
   IInitiateExportResponse,
+  ExportRequestWire,
+  ExportInitiatedWire,
+  mapExportRecord,
+  mapExportInitiated,
 } from '../models/data-export.models';
 
 /**
@@ -60,25 +65,23 @@ export class DataExportService {
     request: IInitiateExportRequest,
     tenantId?: string
   ): Observable<IInitiateExportResponse> {
-    return this.http.post<IInitiateExportResponse>(
-      this.baseFor(tenantId),
-      request,
-      { withCredentials: true }
-    );
+    return this.http
+      .post<ExportInitiatedWire>(this.baseFor(tenantId), request, { withCredentials: true })
+      .pipe(map(mapExportInitiated));
   }
 
   /** Recent exports for the tenant, reverse-chronological (§8 history list). */
   getHistory(tenantId?: string): Observable<IExportRecord[]> {
-    return this.http.get<IExportRecord[]>(this.baseFor(tenantId), {
-      withCredentials: true,
-    });
+    return this.http
+      .get<ExportRequestWire[]>(this.baseFor(tenantId), { withCredentials: true })
+      .pipe(map((rows) => (rows ?? []).map(mapExportRecord)));
   }
 
   /** Current status of a single export (drives the poll loop + progress, FR-9). */
   getStatus(id: string, tenantId?: string): Observable<IExportRecord> {
-    return this.http.get<IExportRecord>(`${this.baseFor(tenantId)}/${id}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<ExportRequestWire>(`${this.baseFor(tenantId)}/${id}`, { withCredentials: true })
+      .pipe(map(mapExportRecord));
   }
 
   /**

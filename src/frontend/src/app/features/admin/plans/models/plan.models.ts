@@ -10,6 +10,8 @@
  * this with a per-field "Unlimited" toggle that nulls the numeric value.
  */
 
+import type { Schema } from '@core/api';
+
 /** Currency codes supported by the pricing fields (extensible; free-text on BE). */
 export type Currency = 'USD' | 'EUR' | 'GBP' | 'AUD' | 'INR' | 'LKR';
 
@@ -220,4 +222,115 @@ export function emptyFeatureFlags(): IPlanFeatureFlags {
 /** Display a nullable limit as a number or the "Unlimited" sentinel. */
 export function limitDisplay(value: number | null): string {
   return value === null || value === undefined ? 'Unlimited' : `${value}`;
+}
+
+// ─── Wire contract → view-model mappers (D1 admin slice 1) ────────────────────
+//
+// `http.get<IPlanDetail>(…)` was an unchecked cast: TypeScript accepted whatever the
+// server sent and called it an `IPlanDetail`. The reads below consume the GENERATED
+// contract types instead, so a backend DTO rename is a compile error here rather than
+// a silent `undefined` in the plan editor.
+//
+// Three drifts this surfaced (reported, NOT silently papered over):
+//   • POST /system/plans returns `CreatePlanResultDto` = { id, code } — NOT a full
+//     plan. `create()` claimed `IPlanDetail`; every field but those two was undefined.
+//   • PUT  /system/plans/{id} returns a bare `ApiResponse` with no `data` at all.
+//     `update()` claimed `IPlanDetail`; the whole object was undefined.
+//   • The three per-tenant override routes this service calls do not exist on the API
+//     (see the service docstring) — the wire types below describe the DTOs the real
+//     `/system/plans/overrides` routes use, which is the closest honest reading.
+
+export type PlanListItemWire = Schema<'SubscriptionPlansPlanListItemDto'>;
+export type PlanDetailWire = Schema<'SubscriptionPlansPlanDetailDto'>;
+export type PlanFeatureFlagsWire = Schema<'SubscriptionPlansPlanFeatureFlagsDto'>;
+export type PlanCreateResultWire = Schema<'SubscriptionPlansCreatePlanResultDto'>;
+export type PlanLimitOverrideWire = Schema<'SubscriptionPlansPlanLimitOverrideDto'>;
+
+/**
+ * What `POST /system/plans` ACTUALLY returns. The plan editor discards the response
+ * and navigates back to the list, so nothing was visibly broken — but the declared
+ * `IPlanDetail` described 20 fields the endpoint has never sent.
+ */
+export interface IPlanCreateResult {
+  id: string;
+  code: string;
+}
+
+/** Every flag is optional on the wire (Swashbuckle emits no `required`); absent = off. */
+export function mapPlanFeatureFlags(
+  w: PlanFeatureFlagsWire | undefined,
+): IPlanFeatureFlags {
+  return {
+    sso: w?.sso ?? false,
+    customDomain: w?.customDomain ?? false,
+    whiteLabel: w?.whiteLabel ?? false,
+    scim: w?.scim ?? false,
+    sandbox: w?.sandbox ?? false,
+  };
+}
+
+/** Field names match the wire 1:1; the mapper only supplies defaults for optionals. */
+export function mapPlanSummary(w: PlanListItemWire): IPlanSummary {
+  return {
+    id: w.id ?? '',
+    code: w.code ?? '',
+    name: w.name ?? '',
+    priceMonthly: w.priceMonthly ?? null,
+    priceYearly: w.priceYearly ?? null,
+    currency: w.currency ?? '',
+    isPublic: w.isPublic ?? false,
+    isActive: w.isActive ?? false,
+    activeTenantCount: w.activeTenantCount ?? 0,
+  };
+}
+
+/**
+ * Field names match the wire 1:1. Note `auditLogRetentionDays` is a non-nullable
+ * `int` on the wire but nullable here (BR-3 "Unlimited"); `?? null` preserves the
+ * FE's Unlimited sentinel without inventing a number the server did not send.
+ */
+export function mapPlanDetail(w: PlanDetailWire): IPlanDetail {
+  return {
+    id: w.id ?? '',
+    code: w.code ?? '',
+    name: w.name ?? '',
+    description: w.description ?? null,
+    isPublic: w.isPublic ?? false,
+    isActive: w.isActive ?? false,
+    priceMonthly: w.priceMonthly ?? null,
+    priceYearly: w.priceYearly ?? null,
+    currency: w.currency ?? '',
+    trialDays: w.trialDays ?? 0,
+    maxEmployees: w.maxEmployees ?? null,
+    maxStorageGb: w.maxStorageGb ?? null,
+    maxApiCallsPerMonth: w.maxApiCallsPerMonth ?? null,
+    maxEmailSendsPerMonth: w.maxEmailSendsPerMonth ?? null,
+    maxCustomRoles: w.maxCustomRoles ?? null,
+    maxCustomFieldsPerEntity: w.maxCustomFieldsPerEntity ?? null,
+    maxWorkflows: w.maxWorkflows ?? null,
+    enabledModules: w.enabledModules ?? [],
+    featureFlags: mapPlanFeatureFlags(w.featureFlags),
+    auditLogRetentionDays: w.auditLogRetentionDays ?? null,
+    slaTier: w.slaTier ?? '',
+  };
+}
+
+export function mapPlanCreateResult(w: PlanCreateResultWire): IPlanCreateResult {
+  return { id: w.id ?? '', code: w.code ?? '' };
+}
+
+/**
+ * `limitKey` / `value` / `expiresAt` all exist on the wire DTO 1:1. The wire also
+ * carries `id`, `tenantId`, `createdAt` and `updatedAt`, which this view-model does
+ * not need — but `id` is what the real DELETE route keys on (see the service's
+ * `deleteOverride` note).
+ */
+export function mapPlanLimitOverride(
+  w: PlanLimitOverrideWire,
+): IPlanLimitOverride {
+  return {
+    limitKey: w.limitKey ?? '',
+    value: w.value ?? null,
+    expiresAt: w.expiresAt ?? null,
+  };
 }
