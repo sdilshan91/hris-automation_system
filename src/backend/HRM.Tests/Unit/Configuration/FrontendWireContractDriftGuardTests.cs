@@ -7,7 +7,7 @@
 // self-assessment throw and the recommendation workspace's permanently-empty table all happened.
 //
 // The fix for an EXISTING one is to consume the generated contract type (`Schema<'…Dto'>`) with an explicit
-// mapper. There are 218 left, and migrating them is the long tail of D1. This guard is the other half: it
+// mapper. There are 167 left, and migrating them is the long tail of D1. This guard is the other half: it
 // stops the count going UP while that work proceeds. Without it D1 never finishes — measured across two
 // commits, 99 call sites were migrated while the hand-written interface count moved by three, because new
 // ones kept arriving.
@@ -48,7 +48,7 @@ public sealed class FrontendWireContractDriftGuardTests
         RegexOptions.Compiled);
 
     /// <summary>
-    /// The unmigrated call sites, per file. 267 at D1's start; 218 after the admin slice took its 49 to ZERO.
+    /// The unmigrated call sites, per file. 267 at D1's start; 218 after admin (49 -> 0); 167 after payroll (55 -> 4). Payroll's residual four are NOT unmigrated work — each targets an endpoint that does not exist (BUG-315, BUG-316) or returns no body to map (ISSUE-404), and each is documented at the call site.
     ///
     /// <para><b>This list may only ever SHRINK.</b> A new file appearing here means a fresh unchecked wire
     /// assertion was written; a count going up means one was added to a file that already had them. Either
@@ -82,18 +82,9 @@ public sealed class FrontendWireContractDriftGuardTests
         ["features/onboarding/services/onboarding-asset.service.ts"] = 3,
         ["features/onboarding/services/onboarding-checklist.service.ts"] = 7,
         ["features/onboarding/services/onboarding-template.service.ts"] = 6,
-        ["features/payroll/services/adjustment.service.ts"] = 4,
-        ["features/payroll/services/audit.service.ts"] = 3,
-        ["features/payroll/services/employee-salary.service.ts"] = 5,
-        ["features/payroll/services/my-payslip.service.ts"] = 2,
-        ["features/payroll/services/payroll-approval.service.ts"] = 8,
-        ["features/payroll/services/payroll-report.service.ts"] = 5,
-        ["features/payroll/services/payroll-run.service.ts"] = 7,
-        ["features/payroll/services/payroll.service.ts"] = 7,
-        ["features/payroll/services/payslip-email.service.ts"] = 4,
-        ["features/payroll/services/payslip.service.ts"] = 4,
-        ["features/payroll/services/reconciliation.service.ts"] = 2,
-        ["features/payroll/services/statutory.service.ts"] = 4,
+        ["features/payroll/services/adjustment.service.ts"] = 2,
+        ["features/payroll/services/payroll-run.service.ts"] = 1,
+        ["features/payroll/services/payroll.service.ts"] = 1,
         ["features/performance/services/performance-goal.service.ts"] = 3,
         ["features/recruitment/services/careers.service.ts"] = 3,
         ["features/recruitment/services/dashboard.service.ts"] = 1,

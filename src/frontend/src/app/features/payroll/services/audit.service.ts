@@ -5,11 +5,19 @@ import { map } from 'rxjs/operators';
 
 import { environment } from '../../../../environments/environment';
 import {
+  AuditEntryWire,
   AuditExportFormat,
+  AuditPageWire,
   IAuditEntry,
   IAuditTrailFilters,
   IPage,
   IPayrollHistoryRun,
+  IWirePage,
+  PayrollHistoryPageWire,
+  PayrollHistoryRunWire,
+  mapAuditEntry,
+  mapAuditPage,
+  mapPayrollHistoryPage,
 } from '../models/audit.models';
 
 /**
@@ -65,11 +73,12 @@ export class AuditService {
       params = params.set('status', status);
     }
     return this.http
-      .get<IPage<IPayrollHistoryRun> | { data: IPage<IPayrollHistoryRun> }>(
-        this.historyUrl,
-        { params, withCredentials: true },
-      )
-      .pipe(map((res) => this.toPage(res)));
+      .get<
+        | PayrollHistoryPageWire
+        | { data: PayrollHistoryPageWire }
+        | PayrollHistoryRunWire[]
+      >(this.historyUrl, { params, withCredentials: true })
+      .pipe(map((res) => mapPayrollHistoryPage(this.toWirePage(res))));
   }
 
   /**
@@ -80,11 +89,11 @@ export class AuditService {
    */
   getAuditTrail(filters: IAuditTrailFilters): Observable<IPage<IAuditEntry>> {
     return this.http
-      .get<IPage<IAuditEntry> | { data: IPage<IAuditEntry> }>(this.auditUrl, {
-        params: this.filterParams(filters),
-        withCredentials: true,
-      })
-      .pipe(map((res) => this.toPage(res)));
+      .get<AuditPageWire | { data: AuditPageWire } | AuditEntryWire[]>(
+        this.auditUrl,
+        { params: this.filterParams(filters), withCredentials: true },
+      )
+      .pipe(map((res) => mapAuditPage(this.toWirePage(res))));
   }
 
   /**
@@ -94,11 +103,11 @@ export class AuditService {
    */
   getRunAuditTrail(runId: string): Observable<IAuditEntry[]> {
     return this.http
-      .get<IAuditEntry[] | { data: IAuditEntry[] }>(
+      .get<AuditEntryWire[] | { data: AuditEntryWire[] }>(
         `${this.runsUrl}/${runId}/audit-timeline`,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapAuditEntry)));
   }
 
   /**
@@ -155,17 +164,19 @@ export class AuditService {
   }
 
   /**
-   * Normalize a paginated response to an `IPage<T>`: accept the bare page, a
+   * Normalize a paginated response to a WIRE page: accept the bare page, a
    * `{ data }`-wrapped page, or a bare array (legacy) — and default to an empty
-   * page so the table renders an empty state instead of throwing.
+   * page so the table renders an empty state instead of throwing. The item
+   * mapper (`mapAuditPage` / `mapPayrollHistoryPage`) runs on the result, so this
+   * stays deliberately shape-only.
    */
-  private toPage<T>(
-    res: IPage<T> | { data: IPage<T> } | T[] | null | undefined,
-  ): IPage<T> {
+  private toWirePage<W>(
+    res: IWirePage<W> | { data: IWirePage<W> } | W[] | null | undefined,
+  ): IWirePage<W> {
     if (Array.isArray(res)) {
       return { items: res, totalCount: res.length, page: 1, pageSize: res.length };
     }
-    const page = res && 'data' in res ? res.data : (res as IPage<T> | null);
+    const page = res && 'data' in res ? res.data : (res as IWirePage<W> | null);
     if (page && Array.isArray(page.items)) {
       return page;
     }

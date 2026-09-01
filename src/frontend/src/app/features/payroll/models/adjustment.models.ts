@@ -7,13 +7,14 @@
  * was written; the service layer is intentionally thin so a route mismatch is a
  * one-file fix in `adjustment.service.ts`). `apiBaseUrl` already includes
  * `/api/v1`, so the resource is `${apiBaseUrl}/payroll/adjustments`:
- *   GET    /payroll/adjustments?status=&type=&period=&employeeId=  - list/filter
+ * VERIFIED against contracts/openapi/hrm-v1.json (the routes are no longer assumed):
+ *   GET    /payroll/adjustments?status=&adjustmentType=&payMonth=&payYear=&employeeId=&page=&pageSize=
  *   POST   /payroll/adjustments                                    - create (FR-1)
  *   POST   /payroll/adjustments/:id/cancel                         - cancel pending (FR-6)
  *   POST   /payroll/adjustments/bulk           (multipart CSV)     - bulk upload (FR-2)
  *   POST   /payroll/adjustments/:id/document   (multipart file)    - supporting doc (AC-3)
  *   GET    /payroll/adjustments/:id/document   (blob)              - download doc
- *   GET    /payroll/adjustments/template       (blob CSV)          - bulk template
+ *   (there is NO /payroll/adjustments/template route — the CSV template is built client-side)
  *
  * `period` filter is the wire form `YYYY-MM` (e.g. `2026-06`) so a single string
  * carries month+year; the service derives it from the period selector.
@@ -32,6 +33,8 @@
  * PascalCase string unions matching the C# member names (global
  * JsonStringEnumConverter); they arrive as STRINGS, never integers.
  */
+
+import type { Schema } from '@core/api';
 
 // ─── Enums (§7, FR-1) ──────────────────────────────────────────
 
@@ -264,4 +267,115 @@ export function recurringPeriods(
     }
   }
   return out;
+}
+
+// ─── Generated-contract wire types + mappers (GAP-S1) ──────────
+//
+// `http.get<IAdjustment>(…)` was an unchecked assertion, not a check: TypeScript believed the
+// hand-written interface while the server sent something else. These aliases bind the view-models
+// above to the GENERATED contract, so a backend rename becomes a compile error here instead of an
+// `undefined` cell in the adjustments table.
+//
+// RENAMES the mapper absorbs (view-model field ← wire field) — NEVER rename the view-model to fit:
+//  - `hasDocument` ← `hasSupportingDocument`. The wire has always said `hasSupportingDocument`, so
+//    `hasDocument` was permanently `undefined` → falsy → the §8 paper-clip / download control never
+//    rendered even for adjustments that DO have a document (AC-3).
+//  - `createAdjustment` responds with `PayrollCreatePayrollAdjustmentResult`, a WRAPPER whose
+//    `adjustment` holds the record. The FE read `created.id` off the wrapper (always `undefined`),
+//    so the follow-up document upload POSTed to `/adjustments/undefined/document`.
+//
+// DEFAULTING POLICY (payroll is money — a default is a decision):
+//  - `amount` defaults to 0 only because it is non-nullable in the schema (`number(double)`, not
+//    `nullable`); every persisted adjustment has a computed amount and the UI draws no distinction
+//    between "zero" and "no value" here. The `?` on the generated type is the Swashbuckle artifact
+//    described in `core/api/index.ts`, not a real absence.
+//  - `isTaxable` / `isRecurring` / `hasDocument` default to FALSE — the least-claiming value. An
+//    absent flag must not assert that tax was withheld, that a series repeats, or that evidence
+//    exists.
+//  - `adjustmentType` and `status` are `string | null` on the wire (Swashbuckle emits the
+//    JsonStringEnumConverter members as a bare `string`). An absent/unknown value is passed through
+//    UNCHANGED rather than coerced: defaulting the TYPE would flip money between an earning and a
+//    deduction, and defaulting the STATUS would claim an adjustment is Applied (money moved) or
+//    Cancelled (money did not). An unrecognised value misses the badge/label `Record` lookups and
+//    renders blank — visibly wrong, which is far safer than confidently wrong.
+//  - `recurrenceEndMonth` / `recurrenceEndYear` default to NULL, not 0: the schema marks them
+//    `nullable` and the UI renders "not recurring" differently from a month number.
+//
+// FE union vs contract enum: `AdjustmentType` (Bonus | Deduction | Reimbursement | Correction) and
+// `AdjustmentStatus` (Pending | Applied | Cancelled) match `HRM.Domain/Enums/AdjustmentType.cs` and
+// `AdjustmentStatus.cs` member-for-member. No FE-only members.
+
+export type AdjustmentWire = Schema<'PayrollPayrollAdjustmentDto'>;
+export type AdjustmentPageWire = Schema<'PayrollPayrollAdjustmentPageDto'>;
+export type CreateAdjustmentResultWire =
+  Schema<'PayrollCreatePayrollAdjustmentResult'>;
+export type BulkAdjustmentResultWire =
+  Schema<'PayrollBulkAdjustmentResultDto'>;
+export type BulkAdjustmentRowResultWire =
+  Schema<'PayrollBulkAdjustmentRowResult'>;
+
+export function mapAdjustment(w: AdjustmentWire): IAdjustment {
+  return {
+    id: w.id ?? '',
+    employeeId: w.employeeId ?? '',
+    employeeName: w.employeeName ?? '',
+    employeeNo: w.employeeNo ?? '',
+    // Passed through, NOT defaulted: coercing an unknown type would flip the sign of money.
+    adjustmentType: (w.adjustmentType ?? '') as AdjustmentType,
+    amount: w.amount ?? 0,
+    description: w.description ?? '',
+    applicablePayMonth: w.applicablePayMonth ?? 0,
+    applicablePayYear: w.applicablePayYear ?? 0,
+    isTaxable: w.isTaxable ?? false,
+    isRecurring: w.isRecurring ?? false,
+    recurrenceEndMonth: w.recurrenceEndMonth ?? null,
+    recurrenceEndYear: w.recurrenceEndYear ?? null,
+    // Passed through, NOT defaulted: coercing would claim money moved (Applied) or did not (Cancelled).
+    status: (w.status ?? '') as AdjustmentStatus,
+    // RENAME: the wire field is `hasSupportingDocument` (AC-3).
+    hasDocument: w.hasSupportingDocument ?? false,
+    createdAt: w.createdAt ?? '',
+  };
+}
+
+// The list endpoint responds with a `PayrollAdjustmentPageDto` page; the service reads `items` and
+// maps each row with `mapAdjustment`. `page` / `pageSize` / `totalCount` have no view-model home —
+// the §8 table is not paginated, so it silently shows only the server's first page (flagged).
+
+/**
+ * Create responds with a WRAPPER (`{ adjustment, deferredToPayMonth, deferredToPayYear,
+ * generatedOccurrences, negativeNetWarning }`). The component contract is `Observable<IAdjustment>`,
+ * so the mapper unwraps `adjustment`. The four sibling fields have no view-model home and are
+ * dropped here — flagged, not silently nulled.
+ */
+export function mapCreateAdjustmentResult(
+  w: CreateAdjustmentResultWire,
+): IAdjustment {
+  return mapAdjustment(w.adjustment ?? {});
+}
+
+export function mapBulkAdjustmentRowResult(
+  w: BulkAdjustmentRowResultWire,
+): IBulkAdjustmentRowResult {
+  return {
+    rowNumber: w.rowNumber ?? 0,
+    employeeNo: w.employeeNo ?? '',
+    // Fail CLOSED: an absent outcome flag must not report a row as imported.
+    success: w.success ?? false,
+    adjustmentId: w.adjustmentId ?? null,
+    error: w.error ?? null,
+    errorCode: w.errorCode ?? null,
+  };
+}
+
+/** Counts are server-computed integers over the uploaded CSV, so `?? 0` fills a generator artifact. */
+export function mapBulkAdjustmentResult(
+  w: BulkAdjustmentResultWire,
+): IBulkAdjustmentResult {
+  return {
+    totalRows: w.totalRows ?? 0,
+    succeededCount: w.succeededCount ?? 0,
+    failedCount: w.failedCount ?? 0,
+    results: (w.results ?? []).map(mapBulkAdjustmentRowResult),
+  };
 }

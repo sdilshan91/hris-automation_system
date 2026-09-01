@@ -9,6 +9,12 @@ import {
   IPayrollRunProgress,
   IPayrollRunValidation,
   IPayrollRunValidationRequest,
+  PayrollRunAcceptedWire,
+  PayrollRunProgressWire,
+  PayrollRunWire,
+  mapPayrollRun,
+  mapPayrollRunAccepted,
+  mapPayrollRunProgress,
 } from '../models/payroll-run.models';
 
 /**
@@ -41,23 +47,31 @@ export class PayrollRunService {
    */
   listRuns(): Observable<IPayrollRun[]> {
     return this.http
-      .get<IPayrollRun[] | { data: IPayrollRun[] }>(this.runsUrl, {
+      .get<PayrollRunWire[] | { data: PayrollRunWire[] }>(this.runsUrl, {
         withCredentials: true,
       })
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapPayrollRun)));
   }
 
   /** A single payroll run (detail view + completion summary). */
   getRun(id: string): Observable<IPayrollRun> {
-    return this.http.get<IPayrollRun>(`${this.runsUrl}/${id}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<PayrollRunWire>(`${this.runsUrl}/${id}`, { withCredentials: true })
+      .pipe(map(mapPayrollRun));
   }
 
   /**
    * Pre-run validation summary for a period (§8: "247 employees ready, 3 missing
    * salary structure"). Drives the New Run modal — `canRun` gates Submit and any
    * `blockers` (e.g. already finalized, AC-4) are shown.
+   *
+   * ⚠️ NOT MIGRATED — THIS ENDPOINT DOES NOT EXIST. `POST /api/v1/payroll/runs/validate`
+   * is absent from both `contracts/openapi/hrm-v1.json` and `PayrollRunsController`, and
+   * there is no `IPayrollRunValidation` counterpart DTO to bind to. The call is a live
+   * 404, which sets `validationError` in the New Run modal and leaves `canSubmit()`
+   * permanently false — i.e. a payroll run cannot be started from the UI at all.
+   * Deliberately left untouched (building the endpoint is a backend change); flagged
+   * OUT-OF-LANE rather than papered over with a fabricated wire type.
    */
   validateRun(
     request: IPayrollRunValidationRequest,
@@ -78,10 +92,12 @@ export class PayrollRunService {
     request: IInitiatePayrollRunRequest,
     idempotencyKey: string,
   ): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(this.runsUrl, request, {
-      withCredentials: true,
-      headers: { 'Idempotency-Key': idempotencyKey },
-    });
+    return this.http
+      .post<PayrollRunAcceptedWire>(this.runsUrl, request, {
+        withCredentials: true,
+        headers: { 'Idempotency-Key': idempotencyKey },
+      })
+      .pipe(map(mapPayrollRunAccepted));
   }
 
   /**
@@ -91,11 +107,11 @@ export class PayrollRunService {
    * run_in_progress, run_already_cancelled) which the caller maps to a message.
    */
   cancelRun(runId: string): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(
-      `${this.runsUrl}/${runId}/cancel`,
-      null,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PayrollRunAcceptedWire>(`${this.runsUrl}/${runId}/cancel`, null, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPayrollRunAccepted));
   }
 
   /**
@@ -106,19 +122,20 @@ export class PayrollRunService {
    * relied upon — the detail view refetches the run to pick up the new state.
    */
   rerunRun(runId: string): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(
-      `${this.runsUrl}/${runId}/rerun`,
-      null,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<PayrollRunAcceptedWire>(`${this.runsUrl}/${runId}/rerun`, null, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPayrollRunAccepted));
   }
 
   /** A single point-in-time progress snapshot (FR-6). */
   getProgress(id: string): Observable<IPayrollRunProgress> {
-    return this.http.get<IPayrollRunProgress>(
-      `${this.runsUrl}/${id}/progress`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<PayrollRunProgressWire>(`${this.runsUrl}/${id}/progress`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPayrollRunProgress));
   }
 
   /**

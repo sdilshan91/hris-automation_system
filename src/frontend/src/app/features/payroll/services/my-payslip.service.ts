@@ -5,8 +5,12 @@ import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
   IMyPayslipDetail,
-  IMyPayslipListItem,
   IMyPayslipPage,
+  MyPayslipDetailWire,
+  MyPayslipListItemWire,
+  MyPayslipListWire,
+  mapMyPayslipDetail,
+  mapMyPayslipListItem,
 } from '../models/my-payslip.models';
 
 /**
@@ -55,7 +59,7 @@ export class MyPayslipService {
       params = params.set('month', String(month));
     }
     return this.http
-      .get<IMyPayslipPage | IMyPayslipListItem[]>(this.baseUrl, {
+      .get<MyPayslipListWire | MyPayslipListItemWire[]>(this.baseUrl, {
         params,
         withCredentials: true,
       })
@@ -67,9 +71,11 @@ export class MyPayslipService {
    * A foreign payslip id is invisible to the tenant/employee filter ⇒ 403/404 (AC-4).
    */
   getMyPayslip(payslipId: string): Observable<IMyPayslipDetail> {
-    return this.http.get<IMyPayslipDetail>(`${this.baseUrl}/${payslipId}`, {
-      withCredentials: true,
-    });
+    return this.http
+      .get<MyPayslipDetailWire>(`${this.baseUrl}/${payslipId}`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapMyPayslipDetail));
   }
 
   /**
@@ -88,17 +94,19 @@ export class MyPayslipService {
 
   /** Normalize a bare array or partial page into a full `IMyPayslipPage`. */
   private toPage(
-    res: IMyPayslipPage | IMyPayslipListItem[] | null | undefined,
+    res: MyPayslipListWire | MyPayslipListItemWire[] | null | undefined,
     page: number,
     pageSize: number,
   ): IMyPayslipPage {
     if (Array.isArray(res)) {
-      return { items: res, totalCount: res.length, page, pageSize };
+      const items = res.map(mapMyPayslipListItem);
+      return { items, totalCount: items.length, page, pageSize };
     }
     if (res && Array.isArray(res.items)) {
+      const items = res.items.map(mapMyPayslipListItem);
       return {
-        items: res.items,
-        totalCount: res.totalCount ?? res.items.length,
+        items,
+        totalCount: res.totalCount ?? items.length,
         page: res.page ?? page,
         pageSize: res.pageSize ?? pageSize,
       };

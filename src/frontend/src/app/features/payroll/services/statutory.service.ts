@@ -8,6 +8,15 @@ import {
   IStatutoryRuleRequest,
   ITestCalculationRequest,
   ITestCalculationResult,
+  StatutoryCalculationResultWire,
+  StatutoryRuleListItemWire,
+  StatutoryRuleWire,
+  mapStatutoryRule,
+  mapStatutoryRuleListItem,
+  mapTestCalculationResult,
+  toCreateStatutoryRuleWire,
+  toTestCalculationRequestWire,
+  toUpdateStatutoryRuleWire,
 } from '../models/statutory.models';
 
 /**
@@ -40,10 +49,11 @@ export class StatutoryService {
       ? `${this.rulesUrl}?fiscalYear=${encodeURIComponent(fiscalYear)}`
       : this.rulesUrl;
     return this.http
-      .get<IStatutoryRule[] | { data: IStatutoryRule[] }>(url, {
-        withCredentials: true,
-      })
-      .pipe(map((res) => this.toArray(res)));
+      .get<
+        | StatutoryRuleListItemWire[]
+        | { items?: StatutoryRuleListItemWire[]; data?: StatutoryRuleListItemWire[] }
+      >(url, { withCredentials: true })
+      .pipe(map((res) => this.toArray(res).map(mapStatutoryRuleListItem)));
   }
 
   /**
@@ -60,9 +70,13 @@ export class StatutoryService {
 
   /** Create a statutory rule (FR-1/FR-2). */
   createRule(request: IStatutoryRuleRequest): Observable<IStatutoryRule> {
-    return this.http.post<IStatutoryRule>(this.rulesUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<StatutoryRuleWire>(
+        this.rulesUrl,
+        toCreateStatutoryRuleWire(request),
+        { withCredentials: true },
+      )
+      .pipe(map(mapStatutoryRule));
   }
 
   /**
@@ -73,9 +87,13 @@ export class StatutoryService {
     id: string,
     request: IStatutoryRuleRequest,
   ): Observable<IStatutoryRule> {
-    return this.http.put<IStatutoryRule>(`${this.rulesUrl}/${id}`, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .put<StatutoryRuleWire>(
+        `${this.rulesUrl}/${id}`,
+        toUpdateStatutoryRuleWire(request),
+        { withCredentials: true },
+      )
+      .pipe(map(mapStatutoryRule));
   }
 
   /** Delete a statutory rule. */
@@ -94,11 +112,17 @@ export class StatutoryService {
   testCalculation(
     request: ITestCalculationRequest,
   ): Observable<ITestCalculationResult> {
-    return this.http.post<ITestCalculationResult>(
-      `${this.rulesUrl}/test-calculation`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<StatutoryCalculationResultWire>(
+        `${this.rulesUrl}/test-calculation`,
+        toTestCalculationRequestWire(request),
+        { withCredentials: true },
+      )
+      .pipe(
+        // `monthlyGross` and `netPay` have no wire source; the mapper supplies them from the request
+        // the caller just sent rather than printing 0. See mapTestCalculationResult's contract note.
+        map((res) => mapTestCalculationResult(res, request.monthlyGross)),
+      );
   }
 
   /**

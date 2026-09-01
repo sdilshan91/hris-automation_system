@@ -4,10 +4,17 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
 import {
+  AdjustmentPageWire,
+  AdjustmentWire,
+  BulkAdjustmentResultWire,
+  CreateAdjustmentResultWire,
   IAdjustment,
   IAdjustmentFilters,
   IAdjustmentRequest,
   IBulkAdjustmentResult,
+  mapAdjustment,
+  mapBulkAdjustmentResult,
+  mapCreateAdjustmentResult,
 } from '../models/adjustment.models';
 
 /**
@@ -59,24 +66,42 @@ export class AdjustmentService {
     }
     return this.http
       .get<
-        | IAdjustment[]
-        | { items: IAdjustment[] }
-        | { data: IAdjustment[] }
+        | AdjustmentWire[]
+        | AdjustmentPageWire
+        | { data: AdjustmentWire[] }
       >(this.baseUrl, {
         params,
         withCredentials: true,
       })
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapAdjustment)));
   }
 
-  /** Create a single adjustment (FR-1). The supporting document, if any, is uploaded after via `uploadDocument`. */
+  /**
+   * Create a single adjustment (FR-1). The supporting document, if any, is uploaded after via
+   * `uploadDocument`.
+   *
+   * WIRE: the response is `PayrollCreatePayrollAdjustmentResult` — a WRAPPER, not the record. This
+   * was typed `post<IAdjustment>` (an unchecked assertion), so `created.id` was always `undefined`
+   * and the follow-up document upload POSTed to `/adjustments/undefined/document`. `mapCreate…`
+   * unwraps `adjustment`, so the public signature and every caller are unchanged.
+   */
   createAdjustment(request: IAdjustmentRequest): Observable<IAdjustment> {
-    return this.http.post<IAdjustment>(this.baseUrl, request, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<CreateAdjustmentResultWire>(this.baseUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapCreateAdjustmentResult));
   }
 
-  /** Cancel a Pending adjustment (FR-6). The backend rejects Applied/Cancelled records. */
+  /**
+   * Cancel a Pending adjustment (FR-6). The backend rejects Applied/Cancelled records.
+   *
+   * CONTRACT MISMATCH — deliberately NOT migrated. `POST /payroll/adjustments/{id}/cancel` responds
+   * with a bare `ApiResponse` (success/message only, NO `data`), so there is no adjustment payload to
+   * map. Typing this honestly would change the public signature, and the caller
+   * (`payroll-adjustments.component.ts` `cancel()`) reads `updated.id` to swap the row in place.
+   * Fixing that needs a component change, which is out of this task's lane — reported instead.
+   */
   cancelAdjustment(id: string): Observable<IAdjustment> {
     return this.http.post<IAdjustment>(
       `${this.baseUrl}/${id}/cancel`,
@@ -101,15 +126,22 @@ export class AdjustmentService {
     form.append('file', file, file.name);
     form.append('payMonth', String(payMonth));
     form.append('payYear', String(payYear));
-    return this.http.post<IBulkAdjustmentResult>(`${this.baseUrl}/bulk`, form, {
-      withCredentials: true,
-    });
+    return this.http
+      .post<BulkAdjustmentResultWire>(`${this.baseUrl}/bulk`, form, {
+        withCredentials: true,
+      })
+      .pipe(map(mapBulkAdjustmentResult));
   }
 
   /**
    * Upload a supporting document for an adjustment (AC-3, NFR-5). The file is
    * validated client-side (PDF/JPG/PNG, <=5MB) before this call; the backend
    * re-validates and stores it at `{tenantId}/payroll/adjustments/{id}/`.
+   *
+   * CONTRACT MISMATCH — deliberately NOT migrated. The endpoint responds with
+   * `ApiResponseOfString` (the stored document path), not the adjustment. There is no wire source
+   * for an `IAdjustment` here, and the caller (`adjustment-form.component.ts`) passes the result
+   * straight to `finish()` / `saved.emit()`. Fixing it needs a component change — reported instead.
    */
   uploadDocument(id: string, file: File): Observable<IAdjustment> {
     const form = new FormData();
@@ -153,12 +185,12 @@ export class AdjustmentService {
    * default to []. `items` is the real shape the List endpoint returns.
    */
   private toArray<T>(
-    res: T[] | { items: T[] } | { data: T[] } | null | undefined,
+    res: T[] | { items?: T[] | null } | { data: T[] } | null | undefined,
   ): T[] {
     if (Array.isArray(res)) {
       return res;
     }
-    if (res && Array.isArray((res as { items: T[] }).items)) {
+    if (res && Array.isArray((res as { items?: T[] }).items)) {
       return (res as { items: T[] }).items;
     }
     if (res && Array.isArray((res as { data: T[] }).data)) {

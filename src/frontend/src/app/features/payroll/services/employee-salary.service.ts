@@ -11,6 +11,15 @@ import {
   ISalaryRevision,
   IBulkAssignmentRequest,
   IBulkAssignmentResult,
+  BulkAssignResultWire,
+  CtcBreakdownWire,
+  EmployeeCompensationWire,
+  SalaryRevisionWire,
+  mapBulkAssignmentResult,
+  mapCtcBreakdown,
+  mapEmployeeCompensation,
+  mapSalaryAssignmentResult,
+  mapSalaryRevision,
 } from '../models/employee-salary.models';
 
 /**
@@ -38,28 +47,39 @@ export class EmployeeSalaryService {
    * Preview the CTC breakdown for an assignment BEFORE confirming (FR-3, AC-1).
    * The server computes each component from the structure's rules and the
    * declared CTC, applying any per-component overrides (AC-3), and returns the
-   * FR-6 balanced flag. Same request shape as `assign` so what HR previews is
-   * exactly what gets saved.
+   * FR-6 balanced flag.
+   *
+   * The full `ISalaryAssignmentRequest` is posted, but the contract's body here is the narrower
+   * `PayrollPreviewCtcRequest { salaryStructureId, annualCtc, overrides }` — `employeeId`,
+   * `effectiveFrom` and `reason` are simply ignored by model binding. Harmless, and sharing one request
+   * shape with `assign` is what keeps "what HR previews" identical to "what gets saved".
    */
   previewBreakdown(
     request: ISalaryAssignmentRequest,
   ): Observable<ICtcBreakdown> {
-    return this.http.post<ICtcBreakdown>(
-      `${this.assignmentsUrl}/preview`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<CtcBreakdownWire>(`${this.assignmentsUrl}/preview`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapCtcBreakdown));
   }
 
-  /** Assign a salary structure to one employee (FR-1, AC-1/AC-2/AC-3). */
+  /**
+   * Assign a salary structure to one employee (FR-1, AC-1/AC-2/AC-3).
+   *
+   * ⚠ The endpoint returns a bare `PayrollCtcBreakdownDto` — there is NO assignment-result DTO on the
+   * API. `mapSalaryAssignmentResult` therefore cannot populate `employeeId` / `effectiveFrom`; see the
+   * warning on that mapper. The signature is kept so the caller is unchanged (it ignores the result and
+   * re-fetches), but do not start binding to those two fields without a backend change.
+   */
   assign(
     request: ISalaryAssignmentRequest,
   ): Observable<ISalaryAssignmentResult> {
-    return this.http.post<ISalaryAssignmentResult>(
-      this.assignmentsUrl,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<CtcBreakdownWire>(this.assignmentsUrl, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapSalaryAssignmentResult));
   }
 
   /**
@@ -70,25 +90,31 @@ export class EmployeeSalaryService {
   bulkAssign(
     request: IBulkAssignmentRequest,
   ): Observable<IBulkAssignmentResult> {
-    return this.http.post<IBulkAssignmentResult>(
-      `${this.assignmentsUrl}/bulk`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<BulkAssignResultWire>(`${this.assignmentsUrl}/bulk`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapBulkAssignmentResult));
   }
 
   /**
    * The employee's CURRENT active compensation for the Compensation tab (§8).
-   * When no structure is assigned the server returns a payload with null
-   * structure/ctc so the UI can flag "Payroll Incomplete" (BR-5).
+   *
+   * The contract documents only 200 and 404 for this route, and every field of
+   * `PayrollEmployeeCompensationDto` is non-nullable — so "no structure assigned" is a 404, NOT the
+   * 200-with-nulls the old comment claimed. BR-5 ("Payroll Incomplete") is therefore driven by the
+   * caller's error branch. The nullable view-model and the mapper's `?? null` defaults stay as the
+   * defensive path: an absent amount reads as unknown, never as a salary of zero.
    */
   getCurrentCompensation(
     employeeId: string,
   ): Observable<IEmployeeCompensation> {
-    return this.http.get<IEmployeeCompensation>(
-      `${this.base}/employees/${employeeId}/compensation`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<EmployeeCompensationWire>(
+        `${this.base}/employees/${employeeId}/compensation`,
+        { withCredentials: true },
+      )
+      .pipe(map(mapEmployeeCompensation));
   }
 
   /**
@@ -98,19 +124,21 @@ export class EmployeeSalaryService {
    */
   getRevisionHistory(employeeId: string): Observable<ISalaryRevision[]> {
     return this.http
-      .get<ISalaryRevision[] | { data: ISalaryRevision[] }>(
+      .get<SalaryRevisionWire[] | { data: SalaryRevisionWire[] }>(
         `${this.base}/employees/${employeeId}/revision-history`,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapSalaryRevision)));
   }
 
   /** Accept either a bare array or a `{ data }` page; default to []. */
-  private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
+  private toArray<T>(
+    res: T[] | { data?: T[] | null } | null | undefined,
+  ): T[] {
     if (Array.isArray(res)) {
       return res;
     }
-    if (res && Array.isArray((res as { data: T[] }).data)) {
+    if (res && Array.isArray((res as { data?: T[] | null }).data)) {
       return (res as { data: T[] }).data;
     }
     return [];

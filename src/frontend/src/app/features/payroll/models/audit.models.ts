@@ -29,6 +29,8 @@
  * matching the C# audit_log column values; they arrive as STRINGS.
  */
 
+import type { Schema } from '@core/api';
+
 import { PayrollRunStatus } from './payroll-run.models';
 
 // ─── Page envelope (the BE returns paginated lists) ────────────
@@ -349,3 +351,109 @@ export function emptyAuditFilters(): IAuditTrailFilters {
 export type AuditExportFormat = 'csv' | 'xlsx' | 'pdf';
 
 /** Month dropdown options for the history year filter are derived from the data. */
+
+// ─── Wire contract → view-model mappers (D1 payroll slice) ───────────────────
+//
+// `http.get<IPage<IAuditEntry>>(…)` was an unchecked assertion, not a check: TypeScript believed the
+// hand-written interface and the server sent whatever it sent. These aliases bind the view-models above
+// to the GENERATED contract, so a backend rename becomes a compile error here rather than a blank cell
+// in the audit timeline.
+//
+// DEFAULTING POLICY (the audit trail is append-only EVIDENCE — a default is a claim):
+//  - Every nullable evidence field (`actorUserId`, `actorEmployeeNo`, `before`, `after`, `ipAddress`,
+//    `userAgent`, `traceId`, `resourceType`, `resourceId`) defaults to `null`, never `''`. The UI renders
+//    "no value" for null; an empty string would assert the server sent a blank, which is a different claim.
+//  - History money (`totalNet`/`totalGross`/`totalDeductions`) defaults to 0 ONLY because these are
+//    server-computed run totals typed as plain `number`, and the history table draws no distinction
+//    between "zero" and "not computed". There is no "unknown total" rendering to preserve.
+//  - History `status` falls back to the `'Unknown'` sentinel (ISSUE-317 / DF-12 — `RUN_STATUS_BADGE` and
+//    `RUN_STATUS_LABELS` already carry an `Unknown` key for exactly this). It must NOT be coerced to a
+//    meaningful lifecycle state: defaulting to e.g. 'Finalized' would paint a green "done" badge on a run
+//    whose status the server never sent.
+
+export type AuditEntryWire = Schema<'PayrollPayrollAuditEntryDto'>;
+export type AuditPageWire = Schema<'PayrollPayrollAuditPageDto'>;
+export type PayrollHistoryRunWire = Schema<'PayrollPayrollRunHistoryItemDto'>;
+export type PayrollHistoryPageWire = Schema<'PayrollPayrollRunHistoryPageDto'>;
+
+/**
+ * The structural shape both wire page DTOs share, used by the service's envelope-tolerant
+ * normaliser before the item mapper runs. Every field is optional exactly as the generated
+ * types are (Swashbuckle emits no `required` — see `core/api/index.ts`).
+ */
+export interface IWirePage<W> {
+  items?: W[] | null;
+  totalCount?: number;
+  page?: number;
+  pageSize?: number;
+}
+
+/** One audit-log entry: wire → view-model. All evidence fields keep `null` for "not sent". */
+export function mapAuditEntry(w: AuditEntryWire): IAuditEntry {
+  return {
+    id: w.id ?? '',
+    tenantId: w.tenantId ?? null,
+    timestamp: w.timestamp ?? '',
+    actorUserId: w.actorUserId ?? null,
+    actorEmployeeNo: w.actorEmployeeNo ?? null,
+    action: w.action ?? '',
+    resourceType: w.resourceType ?? null,
+    resourceId: w.resourceId ?? null,
+    before: w.before ?? null,
+    after: w.after ?? null,
+    ipAddress: w.ipAddress ?? null,
+    userAgent: w.userAgent ?? null,
+    traceId: w.traceId ?? null,
+  };
+}
+
+/**
+ * One payroll-history row: wire → view-model. `status` is `string | null` on the wire but a
+ * `PayrollRunStatus` union in the view-model, so an absent value is widened to the `'Unknown'`
+ * sentinel rather than being coerced to a real lifecycle state (see the defaulting policy above).
+ */
+export function mapPayrollHistoryRun(w: PayrollHistoryRunWire): IPayrollHistoryRun {
+  return {
+    runId: w.runId ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    period: w.period ?? '',
+    // ISSUE-317 / DF-12 sentinel — RUN_STATUS_BADGE/LABELS both key 'Unknown'.
+    status: (w.status ?? 'Unknown') as PayrollRunStatus,
+    employeeCount: w.employeeCount ?? 0,
+    // Server-computed totals; the table has no "not computed" rendering, so 0 is the display value.
+    totalNet: w.totalNet ?? 0,
+    totalGross: w.totalGross ?? 0,
+    totalDeductions: w.totalDeductions ?? 0,
+    initiatedBy: w.initiatedBy ?? '',
+    initiatedAt: w.initiatedAt ?? '',
+    approvedBy: w.approvedBy ?? null,
+    approvedAt: w.approvedAt ?? null,
+    finalizedAt: w.finalizedAt ?? null,
+  };
+}
+
+/** Map a wire page of any item type through `mapItem`, defaulting the page meta. */
+export function mapPage<W, T>(
+  w: IWirePage<W> | null | undefined,
+  mapItem: (item: W) => T,
+): IPage<T> {
+  return {
+    items: (w?.items ?? []).map(mapItem),
+    totalCount: w?.totalCount ?? 0,
+    page: w?.page ?? 1,
+    pageSize: w?.pageSize ?? 0,
+  };
+}
+
+/** `PayrollAuditPageDto` → the audit-trail table page (AC-4/FR-4). */
+export function mapAuditPage(w: AuditPageWire | null | undefined): IPage<IAuditEntry> {
+  return mapPage(w, mapAuditEntry);
+}
+
+/** `PayrollRunHistoryPageDto` → the payroll-history table page (AC-1/FR-1). */
+export function mapPayrollHistoryPage(
+  w: PayrollHistoryPageWire | null | undefined,
+): IPage<IPayrollHistoryRun> {
+  return mapPage(w, mapPayrollHistoryRun);
+}

@@ -8,10 +8,14 @@ import { provideHttpClient } from '@angular/common/http';
 import { AuditService } from './audit.service';
 import { environment } from '../../../../environments/environment';
 import {
+  AuditEntryWire,
+  AuditPageWire,
   IAuditEntry,
   IAuditTrailFilters,
   IPage,
   IPayrollHistoryRun,
+  PayrollHistoryPageWire,
+  PayrollHistoryRunWire,
 } from '../models/audit.models';
 
 describe('AuditService', () => {
@@ -21,7 +25,10 @@ describe('AuditService', () => {
   const historyUrl = `${payrollUrl}/runs/history`;
   const auditUrl = `${payrollUrl}/audit-trail`;
 
-  const historyRow: IPayrollHistoryRun = {
+  // D1 wire-types: every mock below is the WIRE shape the server actually sends
+  // (`PayrollRunHistoryItemDto` / `PayrollAuditEntryDto`), not the view-model. The
+  // expected view-models are declared separately so a mapper rename/default is asserted.
+  const historyRow: PayrollHistoryRunWire = {
     runId: 'r-1',
     payMonth: 5,
     payYear: 2026,
@@ -38,14 +45,14 @@ describe('AuditService', () => {
     finalizedAt: '2026-05-31T12:00:00Z',
   };
 
-  const historyPage: IPage<IPayrollHistoryRun> = {
+  const historyPage: PayrollHistoryPageWire = {
     items: [historyRow],
     totalCount: 1,
     page: 1,
     pageSize: 25,
   };
 
-  const entry: IAuditEntry = {
+  const entry: AuditEntryWire = {
     id: 'a-1',
     tenantId: 't-1',
     timestamp: '2026-05-31T10:00:00Z',
@@ -61,11 +68,46 @@ describe('AuditService', () => {
     traceId: 't-1',
   };
 
-  const auditPage: IPage<IAuditEntry> = {
+  const auditPage: AuditPageWire = {
     items: [entry],
     totalCount: 1,
     page: 1,
     pageSize: 50,
+  };
+
+  /** The view-model the mapper must produce from `historyRow`. */
+  const expectedHistoryRow: IPayrollHistoryRun = {
+    runId: 'r-1',
+    payMonth: 5,
+    payYear: 2026,
+    period: '2026-05',
+    status: 'Finalized',
+    employeeCount: 250,
+    totalNet: 800000,
+    totalGross: 1000000,
+    totalDeductions: 200000,
+    initiatedBy: 'u-1',
+    initiatedAt: '2026-05-25T09:00:00Z',
+    approvedBy: 'u-2',
+    approvedAt: '2026-05-30T09:00:00Z',
+    finalizedAt: '2026-05-31T12:00:00Z',
+  };
+
+  /** The view-model the mapper must produce from `entry`. */
+  const expectedEntry: IAuditEntry = {
+    id: 'a-1',
+    tenantId: 't-1',
+    timestamp: '2026-05-31T10:00:00Z',
+    actorUserId: 'u-2',
+    actorEmployeeNo: 'EMP002',
+    action: 'PayrollRun.Finalized',
+    resourceType: 'PayrollRun',
+    resourceId: 'r-1',
+    before: '{"status":"Approved"}',
+    after: '{"status":"Finalized"}',
+    ipAddress: '10.0.0.1',
+    userAgent: 'jasmine',
+    traceId: 't-1',
   };
 
   const allFilters: IAuditTrailFilters = {
@@ -112,8 +154,10 @@ describe('AuditService', () => {
       expect(req.request.params.has('status')).toBeFalse();
       req.flush(historyPage);
 
-      expect(result).toEqual(historyPage);
-      expect(result?.items).toEqual([historyRow]);
+      expect(result?.items).toEqual([expectedHistoryRow]);
+      expect(result?.totalCount).toBe(1);
+      // The mapper builds a NEW object graph — assert we are not just passing the wire body through.
+      expect(result?.items[0]).not.toBe(historyRow as unknown as never);
     });
 
     it('passes year and status params when provided', () => {
@@ -128,7 +172,7 @@ describe('AuditService', () => {
       let result: IPage<IPayrollHistoryRun> | undefined;
       service.getHistory().subscribe((r) => (result = r));
       httpMock.expectOne(historyUrl).flush({ data: historyPage });
-      expect(result?.items).toEqual([historyRow]);
+      expect(result?.items).toEqual([expectedHistoryRow]);
 
       let result2: IPage<IPayrollHistoryRun> | undefined;
       service.getHistory().subscribe((r) => (result2 = r));
@@ -153,7 +197,9 @@ describe('AuditService', () => {
       expect(req.request.params.get('resourceId')).toBe('r-1');
       req.flush(auditPage);
 
-      expect(result?.items).toEqual([entry]);
+      expect(result?.items).toEqual([expectedEntry]);
+      // The mapper builds a NEW object graph — not a pass-through of the wire body.
+      expect(result?.items[0]).not.toBe(entry as unknown as never);
     });
 
     it('omits every empty filter param', () => {
@@ -172,7 +218,7 @@ describe('AuditService', () => {
       let result: IPage<IAuditEntry> | undefined;
       service.getAuditTrail(noFilters).subscribe((r) => (result = r));
       httpMock.expectOne(auditUrl).flush({ data: auditPage });
-      expect(result?.items).toEqual([entry]);
+      expect(result?.items).toEqual([expectedEntry]);
     });
   });
 
@@ -186,7 +232,8 @@ describe('AuditService', () => {
       expect(req.request.withCredentials).toBeTrue();
       req.flush([entry]);
 
-      expect(result).toEqual([entry]);
+      expect(result).toEqual([expectedEntry]);
+      expect(result?.[0]).not.toBe(entry as unknown as never);
     });
   });
 

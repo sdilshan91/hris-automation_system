@@ -16,6 +16,8 @@
  * `{ data }` wrapper, so the service consumes BARE payloads.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Reconciliation report (FR-7) ──────────────────────────────
 
 /**
@@ -196,3 +198,65 @@ export const RECON_PAY_MONTHS: { value: number; label: string }[] = [
   { value: 11, label: 'November' },
   { value: 12, label: 'December' },
 ];
+
+// ─── Wire contract → view-model mappers (D1 payroll slice) ───────────────────
+//
+// `http.get<IReconciliationReport>(…)` was an unchecked assertion, not a check. These aliases bind the
+// view-models above to the GENERATED contract, so a backend rename becomes a compile error here rather
+// than an `undefined` cell in the reconciliation grid.
+//
+// DEFAULTING POLICY (payroll is money — a default is a decision):
+//  - `attendanceFinalized` defaults to FALSE. It gates the AC-4 banner that BLOCKS Initiate; an absent
+//    flag must not read as "attendance is locked, go ahead and run payroll".
+//  - `periodDeferred` defaults to FALSE — an absent flag must not raise a phantom deferral warning.
+//  - Day counts / hours default to 0: they feed arithmetic in `reconciliationState()` and the UI draws
+//    no distinction between "zero days" and "no value".
+//  - Money (`amount`, `dailyRate`) also defaults to 0 here ONLY because both are always computed
+//    server-side for a successful encashment; there is no "unknown amount" state in this response.
+
+export type ReconciliationReportWire = Schema<'PayrollPrePayrollReconciliationDto'>;
+export type ReconciliationRowWire = Schema<'PayrollPrePayrollReconciliationRowDto'>;
+export type LeaveEncashmentResultWire = Schema<'PayrollLeaveEncashmentResultDto'>;
+
+export function mapReconciliationRow(w: ReconciliationRowWire): IReconciliationRow {
+  return {
+    employeeId: w.employeeId ?? '',
+    employeeNo: w.employeeNo ?? '',
+    employeeName: w.employeeName ?? '',
+    workingDays: w.workingDays ?? 0,
+    presentDays: w.presentDays ?? 0,
+    absentDays: w.absentDays ?? 0,
+    leaveDaysByType: w.leaveDaysByType ?? {},
+    totalLeaveDays: w.totalLeaveDays ?? 0,
+    overtimeHours: w.overtimeHours ?? 0,
+    calculatedLopDays: w.calculatedLopDays ?? 0,
+  };
+}
+
+export function mapReconciliationReport(
+  w: ReconciliationReportWire,
+): IReconciliationReport {
+  return {
+    period: w.period ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    // Fail CLOSED: absent must not unlock payroll initiation.
+    attendanceFinalized: w.attendanceFinalized ?? false,
+    rows: (w.rows ?? []).map(mapReconciliationRow),
+  };
+}
+
+export function mapLeaveEncashmentResult(
+  w: LeaveEncashmentResultWire,
+): ILeaveEncashmentResult {
+  return {
+    adjustmentId: w.adjustmentId ?? '',
+    employeeId: w.employeeId ?? '',
+    encashedDays: w.encashedDays ?? 0,
+    dailyRate: w.dailyRate ?? 0,
+    amount: w.amount ?? 0,
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    periodDeferred: w.periodDeferred ?? false,
+  };
+}

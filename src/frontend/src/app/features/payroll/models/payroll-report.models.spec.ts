@@ -15,6 +15,15 @@ import {
   variancePercent,
   IAnalyticsSeries,
   IPayrollSummaryMetric,
+  BankAdvicePreviewWire,
+  PayrollSummaryMetricWire,
+  ReportResultWire,
+  ReportTypeMetaWire,
+  mapBankAdvicePreview,
+  mapPayrollAnalyticsResult,
+  mapPayrollSummaryMetric,
+  mapReportResult,
+  mapReportTypeMeta,
 } from './payroll-report.models';
 
 /**
@@ -198,6 +207,143 @@ describe('payroll-report.models helpers', () => {
       expect(variancePercent(cost(-25, 100))).toBe(-25);
       expect(variancePercent(cost(50, 0))).toBeNull(); // div-by-zero
       expect(variancePercent(cost(null, null))).toBeNull();
+    });
+  });
+
+  // ── Wire → view-model mappers (D1 payroll slice) ────────────────────────────
+  //
+  // These pin the DEFAULTING DECISIONS, which is where the admin slice went wrong: it defaulted an
+  // unknown lifecycle status to 'terminated' and painted healthy tenants red. In payroll the same class
+  // of mistake is a fabricated variance or a report claiming to be async. Each test flushes a SPARSE
+  // wire object (the server omitting a field) and asserts the least-claiming outcome.
+  describe('mappers', () => {
+    it('mapReportTypeMeta falls back to the id for a missing name and never claims deferred', () => {
+      const sparse: ReportTypeMetaWire = { id: 'Variance' };
+      expect(mapReportTypeMeta(sparse)).toEqual({
+        id: 'Variance',
+        name: 'Variance',
+        description: '',
+        deferred: false,
+      });
+    });
+
+    it('mapReportTypeMeta passes a fully-populated descriptor through faithfully', () => {
+      const w: ReportTypeMetaWire = {
+        id: 'YearEndTaxStatement',
+        name: 'Year-End Tax Statements',
+        description: 'Annual tax statements.',
+        deferred: true,
+      };
+      const m = mapReportTypeMeta(w);
+      expect(m.deferred).toBeTrue();
+      expect(m.name).toBe('Year-End Tax Statements');
+    });
+
+    it('mapReportResult defaults an empty body without fabricating a footer row or KPI cards', () => {
+      const r = mapReportResult({});
+      expect(r.reportType).toBe('' as typeof r.reportType);
+      expect(r.title).toBe('');
+      expect(r.columns).toEqual([]);
+      expect(r.rows).toEqual([]);
+      expect(r.totalCount).toBe(0);
+      expect(r.totalRow).toBeNull();
+      expect(r.note).toBeNull();
+      expect(r.summary).toBeNull();
+    });
+
+    it('mapReportResult maps rows + a present totalRow, defaulting missing cells to []', () => {
+      const w: ReportResultWire = {
+        reportType: 'DepartmentSummary',
+        columns: ['Dept', 'Net'],
+        rows: [{ cells: ['Ops', '1,000.00'] }, {}],
+        totalRow: { cells: ['Total', '1,000.00'] },
+        totalCount: 2,
+      };
+      const r = mapReportResult(w);
+      expect(r.rows.length).toBe(2);
+      expect(r.rows[0].cells).toEqual(['Ops', '1,000.00']);
+      // A row with no cells renders an empty row, not an `undefined.length` crash in the template.
+      expect(r.rows[1].cells).toEqual([]);
+      expect(r.totalRow?.cells).toEqual(['Total', '1,000.00']);
+      // The result is a NEW object graph, not the wire payload aliased through.
+      expect(r.rows[0]).not.toBe(w.rows![0] as never);
+    });
+
+    it('mapReportResult keeps an unknown reportType raw, so reportHasChart() draws no chart', () => {
+      const r = mapReportResult({ reportType: 'BrandNewReport' });
+      expect(r.reportType).toBe('BrandNewReport' as typeof r.reportType);
+      expect(reportHasChart(r.reportType)).toBeFalse();
+    });
+
+    it('mapPayrollSummaryMetric defaults previous/variance to NULL, never 0', () => {
+      // A first-ever finalized run: the BE sends no previous period at all.
+      const w: PayrollSummaryMetricWire = { key: 'net', label: 'Total Net Pay', current: 12345 };
+      const m = mapPayrollSummaryMetric(w);
+      expect(m.current).toBe(12345);
+      expect(m.previous).toBeNull();
+      expect(m.variance).toBeNull();
+      // ...so the KPI card renders "no comparison", not a fake 0% delta.
+      expect(varianceDirection(m)).toBe('none');
+      expect(variancePercent(m)).toBeNull();
+    });
+
+    it('mapPayrollSummaryMetric defaults an absent isCost to false (neutral, not red)', () => {
+      const m = mapPayrollSummaryMetric({ key: 'gross', current: 100, previous: 50, variance: 50 });
+      expect(m.isCost).toBeFalse();
+      expect(varianceColorClass(m)).toContain('neutral');
+    });
+
+    it('mapPayrollSummaryMetric preserves a real 0 previous (distinct from "no prior run")', () => {
+      const m = mapPayrollSummaryMetric({
+        key: 'gross', label: 'Total Gross', current: 100, previous: 0, variance: 100, isCost: true,
+      });
+      expect(m.previous).toBe(0);
+      expect(varianceDirection(m)).toBe('up');
+    });
+
+    it('mapBankAdvicePreview never invents an account number and defaults money to 0', () => {
+      const w: BankAdvicePreviewWire = { payMonth: 6, payYear: 2026, lines: [{ employeeNo: 'E1' }] };
+      const p = mapBankAdvicePreview(w);
+      expect(p.lines[0].accountNumber).toBe('');
+      expect(p.lines[0].employeeName).toBe('');
+      expect(p.lines[0].netAmount).toBe(0);
+      expect(p.employeeCount).toBe(0);
+      expect(p.totalNetAmount).toBe(0);
+      expect(p.note).toBeNull();
+    });
+
+    it('mapBankAdvicePreview carries a masked account string through verbatim (BR-2)', () => {
+      const p = mapBankAdvicePreview({
+        payMonth: 6, payYear: 2026, masked: true, employeeCount: 1, totalNetAmount: 900,
+        lines: [{
+          employeeNo: 'E1', employeeName: 'Sam', bankName: 'B', branchCode: 'BR1',
+          accountNumber: '\u2022\u2022\u2022\u20221234', netAmount: 900, narration: 'Salary',
+        }],
+      });
+      expect(p.lines[0].accountNumber).toBe('\u2022\u2022\u2022\u20221234');
+      expect(p.totalNetAmount).toBe(900);
+    });
+
+    it('mapPayrollAnalyticsResult defaults every collection so the SVG helpers never see undefined', () => {
+      const a = mapPayrollAnalyticsResult({});
+      expect(a.chartType).toBe('');
+      expect(a.points).toEqual([]);
+      expect(a.categories).toEqual([]);
+      expect(a.series).toEqual([]);
+      expect(seriesMax(a.series)).toBe(0);
+    });
+
+    it('mapPayrollAnalyticsResult maps nested series points, defaulting a missing value to 0', () => {
+      const a = mapPayrollAnalyticsResult({
+        chartType: 'MonthlyTrend',
+        categories: ['Apr', 'May'],
+        series: [{ name: 'Gross', points: [{ label: 'Apr', value: 10 }, { label: 'May' }] }, {}],
+      });
+      expect(a.series[0].points[0].value).toBe(10);
+      expect(a.series[0].points[1].value).toBe(0);
+      expect(a.series[1].name).toBe('');
+      expect(a.series[1].points).toEqual([]);
+      expect(seriesMax(a.series)).toBe(10);
     });
   });
 });

@@ -3,11 +3,19 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { environment } from '../../../../environments/environment';
-import { IPayrollRun, PayrollRunStatus } from '../models/payroll-run.models';
+import { IPayrollRun } from '../models/payroll-run.models';
 import {
+  ApprovalHistoryWire,
+  ApprovalResultWire,
+  ApprovalSummaryWire,
   IApprovalCommentRequest,
   IApprovalHistoryEntry,
   IApprovalSummary,
+  PendingApprovalWire,
+  mapApprovalHistoryEntry,
+  mapApprovalResultToRun,
+  mapApprovalSummary,
+  mapPendingApproval,
 } from '../models/approval.models';
 
 /**
@@ -26,16 +34,24 @@ import {
  * `{ data }` wrapper, so these methods consume BARE payloads. Statuses + actions
  * arrive as PascalCase STRINGS (US-PLT-003).
  *
- * ASSUMED REST contract (story brief §FR; backend building in parallel, not yet
- * pinned in the vault):
- *   POST /payroll/runs/:id/submit            - HR submits ReviewPending -> AwaitingApproval (AC-1)
- *   POST /payroll/runs/:id/approve           - approver AwaitingApproval -> Approved (AC-2)
- *   POST /payroll/runs/:id/reject  { comments } - approver -> Rejected (AC-3, reason required)
- *   POST /payroll/runs/:id/return  { comments } - approver sends back to HR (FR-9, comments required)
- *   POST /payroll/runs/:id/finalize          - HR Approved -> Finalized (AC-5)
- *   GET  /payroll/runs/:id/approval-summary   - review summary (FR-4)
- *   GET  /payroll/runs/:id/approval-history   - audit-trail timeline (FR-7)
- *   GET  /payroll/approval/pending            - pending-approvals queue (§8, DF-14)
+ * REST contract — now PINNED against contracts/openapi/hrm-v1.json (D1 wire-types
+ * slice). The response DTO is named per route:
+ *   POST /payroll/runs/:id/submit-for-approval  -> PayrollApprovalResultDto (AC-1)
+ *   POST /payroll/runs/:id/approve              -> PayrollApprovalResultDto (AC-2)
+ *   POST /payroll/runs/:id/reject  { comments } -> PayrollApprovalResultDto (AC-3)
+ *   POST /payroll/runs/:id/return  { comments } -> PayrollApprovalResultDto (FR-9)
+ *   POST /payroll/runs/:id/finalize             -> PayrollApprovalResultDto (AC-5)
+ *   GET  /payroll/runs/:id/approval-summary     -> PayrollApprovalSummaryDto (FR-4)
+ *   GET  /payroll/runs/:id/approval-history     -> PayrollApprovalHistoryDto[] (FR-7)
+ *   GET  /payroll/approval/pending              -> PendingApprovalDto[] (§8, DF-14)
+ *
+ * NOTE — the five ACTION routes return a RESULT DTO (`runId` + status + step
+ * position), NOT a run. They were annotated `IPayrollRun`, which made `.id` and
+ * every total/count on the returned object `undefined`. `mapApprovalResultToRun`
+ * maps `runId -> id` and leaves the rest as explicit placeholders. The public
+ * signatures stay `Observable<IPayrollRun>` so `payroll-run-detail`'s shared
+ * `runAction(action$: Observable<IPayrollRun>)` is unchanged (it discards the
+ * value and refetches the run anyway) — the mappers exist so components don't move.
  */
 @Injectable({ providedIn: 'root' })
 export class PayrollApprovalService {
@@ -45,27 +61,28 @@ export class PayrollApprovalService {
 
   /**
    * Submit a ReviewPending run for approval (AC-1). Creates the workflow instance
-   * server-side and moves the run to AwaitingApproval. Returns the updated run.
+   * server-side and moves the run to AwaitingApproval.
    */
   submit(runId: string): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(
-      `${this.runsUrl}/${runId}/submit-for-approval`,
-      null,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ApprovalResultWire>(
+        `${this.runsUrl}/${runId}/submit-for-approval`,
+        null,
+        { withCredentials: true },
+      )
+      .pipe(map(mapApprovalResultToRun));
   }
 
   /**
    * Approve the current step (AC-2). When all steps are complete the run becomes
-   * Approved (the backend owns the sequential multi-step routing, AC-4). Returns
-   * the updated run.
+   * Approved (the backend owns the sequential multi-step routing, AC-4).
    */
   approve(runId: string): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(
-      `${this.runsUrl}/${runId}/approve`,
-      null,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ApprovalResultWire>(`${this.runsUrl}/${runId}/approve`, null, {
+        withCredentials: true,
+      })
+      .pipe(map(mapApprovalResultToRun));
   }
 
   /**
@@ -76,11 +93,11 @@ export class PayrollApprovalService {
     runId: string,
     request: IApprovalCommentRequest,
   ): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(
-      `${this.runsUrl}/${runId}/reject`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ApprovalResultWire>(`${this.runsUrl}/${runId}/reject`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapApprovalResultToRun));
   }
 
   /**
@@ -92,35 +109,41 @@ export class PayrollApprovalService {
     runId: string,
     request: IApprovalCommentRequest,
   ): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(
-      `${this.runsUrl}/${runId}/return`,
-      request,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ApprovalResultWire>(`${this.runsUrl}/${runId}/return`, request, {
+        withCredentials: true,
+      })
+      .pipe(map(mapApprovalResultToRun));
   }
 
   /**
    * Finalize an Approved run (AC-5). Locks all payslip records (FR-8) and moves the
-   * run to the terminal Finalized state. Returns the updated run.
+   * run to the terminal Finalized state.
    */
   finalize(runId: string): Observable<IPayrollRun> {
-    return this.http.post<IPayrollRun>(
-      `${this.runsUrl}/${runId}/finalize`,
-      null,
-      { withCredentials: true },
-    );
+    return this.http
+      .post<ApprovalResultWire>(`${this.runsUrl}/${runId}/finalize`, null, {
+        withCredentials: true,
+      })
+      .pipe(map(mapApprovalResultToRun));
   }
 
   /**
    * The approval review summary for a run (FR-4): totals, statutory subtotal,
    * previous-month net + variance, and the exceptions list. Backs the left summary
    * card + variance comparison on the run-detail approval review layout.
+   *
+   * The wire's `exceptions` is a `string[]`, not the object list the view-model
+   * declared — `mapApprovalSummary` converts each sentence into an
+   * `IPayrollException`. Before this, the approver's exceptions panel rendered
+   * blank rows. See the comment block in approval.models.ts.
    */
   getApprovalSummary(runId: string): Observable<IApprovalSummary> {
-    return this.http.get<IApprovalSummary>(
-      `${this.runsUrl}/${runId}/approval-summary`,
-      { withCredentials: true },
-    );
+    return this.http
+      .get<ApprovalSummaryWire>(`${this.runsUrl}/${runId}/approval-summary`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapApprovalSummary));
   }
 
   /**
@@ -129,11 +152,11 @@ export class PayrollApprovalService {
    */
   getApprovalHistory(runId: string): Observable<IApprovalHistoryEntry[]> {
     return this.http
-      .get<IApprovalHistoryEntry[] | { data: IApprovalHistoryEntry[] }>(
+      .get<ApprovalHistoryWire[] | { data: ApprovalHistoryWire[] }>(
         `${this.runsUrl}/${runId}/approval-history`,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map((res) => this.toArray(res).map(mapApprovalHistoryEntry)));
   }
 
   /**
@@ -143,17 +166,19 @@ export class PayrollApprovalService {
    * workflow — not every AwaitingApproval run, as the old `runs?status=` call did).
    *
    * The endpoint returns `PendingApprovalDto[]` (a slimmer shape than a full run):
-   * note `runId` maps to `IPayrollRun.id`, and `initiatedByName` is now populated.
-   * Tolerates either a bare array or a `{ data }`-style envelope, then maps each
-   * DTO to the `IPayrollRun` the pending-approvals card renders.
+   * `runId` maps to `IPayrollRun.id`, and `initiatedByName` IS carried by this DTO
+   * (unlike `PayrollRunDto`). Tolerates either a bare array or a `{ data }`-style
+   * envelope, then maps each DTO to the `IPayrollRun` the queue card renders. The
+   * hand-written `IPendingApprovalDto` that used to live at the bottom of this file
+   * is gone — `mapPendingApproval` binds to the generated contract instead.
    */
   listPendingApprovals(): Observable<IPayrollRun[]> {
     return this.http
-      .get<IPendingApprovalDto[] | { data: IPendingApprovalDto[] }>(
+      .get<PendingApprovalWire[] | { data: PendingApprovalWire[] }>(
         this.pendingUrl,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res).map((d) => toPayrollRun(d))));
+      .pipe(map((res) => this.toArray(res).map(mapPendingApproval)));
   }
 
   /** Accept either a bare array or a `{ data }` page; default to []. */
@@ -166,52 +191,4 @@ export class PayrollApprovalService {
     }
     return [];
   }
-}
-
-/**
- * DF-14: the shape returned by `GET /payroll/approval/pending`. A slimmer view of
- * a run than `IPayrollRun` — the primary key is `runId` (not `id`), and it omits
- * `skippedEmployees`/`totalDeductions`/`completedAt`. Adds the approval-step
- * position (`currentApprovalStep` / `totalApprovalSteps`) for future display.
- */
-interface IPendingApprovalDto {
-  runId: string;
-  payMonth: number;
-  payYear: number;
-  status: PayrollRunStatus;
-  processedEmployees: number;
-  totalEmployees: number;
-  totalGross: number;
-  totalNet: number;
-  submittedBy: string;
-  initiatedByName: string | null;
-  initiatedAt: string;
-  currentApprovalStep: number | null;
-  totalApprovalSteps: number | null;
-}
-
-/**
- * Map a `PendingApprovalDto` to the `IPayrollRun` the pending-approvals card binds
- * (id, payMonth, payYear, status, processedEmployees, totalGross, totalNet,
- * initiatedByName, initiatedAt). `runId -> id`. The fields the endpoint doesn't
- * carry are derived where exact (`totalDeductions = gross - net`,
- * `skippedEmployees = total - processed`) or defaulted (`completedAt = null`) —
- * none of these are rendered by the queue card.
- */
-function toPayrollRun(d: IPendingApprovalDto): IPayrollRun {
-  return {
-    id: d.runId,
-    payMonth: d.payMonth,
-    payYear: d.payYear,
-    status: d.status,
-    totalEmployees: d.totalEmployees,
-    processedEmployees: d.processedEmployees,
-    skippedEmployees: d.totalEmployees - d.processedEmployees,
-    totalGross: d.totalGross,
-    totalDeductions: d.totalGross - d.totalNet,
-    totalNet: d.totalNet,
-    initiatedByName: d.initiatedByName,
-    initiatedAt: d.initiatedAt,
-    completedAt: null,
-  };
 }

@@ -24,6 +24,8 @@
  * arrive as STRINGS, never integers.
  */
 
+import type { Schema } from '@core/api';
+
 // ─── Status enum (FR-1, BR-6) ──────────────────────────────────
 
 /**
@@ -247,4 +249,142 @@ export interface IPayrollRunProgress {
   processedEmployees: number;
   totalEmployees: number;
   skippedEmployees: number;
+}
+
+// ─── Wire contract → view-model mappers (D1 payroll slice) ───────────────────
+//
+// `http.get<IPayrollRun>(…)` was an unchecked ASSERTION, not a check: TypeScript believed the
+// annotation and the server sent something else. These aliases bind the view-models above to the
+// GENERATED contract, so a backend rename becomes a compile error here instead of an `undefined`
+// cell in the runs table (or, as it did for `initiateRun`, a route to `/payroll/runs/undefined`).
+//
+// DEFAULTING POLICY (payroll is money — a default is a decision):
+//  - STATUS is never coerced to a meaningful state. An absent or unrecognised status maps to the
+//    `Unknown` sentinel the backend itself emits (ENH-021 / ISSUE-317), which `RUN_STATUS_BADGE`
+//    and `RUN_STATUS_LABELS` already render as an amber "Unknown" badge. It must NOT fall back to
+//    `Queued` (that would enable Cancel and light a stepper node) and certainly not to
+//    `Approved`/`Finalized`.
+//  - Employee counts and money totals default to 0: they are server-computed aggregates that are
+//    genuinely 0 before the run completes, and the UI draws no distinction between "zero" and
+//    "no value" for them (every binding is a `| number` pipe, not a "—" placeholder).
+//  - `completedAt` / `initiatedByName` default to null — the UI renders "—" for those.
+
+export type PayrollRunWire = Schema<'PayrollPayrollRunDto'>;
+export type PayrollRunAcceptedWire = Schema<'PayrollPayrollRunAcceptedDto'>;
+export type PayrollRunProgressWire = Schema<'PayrollPayrollRunProgressDto'>;
+
+/**
+ * The status strings the FE knows. Kept in sync with the `PayrollRunStatus` union above by
+ * construction (the array is typed as that union, so a missing member is a compile error).
+ */
+const KNOWN_RUN_STATUSES: readonly PayrollRunStatus[] = [
+  'Queued',
+  'Processing',
+  'ReviewPending',
+  'AwaitingApproval',
+  'Approved',
+  'Finalized',
+  'Rejected',
+  'Cancelled',
+];
+
+/**
+ * The sentinel used for an absent or unrecognised wire status. The backend's C# enum has a real
+ * `Unknown = 99` member (ENH-021, emitted by the tolerant enum-read converter) that the FE
+ * `PayrollRunStatus` union does NOT carry — see the OUT-OF-LANE note for that drift. Until the
+ * union is widened (it is imported by `audit.models.ts` and by component inputs typed
+ * `PayrollRunStatus`, so widening is a cross-file decision), this maps through with a single
+ * documented cast. Every consumer is safe with it at runtime: `RUN_STATUS_BADGE` /
+ * `RUN_STATUS_LABELS` have an `Unknown` key, `canGeneratePayslipsFor` returns false, the stepper
+ * `findIndex` returns -1, and every `=== 'Finalized'`-style guard is false — i.e. least-claiming.
+ */
+const UNKNOWN_RUN_STATUS = 'Unknown' as PayrollRunStatus;
+
+/**
+ * Narrow the wire's `status?: string | null` to `PayrollRunStatus`. NEVER coerces an unknown value
+ * to a meaningful lifecycle state — see `UNKNOWN_RUN_STATUS`.
+ */
+export function mapPayrollRunStatus(
+  raw: string | null | undefined,
+): PayrollRunStatus {
+  return (KNOWN_RUN_STATUSES as readonly string[]).includes(raw ?? '')
+    ? (raw as PayrollRunStatus)
+    : UNKNOWN_RUN_STATUS;
+}
+
+/**
+ * `PayrollRunDto` → `IPayrollRun` (GET /payroll/runs, GET /payroll/runs/{id}).
+ *
+ * NOTE — `initiatedByName` has NO wire source on this DTO: the contract carries only
+ * `initiatedBy` (a uuid). It is defaulted to null (the UI renders "—"), NOT filled with the raw
+ * uuid, which would put a guid in the "Initiated by" column. Flagged OUT-OF-LANE.
+ */
+export function mapPayrollRun(w: PayrollRunWire): IPayrollRun {
+  return {
+    id: w.id ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    status: mapPayrollRunStatus(w.status),
+    totalEmployees: w.totalEmployees ?? 0,
+    processedEmployees: w.processedEmployees ?? 0,
+    skippedEmployees: w.skippedEmployees ?? 0,
+    totalGross: w.totalGross ?? 0,
+    totalDeductions: w.totalDeductions ?? 0,
+    totalNet: w.totalNet ?? 0,
+    // No wire source on PayrollRunDto — see the note above.
+    initiatedByName: null,
+    initiatedAt: w.initiatedAt ?? '',
+    completedAt: w.completedAt ?? null,
+  };
+}
+
+/**
+ * `PayrollRunAcceptedDto` → `IPayrollRun` (POST /payroll/runs [202], POST …/cancel, POST …/rerun).
+ *
+ * These three endpoints do NOT return a full run — the contract's accepted DTO carries only
+ * `{ runId, status, payMonth, payYear }`. The FE previously annotated them `IPayrollRun`, so
+ * `.id` was `undefined`; `payroll-runs.component.onCreated` then navigated to
+ * `/payroll/runs/undefined` after starting a run. **`runId` → `id` is the rename that fixes it.**
+ *
+ * The remaining `IPayrollRun` fields have no wire source here. They are zero/null-filled rather
+ * than invented, and no caller renders them (all three call sites refetch the run) — but the
+ * honest shape is a narrower accepted view-model, which would change component signatures.
+ * Flagged OUT-OF-LANE.
+ */
+export function mapPayrollRunAccepted(w: PayrollRunAcceptedWire): IPayrollRun {
+  return {
+    // RENAME: wire `runId` → view-model `id`.
+    id: w.runId ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    status: mapPayrollRunStatus(w.status),
+    // Not carried by the accepted DTO — placeholders, not claims. Callers refetch the run.
+    totalEmployees: 0,
+    processedEmployees: 0,
+    skippedEmployees: 0,
+    totalGross: 0,
+    totalDeductions: 0,
+    totalNet: 0,
+    initiatedByName: null,
+    initiatedAt: '',
+    completedAt: null,
+  };
+}
+
+/**
+ * `PayrollRunProgressDto` → `IPayrollRunProgress` (GET /payroll/runs/{id}/progress, FR-6).
+ * The wire also carries `isComplete`, which the view-model does not model — `streamProgress`
+ * derives completion from the status instead, so it is deliberately dropped (not a data loss:
+ * `isComplete` is a function of the same status).
+ */
+export function mapPayrollRunProgress(
+  w: PayrollRunProgressWire,
+): IPayrollRunProgress {
+  return {
+    runId: w.runId ?? '',
+    status: mapPayrollRunStatus(w.status),
+    processedEmployees: w.processedEmployees ?? 0,
+    totalEmployees: w.totalEmployees ?? 0,
+    skippedEmployees: w.skippedEmployees ?? 0,
+  };
 }

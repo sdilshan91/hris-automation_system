@@ -16,6 +16,9 @@
  * arrive as STRINGS.
  */
 
+import type { Schema } from '@core/api';
+import { IPayrollRun, mapPayrollRunStatus } from './payroll-run.models';
+
 // ─── Approval action (§7 payroll_approval_history.action) ──────
 
 /** An action recorded in the approval audit trail (§7, FR-7). PascalCase wire. */
@@ -150,4 +153,188 @@ export interface IApprovalHistoryEntry {
  */
 export interface IApprovalCommentRequest {
   comments: string;
+}
+
+// ─── Wire contract → view-model mappers (D1 payroll slice) ───────────────────
+//
+// THIS MIGRATION FOUND A LIVE DEFECT ON THE PAYROLL APPROVAL SCREEN. `IApprovalSummary.exceptions` was
+// declared `IPayrollException[]` — objects with `severity`/`message`/`employeeName`. **The API sends
+// `string[]`.** `http.get<IApprovalSummary>(…)` asserted the shape instead of checking it, so every row's
+// `ex.message` and `ex.severity` were `undefined`: the approver saw "Exceptions (3)" above three blank
+// amber rows — the exact items they are supposed to read before approving a payroll run.
+//
+// Severity was never carried by the API at all (`PayrollApprovalService` builds plain sentences: skipped
+// employees, negative net salary, no employees processed). Every exception is therefore mapped as a
+// Warning, which is what the UI already rendered — `undefined !== 'Error'` took the amber branch — so the
+// styling is unchanged and only the text appears. Inventing an Error/Warning split the backend does not
+// make would be putting a judgement in the UI that no data supports.
+
+export type ApprovalResultWire = Schema<'PayrollPayrollApprovalResultDto'>;
+export type ApprovalSummaryWire = Schema<'PayrollPayrollApprovalSummaryDto'>;
+export type ApprovalHistoryWire = Schema<'PayrollPayrollApprovalHistoryDto'>;
+export type PendingApprovalWire = Schema<'PayrollPendingApprovalDto'>;
+
+/**
+ * One API exception sentence as the panel renders it.
+ *
+ * `employeeName` is null because the wire carries no per-employee attribution — the sentences name counts
+ * ("3 employee(s) were skipped"), not people.
+ */
+export function mapPayrollException(message: string): IPayrollException {
+  return { severity: 'Warning', message, employeeName: null };
+}
+
+export function mapApprovalSummary(w: ApprovalSummaryWire): IApprovalSummary {
+  return {
+    runId: w.runId ?? '',
+    totalEmployees: w.totalEmployees ?? 0,
+    totalGross: w.totalGross ?? 0,
+    totalDeductions: w.totalDeductions ?? 0,
+    totalStatutory: w.totalStatutory ?? 0,
+    totalNet: w.totalNet ?? 0,
+    // null, not 0: the card distinguishes "no prior run to compare" from "the prior run was zero".
+    previousMonthTotalNet: w.previousMonthTotalNet ?? null,
+    variancePercentage: w.variancePercentage ?? null,
+    exceptions: (w.exceptions ?? []).map(mapPayrollException),
+  };
+}
+
+/**
+ * The action strings the FE knows. Typed as the union by construction, so dropping a member here is a
+ * compile error rather than a silently unstyled timeline row.
+ */
+const KNOWN_APPROVAL_ACTIONS: readonly ApprovalAction[] = [
+  'Submitted',
+  'Approved',
+  'Rejected',
+  'Returned',
+  'Escalated',
+];
+
+/**
+ * Pass the wire's `action?: string | null` through WITHOUT coercing it to a known member.
+ *
+ * An absent or unrecognised action must NOT be stamped `Submitted` (or, worse, `Approved`): this is the
+ * approval AUDIT TRAIL for a payroll run, and mislabelling a row here misrepresents who did what to a
+ * payment. An unknown value keeps its raw string, so `APPROVAL_ACTION_LABELS[…]` renders nothing rather
+ * than the wrong thing, and none of the `h.action === 'Approved'` colour guards in the timeline fire.
+ * The single cast is the honest expression of "the server said something this union does not model" —
+ * `Delegated` is exactly that today (see the OUT-OF-LANE enum-drift finding).
+ */
+function passThroughApprovalAction(
+  raw: string | null | undefined,
+): ApprovalAction {
+  return (KNOWN_APPROVAL_ACTIONS as readonly string[]).includes(raw ?? '')
+    ? (raw as ApprovalAction)
+    : ((raw ?? '') as ApprovalAction);
+}
+
+/**
+ * Maps one approval-history row.
+ *
+ * `actorName` is null on purpose: the wire carries only `actorUserId` (a GUID), so the timeline has never
+ * had a name to show and renders its `|| '—'` fallback. Synthesising one here would be inventing data;
+ * resolving it needs an API change. Filed — see the D1 payroll findings.
+ */
+export function mapApprovalHistoryEntry(
+  w: ApprovalHistoryWire,
+): IApprovalHistoryEntry {
+  return {
+    id: w.id ?? '',
+    stepNumber: w.stepNumber ?? 0,
+    action: passThroughApprovalAction(w.action),
+    actorName: null,
+    comments: w.comments ?? null,
+    actedAt: w.actedAt ?? '',
+    ipAddress: w.ipAddress ?? null,
+  };
+}
+
+/**
+ * `PendingApprovalDto` → `IPayrollRun` for the approver's queue card (§8, DF-14).
+ *
+ * This mapper already existed as a private `toPayrollRun` in `payroll-approval.service.ts` with a
+ * hand-written `IPendingApprovalDto` interface beside it; it now binds to the GENERATED contract instead,
+ * so a backend rename is a compile error here. **RENAME: wire `runId` → view-model `id`** (the queue card
+ * routes on `r.id`).
+ *
+ * Two view-model fields are DERIVED, not sent — kept from the original mapper because they are exact
+ * identities, not guesses, and neither is rendered by the queue card:
+ *   `totalDeductions = totalGross - totalNet` and `skippedEmployees = totalEmployees - processedEmployees`.
+ * `completedAt` is null: a run awaiting approval has not completed. `currentApprovalStep` /
+ * `totalApprovalSteps` are carried by the wire but have no `IPayrollRun` field — see the OUT-OF-LANE note.
+ */
+export function mapPendingApproval(w: PendingApprovalWire): IPayrollRun {
+  const totalGross = w.totalGross ?? 0;
+  const totalNet = w.totalNet ?? 0;
+  const totalEmployees = w.totalEmployees ?? 0;
+  const processedEmployees = w.processedEmployees ?? 0;
+  return {
+    // RENAME: wire `runId` → view-model `id`.
+    id: w.runId ?? '',
+    payMonth: w.payMonth ?? 0,
+    payYear: w.payYear ?? 0,
+    // Never coerced to Approved/Finalized — see mapPayrollRunStatus.
+    status: mapPayrollRunStatus(w.status),
+    totalEmployees,
+    processedEmployees,
+    skippedEmployees: totalEmployees - processedEmployees,
+    totalGross,
+    totalDeductions: totalGross - totalNet,
+    totalNet,
+    // This DTO — unlike PayrollRunDto — really does carry the initiator's display name.
+    initiatedByName: w.initiatedByName ?? null,
+    initiatedAt: w.initiatedAt ?? '',
+    completedAt: null,
+  };
+}
+
+/**
+ * `PayrollApprovalResultDto` → `IPayrollRun`, for submit / approve / reject / return / finalize.
+ *
+ * These five endpoints return a RESULT, not a run: `{ runId, status, action, currentApprovalStep,
+ * totalApprovalSteps, workflowInstanceId }`. The FE annotated them `IPayrollRun`, so every total and
+ * count on the returned object was `undefined`. No caller reads them today — `payroll-run-detail`'s
+ * `runAction()` discards the value and refetches — so the remaining fields are zero/null placeholders,
+ * NOT claims. **RENAME: wire `runId` → view-model `id`.** The honest fix is a narrower result view-model,
+ * which would change component signatures; flagged OUT-OF-LANE.
+ */
+export function mapApprovalResultToRun(w: ApprovalResultWire): IPayrollRun {
+  return {
+    // RENAME: wire `runId` → view-model `id`.
+    id: w.runId ?? '',
+    // Not carried by the result DTO — placeholders, not claims. Callers refetch the run.
+    payMonth: 0,
+    payYear: 0,
+    status: mapPayrollRunStatus(w.status),
+    totalEmployees: 0,
+    processedEmployees: 0,
+    skippedEmployees: 0,
+    totalGross: 0,
+    totalDeductions: 0,
+    totalNet: 0,
+    initiatedByName: null,
+    initiatedAt: '',
+    completedAt: null,
+  };
+}
+
+/**
+ * The approval-step position an action result reports (`2 of 3`). Exposed because the result DTO
+ * genuinely carries it and `IPayrollRun` has nowhere to put it — dropping it silently is what the
+ * previous unchecked cast did.
+ */
+export interface IApprovalStepPosition {
+  currentApprovalStep: number | null;
+  totalApprovalSteps: number | null;
+}
+
+/** Read the step position off an action result. Absent values stay null — never 0-of-0. */
+export function approvalStepPosition(
+  w: ApprovalResultWire,
+): IApprovalStepPosition {
+  return {
+    currentApprovalStep: w.currentApprovalStep ?? null,
+    totalApprovalSteps: w.totalApprovalSteps ?? null,
+  };
 }
