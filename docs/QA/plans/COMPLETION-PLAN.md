@@ -4,6 +4,9 @@
 > by a `@requirements-auditor` pass with `file:line` evidence. The ledgers were treated as **claims**,
 > never evidence — which is why a third of them turned out to be wrong.
 >
+> **How to actually close these items — the fix, the proof, the trap — is in
+> [`COMPLETION-GUIDE.md`](COMPLETION-GUIDE.md).** This file says *what and why*; the guide says *how*.
+>
 > **This file is the broad backlog. It is NOT the execution lane.**
 > The loop executes [`GAP-CLOSURE-QUEUE.md`](GAP-CLOSURE-QUEUE.md), top-down, one item per iteration,
 > and that is also where `/auto-heal` folds new findings. This file is refreshed at `/retro` and
