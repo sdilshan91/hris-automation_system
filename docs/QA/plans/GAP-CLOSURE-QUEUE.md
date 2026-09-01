@@ -230,8 +230,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 - [ ] **G11 · Correct the GAP register's four wrong rows** — `GAP-006` (only 3 of 6 entities were holes; the
       "add 6 lines" framing **would have regressed** — the other 3 are deliberately allow-listed with RLS
       policies), `GAP-030` ("zero test cases" is false), `GAP-034` (there are **zero** axe assertions, not
-      non-executing ones), `GAP-020` (rotation exists and is tested — reword to "no *online* lever").
-- [ ] **G12 · Fix queue item `E2`** — it references `HRM.ArchitectureTests`, a project that does not exist. (GAP-040)
+      non-executing ones) *(GAP-020's reword is **F2**'s, not this item's)*.
 
 ### Test-health items (the suites that hid the breaks above)
 
@@ -256,8 +255,47 @@ instances**, so probes 3–5 could not be observed end-to-end.
 - **GAP-020** — no *online* JWT rotation lever and no global revocation cutoff; containment needs a rolling restart.
 - **GAP-030** — two BA stories are stubs (their code IS test-covered).
 - `ISSUE-289`, `ISSUE-301`, `ISSUE-400`, `ISSUE-380` items 2–4 — product calls, not build work.
-- **`ISSUE-365`** — pick one: add the `/api` proxy to `nginx.conf`, or stop publishing `4200:80`. **Do not**
+- **`ISSUE-365`** — **owned by `E4` (QA rig), not a separate item.** Pick one there: add the `/api` proxy to
+  `nginx.conf`, or stop publishing `4200:80`. **Do not**
   implement the shared `storageState` the finding proposes; `playwright.config.ts:15` forbids it (2026-08-11).
+
+---
+
+## ▶ EXECUTION ORDER — decided 2026-09-01, this is what the loop follows
+
+> **Serial, top-down, one item per iteration.** That is this file's own invariant and it is what makes
+> conflicts impossible: `G8`/`G3b` and `ISSUE-379` all touch the performance mappers, `G3c` and
+> `ISSUE-374` both touch onboarding. Parallelism happens *inside* an item (BE + FE + QA sub-agents on
+> disjoint paths), never across items.
+>
+> **Deduplicated before sequencing:** `G12` withdrawn (misread `E2`) · `GAP-020` reword is `F2`'s ·
+> `ISSUE-365` is `E4`'s. Nothing below is worked twice.
+
+| # | Item | Merge gate | Note |
+|---|---|---|---|
+| 1 | `G9` `/verify-fix` the 11 already-fixed | auto | −29% of the live backlog, no code |
+| 2 | `G10` `/test-us US-PRF-005` | auto | QA-execution debt |
+| 3 | `G11` correct 3 register rows | auto | GAP-006 / GAP-030 / GAP-034 |
+| 4 | `G1` part-time overtime on a full-time base | auto | **money, live** |
+| 5 | `G8` performance FE mappers | auto | cheapest fix in the guide |
+| 6 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
+| 7 | `G13` test theater | auto | |
+| 8 | `G15` Production email guard test | auto | |
+| 9 | `G2` `JwtKeyRingOptions` validation | **HELD** | auth/JWT |
+| 10 | `G5` unresolved-tenant HTTP negative test | **HELD** | tenant isolation |
+| 11 | `G14` sweep-job tenant logging | **HELD** | tenant context |
+| 12 | `G6` roles.sql or correct the claim | **HELD** | isolation/RLS |
+| 13 | `G7` triage 354 `IgnoreQueryFilters` | **HELD** | campaign-shaped |
+| 14+ | `A3`, `E2`–`E5`, `F1`–`F4` | mixed | **pre-audit scope — re-verify before building** |
+
+**Held items open a PR and the loop moves on**; they do not stall the queue. The gate stands as
+written (decided 2026-09-01): a human reviews every auth/JWT and tenant-isolation diff.
+
+**Pre-audit items (`A3`, `E`, `F`) get a verification step first.** They were scoped before the
+2026-09-01 audit, which found the ledgers wrong in both directions and already caught one of these
+(`E2`) being misread. Confirm the premise against `src/` before spending on the build.
+
+**Parked at the decision gate:** `G4` (DSAR) needs a story authored before it needs code.
 
 ---
 
@@ -733,7 +771,8 @@ instances**, so probes 3–5 could not be observed end-to-end.
   browser spot-check would have hidden it. `NginxSecurityHeaderInheritanceTests` now fails if any future
   `location` block repeats the mistake. 3/3 mutations RED. Gate 5444/5444 + 4104/4104.
   **Spawned:** BUG-308 (HSTS dead behind the TLS proxy — in flight), ISSUE-383 (Swagger ordering).
-- [ ] **E2 · `HRM.ArchitectureTests`** — ~6 NetArchTest rules. Mechanically catches the GAP-006 class forever.
+- [ ] **E2 · `HRM.ArchitectureTests`** *(audit 2026-09-01 confirmed the project genuinely does not exist —
+      that is this item's premise, not a defect in it. A `G12` filed against it was withdrawn as a misreading.)* — ~6 NetArchTest rules. Mechanically catches the GAP-006 class forever.
   **Highest durable value per effort in the tail.**
 - [ ] **E3 · Leg-3 parity** — port the InMemory integration suites on stateful paths to Testcontainers, worst-first:
   **reports (12 of 14 InMemory, on `GROUP BY`/ordering code) → leave (18 of 26) → admin-console provisioning/
