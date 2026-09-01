@@ -465,9 +465,19 @@ instances**, so probes 3–5 could not be observed end-to-end.
   **DECIDED (human, 2026-08-23): per-module slices in this loop, worst-first** — not `/campaign`. The queue's
   own measurement (≈1 field in 5 describes an endpoint that was never built) means these are *not* mechanical
   edits, and a batch tool would produce wrong code silently, exactly as BUG-310 did.
-  **Remaining, worst-first** (each its own slice + PR): admin **43** · payroll **40** · attendance **35** ·
-  onboarding **20** · core **16** · benefits **12** · training **10** · core-hr **10** · recruitment **7** ·
-  reports **3** · leave **3** · notifications **2** · dashboard **1**.
+  **Slice 1 — admin ✅ DONE (#567): 49 → 0.** Repo-wide 267 → **218**. Found **two live bugs**: BUG-312
+  (Company Settings' first tab bound to `org` while the API sends `orgProfile` — the section rendered nothing)
+  and BUG-313 (the tenant list's `@for` **track key** was `undefined`, because the FE said `tenantId` and the
+  wire says `id` — wrong/duplicated rows on re-render, not merely a blank cell). Also corrected a mapper that
+  defaulted an unrecognised tenant status to **`'terminated'`**, the most severe state in the union.
+  Filed **ISSUE-400** (the Linked Employee section renders a name/title/department the API has never sent —
+  needs a decision, not a mapper).
+  **The guard was counting its own documentation** (ISSUE-401): every migrated file gains a comment explaining
+  the pattern it replaced, so *finishing* a module raised its count unless the explanation was deleted.
+  Comments are stripped now; that is what moved the true baseline from 267 to 218.
+  **Remaining, worst-first** (each its own slice + PR): payroll **40** · attendance **35** · onboarding **20** ·
+  core **16** · benefits **12** · training **10** · core-hr **10** · recruitment **7** · reports **3** ·
+  leave **3** · notifications **2** · dashboard **1**.
   - *(original scoping note below)*
 - [ ] ~~D1 original~~ — **the 450 wire-adjacent interfaces + a drift guard.**
   Original text: module by module, worst-first. **669 hand-written interfaces vs 11 `Schema<>` uses** —
@@ -530,6 +540,12 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ## Changelog
 
+- **2026-08-23 (D1/admin)** — **First migration slice done (#567): admin 49 → 0, repo-wide 267 → 218.**
+  Two live bugs in it, both in services the delegated agent did not reach — which is the argument for
+  per-module slices over a batch tool, restated with evidence rather than as a prediction.
+  Two lessons recorded rather than just fixed: a mapper's DEFAULT is a decision (defaulting an unknown tenant
+  status to `'terminated'` would have shown operators a red badge for healthy tenants), and **a guard that
+  counts comments punishes documenting the defect it prevents**.
 - **2026-08-23 (D1 guard)** — **D1's drift guard shipped (#565); Tier C closed just before it.** The
   re-measurement matters more than the guard: the metric this queue has tracked all along ("N hand-written
   interfaces") barely moves when work is done, because most of those interfaces never cross the wire.
