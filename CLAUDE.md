@@ -96,7 +96,6 @@ reporting risks, not by narrating confidence on every line).
 > editing `.mcp.json`, fully restart the Claude Code session (a plain "Reload Window" may not
 > reconnect) and approve the project-MCP trust prompt.
 
-All four are defined in [.mcp.json](.mcp.json) (project scope) — the file Claude Code actually loads.
 Setup steps, capability flags and the plugin-collision history: [docs/DEV/mcp-servers.md](docs/DEV/mcp-servers.md).
 
 | Server | Purpose | Driven by |
@@ -140,76 +139,28 @@ Setup steps, capability flags and the plugin-collision history: [docs/DEV/mcp-se
 | `/analyze-module {name}` | Local + MCP | Generate user stories for a specific module |
 | `/research-story US-{ID}` | Local + MCP | **Feasibility gate (RPI-style).** Read-only: reads ONE story + codebase + vault and writes `docs/DEV/research/US-{ID}.md` with a GO / GO-WITH-CONDITIONS / NO-GO verdict. Run before implementing a large/risky/unclear story. |
 | `/implement-story US-{ID}` | Local + MCP | Implement ONE specific story end-to-end (manual single-shot; does NOT touch STATUS.md) |
-| `/test-all [module\|US-ID]` | Local + MCP | **Test loop driver (REPORT-ONLY).** Picks the next untested story from `docs/QA/TEST-STATUS.md`, executes its test cases against the running stack via `@test-runner`, and logs bugs/issues/enhancements to `docs/QA/TEST-FINDINGS.md` (severity, status, root cause, repro). **Never fixes; never opens PRs.** One story per call; rerun (or `/loop`) to continue. See below. |
+| `/test-all [module\|US-ID]` | Local + MCP | **Test loop driver — REPORT-ONLY.** Executes the next untested story's TCs via `@test-runner` and logs findings to `docs/QA/TEST-FINDINGS.md`. **Never fixes, never opens PRs.** One story per call. See below. |
 | `/test-us US-{ID}` | Local + MCP | Execute the test cases for ONE specific story (manual single-shot; **REPORT-ONLY**; does NOT touch TEST-STATUS.md). |
-| `/fix-finding {BUG-ID\|ISSUE-ID}` | Local + MCP | **Finding-driven fix driver.** Fixes ONE finding from `docs/QA/TEST-FINDINGS.md` end-to-end (dev agent + a regression TC via `@qa-engineer` + `@test-authenticator`/`@integration-enforcer`/`/security-audit` gates) on one `fix/{ID}` branch + PR. Edits `src/`; **does NOT touch the ledgers** — run `/verify-fix` after merge. The finding-driven counterpart to `/implement-story`. |
-| `/verify-fix {BUG-ID\|ISSUE-ID}` | Local + MCP | **Fix close-out.** After a `/fix-finding` PR merges: re-runs the finding's affected TCs via `@test-runner` (TC-scoped, or `--iso` for a cross-module isolation re-run), flips `TEST-STATUS.md`, and marks the finding **RESOLVED** in `TEST-FINDINGS.md` with the PR#. The only skill authorized to close a finding; writes only to `docs/QA/`. |
+| `/fix-finding {BUG-ID\|ISSUE-ID}` | Local + MCP | **Finding-driven fix driver.** Fixes ONE finding end-to-end on a `fix/{ID}` branch + PR, with a regression TC and the three audit gates. Edits `src/`; **does not touch the ledgers** — run `/verify-fix` after merge. |
+| `/verify-fix {BUG-ID\|ISSUE-ID}` | Local + MCP | **Fix close-out.** Re-runs the finding's TCs post-merge, flips `TEST-STATUS.md`, marks the finding RESOLVED with the PR#. The only skill authorized to close a finding; writes only to `docs/QA/`. |
 | `/security-audit [scope]` | Local + MCP | **HRM security gate.** Reviews a diff (branch/US-ID/path) against this platform's threat model — tenant isolation, authz, injection, secrets, PII — and writes `docs/Architecture/security-reviews/{scope}.md` with severity-by-exploitability findings + fixes. Read-only; run before opening a PR. `--deep` fans out parallel reviewers. |
 | `/debug-ui {symptom\|URL}` | Local + MCP (Playwright) | Debug the running UI in a real browser — console + network + DOM diagnosis via `@browser-debugger` |
-| `/design-review [URL\|--diff]` | Local + MCP (Playwright/Chrome-DevTools) | **Designer's-eye visual + UX audit (REPORT-ONLY).** Drives `@browser-debugger` to grade the *rendered* UI: first-impression, **AI-slop blacklist**, WCAG/typography/spacing/interaction checklist, trunk test + goodwill reservoir → a screenshot-backed report with **Design Score + AI-Slop Score** in `docs/Design/design-reports/`. The visual-taste counterpart to `/debug-ui` (correctness); never edits code. Adapted (MIT) from gstack `/design-review`, retargeted to our Angular 20 **App-UI** + multi-tenant stack. |
-| `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (read Serilog by `RequestId` → reproduce → hypothesis → fix the source) + backward call-stack tracing, flaky/order-dependent test bisection (xUnit/Karma), condition-based waiting. Encodes this repo's known root-cause classes (InMemory-masks-Postgres, BUG-003 tenant split). Respects the **report-only** boundary (diagnosis ends at a finding under `/test-all`). |
+| `/design-review [URL\|--diff]` | Local + MCP (Playwright) | **Visual + UX audit — REPORT-ONLY.** Grades the *rendered* UI (WCAG, typography, spacing, AI-slop) into `docs/Design/design-reports/` with screenshots. Never edits code. |
+| `/fault-diagnosis` | Local | **Root-cause-before-fix discipline.** 4-phase method (Serilog by `RequestId` → reproduce → hypothesise → fix the source), backward stack tracing, flaky-test bisection. Respects the report-only boundary. |
 | `/error-recovery` | Local | **Stuck-loop breaker.** Failure counter + 2/3/4-attempt escalation (Yellow→Orange→Red), "fix the code not the test," rollback-to-known-good. Governs each attempt *inside* the `/implement-all` 3-attempt remediation cap; pairs with `/fault-diagnosis`. |
-| `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + `docs/QA/` ledger deltas over a window into an honest retro: what shipped, quality/velocity **trends vs the previous retro**, what hurt, and 3-5 owned action items. Writes to `docs/vault/retros/{date}.md` (backlinked into a timeline) so trends accumulate. Also runs a **skill-friction pass**: clusters recurring friction (repeat root-cause classes, `.claude/` churn, abandoned remediation loops, new `agent-memory/feedback-*` notes) and proposes ≤3 ranked diffs to `.claude/skills/` — **report-only, two-occurrence bar, never weakens a guard rail**; the human applies them. The scoped alternative to an always-on observer skill. Also runs a **setup-drift pass** — *are the instructions still true?* — checking the claims `ClaudeMdAccuracyTests` cannot see (hook `command:` paths, agent/skill tables vs `.claude/`, `.mcp.json` vs documented servers, `skillOverrides` vs the plugin's current skill set, lint/format gates still wired). Read-only on code and on `.claude/`. Adapted (MIT) from gstack `/retro`. |
-| `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical-consultant advisory (REPORT-ONLY).** Evidence-anchored, ranked advisory over 3 net-new passes — tech-radar/dependency currency, ADR-drift, complexity/dead-code — plus light synthesis that links (never re-runs) the existing auditors. Writes `docs/Architecture/advisory-reports/`, updates `docs/Architecture/radar/tech-radar.md`, proposes ADRs; folds actionable items into `/auto-heal`. Never edits src / deletes / bumps deps. Drives `@principal-advisor`. |
-| `/gap-analysis [module\|--nfr\|--reverse\|--arch\|--rollup]` | Local | **Implemented-vs-documented gap analysis (REPORT-ONLY).** Traces every documented requirement — the 125 BA stories, tech-doc §5/§11 functional, **§6 NFR**, §8/§9/§10 architecture — to actual code, and reports what is *really* built vs what the ledgers claim, bucketed by MoSCoW. **AC-level for Must Have, story-level for Should/Could**; a requirement passes only with code **+ wired/reachable + a bound test**, so a strong backend behind a broken FE contract is `PARTIAL`, not done. Five passes (functional · doc-coverage · NFR · reverse · architecture) + a ranked `GAP-REGISTER.md`. Writes `docs/Architecture/gap-analysis/`; **never edits `src/` and never corrects a false ledger line — it reports the contradiction and lets the human decide.** Drives `@requirements-auditor`. |
-| `/campaign {name}` | Local + MCP | **Batch driver for a large, homogeneous, mechanical backlog** — N call-sites/files/findings of the SAME class (the 657 hand-written `*.models.ts` interfaces; the 187 WCAG violations in ISSUE-389). The shape between `/implement-all` (story-scoped) and `/fix-finding` (one finding, full PR + regression TC + three audit gates). **Phase 1 is a mandatory survey** — a stratified sample classified MECHANICAL / HETEROGENEOUS / DECISION-REQUIRED; >20% non-mechanical **stops the campaign**, because that is exactly how the scripted 5-site migration in **BUG-310** produced wrong code for four of nine sites. Then pilots the smallest module end-to-end, then one PR per module batch with the full verify gate. Freezes its work-list at Phase 0; parks decision-required items rather than guessing; never closes a finding (that is `/verify-fix`). Edits `src/`. |
-| `/auto-heal` | Local | **Living-plan self-healing (breadth).** On any `OUT-OF-LANE:` flag or discovered adjacent gap: files the finding to `TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, and **re-sorts the priority order** (severity × blast-radius × unblocks-others; gated items park at the decision-gate). Encodes Engineering-Discipline rule #6. The orchestrator's counterpart to every agent's out-of-lane contract; complements `/error-recovery` + `/fault-diagnosis` (depth). Never bypasses report-only / test-integrity / decision-gate. |
+| `/retro [--since]` | Local | **Engineering retrospective.** Turns git history + PRs + ledger deltas into trends vs the last retro and 3-5 owned actions, in `docs/vault/retros/`. Also runs a **skill-friction** pass and a **setup-drift** pass (are the instructions still true?). Report-only; never weakens a guard rail. |
+| `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical advisory — REPORT-ONLY.** Dependency currency, ADR-drift, complexity/dead-code → one ranked advisory in `docs/Architecture/advisory-reports/`. Never edits `src/`, deletes, or bumps deps. |
+| `/gap-analysis [module\|--nfr\|--reverse\|--arch\|--rollup]` | Local | **Implemented-vs-documented tracing — REPORT-ONLY.** Traces every documented requirement to real code; passes only with code **+ wired + test-bound**, so a strong backend behind a broken FE contract is `PARTIAL`. **Never corrects a false ledger line — it reports the contradiction.** |
+| `/campaign {name}` | Local + MCP | **Batch driver for a large, homogeneous, mechanical backlog.** Phase 1 is a **mandatory survey**: >20% non-mechanical **stops the campaign** (this is how BUG-310 shipped wrong code). Then pilot the smallest module, then one PR per module batch. Parks decision-required items; never closes a finding. |
+| `/auto-heal` | Local | **Living-plan self-healing.** On any `OUT-OF-LANE:` flag: files it to `TEST-FINDINGS.md`, folds it into the `COMPLETION-PLAN`, re-sorts priority (severity × blast-radius × unblocks-others). Encodes Engineering-Discipline rule #6. Never bypasses report-only or the decision-gate. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 
-> **Locally-vendored discipline skills.** `/fault-diagnosis` and `/error-recovery` live in
-> [`.claude/skills/`](.claude/skills/) (adapted from third-party MIT skill definitions, retargeted to
-> this stack — Serilog/`RequestId`, EF/Postgres, xUnit/Karma/Playwright). They are guidance protocols,
-> not pipeline drivers; invoke them explicitly or let them fire on bug/stuck-loop triggers. They defer to
-> the `test-integrity-guard` hook and the `/implement-all` remediation loop rather than competing with them.
-
-> **.NET reference skills — VENDORED, not a plugin (changed 2026-08-23).** 16 on-stack skills from the
-> MIT-licensed [`dotnet-skills`](https://github.com/Aaronontheweb/dotnet-skills) v1.5.0 now live directly in
-> [.claude/skills/](.claude/skills/): **`efcore-patterns`** (NoTracking-by-default, query splitting, CLI-only
-> migrations — reinforces our "never hand-write migrations" rule), **`testcontainers`** (our integration-test
-> approach), `database-performance`, `csharp-api-design`/`-coding-standards`, `csharp-nullable-reference-types`
-> (every project sets `<Nullable>enable</Nullable>` and the build emits CS8602/CS8604), the
-> `microsoft-extensions-*` DI/config pair, `project-structure`, `package-management`, `serialization`,
-> `snapshot-testing` (Verify), `opentelementry-dotnet-instrumentation` (dir name misspelled upstream),
-> `csharp-type-design-performance`, `csharp-concurrency-patterns`, and `crap-analysis`.
->
-> **Why it stopped being a plugin.** The 20 off-stack skills (`akka-*`, `aspire-*`, `playwright-blazor`,
-> `mjml-email-templates`, `slopwatch`…) were listed `"off"` in `skillOverrides` for months. That never worked
-> and never could — the docs are explicit: **"Plugin skills are not affected by `skillOverrides`. Manage those
-> through `/plugin` instead."** Once the plugin was genuinely installed (2026-08-22, after months of being
-> declared-but-absent) all 20 went live, and `@backend-dev` was being offered Akka.NET actor-system guidance
-> and Blazor Playwright patterns on an Angular + ASP.NET Core project. Vendored loose skills are **not** plugin
-> skills, so what sits in `.claude/skills/` is exactly what agents are offered. `skillOverrides` and the
-> `dotnet-skills` marketplace entry are both **removed** — they were dead config.
->
-> **Trade-off:** frozen at v1.5.0, no auto-update. Refresh instructions and the full skipped-skill list are in
-> [.claude/skills/_vendor/README.md](.claude/skills/_vendor/README.md); upstream LICENSE preserved alongside.
-
-> ⚠️ **`enabledPlugins` is a declaration, not an installer.** Adding a key there does **not** fetch the
-> plugin — you must also `claude plugin install <name>@<marketplace> --scope project`. This repo has hit
-> the trap twice: `dotnet-skills` sat declared-and-documented but uninstalled for months (its marketplace
-> was never even registered), and four plugins added on 2026-08-22 landed in the same state before being
-> installed properly. **Verify with:** the two sets — `enabledPlugins` in this file and the keys of
-> `~/.claude/plugins/installed_plugins.json` — must match exactly, in both directions. `/retro`'s
-> setup-drift pass checks this.
->
-> **Official Anthropic plugins (project-scoped, in [.claude/settings.json](.claude/settings.json)).** Enabled 2026-08-22 alongside `frontend-design`. They auto-update and are **inert until the session restarts** after enabling:
-> - **`claude-code-setup`** — `/claude-automation-recommender`. A read-only scan of the repo that recommends hooks/skills/agents/MCP servers. Calibrated for projects with little setup, so most of its output is already-have here; its yield is *defects in existing config*. The 2026-08-22 run found the two that produced `ClaudeMdAccuracyTests` and ISSUE-389. Run it after a significant setup change, not on a cadence — the recurring version lives in `/retro`'s setup-drift pass.
-> - **`claude-md-management`** — `/revise-claude-md` + `claude-md-improver`. Audits CLAUDE.md quality and folds session learnings back in. **Complements, does not duplicate, [ClaudeMdAccuracyTests](src/backend/HRM.Tests/Unit/ClaudeMdAccuracyTests.cs):** the test catches *mechanical* drift (dead links, missing scripts, the ISSUE-312 warning); this catches *prose* rot, which no test can. Neither is sufficient alone.
-> - **`pr-review-toolkit`** — six review agents. **`silent-failure-hunter`** and **`type-design-analyzer`** are the net-new ones: they map onto this repo's two documented defect classes (swallowed errors; blind `as` casts hiding contract drift — see BUG-311/BUG-127). `code-reviewer` / `code-simplifier` overlap `/code-review` and `/simplify`; `pr-test-analyzer` overlaps `@test-authenticator`. Prefer the local agents where they overlap — they know the tenant-isolation rules.
-> - **`hookify`** — `/hookify` + `conversation-analyzer`, generates hooks from observed friction. Lower marginal value here (11 custom hooks already hand-written with rationale), but useful as the *authoring* step for whatever `/retro`'s skill-friction pass proposes turning into structural enforcement.
-> - **`security-guidance`** — pattern warnings on edit, an LLM diff review on `Stop`, and an agentic commit reviewer. Heavy overlap with `secret-guard`, `gitleaks.yml`, `semgrep.yml` and `/security-audit`; the **`Stop`-time diff review is the net-new layer**. Watch for duplicate findings — if it just re-reports what semgrep already caught, mute it via `skillOverrides` rather than living with the noise.
->
-> - **`code-review` · `code-simplifier` · `csharp-lsp` · `typescript-lsp` · `feature-dev` · `skill-creator` · `superpowers`** — installed earlier but **undeclared** until 2026-08-22, so they existed only on one machine and never reached CI or a fresh clone. Now declared. `csharp-lsp`/`typescript-lsp` give real language-server navigation over 2,378 C# and 781 TypeScript files and are the highest-value pair of the group.
->
-> **Overlap is the thing to manage here, not coverage.** Five plugins landed at once on a repo that already had 12 agents and 23 skills; the failure mode is three reviewers reporting the same finding and nobody reading any of them. Review after one full cycle and mute what does not earn its place.
-
-> **Optional — Angular reference skills.** The Angular team's official [`angular/skills`](https://github.com/angular/skills) package (`npx skills add https://github.com/angular/skills`) gives `@frontend-dev` current, idiomatic Angular reference knowledge — `angular-developer` (signals/`linkedSignal`/`resource`, standalone components, forms, DI, routing, SSR, a11y, testing) and `angular-new-app`. It tracks the latest Angular, matching our Angular 20 + signals + OnPush stack, and is **version-aware** (its rule #1 makes the agent check the project's Angular version before applying guidance — e.g. Signal Forms is gated to v21+, so it won't force v21 features on our v20). The frontend counterpart to `dotnet-skills` above. (Note: prefer this over the now-deprecated `analogjs/angular-skills`.) **`angular-developer` is now vendored** (see below); `angular-new-app` was skipped as greenfield `ng new` scaffolding, irrelevant to our existing app.
-
-> **Vendored loose skills (`.claude/skills/`, manual-update — FROZEN).** Unlike the marketplace plugins above, these third-party MIT skills have **no marketplace manifest**, so they are **copied into the repo** and pinned at the vendored version — they do **not** auto-update. To refresh, re-copy from upstream (there is no auto-update path for loose skills):
-> - **`karma-skill`** — [`.claude/skills/karma-skill/`](.claude/skills/karma-skill/), from [`LambdaTest/agent-skills`](https://github.com/LambdaTest/agent-skills). Angular-aware Karma + Jasmine unit-test patterns (`TestBed`, `ComponentFixture`, `HttpTestingController`, `fakeAsync/tick/flush`, `createSpyObj`) matching our Angular 20 + Karma/Jasmine FE test stack. (The sibling `jasmine-skill` was **deliberately not** vendored — generic Jasmine, no Angular, redundant with baseline knowledge.)
-> - **`excalidraw-diagram`** — [`.claude/skills/excalidraw-diagram/`](.claude/skills/excalidraw-diagram/), from [`coleam00/excalidraw-diagram-skill`](https://github.com/coleam00/excalidraw-diagram-skill). Generates architecture/flow diagrams as `.excalidraw` JSON for `docs/`, ADRs, and the Obsidian vault. Diagram generation has **zero deps**; the optional PNG self-render/validation pipeline (`references/render_excalidraw.py`) needs Python `uv` + a Chromium and is intentionally **not** set up. Brand colors live in `references/color-palette.md`.
-> - **`angular-developer`** — [`.claude/skills/angular-developer/`](.claude/skills/angular-developer/), from the official [`angular/skills`](https://github.com/angular/skills) (Google/Angular team, MIT). SKILL.md + **37 reference files** covering components, signals/`linkedSignal`/`resource`, DI, routing, reactive + signal forms, SSR/rendering strategies, testing (fundamentals + harnesses + e2e + router), ARIA, animations, CLI, and **Tailwind** — the reference brain for `@frontend-dev`. Version-aware (checks project Angular version first). Only `angular-developer` was vendored; `angular-new-app` (greenfield scaffolding) was skipped.
-
+> **Setup history — plugins, vendored skills, and the traps already hit.** Why `dotnet-skills` was
+> vendored rather than installed, why `skillOverrides` was dead config, the
+> `enabledPlugins`-is-not-an-installer trap this repo fell into twice, and the per-plugin overlap
+> notes all live in [docs/DEV/claude-setup-history.md](docs/DEV/claude-setup-history.md).
+> Read it before changing plugins, marketplaces, or the vendored skill set;
+> `/retro`'s setup-drift pass is what rechecks those claims on a cadence.
 ### `/implement-all` — autonomous story loop
 
 Source of truth: [.claude/skills/implement-all.md](.claude/skills/implement-all.md). Per story it:
@@ -223,75 +174,51 @@ Run continuously with `/loop /implement-all [scope]` — it re-fires until the s
 
 ### `/test-all` — autonomous test-execution loop (REPORT-ONLY)
 
-Source of truth: [.claude/skills/test-all.md](.claude/skills/test-all.md). The **testing** counterpart to
-`/implement-all`. **Hard policy decision: the testing loop identifies and documents defects but NEVER fixes
-them.** It has **no remediation loop** — a failing test produces a *finding*, not a fix attempt. Fixing is a
-separate step the human decides on after reviewing the ledger. Per story it:
+Source of truth: [.claude/skills/test-all.md](.claude/skills/test-all.md). The testing counterpart to
+`/implement-all`. **Hard policy: it identifies and documents defects but NEVER fixes them.** There is
+**no remediation loop** — a failing test produces a *finding*, not a fix attempt.
 
-1. Picks the first `[ ]` (not-tested) story in [docs/QA/TEST-STATUS.md](docs/QA/TEST-STATUS.md) (scoped by module/ID arg, else priority order), pre-flights the running stack, marks it `[~]`.
-2. Dispatches `@test-runner` to execute every test case bound to that story — bound automated test (xUnit/Karma/Playwright) if present, else API-layer (curl + JWT) / UI-layer (Playwright MCP) per the TC steps.
-3. Records each TC verdict (flips the TC `status:` `draft → automated → pass | fail | blocked`) and appends **every** defect to [docs/QA/TEST-FINDINGS.md](docs/QA/TEST-FINDINGS.md) with the full schema: **type** (BUG/ISSUE/ENH), **severity**, **status** (`OPEN`), **layer**, module/US/TC, **root cause + confidence**, **reproduction steps**, and evidence.
-4. Flips TEST-STATUS.md: `[x]` tested-clean · `[!]` tested-with-findings (lists the finding IDs) · `[b]` blocked.
+Per story: picks the first `[ ]` in [docs/QA/TEST-STATUS.md](docs/QA/TEST-STATUS.md) → `@test-runner`
+executes every bound TC → records each verdict and appends every defect to
+[docs/QA/TEST-FINDINGS.md](docs/QA/TEST-FINDINGS.md) with the full schema → flips TEST-STATUS.md
+(`[x]` clean · `[!]` findings · `[b]` blocked).
 
-`@test-runner` writes **only** to `docs/QA/` ledgers — it must never edit `src/`, never weaken a test to
-go green, and never open a PR. Run continuously with `/loop /test-all [scope]`; because nothing is auto-fixed
-and no PRs are opened, this is **safe to run unattended** — the worst case is a longer findings ledger to
-triage. `/test-us US-{ID}` is the manual single-shot variant (does not touch TEST-STATUS.md). The findings in
-`TEST-FINDINGS.md` are the input to a **separate, human-decided** fix cycle (e.g. you then run `/implement-story`
-or hand a finding to a dev agent).
+`@test-runner` writes **only** to `docs/QA/` — never edits `src/`, never weakens a test, never opens a
+PR. Because nothing is auto-fixed, `/loop /test-all [scope]` is **safe unattended**; the worst case is a
+longer ledger to triage. Those findings are the input to a **separate, human-decided** fix cycle.
+
 
 ## Automation Hooks
 
-| Hook | Trigger | Action |
-|------|---------|--------|
-| `post-user-story-commit` | User story files committed | Notifies dev + QA agents to start |
-| `post-dev-commit` | Frontend/backend code committed | Notifies QA to review test cases |
-| `sound notifications` | `Stop`, `Notification`, `PermissionRequest`, `SubagentStop` | Plays a short sound via `python .claude/hooks/scripts/hooks.py` so you know when a long `/implement-all` run finishes or needs you. Toggle per-hook in `.claude/hooks/config/hooks-config.json` (or git-ignored `…local.json`); disable all via `disableAllHooks` in `settings.local.json`. Needs Python 3. |
-| `secret-guard` | `PreToolUse` on `Write\|Edit` | **Enforces** Critical Rule #6. Blocks a write whose *pending* content contains a hardcoded secret (Postgres `Password=…`, DB connection URLs with creds, `Jwt:PrivateKey`, private-key blocks, GitHub/AWS tokens, JWTs). Exempts gitignored secret files (`.env`, `*.local.json`). Fails open. Override for one run with `CLAUDE_DISABLE_SECRET_GUARD=1`. |
-| `test-integrity-guard` | `PreToolUse` on `Write\|Edit` | **Enforces** the "never weaken/skip/delete a test to go green" rule. Blocks edits to test files (`*.spec.ts`, `*Tests.cs`, …) that introduce skip/focus markers (`xit`/`fit`/`.skip`/`.only`/`[Fact(Skip)]`/`[Ignore]`) or remove test cases. Fails open. Override with `CLAUDE_DISABLE_TEST_GUARD=1`. |
-| `careful-guard` | `PreToolUse` on `Bash` | **Speed-bump on irreversible commands.** Returns `ask` (forces a prompt even under `bypassPermissions`, which the `permissions.ask` list can't do during unattended loops) for `rm -r`, SQL `DROP`/`TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout/restore .`, `kubectl delete`, `docker rm -f`/`prune`, `dotnet ef database drop`. Exempts recursive-delete of build artefacts (`node_modules`, `dist`, `bin`, `obj`, `.angular`, `coverage`…). Fails open. Override with `CLAUDE_DISABLE_CAREFUL=1`. Adapted (MIT) from gstack `/careful`. |
-| `freeze-guard` | `PreToolUse` on `Write\|Edit` | **Edit-scope fence (dormant until armed).** When a boundary is armed, blocks any Write/Edit outside it — stops scope-creep into unrelated files during a focused fix/debug. **Arm:** `echo "<abs-dir>" > .claude/hooks/.freeze-dir` (or set `CLAUDE_FREEZE_DIR`). **Disarm:** delete that file. State file is gitignored (never travels in a commit). Fails open when unarmed. Adapted (MIT) from gstack `/freeze`. |
-| `config-protection-guard` | `PreToolUse` on `Write\|Edit` | **Config-file sibling of `test-integrity-guard`.** Blocks edits that *weaken a lint/format config* to fake a green gate — `eslint.config.*`/`.eslintrc*`, `.prettierrc*`, `.stylelintrc*`, `.markdownlint*`, `.editorconfig`, `ruff.toml`. Allows **first-time creation** (nothing to weaken); `pyproject.toml`/`package.json` deliberately unprotected (carry metadata/deps). Fails open. Override with `CLAUDE_DISABLE_CONFIG_GUARD=1`. Ported (MIT) from ECC `config-protection.js`. |
-| `antipattern-advisor` | `PreToolUse` on `Write\|Edit` | **Advisory (NON-blocking) .NET code-smell nudge.** On a `*.cs` write, greps the *pending* content for four mechanically-detectable anti-patterns (`DateTime.Now`/`UtcNow` → TimeProvider · `new HttpClient()` → IHttpClientFactory/ResilientClient · non-event-handler `async void` · `.Result`/`.GetAwaiter().GetResult()` sync-over-async) and surfaces a note the model can act on — it **never denies** (unlike the deny-guards), so it can't wedge the `/implement-all` loop. Catches smells at write-time because agents commit via GitHub MCP `push_files`, which no git pre-commit hook would see. Backed by [docs/DEV/references/dotnet-common-antipatterns.md](docs/DEV/references/dotnet-common-antipatterns.md). Fails open. Silence with `CLAUDE_DISABLE_ANTIPATTERN_ADVISOR=1`. Adapted (MIT) from codewithmukesh/dotnet-claude-kit. |
-| `no-verify-guard` | `PreToolUse` on `Bash` | **Blocks git-hook bypass.** Denies `git commit/push/merge/… --no-verify` (and `git commit -n`) and `-c core.hooksPath=…` overrides so pre-commit/commit-msg/pre-push hooks can't be skipped to force a red gate green. shlex-tokenized so a commit *message* mentioning `--no-verify` is not a false block. Fails open. Override with `CLAUDE_DISABLE_NOVERIFY_GUARD=1`. Ported (MIT) from ECC `block-no-verify.js`. |
-| `vault-compliance-advisor` | `SubagentStop` | **Advisory (NON-blocking) shared-memory nudge.** Enforces the **Agent contract** above the way `antipattern-advisor` enforces code smells: when a *writing* agent (`backend-dev`, `frontend-dev`, `qa-engineer`, `business-analyst`) finishes a run that changed ≥3 files under `src/`, `docs/BA/` or `docs/QA/` but wrote **nothing** to `docs/vault/` or `.claude/agent-memory/`, it surfaces a note and appends a line to `.claude/hooks/vault-compliance.log` (gitignored) so unattended `/implement-all` runs leave a reviewable trail. Reads the subagent's own transcript (`<session>/subagents/agent-*.jsonl`) and resolves the agent from its `.meta.json` sidecar. **Read-only auditors are deliberately out of scope** — their contracts forbid writing files; `test-runner` too (its lane is the `docs/QA/` ledgers). Never blocks by default, so it cannot wedge the loop; opt in to blocking with `CLAUDE_VAULT_ENFORCE=1`. Threshold via `CLAUDE_VAULT_MIN_WRITES`. Fails open. Silence with `CLAUDE_DISABLE_VAULT_ADVISOR=1`. Chosen over an external auto-capture memory daemon (e.g. `claude-mem`) to keep knowledge as reviewable markdown in git — no extra service, vector DB, or LLM spend. |
+Full rationale, override variables and provenance: [docs/DEV/hooks.md](docs/DEV/hooks.md).
+Every guard **fails open** and has a documented `CLAUDE_DISABLE_*` override, so a deliberate
+exception is one env var away and a silent bypass is not.
+
+| Hook | Trigger | Enforces |
+|------|---------|----------|
+| `secret-guard` | `PreToolUse` Write\|Edit | **Denies** a write whose pending content holds a hardcoded secret. Critical Rule #6. |
+| `test-integrity-guard` | `PreToolUse` Write\|Edit | **Denies** skip/focus markers or removed test cases. "Never weaken a test to go green." |
+| `config-protection-guard` | `PreToolUse` Write\|Edit | **Denies** edits that weaken a lint/format config to fake a green gate. |
+| `freeze-guard` | `PreToolUse` Write\|Edit | **Denies** edits outside an armed directory fence. Dormant until armed. |
+| `antipattern-advisor` | `PreToolUse` Write\|Edit | *Advisory.* Flags four .NET smells on `*.cs` writes. Never denies. |
+| `careful-guard` | `PreToolUse` Bash | Forces a prompt on irreversible commands (`rm -r`, `DROP`, `push --force`, `reset --hard`). |
+| `no-verify-guard` | `PreToolUse` Bash | **Denies** `--no-verify` and `core.hooksPath` overrides that skip git hooks. |
+| `post-user-story-commit` | story files committed | Notifies dev + QA agents to start. |
+| `post-dev-commit` | FE/BE code committed | Notifies QA to review test cases. |
+| `vault-compliance-advisor` | `SubagentStop` | *Advisory.* Nudges when a writing agent changed ≥3 files but wrote nothing shared to `docs/vault/`. |
+| sound notifications | `Stop`, `Notification`, `PermissionRequest`, `SubagentStop` | Audible cue when a long run finishes or needs you. |
 
 ## Pipeline Flow (Local + MCP)
 
-```
-                      LOCAL (Claude Code)              GITHUB (via MCP)
-                      ──────────────────               ────────────────
-[docs/]
-   │
-   ▼
-@business-analyst ─────────────────────── MCP ──► branch: feature/user-stories-{module}
-   │  (writes docs/BA/)                      PR: "IEEE 830 stories for {module}"
-   │                                              Issues: epic per module
-   │
-   ├── Stage 2 (parallel via git worktrees) ──┐
-   │                                          │
-   ▼                 ▼                        ▼
-@frontend-dev   @backend-dev           @qa-engineer
-   │                 │                        │
-   MCP               MCP                     MCP
-   ▼                 ▼                        ▼
-branch + PR      branch + PR             branch + PR
-(Angular 20)     (.NET Core 10)          (test cases)
-   │                 │                        │
-   └─────────────────┼────────────────────────┘
-                     ▼
-           GitHub: Integration Review Issue
-```
+`docs/` → `@business-analyst` (writes `docs/BA/`, opens an epic issue per module) → **Stage 2 in
+parallel via git worktrees**: `@frontend-dev` + `@backend-dev` + `@qa-engineer`, each on its own
+branch and PR → a GitHub integration-review issue. Every stage pushes via GitHub MCP, never manual git.
 
 ## Branch Strategy
 
-```
-main
-├── feature/user-stories-{module}   ← @business-analyst
-├── feature/frontend-{module}       ← @frontend-dev (worktree)
-├── feature/backend-{module}        ← @backend-dev  (worktree)
-└── feature/qa-{module}             ← @qa-engineer  (worktree)
-```
+Cut from `main`: `feature/user-stories-{module}` (BA) · `feature/frontend-{module}` ·
+`feature/backend-{module}` · `feature/qa-{module}` (each in its own worktree) ·
+`feature/US-{MODULE}-{NNN}` (`/implement-all`) · `fix/{BUG-ID|ISSUE-ID}` (`/fix-finding`).
 
 ## Directory Structure
 
@@ -338,14 +265,6 @@ There are **two** distinct memory stores — keep them separate so knowledge doe
 Rule of thumb: if it's worth sharing, it goes in the **vault**; if it's just one agent's working memory, the
 built-in store is fine. Never duplicate the same fact into both. Secrets/logs go in neither.
 
-> **The rule had quietly inverted.** `.claude/agent-memory/` was gitignored, so 107 of the project's 141
-> notes (76%) sat on one NTFS drive — never reviewed, never shared, one disk failure from gone — while
-> `docs/vault/` fell from 70 commits in June 2026 to 5 in August. `vault-compliance-advisor` accepted
-> *either* store, so a private note satisfied the contract and the shared vault starved. Both are fixed:
-> agent-memory is tracked, and the hook now nudges separately on **`private-only`** runs. Replaying 10 real
-> subagent transcripts: **3 nudges before, 10 after** — including a `backend-dev` run that touched 55 files
-> and left nothing shared.
-
 ## Critical Rules
 1. **Tenant isolation is non-negotiable** — every query, cache key, and API call must be tenant-scoped
 2. **IEEE standards** — user stories follow IEEE 830, test cases follow IEEE 829
@@ -355,19 +274,10 @@ built-in store is fine. Never duplicate the same fact into both. Secrets/logs go
 6. **Secrets in .env only** — never hardcode tokens, always use `${ENV_VAR}` references
 
 ## Module Priority
-1. Authentication & Authorization
-2. Core HR (Employees, Departments, Org Tree)
-3. Leave Management
-4. Attendance
-5. Recruitment
-6. Payroll
-7. Performance Management
-8. Admin Console (System + Tenant)
-9. Onboarding/Offboarding
-10. Training & Benefits
-11. Reports & Analytics
-12. Notifications & Audit
 
+1. Authentication & Authorization · 2. Core HR · 3. Leave · 4. Attendance · 5. Recruitment ·
+6. Payroll · 7. Performance · 8. Admin Console · 9. Onboarding/Offboarding · 10. Training &
+Benefits · 11. Reports & Analytics · 12. Notifications & Audit
 ---
 
 # Application Development
@@ -393,6 +303,12 @@ built-in store is fine. Never duplicate the same fact into both. Secrets/logs go
 - `ConnectionStrings:DefaultConnection` — PostgreSQL (`Password` is empty in the template)
 - `Jwt:PrivateKey` — signing key for JWT validation
 - A running **PostgreSQL** instance (also backs Hangfire job storage)
+
+Run **`scripts/doctor.sh`** after any toolchain or plugin change. It checks the two tiers
+separately — REQUIRED (exit 1: cannot build) and CAPABILITY (exit 2: builds fine, but a
+capability these instructions promise is silently absent). The second tier exists because
+`csharp-lsp`/`typescript-lsp` ship no language server: both were documented as available
+and were dead on PATH for 12 days with no build, test, or agent ever noticing.
 
 ## Traceability convention
 Code, user stories (`docs/BA/`, IEEE 830), and test cases (`docs/QA/`, IEEE 829) are cross-referenced by ID — e.g. `US-AUTH-007` appears in both `TenantService` comments and `docs/QA/authentication/`. Preserve these references when modifying related code.

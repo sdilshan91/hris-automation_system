@@ -38,6 +38,14 @@ for anything touching SQL, query filters, or migrations.
 > Coverage is **measure-only** (`COVERAGE=1`); no threshold is enforced yet, deliberately — setting a
 > gate before anyone has seen the number is how the gate ends up lowered.
 
+## Nullability
+
+All 5 projects set `<Nullable>enable</Nullable>`, so the build really does emit
+**CS8602 / CS8604 / CS8714** — they are live warnings in this codebase, not theory.
+Write null-aware C#: guard or annotate rather than reaching for `!`. The
+`csharp-nullable-reference-types` skill has the full attribute catalog
+(`NotNullWhen`, `MemberNotNull`, `MaybeNull`, …) when you need it.
+
 ## Clean Architecture + CQRS
 
 Four projects, dependencies point inward (`Api → Application → Domain`; `Infrastructure → Application`):
