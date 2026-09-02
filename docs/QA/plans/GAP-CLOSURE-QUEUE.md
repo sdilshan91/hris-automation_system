@@ -278,7 +278,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 3 | ~~`G16` BUG-431 date-only 500~~ | ✅ | **fixed at the API boundary**; 5573/5573; found ISSUE-435 + ISSUE-436 |
 | 4 | ~~`G11` correct 3 register rows~~ | ✅ | **#582** — GAP-006's "add 6 filters" would have REGRESSED 3 |
 | 5 | `G1` part-time overtime on a full-time base | auto | **money, live** |
-| 6 | `G8` performance FE mappers | auto | cheapest fix in the guide |
+| 6 | ~~`G8` performance FE mappers~~ | ✅ | **7 of 8 comments were false**; 5 arms failed pre-fix; 4333 green |
 | 7 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
 | 8 | `G13` test theater | auto | |
 | 9 | `G15` Production email guard test | auto | |

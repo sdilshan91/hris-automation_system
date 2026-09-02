@@ -1541,6 +1541,7 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 
 ### ISSUE-379 — the migration surfaced 11 backend DTO gaps: fields the UI renders that the API has never sent
 - **Type / Severity / Status:** ISSUE · HIGH · OPEN ` — **all are decision-gated** (add the field, or remove the UI that renders it)
+- **RE-SCOPED 2026-09-02 (G8):** this was filed as a **backend** gap. **Seven of its eight fields were frontend mapper bugs** — the wire carried them and the mappers discarded them under comments asserting it did not. Those seven are now **CLOSED** by G8 (`availableExportFormats`, trend `scoreScaleMax`, drilldown `cycleLabel` + `scoreScaleMax`, sign-off `cycleName` + `ratingScaleMax` + `finalScore`). **What remains is genuinely absent from the BE DTOs and is the real residue of this finding:** `managerName`, `jobTitle`, `goals` (the goal + manager-rating snapshot) and `exportAvailable` on `PerformanceReviewMeetingNotesDto`; `scopeLabel` and `filterOptions` on the dashboard overview (**the FR-4 filter panel is wired but permanently empty**); `jobTitle` + `trend` on `PerformancePerformerDto`; `grade` + `trend` on the drilldown employee row. A fixer following the original wording would have edited DTOs that were already correct.
 - **Layer:** BE (DTOs) with FE symptoms
 - **Module / US / TC:** performance, leave, core-hr — surfaced 2026-08-18..21 by the D-migration slices
 - **Title:** ~35 view-model fields across three modules have **no wire source at all.** These 11 are the ones something actually renders.
@@ -2665,4 +2666,14 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Root cause + confidence (~95%):** there is no outbound contract assertion anywhere. `src/app/core/api/generated/api-types.ts` IS generated from `contracts/openapi/hrm-v1.json` and CI enforces it byte-for-byte (`npm run api:types:check`) — but only for *types the FE reads*. Nothing asserts that what a service **sends** conforms to the contract.
 - **Severity rationale:** HIGH by blast radius. It is the mechanism behind this repo's documented dominant defect class, and it makes the FE suite structurally unable to detect it. 4,327 green specs did not catch four live user-facing breaks.
 - **Suggested direction (NOT applied):** assert outbound payloads against the generated request types — the type information already exists and is already enforced; the missing step is applying it on the send path. Cheaper than it looks, and it would have caught all four.
+
+### ISSUE-440 — `employeeViewed` is hardcoded false, but the notes DTO carries `notesOpenedAt` — BR-2 always displays "not viewed"
+- **Type / Severity / Status:** ISSUE · MED · OPEN (needs-decision)
+- **Layer:** FE
+- **Module / US / TC:** Performance · US-PRF-006 (BR-2) · sibling of ISSUE-379
+- **Title:** `review-signoff.models.ts` hardcodes `employeeViewed: false` under a "No wire source" comment, but `PerformanceReviewMeetingNotesDto` carries `notesOpenedAt?: string | null` — the signal the field exists for. The sign-off screen therefore always shows "not viewed".
+- **Root cause + confidence (~85%):** the mapper was written before the wire field existed, or the connection was never made.
+- **Severity rationale:** MED — BR-2 display is permanently wrong, but it is read-only and misleads rather than corrupts.
+- **Why it was NOT fixed in G8:** unlike the seven fields G8 closed, this is an **inference** (`notesOpenedAt != null` ⇒ viewed), not a rename. Whether "opened" equals "viewed" is a product decision, so the agent correctly declined to invent it.
+- **Suggested direction (NOT applied):** confirm the semantics, then `employeeViewed: w.notesOpenedAt != null`.
 

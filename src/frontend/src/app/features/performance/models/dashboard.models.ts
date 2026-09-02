@@ -220,14 +220,47 @@ export type DepartmentEmployeeScoreWire =
   Schema<'PerformanceDepartmentEmployeeScoreDto'>;
 
 /**
- * Fallback score-scale for the TREND and DRILL-DOWN surfaces. NOTE (finding): neither
- * `PerformancePerformanceTrendDto` nor `PerformanceDepartmentDrilldownDto` carries a
- * score-scale field, yet both are rendered against one (the polyline / the score bars).
- * The overview supplies `ratingScaleMax`; these two do not, so this constant stands in
- * until the backend adds the field (or the caller threads the overview's scale). The
- * dashboard scores share the cycle rating scale (default 5), so that is the fallback.
+ * Fallback score-scale for the TREND and DRILL-DOWN surfaces, used ONLY when the wire
+ * omits the field.
+ *
+ * G8 CORRECTION: this comment used to assert that neither `PerformancePerformanceTrendDto`
+ * nor `PerformanceDepartmentDrilldownDto` "carries a score-scale field". Both do — each has
+ * `ratingScaleMax`, exactly like the overview. The mappers below now read it, and this
+ * constant is what they fall back to when it is absent from the payload. The dashboard
+ * scores share the cycle rating scale (default 5), so that is the fallback value.
  */
 export const DASHBOARD_SCALE_FALLBACK = 5;
+
+/**
+ * Wire export token → FE `ExportFormat`. The server advertises
+ * `ExportFormatNormalizer.Supported` = `["csv", "xlsx", "pdf"]` — lowercase, and `xlsx`
+ * rather than `excel` — which matches NO member of the FE union literally. So this is a
+ * translation, not a cast. The translated values round-trip back through the export
+ * endpoint because the server normalizes case-insensitively and treats `excel` as an
+ * alias for `xlsx`.
+ */
+const EXPORT_FORMAT_WIRE_MAP: Readonly<Record<string, ExportFormat>> = {
+  csv: 'Csv',
+  xlsx: 'Excel',
+  pdf: 'Pdf',
+};
+
+/**
+ * Translates the advertised wire tokens, DROPPING anything unrecognised.
+ *
+ * Filtering rather than casting (BUG-311's lesson, mirrored from
+ * `isRecommendationExportFormat`): `as ExportFormat[]` would make the union describe
+ * values the wire never sends, and a format a newer backend starts advertising would
+ * render a button whose handler the FE cannot honour. Losing an export option the user
+ * never had is the safe direction.
+ */
+export function mapExportFormats(
+  w: readonly string[] | null | undefined,
+): ExportFormat[] {
+  return (w ?? [])
+    .map((token) => EXPORT_FORMAT_WIRE_MAP[token.trim().toLowerCase()])
+    .filter((f): f is ExportFormat => f !== undefined);
+}
 
 /** Maps the wire cycle-progress block onto `ICycleProgress` (`*Completed` → `*Complete`). */
 export function mapCycleProgress(
@@ -285,19 +318,28 @@ export function mapPerformer(w: PerformerWire): IPerformerRow {
  * Maps the whole overview wire payload onto `IDashboardOverview`.
  *
  * NOTE (findings): fields that have no wire source are defaulted + reported here, not invented.
- * This list was WRONG about one of them, so it is worth stating precisely which is which:
+ * This list has now been WRONG about two of them, each time in the same direction — claiming a
+ * backend gap for a field the payload was already carrying — so it is worth stating precisely
+ * which is which, re-verified against `PerformancePerformanceDashboardDto` in the generated
+ * contract:
  *   • `teamRanking`       → NOT a wire gap. FIXED (ISSUE-379). The API sends it: in Team scope the
  *                           server's `topPerformers` IS the ranking (BR-3 leaves `bottomPerformers`
  *                           empty for a manager). This mapper was discarding it, which is why the
  *                           widget rendered blank — a FRONTEND bug filed for four weeks as a missing
  *                           backend field.
- *   • `scopeLabel`        → '' (the scope subtitle renders blank) — genuinely absent from the wire.
+ *   • `availableExportFormats` → NOT a wire gap either. FIXED (G8). The DTO declares
+ *                           `availableExportFormats?: string[] | null` and the server fills it from
+ *                           `ExportFormatNormalizer.Supported`. The previous comment here asserted it
+ *                           was "genuinely absent from THIS payload"; it was not, and the hardcoded
+ *                           `[]` is why no export button ever rendered (FR-8/AC-4). The wire tokens
+ *                           are lowercase, so they are TRANSLATED, not cast — see `mapExportFormats`.
+ *   • `scopeLabel`        → '' (the scope subtitle renders blank) — genuinely absent from the wire
+ *                           (re-verified: the DTO has `cycleName`, which is a different thing).
  *   • `filterOptions`     → empty lists (the FR-4 filter panel has no options) — genuinely absent.
- *   • `availableExportFormats` → [] (no export buttons render) — genuinely absent from THIS payload,
- *                           though the export endpoint itself exists and accepts csv/xlsx/pdf.
  *
- * The lesson worth keeping: "the API never sends it" is a claim about the API, and it needs checking
- * against the API. Three of the four here were right; one was a mapper bug wearing a backend label.
+ * The lesson worth keeping, now with a second data point: "the API never sends it" is a claim about
+ * the API, and it needs checking against the API. Two of the four here were mapper bugs wearing a
+ * backend label; a stale comment next to a hardcoded default is the mechanism that kept them alive.
  * The renames that WERE broken (`ratingScaleMax`/`scoredEmployeeCount`/
  * `scoreDistribution`/`progress`, nested `completionRate`) are fixed below.
  */
@@ -333,7 +375,10 @@ export function mapDashboardOverview(
     teamRanking:
       (w.scope ?? 'Organization') === 'Team' ? (w.topPerformers ?? []).map(mapPerformer) : [],
     cycleProgress: mapCycleProgress(w.progress),
-    availableExportFormats: [],
+    // G8: this was hardcoded `[]` under a comment claiming the payload never carried it. It does
+    // (`availableExportFormats?: string[] | null`, filled from `ExportFormatNormalizer.Supported`),
+    // so every export button was gated off by the mapper, not by the backend.
+    availableExportFormats: mapExportFormats(w.availableExportFormats),
   };
 }
 
@@ -350,8 +395,11 @@ export function mapTrendPoint(w: CycleTrendPointWire): ITrendPoint {
  * Maps the wire trend payload onto `ITrendResponse`. The wire keeps the aggregate
  * (`points`) and the per-department overlays (`departmentSeries`) apart; the FE flattens
  * them into one `series` list where the first, keyless series is the org/team aggregate.
- * NOTE (finding): the wire carries NO score-scale, so `scoreScaleMax` falls back to
- * `DASHBOARD_SCALE_FALLBACK` (reported).
+ *
+ * G8 CORRECTION: the previous note here claimed "the wire carries NO score-scale", so
+ * `scoreScaleMax` was pinned to `DASHBOARD_SCALE_FALLBACK` regardless of the payload.
+ * `PerformancePerformanceTrendDto` does carry `ratingScaleMax`; it is read now, and the
+ * fallback only applies when the field is genuinely absent from the response.
  */
 export function mapTrendResponse(w: TrendWire): ITrendResponse {
   const aggregate: ITrendSeries = {
@@ -366,7 +414,7 @@ export function mapTrendResponse(w: TrendWire): ITrendResponse {
   }));
   return {
     series: [aggregate, ...overlays],
-    scoreScaleMax: DASHBOARD_SCALE_FALLBACK,
+    scoreScaleMax: w.ratingScaleMax ?? DASHBOARD_SCALE_FALLBACK,
   };
 }
 
@@ -390,10 +438,13 @@ export function mapDepartmentEmployeeScore(
 }
 
 /**
- * Maps the wire drill-down payload onto `IDepartmentDrilldown`. NOTE (findings): the
- * wire has no cycle LABEL (only a `cycleId`) and no score-scale, both of which are
- * rendered. `cycleLabel` → '' and `scoreScaleMax` → `DASHBOARD_SCALE_FALLBACK`.
- * Reported — not invented.
+ * Maps the wire drill-down payload onto `IDepartmentDrilldown`.
+ *
+ * G8 CORRECTION: the previous note here claimed the wire "has no cycle LABEL (only a
+ * `cycleId`) and no score-scale", so both were hardcoded — the breadcrumb rendered an
+ * empty cycle segment and the score bars were drawn against a guessed scale.
+ * `PerformanceDepartmentDrilldownDto` carries BOTH `cycleName` and `ratingScaleMax`;
+ * they are read now, with the scale falling back only when the payload omits it.
  */
 export function mapDepartmentDrilldown(
   w: DepartmentDrilldownWire,
@@ -401,9 +452,9 @@ export function mapDepartmentDrilldown(
   return {
     departmentId: w.departmentId ?? '',
     departmentName: w.departmentName ?? '',
-    cycleLabel: '',
+    cycleLabel: w.cycleName ?? '',
     averageScore: w.averageScore ?? null,
-    scoreScaleMax: DASHBOARD_SCALE_FALLBACK,
+    scoreScaleMax: w.ratingScaleMax ?? DASHBOARD_SCALE_FALLBACK,
     employees: (w.employees ?? []).map(mapDepartmentEmployeeScore),
   };
 }

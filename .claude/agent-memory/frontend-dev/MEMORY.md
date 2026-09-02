@@ -39,3 +39,5 @@
 - [Payroll statutory contract traps](project-payroll-statutory-contract-traps.md) — the list DTO carries no taxSlabs/socialSecurity; hydrating the editor from it opens empty and saving destroys the bands
 - [Wire migration: envelope + defaults](wire-migration-envelope-and-defaults.md) — alias the INNER dto (envelope auto-unwraps); spec flush bodies are WIRE bodies; pick the default that cannot over-claim
 - [Wire migration: parallel split](wire-migration-parallel-split.md) — fan out research per domain concern to scratch fragments; apply the shared-file edits serially with assert-count-1 replacements
+- ["No wire source" comments lie](stale-no-wire-source-comments.md) — mapper comments claiming a field is absent are unverified claims; grep the DTO before filing a backend gap (ISSUE-379, G8)
+- [Export-format token mismatch](wire-export-format-token-mismatch.md) — wire ships lowercase csv/xlsx/pdf; dashboard's ExportFormat union is PascalCase — translate via map + drop unknowns, never cast
