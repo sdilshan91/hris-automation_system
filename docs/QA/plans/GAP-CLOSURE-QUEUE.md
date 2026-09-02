@@ -276,17 +276,17 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 1 | ~~`G9` `/verify-fix` the 11 already-fixed~~ | ✅ | **7 closed · 1 partial · 1 parked** — see below |
 | 2 | ~~`G10` `/test-us US-PRF-005`~~ | ✅ | **BLOCKED × 3 — ISSUE-377 NOT discharged.** Found BUG-431 (HIGH) |
 | 3 | ~~`G16` BUG-431 date-only 500~~ | ✅ | **fixed at the API boundary**; 5573/5573; found ISSUE-435 + ISSUE-436 |
-| 4 | `G11` correct 3 register rows | auto | GAP-006 / GAP-030 / GAP-034 |
+| 4 | ~~`G11` correct 3 register rows~~ | ✅ | **#582** — GAP-006's "add 6 filters" would have REGRESSED 3 |
 | 5 | `G1` part-time overtime on a full-time base | auto | **money, live** |
 | 6 | `G8` performance FE mappers | auto | cheapest fix in the guide |
 | 7 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
 | 8 | `G13` test theater | auto | |
 | 9 | `G15` Production email guard test | auto | |
-| 9 | `G2` `JwtKeyRingOptions` validation | **HELD** | auth/JWT |
-| 10 | `G5` unresolved-tenant HTTP negative test | **HELD** | tenant isolation |
-| 11 | `G14` sweep-job tenant logging | **HELD** | tenant context |
-| 12 | `G6` roles.sql or correct the claim | **HELD** | isolation/RLS |
-| 13 | `G7` triage 354 `IgnoreQueryFilters` | **HELD** | campaign-shaped |
+| 10 | `G2` `JwtKeyRingOptions` validation | **HELD** | auth/JWT |
+| 11 | `G5` unresolved-tenant HTTP negative test | **HELD** | tenant isolation |
+| 12 | `G14` sweep-job tenant logging | **HELD** | tenant context |
+| 13 | `G6` roles.sql or correct the claim | **HELD** | isolation/RLS |
+| 14 | `G7` triage 354 `IgnoreQueryFilters` | **HELD** | campaign-shaped |
 | 14+ | `A3`, `E2`–`E5`, `F1`–`F4` | mixed | **pre-audit scope — re-verify before building** |
 
 **Held items open a PR and the loop moves on**; they do not stall the queue. The gate stands as
