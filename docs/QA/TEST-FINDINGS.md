@@ -2676,6 +2676,55 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Severity rationale:** MED — BR-2 display is permanently wrong, but it is read-only and misleads rather than corrupts.
 - **Why it was NOT fixed in G8:** unlike the seven fields G8 closed, this is an **inference** (`notesOpenedAt != null` ⇒ viewed), not a rename. Whether "opened" equals "viewed" is a product decision, so the agent correctly declined to invent it.
 - **Suggested direction (NOT applied):** confirm the semantics, then `employeeViewed: w.notesOpenedAt != null`.
+### BUG-441 — assigning an onboarding checklist creates every template task TWICE, at offset 0, discarding the HR officer's due-date edits
+- **Type / Severity / Status:** BUG · CRIT · OPEN
+- **Layer:** BE + FE (contract)
+- **Module / US / TC:** Onboarding · US-ONB-002 (AC-2, FR-6) · TC-ONB-002-01
+- **Title:** `checklist-assignment.component.ts:945` (`toRequest`) sends **every** task on screen in `additionalTasks`. `OnboardingChecklistService.AssignAsync` adds `template.Tasks` (`:185`, `:223`) **plus** `input.AdditionalTasks` (`:188`, `:226`) — so each template task is created twice. The duplicates land on `startDate + 0` because the FE payload carries `dueDate` while `AdHocTaskRequest` binds `DueOffsetDays` (`OnboardingChecklistDtos.cs:75`, never sent → defaults `0`), which **also silently discards every inline due-date edit the HR officer made** — the entire point of FR-6.
+- **Root cause + confidence (~98%, both sides read independently):** `additionalTasks` means "tasks beyond the template", but the assignment screen holds the full resolved list and posts all of it. The two sides disagree about what the field means, and nothing typed the disagreement.
+- **Evidence:** `AssignAsync` iterates both collections at two sites; `toRequest` maps `this.tasks.controls` in full; `AdHocTaskRequest.DueOffsetDays` is an `int` while the FE sends `dueDate`.
+- **Severity rationale:** CRIT — it corrupts real onboarding data for a real employee (double task sets, wrong dates) and silently drops user input on a screen whose purpose is editing that input.
+- **Why it was dormant:** the `/checklists/preview` route did not exist, so the task array stayed empty and nothing was ever posted back. **Building preview (G3) makes this reachable** — which is why it must be fixed in the same change, not after.
+- **DECIDED FIX (user, 2026-09-02):** an explicit **replace-mode** on assign — the FE sends the resolved task list and the BE uses it verbatim instead of `template.Tasks + additionalTasks`, carrying real due dates. Chosen over "FE sends only ad-hoc tasks" because that alternative regenerates template tasks and would drop the FR-6 edits rather than honour them. Replace-mode also makes preview and assign agree by construction.
+
+### ISSUE-442 — agent worktrees are created from a stale base, so an isolated agent can be handed a tree where its target files do not exist
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** INFRA (orchestration)
+- **Module / US / TC:** cross-module · `isolation: worktree`
+- **Title:** The G13 worktree was created at commit `7ea6ce61`, **hundreds of commits behind** the working branch. **None of the three target files existed in it** — they all landed after that commit. The agent noticed and recovered with a clean `git merge --ff-only`, but an agent that did not check would have "fixed" files that do not exist, or silently re-added files that had been deleted.
+- **Root cause + confidence (~85%):** `isolation: worktree` did not branch from the session's current working branch. The `worktree.baseRef` setting governs this (`fresh` branches from `origin/<default-branch>`, `head` from local HEAD); this repo works on `test/local-subdomains`, not the default branch, so `fresh` lands far behind.
+- **Evidence:** agent report 2026-09-02 — worktree HEAD `7ea6ce61` vs working branch `14ea2181`.
+- **Severity rationale:** MED — it silently invalidates isolated agent work, and the failure is invisible unless the agent happens to check. It cost nothing here only because this one did.
+- **Suggested direction (NOT applied):** set `worktree.baseRef` to `head`, or have the orchestrator verify the worktree's base matches the working branch before dispatching. **The orchestrator should state the expected base commit in the brief** so a mismatch is detectable by the agent rather than by luck.
+
+### ISSUE-443 — four agents in one session hit the 60-turn ceiling; the agent contracts report only at the end, so a long run loses everything
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST (process)
+- **Module / US / TC:** cross-module · `.claude/agents/team/*.md`
+- **Title:** Four agents hit the limit on 2026-09-02: two `@test-runner` (one lost 2.7 hours having written nothing — every TC still `draft`, no finding filed), one `@backend-dev` mid-revert of a deliberate mutation, one `@backend-dev` mid-suite-run. Each was recoverable only by resuming it and ordering it to stop investigating and write up. **This generalises `ISSUE-434`, which named only `@test-runner`** — it is every long-running agent contract, not one.
+- **Root cause + confidence (~95%):** the contracts ask for a verdict/report at the end. With a hard turn ceiling that guarantees total loss on exactly the runs that found the most.
+- **Severity rationale:** MED — no production impact, but it destroys expensive investigation and makes long agent work a coin flip. The mid-revert case is worse than lost work: a deliberate mutation could have been collected as if it were the fix.
+- **Suggested direction (NOT applied):** require **record-as-you-go** in every `team/` agent contract — write the verdict the moment it is reached, file the finding as soon as its shape is known, refine after. And **revert mutations before reporting them**, never after.
+
+### BUG-444 — `PUT /checklists/{id}` binds nothing: the FE sends `{tasks}`, the BE binds `{addTasks, taskChanges}`
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** FE + BE (contract)
+- **Module / US / TC:** Onboarding · US-ONB-002 AC-4
+- **Title:** `IModifyChecklistRequest` (`onboarding-checklist.models.ts:120`) sends `{ tasks: [...] }`; `ModifyChecklistRequest` (`OnboardingChecklistDtos.cs:169`) binds `AddTasks` + `TaskChanges`. **A modify request binds nothing at all.** Same defect class as GAP-013 and BUG-441 — the third instance on this one screen.
+- **Root cause + confidence (~95%):** the BE shape is operation-based (`taskInstanceId` / `newDueDate` / `remove`); the FE models it as a task list. Nothing typed the disagreement.
+- **Mitigation today:** `OnboardingChecklistService.modify()` has **no non-spec caller**, so this is dead FE code rather than live data loss. **Its spec is therefore test theater** — it asserts a body the server ignores, and passes.
+- **Severity rationale:** MED — not reachable today, but US-ONB-002 AC-4 (edit an assigned checklist) is unshippable until the contract is agreed, and the green spec disguises that.
+- **Suggested direction (NOT applied):** decide the contract (op-based vs list-based), then fix in both lanes.
+
+### ISSUE-445 — two `agent-memory/frontend-dev` stores exist; the configured path points at an empty scaffold
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** INFRA (agent config)
+- **Module / US / TC:** cross-module
+- **Title:** `src/frontend/.claude/agent-memory/frontend-dev/` is an empty scaffold and is the path the agent's own prompt names; the real 46-entry store — the one git tracks — is at the repo root. An agent following its configured path writes into the empty one and its notes never reach the shared store.
+- **Root cause + confidence (~90%):** a working-directory-relative path resolved against `src/frontend` rather than the repo root.
+- **Evidence:** found by `@frontend-dev` 2026-09-02, which wrote to the root store and removed the stray copy rather than fragmenting memory.
+- **Severity rationale:** LOW — silently loses agent memory, which is exactly the kind of absent-capability drift `ISSUE-437` is about.
+- **Suggested direction (NOT applied):** correct the configured path so it resolves to the repo-root store.
 
 ### BUG-446 — the top-level startup catch swallows the exit code, so EVERY fail-fast in the app reports success
 - **Type / Severity / Status:** BUG · HIGH · OPEN

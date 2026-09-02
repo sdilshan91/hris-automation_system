@@ -32,10 +32,12 @@ describe('CareersPageComponent', () => {
     ...over,
   });
 
+  // Ids are GUID-ish and slugs are SEO strings on purpose: the detail link must be built
+  // from the slug, so the two must never be interchangeable in this fixture.
   const list: IPublicVacancy[] = [
-    vac({ id: 'a', title: 'Backend Engineer', departmentName: 'Engineering', locationName: 'HQ', employmentType: 'FullTime' }),
-    vac({ id: 'b', title: 'Recruiter', departmentName: 'People', locationName: 'Remote', employmentType: 'Contract' }),
-    vac({ id: 'c', title: 'Frontend Engineer', departmentName: 'Engineering', locationName: 'Remote', employmentType: 'FullTime' }),
+    vac({ id: 'a', slug: 'backend-engineer', title: 'Backend Engineer', departmentName: 'Engineering', locationName: 'HQ', employmentType: 'FullTime' }),
+    vac({ id: 'b', slug: 'recruiter', title: 'Recruiter', departmentName: 'People', locationName: 'Remote', employmentType: 'Contract' }),
+    vac({ id: 'c', slug: 'frontend-engineer', title: 'Frontend Engineer', departmentName: 'Engineering', locationName: 'Remote', employmentType: 'FullTime' }),
   ];
 
   const setup = async () => {
@@ -68,6 +70,20 @@ describe('CareersPageComponent', () => {
   it('loads and shows all vacancies', () => {
     expect(component.loading()).toBeFalse();
     expect(component.filtered().length).toBe(3);
+  });
+
+  it('links each vacancy card to /careers/{slug}, never the id (detail API is slug-keyed)', () => {
+    const hrefs = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLAnchorElement>(
+        'a[href^="/careers/"]',
+      ),
+    ).map((a) => a.getAttribute('href'));
+
+    expect(hrefs).toEqual([
+      '/careers/backend-engineer',
+      '/careers/recruiter',
+      '/careers/frontend-engineer',
+    ]);
   });
 
   it('derives distinct sorted filter options', () => {

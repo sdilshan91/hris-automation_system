@@ -64,11 +64,27 @@ describe('PerformanceGoalService', () => {
     parentGoalId: null,
   };
 
-  const mockTeam: ITeamGoalStatus[] = [
+  // Real wire shape (PerformanceTeamGoalsDashboardDto): the endpoint returns a
+  // dashboard OBJECT keyed by `members` — never a bare array and never a `{ data }`
+  // page. `employeeNo` is on the wire; `jobTitle` is not.
+  const mockTeamWire = {
+    cycleId: 'cyc-1',
+    members: [
+      {
+        employeeId: 'e-1',
+        employeeName: 'Alex Doe',
+        employeeNo: 'EMP-001',
+        status: 'Draft',
+        goalCount: 2,
+        totalWeight: 60,
+      },
+    ],
+  };
+
+  const expectedTeam: ITeamGoalStatus[] = [
     {
       employeeId: 'e-1',
       employeeName: 'Alex Doe',
-      jobTitle: 'Engineer',
       status: 'Draft',
       goalCount: 2,
       totalWeight: 60,
@@ -121,25 +137,36 @@ describe('PerformanceGoalService', () => {
     expect(result?.goalSettingOpen).toBeTrue();
   });
 
-  it('getTeamStatus GETs the team list for a cycle', () => {
+  it('getTeamStatus reads .members out of the team dashboard payload', () => {
     let result: ITeamGoalStatus[] | undefined;
     service.getTeamStatus('cyc-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${baseUrl}/cycles/cyc-1/team-dashboard`);
     expect(req.request.method).toBe('GET');
-    req.flush(mockTeam);
+    req.flush(mockTeamWire);
 
-    expect(result).toEqual(mockTeam);
+    // Regression guard: reading anything other than `.members` yields [] and the
+    // manager dashboard shows "No team members yet" for every real response (AC-4).
+    expect(result).toEqual(expectedTeam);
   });
 
-  it('getTeamStatus tolerates a { data } envelope', () => {
+  it('getTeamStatus defaults an unreadable member to the least-claiming values', () => {
     let result: ITeamGoalStatus[] | undefined;
     service.getTeamStatus('cyc-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${baseUrl}/cycles/cyc-1/team-dashboard`);
-    req.flush({ data: mockTeam });
+    req.flush({ cycleId: 'cyc-1', members: [{ employeeId: 'e-2' }] });
 
-    expect(result).toEqual(mockTeam);
+    // An absent status must NOT imply goal-setting progress that did not happen.
+    expect(result).toEqual([
+      {
+        employeeId: 'e-2',
+        employeeName: '',
+        status: 'NotStarted',
+        goalCount: 0,
+        totalWeight: 0,
+      },
+    ]);
   });
 
   it('getEmployeeGoals GETs goals for an employee in a cycle', () => {

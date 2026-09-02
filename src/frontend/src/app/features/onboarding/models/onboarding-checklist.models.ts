@@ -101,6 +101,37 @@ export interface IChecklistTaskRequest {
   sortOrder: number;
 }
 
+/**
+ * BUG-441: one row of the AUTHORITATIVE task set sent on assignment (FR-6).
+ *
+ * Mirrors the wire contract `OnboardingResolvedTaskRequest` in
+ * `core/api/generated/api-types.ts` — every field name must match it. Declared here rather than
+ * aliased from the generated schema because the generated request fields are all optional, which
+ * would let a payload compile with no `dueDate` (a 400, and the exact defect BUG-441 was).
+ *
+ * Two omissions are deliberate, not oversights:
+ * - **no `responsibleUserId`** — the server re-resolves ownership from the role (FR-3), so a
+ *   client-supplied user id is ignored; sending one would imply a control the UI does not have.
+ * - **no `id`** — these rows are always created fresh; there is no instance task to address.
+ */
+export interface IResolvedChecklistTaskRequest {
+  /** Source template task id; null for a task the officer added by hand (FR-5). */
+  templateTaskId?: string | null;
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  responsibleRole?: ResponsibleRole | null;
+  /**
+   * ISO date (yyyy-MM-dd) — a CONCRETE date used verbatim by the server, not an offset. This is the
+   * field that carries the HR officer's inline edit (FR-6); an omitted date is a 400, never a
+   * silently defaulted `startDate + 0`.
+   */
+  dueDate: string;
+  /** Honoured for ad-hoc rows only — a template task's own flag wins server-side (BR-3). */
+  isMandatory: boolean;
+  sortOrder: number;
+}
+
 /** Assign-checklist request (tenant_id is server-set, never sent — FR-7). */
 export interface IAssignChecklistRequest {
   employeeId: string;
@@ -110,10 +141,23 @@ export interface IAssignChecklistRequest {
   /** Required only when the employee already has an active checklist (AC-3). */
   mode?: AssignMode | null;
   /**
-   * GAP-013: the wire field is `additionalTasks`, not `tasks` — the API bound nothing, so the HR officer's
-   * inline-edited task set was silently discarded on every assignment (AC-2).
+   * BUG-441: the complete, authoritative task set — what this app now sends. When present the server
+   * creates exactly these rows and does NOT expand the template again.
+   *
+   * `undefined`/absent means legacy template expansion; `[]` is meaningful and different — it means
+   * "assign a checklist with no tasks". Every mandatory template task must still be present, or the
+   * server rejects with `mandatory_task_missing`.
    */
-  additionalTasks: IChecklistTaskRequest[];
+  resolvedTasks?: IResolvedChecklistTaskRequest[];
+  /**
+   * LEGACY (FR-5): extras appended ON TOP of the template's own tasks. This app no longer sends it —
+   * echoing the whole on-screen list here is what created every template task twice at `startDate + 0`
+   * and discarded the officer's inline due-date edits (BUG-441).
+   *
+   * Mutually exclusive with {@link resolvedTasks}: a non-empty value alongside `resolvedTasks` is a
+   * 400, deliberately, because silently dropping one of two task sets is the same invisible data loss.
+   */
+  additionalTasks?: IChecklistTaskRequest[];
 }
 
 /** Modify request for an existing checklist instance (AC-4 / FR-5 / FR-6). */

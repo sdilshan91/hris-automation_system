@@ -219,23 +219,28 @@ describe('OnboardingTemplateService', () => {
 
   // ─── activate / deactivate (FR-7) ──────────────────────────
 
-  it('activate PATCHes the activate endpoint', () => {
+  // The controller exposes POST {id}/activate and POST {id}/deactivate — a PATCH
+  // here 405s for a real user, with both list buttons dead (verified against
+  // OnboardingTemplatesController).
+  it('activate POSTs to the activate endpoint', () => {
     let result: IOnboardingTemplateSummary | undefined;
     service.activate('tpl-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${base}/tpl-1/activate`);
-    expect(req.request.method).toBe('PATCH');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
     req.flush(summary({ isActive: true }));
 
     expect(result!.isActive).toBeTrue();
   });
 
-  it('deactivate PATCHes the deactivate endpoint', () => {
+  it('deactivate POSTs to the deactivate endpoint', () => {
     let result: IOnboardingTemplateSummary | undefined;
     service.deactivate('tpl-1').subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${base}/tpl-1/deactivate`);
-    expect(req.request.method).toBe('PATCH');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.withCredentials).toBeTrue();
     req.flush(summary({ isActive: false }));
 
     expect(result!.isActive).toBeFalse();

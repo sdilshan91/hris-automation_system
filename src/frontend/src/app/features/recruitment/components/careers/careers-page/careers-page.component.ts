@@ -138,7 +138,7 @@ import { IPublicVacancy } from '../../../models/applicant.models';
           <div [@listIn]="filtered().length" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             @for (v of filtered(); track v.id) {
               <a
-                [routerLink]="['/careers', v.id]"
+                [routerLink]="['/careers', v.slug]"
                 class="group flex flex-col rounded-xl border border-neutral-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
                 <h2 class="text-base font-semibold text-neutral-900 group-hover:text-indigo-600">

@@ -48,7 +48,9 @@ describe('CareersVacancyDetailComponent', () => {
     appliedAt: '2026-06-15',
   };
 
-  const setup = async (id: string | null, vacancy = mockVacancy, fail = false) => {
+  // The route param is the SEO slug the careers list links with (`/careers/:slug`),
+  // because the public detail endpoint is `GET /careers/vacancies/{slug}`.
+  const setup = async (slug: string | null, vacancy = mockVacancy, fail = false) => {
     serviceSpy = jasmine.createSpyObj('CareersService', [
       'getPublicVacancy',
       'applyPublic',
@@ -74,7 +76,9 @@ describe('CareersVacancyDetailComponent', () => {
         },
         {
           provide: ActivatedRoute,
-          useValue: { snapshot: { paramMap: convertToParamMap(id ? { id } : {}) } },
+          useValue: {
+            snapshot: { paramMap: convertToParamMap(slug ? { slug } : {}) },
+          },
         },
       ],
     }).compileComponents();
@@ -84,26 +88,28 @@ describe('CareersVacancyDetailComponent', () => {
     fixture.detectChanges();
   };
 
-  it('loads the vacancy by id', async () => {
-    await setup('vac-1');
-    expect(serviceSpy.getPublicVacancy).toHaveBeenCalledWith('vac-1');
+  it('loads the vacancy by the slug route param, not the id', async () => {
+    await setup('vac-slug');
+    // Regression guard: the careers list links `/careers/{slug}` and the API is keyed by
+    // slug, so passing the vacancy GUID here would 404 for every visitor.
+    expect(serviceSpy.getPublicVacancy).toHaveBeenCalledWith('vac-slug');
     expect(component.vacancy()?.id).toBe('vac-1');
     expect((fixture.nativeElement as HTMLElement).textContent).toContain('Senior Engineer');
   });
 
-  it('shows not-found when id is missing', async () => {
+  it('shows not-found when the slug is missing', async () => {
     await setup(null);
     expect(component.notFound()).toBeTrue();
     expect(serviceSpy.getPublicVacancy).not.toHaveBeenCalled();
   });
 
   it('shows not-found when the load fails', async () => {
-    await setup('vac-1', mockVacancy, true);
+    await setup('vac-slug', mockVacancy, true);
     expect(component.notFound()).toBeTrue();
   });
 
   it('swaps to the confirmation screen with the reference number (AC-1)', async () => {
-    await setup('vac-1');
+    await setup('vac-slug');
     component.onSubmitted(mockApplicant);
     fixture.detectChanges();
     expect(component.confirmation()).toBe(mockApplicant);

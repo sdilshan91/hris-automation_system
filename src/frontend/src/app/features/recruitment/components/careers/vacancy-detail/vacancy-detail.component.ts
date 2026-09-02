@@ -216,13 +216,15 @@ export class CareersVacancyDetailComponent implements OnInit {
   readonly descOpen = signal(true);
 
   ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (!id) {
+    // The public detail endpoint is keyed by SLUG (`GET /careers/vacancies/{slug}`),
+    // so the route param is the slug the careers list linked with — not the vacancy id.
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (!slug) {
       this.loading.set(false);
       this.notFound.set(true);
       return;
     }
-    this.careers.getPublicVacancy(id).subscribe({
+    this.careers.getPublicVacancy(slug).subscribe({
       next: (v) => {
         this.vacancy.set(v);
         this.loading.set(false);

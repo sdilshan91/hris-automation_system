@@ -219,3 +219,45 @@ export function mapActiveCycle(w: ActiveCycleWire): IAppraisalCycle {
     goalSettingOpen: w.goalSettingOpen ?? false,
   };
 }
+
+
+// ─── Team dashboard wire contract → view-model mapper ────────────────────────
+//
+// **Drift reconciled here:** the service typed this endpoint as
+// `ITeamGoalStatus[] | { data: ITeamGoalStatus[] }` and funnelled it through a
+// tolerant `toArray()`. The endpoint returns neither shape — it returns
+// `TeamGoalsDashboardDto { cycleId, members }` (the ApiResponse envelope is already
+// stripped by the US-PLT-001 interceptor), so `toArray()` fell through to `[]` and
+// the manager team dashboard rendered "No team members yet" on every load
+// (US-PRF-001 AC-4 dead in production). The members list lives under `.members`.
+export type TeamGoalsDashboardWire = Schema<'PerformanceTeamGoalsDashboardDto'>;
+
+const GOAL_SETTING_STATUSES: readonly GoalSettingStatus[] = [
+  'NotStarted',
+  'Draft',
+  'Submitted',
+  'Acknowledged',
+];
+
+/**
+ * Map the team dashboard payload to the view model. Every wire field is optional in
+ * the generated contract, so each default is the least-claiming one: an unreadable
+ * status becomes `NotStarted` and counts become 0 — never a value that would show a
+ * manager goal-setting progress that did not happen.
+ *
+ * NOTE: the wire carries `employeeNo`, not `jobTitle`; `ITeamGoalStatus.jobTitle`
+ * therefore stays undefined and the template's `@if (m.jobTitle)` row stays hidden.
+ */
+export function mapTeamGoalStatuses(
+  w: TeamGoalsDashboardWire | null | undefined,
+): ITeamGoalStatus[] {
+  return (w?.members ?? []).map((m) => ({
+    employeeId: m.employeeId ?? '',
+    employeeName: m.employeeName ?? '',
+    status: GOAL_SETTING_STATUSES.includes(m.status as GoalSettingStatus)
+      ? (m.status as GoalSettingStatus)
+      : 'NotStarted',
+    goalCount: m.goalCount ?? 0,
+    totalWeight: m.totalWeight ?? 0,
+  }));
+}

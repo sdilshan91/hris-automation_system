@@ -69,6 +69,39 @@ public sealed class OnboardingChecklistsController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/onboarding/checklists/preview?employeeId={e}&amp;templateId={t}
+    /// FR-2/BR-4: what this template WOULD assign to this employee — the task list, the calculated due
+    /// dates and the resolved responsible parties — so the HR officer can review it before confirming.
+    ///
+    /// <para>PURE READ. It resolves through the same helpers the assign path uses but writes nothing: no
+    /// checklist instance, no task instances, no outbox rows, no SaveChanges. It also never enters the
+    /// assign path's unique-violation idempotency handling, because it never inserts. Same discipline as
+    /// AttendancePolicyResolver, which deliberately never lazily creates a policy row.</para>
+    ///
+    /// <para>Route ordering: the literal <c>preview</c> segment is declared before <c>{id:guid}</c>, and
+    /// "preview" is not a GUID, so the two can never be ambiguous.</para>
+    ///
+    /// <para>Gated by <c>Onboarding.Manage</c> — the same permission as assign and applicable-templates:
+    /// a preview reveals exactly the task set that assign would create, so it must not be reachable by a
+    /// caller who cannot assign.</para>
+    /// </summary>
+    [HttpGet("preview")]
+    [RequirePermission("Onboarding.Manage")]
+    [ProducesResponseType(typeof(ApiResponse<ChecklistPreviewDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Preview(
+        [FromQuery] Guid employeeId, [FromQuery] Guid templateId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetChecklistPreviewQuery(employeeId, templateId), cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        return Ok(ApiResponse<ChecklistPreviewDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
     /// GET /api/v1/onboarding/checklists/{id}
     /// Gets a single assigned checklist instance (with its task instances) by id, tenant-scoped.
     /// </summary>
@@ -136,7 +169,12 @@ public sealed class OnboardingChecklistsController : ControllerBase
                 t.Title, t.Description, t.Category, t.ResponsibleRole, t.ResponsibleUserId,
                 t.DueOffsetDays, t.IsMandatory, t.SortOrder)).ToList(),
             // The header takes precedence over the body key (NFR-5).
-            string.IsNullOrWhiteSpace(idempotencyKey) ? request.IdempotencyKey : idempotencyKey);
+            string.IsNullOrWhiteSpace(idempotencyKey) ? request.IdempotencyKey : idempotencyKey,
+            // BUG-441: when present this is the authoritative set and the template is not expanded. `?.`
+            // is load-bearing — absent must stay null (legacy expansion), not become an empty set.
+            request.ResolvedTasks?.Select(t => new AssignChecklistResolvedTask(
+                t.TemplateTaskId, t.Title, t.Description, t.Category, t.ResponsibleRole,
+                t.DueDate, t.IsMandatory, t.SortOrder)).ToList());
 
         var result = await _mediator.Send(command, cancellationToken);
 
