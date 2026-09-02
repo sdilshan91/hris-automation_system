@@ -33,6 +33,28 @@ public static class DbInitializer
     private static readonly string SystemSupportRoleName = PermissionCatalog.SystemRoles.SystemSupport;
 
     /// <summary>
+    /// The module vocabulary every seeded tenant's <c>enabled_modules</c> is filled from — the ONE place the
+    /// seeder names it, so the platform seed and the DEV/E2E seed cannot drift from each other.
+    ///
+    /// <para><b>ISSUE-335.</b> This MUST be <see cref="PlanModules.All"/> — the canonical product-module
+    /// vocabulary — and NOT <c>PermissionCatalog.ByModule.Keys</c>, which is a list of PERMISSION PREFIXES
+    /// (<c>Audit</c>, <c>CustomField</c>, <c>Roles</c>, <c>Tenant</c>, …). The two sets overlap enough to look
+    /// right and are not interchangeable: the permission list has no
+    /// <c>CoreHR</c>/<c>Asset</c>/<c>CustomReportBuilder</c>/<c>PublicCareersPage</c> and calls
+    /// <c>Reporting</c> "Reports". Because nothing read <c>enabled_modules</c> until US-ADM-012, the mismatch
+    /// sat in seeded data undetected; a module gate reading it would have denied EVERY request for the seeded
+    /// tenants — a total outage on deploy.</para>
+    ///
+    /// <para><b>internal for the drift guard.</b> Exposed via <c>InternalsVisibleTo("HRM.Tests")</c> so
+    /// <c>PlanModulesEntitlementTests.SeedVocabulary_*</c> asserts against the seeder's real vocabulary rather
+    /// than restating <see cref="PlanModules.All"/> to itself — which is exactly what that test used to do, and
+    /// why it could not fail. The stronger guard is <c>PlanModulesSeedDriftApiTests</c>, which reads
+    /// <c>tenants.enabled_modules</c> back out of the database this initializer really seeded and therefore
+    /// also catches a seed SITE that stops using this member.</para>
+    /// </summary>
+    internal static IReadOnlyList<string> DefaultSeededEnabledModules => PlanModules.All;
+
+    /// <summary>
     /// BUG-307 — the plan code seeded tenants are given.
     /// </summary>
     /// <remarks>
@@ -438,14 +460,9 @@ public static class DbInitializer
         // US-NTF-002: seed the platform system-default email templates for every catalog event (BR-2).
         await SeedSystemNotificationTemplatesAsync(db, logger, ct);
 
-        // ISSUE-335: this MUST come from PlanModules — the canonical product-module vocabulary — and not from
-        // PermissionCatalog.ByModule.Keys, which is a list of PERMISSION PREFIXES (Audit, CustomField, Roles,
-        // Tenant, ...). The two sets overlap enough to look right and are not interchangeable: the permission
-        // list has no CoreHR/Asset/CustomReportBuilder/PublicCareersPage and calls Reporting "Reports". Because
-        // nothing read enabled_modules until US-ADM-012, the mismatch sat in seeded data undetected; a module
-        // gate reading it would have denied every request for the seeded tenants. PlanModulesSeedDriftTests
-        // pins this.
-        var defaultEnabledModules = PlanModules.All.ToList();
+        // ISSUE-335: see DefaultSeededEnabledModules. Pinned by PlanModulesSeedDriftApiTests, which reads
+        // tenants.enabled_modules back out of the really-seeded database.
+        var defaultEnabledModules = DefaultSeededEnabledModules.ToList();
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Subdomain == DefaultTenantSubdomain, ct);
@@ -1045,10 +1062,11 @@ public static class DbInitializer
     /// </summary>
     private static async Task SeedE2EDevTenantAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
-        // ISSUE-335: canonical product modules, NOT permission prefixes — see the note on the platform-tenant
-        // seed above. The E2E tenant is the one the Playwright suite drives, so seeding the wrong vocabulary
-        // here would break every E2E run the moment module gating ships.
-        var enabledModules = PlanModules.All.ToList();
+        // ISSUE-335: canonical product modules, NOT permission prefixes — see DefaultSeededEnabledModules.
+        // The E2E tenant is the one the Playwright suite drives, so seeding the wrong vocabulary here would
+        // break every E2E run the moment module gating ships. PlanModulesSeedDriftApiTests asserts this row
+        // too, not just the platform tenant's.
+        var enabledModules = DefaultSeededEnabledModules.ToList();
 
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
