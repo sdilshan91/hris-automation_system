@@ -17,6 +17,7 @@
 
 using FluentAssertions;
 using HRM.Domain.Authorization;
+using HRM.Infrastructure.Persistence;
 
 namespace HRM.Tests.Unit;
 
@@ -112,17 +113,37 @@ public sealed class PlanModulesEntitlementTests
     // -------- TC-ADM-012-07: every module key the seed hands a tenant must be a canonical PlanModules key --------
     // Modelled on the both-direction EncryptedFieldRegistry guards. The original bug was precisely that the
     // seed's vocabulary and the canonical vocabulary were allowed to diverge with nothing asserting the link.
+    //
+    // REWRITTEN 2026-09-02 (queue item G13) — THIS TEST USED TO BE A TAUTOLOGY. Its body was
+    // `var seeded = PlanModules.All;` followed by `seeded.Should().BeEquivalentTo(PlanModules.All)`. It never
+    // referenced DbInitializer, so the regression it advertised in its own comment — repointing the seed at
+    // PermissionCatalog.ByModule.Keys — would have left it GREEN. It now reads
+    // DbInitializer.DefaultSeededEnabledModules, the member BOTH seed sites fill enabled_modules from, so
+    // repointing that member turns this red.
+    //
+    // Its complement is PlanModulesSeedDriftApiTests, which reads tenants.enabled_modules back out of a
+    // genuinely-seeded Postgres. That one also catches a seed SITE that stops using the member — a hole no
+    // unit test in this file can close, because nothing here executes the seeder.
     [Fact]
     public void SeedVocabulary_IsExactlyTheCanonicalModuleSet_ADM012()
     {
-        // This mirrors what DbInitializer now seeds (PlanModules.All). If someone repoints the seed at
-        // PermissionCatalog.ByModule.Keys again — the exact regression — this fails.
-        var seeded = PlanModules.All;
+        var seeded = DbInitializer.DefaultSeededEnabledModules;
 
         seeded.Should().OnlyContain(m => PlanModules.IsValid(m),
             "every seeded module must be a recognized canonical key");
+
+        // The both-direction half: it is not enough that the seeded keys are valid — the specific tokens the
+        // ISSUE-335 regression introduced must be provably absent. Derived from the legacy vocabulary above
+        // rather than re-listed, so the two fixtures cannot drift apart.
+        seeded.Should().NotIntersectWith(LegacyPermissionPrefixVocabulary.Where(m => !PlanModules.IsValid(m)),
+            "these are permission prefixes, not module keys — seeding them IS the regression");
+
         seeded.Should().Contain(PlanModules.CoreHr,
             "CoreHR is always-on; a tenant seeded without it would be denied the core HR surface by any gate");
+        seeded.Should().Contain([
+            PlanModules.Asset, PlanModules.CustomReportBuilder, PlanModules.PublicCareersPage, PlanModules.Reporting,
+        ], "the legacy permission vocabulary has no equivalent for these four, so a drifted seed loses them");
+
         seeded.Should().BeEquivalentTo(PlanModules.All,
             "the seed must hand out the full canonical set, not a subset or a different vocabulary");
     }

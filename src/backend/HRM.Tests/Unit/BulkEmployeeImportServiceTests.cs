@@ -502,6 +502,42 @@ public sealed class BulkEmployeeImportServiceTests : IDisposable
             e.Field == "location_name" && e.Error.Contains("NonExistentLocation"));
     }
 
+    // ── Resolvable Location: the POSITIVE arm ISSUE-286 actually exists for ──
+    //
+    // ISSUE-286 was that a resolved location name never reached Employee.LocationId — the row imported, the
+    // name was stored on the free-text Location column, and the FK stayed null. Until now the only coverage
+    // was the negative arm above (a bad name flags the row), which stays green no matter what the success
+    // path writes: dropping `LocationId = row.LocationId` from BulkEmployeeImportService's insert would leave
+    // the entire suite passing. This arm asserts the FK is set, to the ID of the seeded Location, and that the
+    // display name is set alongside it — so the fix has a test that can die with it.
+    [Fact]
+    public async Task Import_ResolvableLocation_ShouldSetLocationIdOnEmployee_ISSUE286()
+    {
+        await SeedTenant();
+        var (_, _, locId) = await SeedReferenceData("Engineering", "Software Engineer", "Colombo HQ");
+        locId.Should().NotBeNull("the fixture must actually seed a Location, or this arm proves nothing");
+
+        var csv = BuildCsvContent(
+            "John,Doe,john@test.com,,,,2026-01-15,Engineering,Software Engineer,Full-Time,Colombo HQ,"
+        );
+
+        var service = CreateService();
+        var result = await service.ImportAsync(CreateCsvStream(csv), "test.csv", csv.Length, false);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Success.Should().Be(1, string.Join("; ", result.Value.Errors.Select(e => $"{e.Field}: {e.Error}")));
+        result.Value.Failed.Should().Be(0);
+
+        using var db = CreateDbContext();
+        var employee = db.Employees.Single(e => e.Email == "john@test.com");
+
+        employee.LocationId.Should().Be(locId,
+            "ISSUE-286: a resolvable location_name must populate the LocationId FK, not just the free-text "
+            + "Location column — the FK is what the directory filter and every location-scoped query read");
+        employee.Location.Should().Be("Colombo HQ",
+            "the display name is written alongside the FK; asserting only the FK would let the name silently drop");
+    }
+
     // ── Plan Limit Pre-validation (AC-5) ────────────────────────────
 
     [Fact]
