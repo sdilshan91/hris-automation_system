@@ -279,6 +279,8 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 4 | ~~`G11` correct 3 register rows~~ | ✅ | **#582** — GAP-006's "add 6 filters" would have REGRESSED 3 |
 | 5 | `G1` part-time overtime on a full-time base | auto | **money, live** |
 | 6 | ~~`G8` performance FE mappers~~ | ✅ | **7 of 8 comments were false**; 5 arms failed pre-fix; 4333 green |
+| 5 | ~~`G1` part-time overtime on a full-time base~~ | ✅ | **FIXED** — 2 arms failed pre-fix, 5578/5578 after |
+| 6 | `G8` performance FE mappers | auto | cheapest fix in the guide |
 | 7 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
 | 8 | `G13` test theater | auto | |
 | 9 | ~~`G15` Production email guard test~~ | ✅ | **3 mutations**; M1 proved the old suite could not see the guard deleted |
