@@ -1,1 +1,2 @@
-- [Gap-tracking sources](reference-gap-tracking-sources.md) — three conflicting gap docs; commit GAP-IDs use a different numbering than the register.
+- [Gap-tracking sources](reference-gap-tracking-sources.md) — four conflicting gap docs; commit GAP-IDs use a different numbering than the register.
+- [Grep-blind source files](gotcha-grep-blind-source-files.md) — 3 .cs files hold raw NUL bytes; grep/semgrep skip them silently, so grep-based inventories undercount.

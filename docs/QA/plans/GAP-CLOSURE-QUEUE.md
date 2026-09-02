@@ -281,7 +281,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 6 | ~~`G8` performance FE mappers~~ | ✅ | **7 of 8 comments were false**; 5 arms failed pre-fix; 4333 green |
 | 7 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
 | 8 | `G13` test theater | auto | |
-| 9 | `G15` Production email guard test | auto | |
+| 9 | ~~`G15` Production email guard test~~ | ✅ | **3 mutations**; M1 proved the old suite could not see the guard deleted |
 | 10 | `G2` `JwtKeyRingOptions` validation | **HELD** | auth/JWT |
 | 11 | `G5` unresolved-tenant HTTP negative test | **HELD** | tenant isolation |
 | 12 | `G14` sweep-job tenant logging | **HELD** | tenant context |
