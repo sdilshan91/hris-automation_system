@@ -357,11 +357,19 @@ function toSignature(
 }
 
 /**
- * Maps `PerformanceReviewMeetingNotesDto` onto `IReviewSignoff`. The notes DTO is
- * notes-centric: it does NOT carry the review's goal/rating snapshot, rating scale,
- * manager name, cycle name, final score, or an export flag — those are defaulted here
- * and REPORTED (the sign-off screen renders them, so this is a real backend gap, not a
- * fabricated value).
+ * Maps `PerformanceReviewMeetingNotesDto` onto `IReviewSignoff`.
+ *
+ * G8 CORRECTION — the previous version of this comment claimed the notes DTO does not carry
+ * "the review's goal/rating snapshot, rating scale, manager name, cycle name, final score, or
+ * an export flag". Re-verified field by field against the generated contract, three of those
+ * were WRONG: the DTO declares `cycleName`, `ratingScaleMax` and `finalScore`, and the mapper
+ * was throwing them away — the sign-off header showed no cycle, ratings rendered against a
+ * scale of 0, and the final score never appeared. They are mapped below.
+ *
+ * Still genuinely absent from THIS DTO (defaulted and reported, NOT invented):
+ * `managerName`, `jobTitle`, `goals` (no goal/rating snapshot), `employeeViewed`, and
+ * `exportAvailable`. Before adding a mapping for any of them, check the DTO — that check is
+ * the step this file skipped, twice.
  */
 export function mapReviewSignoff(w: ReviewMeetingNotesWire): IReviewSignoff {
   const signoffs = w.signoffs ?? [];
@@ -372,21 +380,23 @@ export function mapReviewSignoff(w: ReviewMeetingNotesWire): IReviewSignoff {
   return {
     reviewId: w.managerReviewId ?? '',
     cycleId: w.cycleId ?? '',
-    // No wire source on the notes DTO — defaulted (reported).
-    cycleName: '',
+    // G8: the DTO DOES declare `cycleName`; the old comment said otherwise and the value
+    // was discarded, so the sign-off header rendered no cycle.
+    cycleName: w.cycleName ?? '',
     employeeId: w.employeeId ?? '',
     employeeName: w.employeeName ?? '',
     // No wire source — defaulted (reported).
     jobTitle: null,
-    // No wire source — defaulted (reported).
+    // Genuinely absent from PerformanceReviewMeetingNotesDto — re-verified against the
+    // generated contract during G8. Defaulted, and reported as a backend gap.
     managerName: '',
     status:
       (rawStatus ? SIGNOFF_STATUS_WIRE_MAP[rawStatus] : undefined) ??
       'NotesDraft',
-    // No wire source — defaulted (reported).
-    ratingScaleMax: 0,
-    // No wire source — defaulted (reported).
-    finalScore: null,
+    // G8: both DO ship on the notes DTO (`ratingScaleMax`, `finalScore`). Hardcoding them
+    // rendered every goal rating against a scale of 0 and hid the final score entirely.
+    ratingScaleMax: w.ratingScaleMax ?? 0,
+    finalScore: w.finalScore ?? null,
     meetingNotesHtml: w.body ?? '',
     managerSignature: toSignature(byAction('RequestedSignOff')),
     employeeSignature: toSignature(byAction('Acknowledged')),

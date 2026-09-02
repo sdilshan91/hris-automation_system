@@ -22,8 +22,14 @@ describe('ReviewSignoffService', () => {
 
   // Real wire (PerformanceReviewMeetingNotesDto): the record id is `managerReviewId`,
   // the notes HTML is `body`, the status enum is `signoffStatusName` (wire `NotesAdded`),
-  // and the signatures live in the `signoffs[]` audit array — there is NO goal snapshot,
-  // rating scale, manager name, cycle name, final score, or export flag on this DTO.
+  // and the signatures live in the `signoffs[]` audit array.
+  //
+  // G8 CORRECTION: this comment used to add "there is NO goal snapshot, rating scale,
+  // manager name, cycle name, final score, or export flag on this DTO". The DTO does carry
+  // `cycleName`, `ratingScaleMax` and `finalScore` — only the goal snapshot, manager name and
+  // export flag are genuinely absent. This fixture deliberately OMITS the three real fields so
+  // the arms below still cover the field-absent path; the G8 arm at the bottom of the file
+  // flushes a payload that carries them.
   const mockNotesWire: ReviewMeetingNotesWire = {
     managerReviewId: 'rv-1',
     cycleId: 'cyc-1',
@@ -37,7 +43,10 @@ describe('ReviewSignoffService', () => {
     signoffs: [],
   };
 
-  // Expected mapped view-model. The eight backend-gap fields are defaulted here.
+  // Expected mapped view-model for the fixture ABOVE, which omits cycleName/ratingScaleMax/
+  // finalScore — so those three land on their absent-field defaults here, alongside the
+  // five fields the DTO genuinely never carries (jobTitle, managerName, employeeViewed,
+  // goals, exportAvailable).
   const mockRecord: IReviewSignoff = {
     reviewId: 'rv-1',
     cycleId: 'cyc-1',
@@ -302,5 +311,31 @@ describe('ReviewSignoffService', () => {
     req.flush(new Blob(['pdf']), { status: 200, statusText: 'OK' });
 
     expect(status).toBe(200);
+  });
+
+  // ─── G8: fields PerformanceReviewMeetingNotesDto DOES carry ─────────────────
+  // The fixture above deliberately omits them (so the default arms still assert the
+  // omission path). This arm flushes a payload that CARRIES them; against the pre-G8
+  // mapper — which hardcoded `cycleName: ''`, `ratingScaleMax: 0`, `finalScore: null`
+  // under a comment claiming the DTO has no such fields — it fails on all three.
+
+  it('getSignoff() maps cycleName, ratingScaleMax and finalScore off the notes DTO', () => {
+    let result: IReviewSignoff | undefined;
+    service.getSignoff('e-1').subscribe((r) => (result = r));
+
+    flushActiveCycle();
+    httpMock.expectOne(`${notesBase}/notes`).flush({
+      ...mockNotesWire,
+      cycleName: 'FY2026 Annual',
+      ratingScaleMax: 5,
+      finalScore: 4.2,
+    });
+
+    expect(result?.cycleName).toBe('FY2026 Annual');
+    expect(result?.ratingScaleMax).toBe(5);
+    expect(result?.finalScore).toBe(4.2);
+    // managerName is the one field of this group genuinely ABSENT from the notes DTO,
+    // so it stays defaulted — verified against the generated contract, not assumed.
+    expect(result?.managerName).toBe('');
   });
 });

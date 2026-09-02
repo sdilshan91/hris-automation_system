@@ -172,7 +172,9 @@ describe('PerformanceDashboardService (US-PRF-007)', () => {
     expect(result?.series[0].points[0].cycleLabel).toBe('2024'); // ← cycleName
     expect(result?.series[1].key).toBe('d1');
     expect(result?.series[1].label).toBe('Engineering');
-    // NOTE: the trend wire carries no scale — reported no-source fallback.
+    // This fixture omits `ratingScaleMax`, so the absent-field fallback applies. (The wire
+    // DOES carry the field — see the G8 arm below; the older claim that it never did was
+    // what pinned the mapper to the fallback unconditionally.)
     expect(result?.scoreScaleMax).toBe(DASHBOARD_SCALE_FALLBACK);
   });
 
@@ -208,6 +210,8 @@ describe('PerformanceDashboardService (US-PRF-007)', () => {
     // NOTE: grade + trend have no wire source — defaulted + reported.
     expect(result?.employees[0].grade).toBeNull();
     expect(result?.employees[0].trend).toBe('Flat');
+    // No `ratingScaleMax` on this fixture → the absent-field fallback. The drill-down wire
+    // does carry the field; see the G8 arm below.
     expect(result?.scoreScaleMax).toBe(DASHBOARD_SCALE_FALLBACK);
   });
 
@@ -237,5 +241,79 @@ describe('PerformanceDashboardService (US-PRF-007)', () => {
       headers: { 'Content-Disposition': 'attachment; filename="dashboard.csv"' },
     });
     expect(response?.body).toBeInstanceOf(Blob);
+  });
+
+  // ─── G8: fields the wire DOES send that the mapper was hardcoding away ───────
+  // Each arm below flushes a payload CARRYING the field. Against the pre-G8 mapper
+  // (`availableExportFormats: []`, `scoreScaleMax: DASHBOARD_SCALE_FALLBACK`,
+  // `cycleLabel: ''`) every one of them fails: the mapper ignored its input.
+
+  it('getOverview() maps availableExportFormats from the wire (ISSUE-379 was mis-filed as a backend gap)', () => {
+    let result: IDashboardOverview | undefined;
+    service.getOverview(emptyFilters()).subscribe((o) => (result = o));
+
+    // The server sources this from ExportFormatNormalizer.Supported → lowercase tokens.
+    httpMock
+      .expectOne(`${baseUrl}/overview`)
+      .flush({ ...overviewWire, availableExportFormats: ['csv', 'xlsx', 'pdf'] });
+
+    expect(result?.availableExportFormats).toEqual(['Csv', 'Excel', 'Pdf']);
+  });
+
+  it('getOverview() drops an export format the FE does not understand instead of casting it', () => {
+    let result: IDashboardOverview | undefined;
+    service.getOverview(emptyFilters()).subscribe((o) => (result = o));
+
+    httpMock
+      .expectOne(`${baseUrl}/overview`)
+      .flush({ ...overviewWire, availableExportFormats: ['csv', 'parquet'] });
+
+    // BUG-311's lesson: narrow, never cast — an unknown token must not render a button
+    // whose handler the FE cannot honour.
+    expect(result?.availableExportFormats).toEqual(['Csv']);
+  });
+
+  it('getOverview() falls back to an empty format list when the wire omits it', () => {
+    let result: IDashboardOverview | undefined;
+    service.getOverview(emptyFilters()).subscribe((o) => (result = o));
+
+    httpMock.expectOne(`${baseUrl}/overview`).flush(overviewWire);
+
+    expect(result?.availableExportFormats).toEqual([]);
+  });
+
+  it('getTrend() maps scoreScaleMax from the wire ratingScaleMax rather than the fallback', () => {
+    const trendWire: TrendWire = {
+      scope: 'Organization',
+      ratingScaleMax: 10,
+      points: [{ cycleId: 'c1', cycleName: '2026', averageScore: 8 }],
+    };
+    let result: ITrendResponse | undefined;
+    service.getTrend(emptyFilters()).subscribe((t) => (result = t));
+
+    httpMock.expectOne((r) => r.url === `${baseUrl}/trend`).flush(trendWire);
+
+    expect(result?.scoreScaleMax).toBe(10);
+    expect(result?.scoreScaleMax).not.toBe(DASHBOARD_SCALE_FALLBACK);
+  });
+
+  it('getDepartmentDrilldown() maps cycleLabel + scoreScaleMax from the wire', () => {
+    const drillWire: DepartmentDrilldownWire = {
+      departmentId: 'd1',
+      departmentName: 'Engineering',
+      cycleId: 'c1',
+      cycleName: 'FY2026 Annual',
+      ratingScaleMax: 10,
+      averageScore: 8.3,
+      headcount: 3,
+      employees: [],
+    };
+    let result: IDepartmentDrilldown | undefined;
+    service.getDepartmentDrilldown('d1', 'c1').subscribe((d) => (result = d));
+
+    httpMock.expectOne((r) => r.url === `${baseUrl}/department/d1`).flush(drillWire);
+
+    expect(result?.cycleLabel).toBe('FY2026 Annual'); // ← cycleName
+    expect(result?.scoreScaleMax).toBe(10); // ← ratingScaleMax
   });
 });
