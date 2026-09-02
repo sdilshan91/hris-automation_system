@@ -1,11 +1,11 @@
 ---
 name: reference-gap-tracking-sources
-description: Where HRM gap-analysis state lives — three competing documents with conflicting GAP-ID numbering; which to trust as a claim source
+description: Where HRM gap-analysis state lives — four competing documents with conflicting GAP-ID numbering; which to trust as a claim source
 metadata:
   type: reference
 ---
 
-Gap tracking for this repo is spread across **three** documents, and they do not agree:
+Gap tracking for this repo is spread across **four** documents, and they do not agree:
 
 - `docs/Architecture/gap-analysis/GAP-REGISTER.md` — the GAP-001..040 register. Snapshot dated
   **2026-08-08**; its own banner concedes the headline counts do not survive measurement.
@@ -19,4 +19,10 @@ Gap tracking for this repo is spread across **three** documents, and they do not
 "per-tenant sender identity"; `293af88a ... (GAP-036)` is a dev field-encryption key, while register
 GAP-036 is per-user GDPR erasure. Never map a commit to a register row by ID alone — read the diff.
 
-All three are **claims**, never evidence. See [[feedback-verdicts-come-from-src]].
+- `src/backend/HRM.Infrastructure/Persistence/Rls/FLIP-READINESS-2026-08-05.md` — lives in `src/`, not
+  `docs/`, so no ledger links it and gap passes miss it. It is the **most current and most rigorous**
+  record of the tenant-isolation posture: it already triaged all 69 `IgnoreQueryFilters()` sites on
+  policy-carrying tables into A/B/C buckets and fixed bucket A. Queue item `G7` asks for that triage as
+  if it had never happened. Read this file before accepting any claim about RLS or `IgnoreQueryFilters`.
+
+All four are **claims**, never evidence. See [[feedback-verdicts-come-from-src]].

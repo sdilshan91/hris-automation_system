@@ -2677,3 +2677,22 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Why it was NOT fixed in G8:** unlike the seven fields G8 closed, this is an **inference** (`notesOpenedAt != null` ⇒ viewed), not a rename. Whether "opened" equals "viewed" is a product decision, so the agent correctly declined to invent it.
 - **Suggested direction (NOT applied):** confirm the semantics, then `employeeViewed: w.notesOpenedAt != null`.
 
+### BUG-446 — the top-level startup catch swallows the exit code, so EVERY fail-fast in the app reports success
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Platform · `Program.cs:1079-1082`
+- **Title:** The outermost `catch (Exception ex)` calls `Log.Fatal(ex, ...)` and falls through to `finally { Log.CloseAndFlush(); }`. **Nothing sets a non-zero exit code**, so the process exits **0**. Every startup guard in this codebase — the new JWT signing-key guard (G2), the `Smtp:Host` fail-fast, the `Encryption`/AesGcm secret guards from A2 — reports **success** to any orchestrator, CI step, healthcheck or supervisor that reads the exit code. Only the log line reveals the failure.
+- **Root cause + confidence (~98%, read directly):** the catch was written to guarantee log flushing, and the exit code was never considered.
+- **Severity rationale:** HIGH — it partially defeats **every** fail-fast control in the application, including ones added specifically to make misconfiguration loud. A container that exits 0 is a container an orchestrator will not restart, alert on, or mark unhealthy.
+- **Suggested direction (NOT applied):** set `Environment.ExitCode = 1` (or rethrow after flushing) in that catch. Blast radius is every startup failure path, so it wants its own change rather than riding along with a feature fix.
+
+### ISSUE-447 — the `Smtp:Host` guard reads the RAW environment variable, a second fail-open independent of its deny-list gating
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Notifications · US-NTF-006 · extends GAP-015 / G15
+- **Title:** `DependencyInjection.cs:866` reads `configuration["ASPNETCORE_ENVIRONMENT"]` — the **raw string** — rather than `IHostEnvironment`. Those differ: `IWebHostBuilder.UseEnvironment(...)` sets the host's environment key and **never** sets that variable, so both test fixtures (`ApiTestFactory.cs:97`, `RlsOnApiTestFactory.cs:127`) see `null`; and when the variable is genuinely unset, `IHostEnvironment.EnvironmentName` resolves to `"Production"` while the raw read is `null`.
+- **Root cause + confidence (~95%):** raw configuration read where the resolved host environment was meant.
+- **Why this matters beyond G15:** it is a **second, independent** fail-open, separate from the deny-list gating G15 recorded — and it **explains** G15's symptom. The fixture "never sets an environment name" partly because setting it the idiomatic way (`UseEnvironment`) would not have been seen anyway.
+- **Severity rationale:** MED — same class as the deny-list hole, and it makes the guard untestable through the normal fixture seam.
+- **Suggested direction (NOT applied):** switch to `IHostEnvironment` with allow-list gating; G15's test then becomes writable through `UseEnvironment`. **Amend GAP-015 to record both failure modes, not just the missing test.**
+
