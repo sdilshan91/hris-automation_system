@@ -77,8 +77,13 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
 
 7. **Plan it, track it, and finish the pipeline yourself.** Break every non-trivial task
    into sub-tasks with a real plan *before* starting, and keep a **todo list** you update
-   as each sub-task completes — not retroactively at the end. Put the plan to the user when
-   an item genuinely needs their input; otherwise proceed. You are **authorized to commit,
+   as each sub-task completes — not retroactively at the end. **Render it as a visible markdown
+   checklist in your reply, every turn. Do NOT assume a `TodoWrite` tool exists** — it is absent in
+   some sessions (confirmed 2026-09-02, after this rule silently did not run for eight loop
+   iterations). A rule whose only mechanism is a missing tool is a rule that does not run. If a
+   native todo tool IS present, use it *and* keep the checklist visible: the point is that the user
+   can see progress without having to ask for it.
+   Put the plan to the user when an item genuinely needs their input; otherwise proceed. You are **authorized to commit,
    push, open PRs, and merge them** to carry a loop or long task to completion without
    asking each time. That authority is bounded by the **merge gate** in
    [`/pr-pipeline`](.claude/skills/pr-pipeline.md): auto-merge only on a green verify gate
