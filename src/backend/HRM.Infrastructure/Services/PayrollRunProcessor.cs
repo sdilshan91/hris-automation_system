@@ -352,6 +352,18 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         if (excludeHolidays)
             runLog.AppendLine("NOTE: public holidays are excluded from working days for this period (payroll calendar policy).");
 
+        // ── GAP-022 (US-ATT-011 AC-5 / US-CHR-013): the FTE-scaled overtime base ───────────────────────────
+        // The tenant's attendance policy decides whether a part-timer's OT hourly base scales by their FTE.
+        // Resolved ROW-LEVEL per employee (their Location's override → the tenant default → null = code
+        // defaults, i.e. OFF), so a branch that opted in does not drag the whole tenant with it. Loaded ONCE
+        // in a single query — this loop walks every employee in the tenant, so ResolveForEmployeeAsync here
+        // would be an N+1 — and read-only: a payroll run must never write attendance policy as a side effect.
+        //
+        // Until this load existed the run called PayrollOvertimeCalculator.Compute WITHOUT the fte/flag
+        // arguments, so the persisted, API-settable FteScaledOvertimeBase was completely inert and every
+        // part-timer's overtime was priced at the full-time base — a silent UNDER-payment on every run.
+        var attendancePolicyByLocation = await AttendancePolicyResolver.LoadAllAsync(_dbContext, cancellationToken);
+
         // US-PAY-007 FR-3: Pending adjustments for the period, grouped by employee, loaded ONCE (no N+1). Empty
         // when none are configured → the per-employee lookup misses and the engine behaves exactly as before,
         // keeping every existing US-PAY-003/006 test green (purely additive wiring).
@@ -515,7 +527,12 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             // (BR-4 — pending/rejected are excluded upstream) per multiplier bucket (BR-5 holiday OT = its
             // bucket multiplier). hourly_rate = monthly_basic / (working_days * standard_hours_per_day). The
             // overtime line is added BEFORE statutory so it is in the tax base. Zero OT → no line, no-op.
-            var overtime = ComputeOvertime(result, inputs, attendance, workingDays);
+            // GAP-022: the OT hourly base optionally scales by this employee's FTE — their EFFECTIVE attendance
+            // policy (Location override → tenant default → code default OFF) decides. Off ⇒ Fte is ignored and
+            // the rate is byte-identical to its pre-fix value for every default-policy tenant.
+            var fteScaledOvertimeBase =
+                AttendancePolicyResolver.For(attendancePolicyByLocation, emp.LocationId)?.FteScaledOvertimeBase ?? false;
+            var overtime = ComputeOvertime(result, inputs, attendance, workingDays, emp.Fte, fteScaledOvertimeBase);
             if (!overtime.IsZero)
                 result = ApplyOvertime(result, overtime);
 
@@ -964,9 +981,16 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// US-PAY-010 AC-2/FR-4: computes the overtime earning for the employee from the attendance pull's approved
     /// overtime (per-multiplier buckets, BR-5) using the slip's resolved BASIC as the hourly-rate base. Returns
     /// <see cref="PayrollOvertimeCalculator.OvertimeResult.Zero"/> when there is no attendance row or no approved OT.
+    ///
+    /// <para><b>GAP-022 (US-ATT-011 AC-5 / US-CHR-013).</b> <paramref name="fte"/> and
+    /// <paramref name="fteScaledBase"/> are the employee's FTE and their EFFECTIVE attendance policy's
+    /// <c>FteScaledOvertimeBase</c>, both resolved by the caller. They are passed STRAIGHT THROUGH: the scaling —
+    /// and its guard against a non-positive FTE — lives in the pure calculator and must not be reimplemented
+    /// here. With the flag off (the default) <paramref name="fte"/> is ignored entirely.</para>
     /// </summary>
     private static PayrollOvertimeCalculator.OvertimeResult ComputeOvertime(
-        PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, AttendancePayrollRowDto? attendance, decimal workingDays)
+        PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, AttendancePayrollRowDto? attendance,
+        decimal workingDays, decimal fte, bool fteScaledBase)
     {
         if (attendance is null
             || (attendance.ApprovedOvertimeMinutes <= 0
@@ -975,7 +999,8 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
 
         var basic = ResolvedBasic(result, inputs);
         return PayrollOvertimeCalculator.Compute(
-            basic, workingDays, attendance.OvertimeMultiplierDetails, attendance.ApprovedOvertimeMinutes);
+            basic, workingDays, attendance.OvertimeMultiplierDetails, attendance.ApprovedOvertimeMinutes,
+            fte: fte, fteScaledBase: fteScaledBase);
     }
 
     /// <summary>Adds the overtime earning line (US-PAY-010 AC-2) and re-rolls gross/net.</summary>

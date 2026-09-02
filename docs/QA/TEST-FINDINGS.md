@@ -2695,4 +2695,31 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Why this matters beyond G15:** it is a **second, independent** fail-open, separate from the deny-list gating G15 recorded — and it **explains** G15's symptom. The fixture "never sets an environment name" partly because setting it the idiomatic way (`UseEnvironment`) would not have been seen anyway.
 - **Severity rationale:** MED — same class as the deny-list hole, and it makes the guard untestable through the normal fixture seam.
 - **Suggested direction (NOT applied):** switch to `IHostEnvironment` with allow-list gating; G15's test then becomes writable through `UseEnvironment`. **Amend GAP-015 to record both failure modes, not just the missing test.**
+### ISSUE-437 — nothing verifies that a documented CAPABILITY exists; four instances shipped, one written during the audit that catalogued the other three
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST (process)
+- **Module / US / TC:** cross-module · `ClaudeMdAccuracyTests`
+- **Title:** `ClaudeMdAccuracyTests` asserts that documented **scripts**, **links** and **paths** exist. Nothing asserts that a documented **capability** does. Four instances have now shipped: `csharp-lsp`/`typescript-lsp` documented and dead on PATH for 12 days; 13 plugins declared in `enabledPlugins` and inert because they were installed against a path that no longer exists; the project's own skills listed as slash commands but not dispatchable in this session; and CLAUDE.md rule #7 requiring a todo list with no mechanism named, which silently did not run for eight loop iterations.
+- **Root cause + confidence (~90%):** a path or script is a filesystem fact a test can check. A *capability* — "this tool is callable", "this plugin loaded", "this skill dispatches" — is runtime state the guard never looks at. `scripts/doctor.sh` covers part of this for the toolchain (that is why the LSP gap was eventually found) but nothing covers tools, plugins or skills referenced by the instructions themselves.
+- **Evidence:** the fourth instance was authored **during** the audit that catalogued the first three, by the agent cataloguing them — which is the strongest available evidence that reading carefully is not a sufficient control.
+- **Severity rationale:** MED — no production impact, but it is the mechanism by which the instruction set drifts from what the runtime can actually do, and every instance was invisible until a human asked.
+- **Suggested direction (NOT applied):** extend `scripts/doctor.sh`'s CAPABILITY tier (exit 2) to assert that each plugin in `enabledPlugins` resolves for the *current* path, that each `.claude/skills/*.md` marked `user_invocable` actually dispatches, and that any tool a rule depends on is named in the rule rather than assumed. Prefer a rule that names a mechanism working everywhere over one that needs a tool.
+
+### ISSUE-438 — `FteScaledOvertimeBase` has no UI control anywhere; a money-affecting policy is reachable only by raw API call
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** FE
+- **Module / US / TC:** Attendance · US-ATT-011 AC-5 · TC-ATT-152
+- **Title:** The flag has a full backend write+read path (`AttendanceSettingsService.cs:318,386`) and sits in the settings DTO, but the **only** occurrence anywhere in the Angular app is the generated type at `api-types.ts:34242`. There is no toggle in the attendance-settings form, so a tenant admin cannot enable it through the product.
+- **Root cause + confidence (~95%):** the BE half of US-ATT-011 AC-5 shipped; the FE control was never built.
+- **Severity rationale:** MED — with GAP-022 now fixed the flag finally *works*, but no real admin can reach it, so the capability stays latent. It also explains why the inert-flag defect survived: nobody could exercise it.
+- **Suggested direction (NOT applied):** add the toggle to the attendance-settings form.
+
+### ISSUE-439 — a domain calculator can gain trailing-optional parameters that no caller ever supplies, and every unit test stays green
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST (architecture)
+- **Module / US / TC:** cross-module · generalises GAP-022
+- **Title:** GAP-022's shape: `PayrollOvertimeCalculator.Compute` gained `fte` and `fteScaledBase` as trailing optionals, `PayrollRunProcessor` was never updated to pass them, the parameters were inert on the only production path, and **the entire suite stayed green** — because the calculator's own unit tests supply the arguments directly. `OvertimeFteBaseTests.cs:10-13` even records in its header that it proves "the MATH, not the plumbing", and it stayed broken anyway. A written admission of an untested seam is not a control.
+- **Root cause + confidence (~90%):** nothing asserts that a domain calculator's optional parameters are actually supplied by a non-test caller.
+- **Severity rationale:** MED — this is a money-path defect generator. It produced a silent underpayment once already.
+- **Suggested direction (NOT applied):** a NetArchTest/architecture rule flagging any domain calculator whose optional parameters are never supplied by a production caller — natural work for queue item `E2` (`HRM.ArchitectureTests`), which does not yet exist. Failing that, a manual sweep of every domain calculator's call sites.
 
