@@ -2467,7 +2467,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-422 — INFRA: the running dev stack serves a container image built 2026-08-11, ~12 days behind `main` — live-API test verdicts taken on this stack can be false in either direction
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED (2026-09-02, stack rebuilt)
+- **Resolution (2026-09-02):** `docker compose build backend frontend && docker compose up -d` from `3129454c`. Container `hris-backend-1` now created **2026-09-01T21:43:31Z** (was 2026-08-11T13:31:11Z). `/health` 200. **Decisive proof the staleness was real:** the 360-release route that shipped 2026-08-17 (`d87b9e8b`, PR #510) now returns **401** (auth required) and appears in `swagger.json` as `/api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/release` — on the old image it would have 404'd, which would have recorded a FALSE FAIL for TC-PRF-005-05 and turned ISSUE-377 back into a phantom live defect. **Unblocks G10 and BUG-003's `--iso` close-out.**
 - **Layer:** INFRA
 - **Module / US / TC:** cross-cutting (affects every API-layer TC executed against `http://localhost:5000`). Surfaced while executing TC-CHR-063 / TC-CHR-337.
 - **Title:** `docker image inspect hris-backend` reports `Created = 2026-08-11T19:00:49+05:30`, and the container `hris-backend-1` was last started 2026-09-01T14:58Z from that same image. At least one source file in the ISSUE-021 surface has changed since: `SalaryGradesController.cs` was last modified **2026-08-23** by "fix(B5): two silent no-ops" (`29279413`). The running API therefore does not implement B5's `UpdateSalaryGradeRequest.IsActive` field, and a live probe against it produces a *false defect*: `PUT /api/v1/tenant/salary-grades/{id}` with `{"isActive":true}` on a deactivated grade returns **HTTP 200** with `"isActive":false` in the body and leaves `salary_grades.is_active = f` and `updated_at` untouched in the DB — which looks exactly like a reactivation bug but is only the stale build.
@@ -2548,3 +2549,101 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Module / US / TC:** Authentication · TEST-MATRIX.md
 - **Title:** The module holds `automated` and `blocked` TCs. Reported rather than corrected in place, per the ledger rule that a contradiction is surfaced, not silently fixed.
 - **Suggested direction (NOT applied):** recount and correct the summary block.
+
+### BUG-431 — `POST /api/v1/tenant/performance/cycles` returns **500** for date-only (`yyyy-MM-dd`) dates — the exact shape the Angular cycle form sends
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** BE (+ FE contract)
+- **Module / US / TC:** Performance Management · US-PRF-004 (cycle creation) · found while building fixtures for **TC-PRF-005-04 / -14** (US-PRF-005)
+- **Title:** Creating an appraisal cycle with `startDate`/`endDate`/phase dates as `"2026-08-01"` (no time, no offset) is an unhandled `DbUpdateException` → HTTP 500 "An unexpected error occurred", instead of a 400 validation error. The Angular cycle form emits precisely that format, so cycle creation from the UI appears to be broken.
+- **Root cause (PROVISIONAL — 85% confidence on the mechanism, 70% on the UI blast radius):** the request DTO binds `startDate` as `DateTime`; a date-only JSON string deserializes with `Kind=Unspecified`, and Npgsql refuses to write it to `timestamp with time zone`. Logged exception (Serilog, `/app/Logs/hrm-20260902.log`, `RequestId 0HNO8E8BVKTC7:00000001`):
+  ```
+  [2026-09-02 00:25:18.433 +00:00 ERR] An exception occurred in the database while saving changes for context type 'HRM.Infrastructure.Persistence.AppDbContext'.
+  Microsoft.EntityFrameworkCore.DbUpdateException: An error occurred while saving the entity changes. See the inner exception for details.
+   ---> System.ArgumentException: Cannot write DateTime with Kind=Unspecified to PostgreSQL type 'timestamp with time zone', only UTC is supported. (Parameter 'value')
+  [2026-09-02 00:25:18.435 +00:00 ERR] Error handling CreateCycleCommand after 191ms {... "RequestPath":"/api/v1/tenant/performance/cycles" ...}
+  [2026-09-02 00:25:18.445 +00:00 ERR] HTTP POST /api/v1/tenant/performance/cycles responded 500 in 265.1667 ms
+  ```
+  Provisional because I did **not** confirm which layer should normalise (DTO converter vs. handler vs. `Npgsql.EnableLegacyTimestampBehavior`), and I did **not** reproduce it through the browser — the UI claim is a code trace, not an observed UI failure.
+- **Reproduction steps** (persona `admin@hrm.local` / `Admin@123!`, subdomain `platform`, all permissions):
+  1. `TOKEN=$(curl -s -X POST http://localhost:5000/api/v1/auth/login -H 'Content-Type: application/json' -H 'X-Tenant-Subdomain: platform' -d '{"email":"admin@hrm.local","password":"Admin@123!"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["accessToken"])')`
+  2. ```bash
+     curl -s -w '\nHTTP=%{http_code}\n' -X POST http://localhost:5000/api/v1/tenant/performance/cycles \
+       -H "Authorization: Bearer $TOKEN" -H 'X-Tenant-Subdomain: platform' -H 'Content-Type: application/json' \
+       -d '{"name":"QA A all-date-only","type":"Annual","startDate":"2026-08-01","endDate":"2026-12-31",
+            "ratingScaleMax":5,"selfWeightPercent":30,"is360Enabled":false,"isCalibrationEnabled":false,
+            "phases":[{"phaseType":"GoalSetting","startDate":"2026-08-01","endDate":"2026-08-31"},
+                      {"phaseType":"SelfAssessment","startDate":"2026-09-01","endDate":"2026-09-15"},
+                      {"phaseType":"ManagerReview","startDate":"2026-09-16","endDate":"2026-09-30"},
+                      {"phaseType":"Publish","startDate":"2026-10-01","endDate":"2026-10-15"}],
+            "scope":{"scopeType":"AllEmployees","departmentIds":[],"employeeIds":[]}}'
+     ```
+- **Evidence (three isolation arms, run 2026-09-02):**
+  | Arm | Top-level dates | Phase dates | Result |
+  |---|---|---|---|
+  | A (exact FE payload shape) | `2026-08-01` | `2026-08-01` | **HTTP 500** `{"success":false,"message":"An unexpected error occurred. Please try again later."}` |
+  | B | `2026-08-01T00:00:00Z` | `2026-08-01` | **HTTP 500** (same body) |
+  | C | `2026-08-01` | `2026-08-01T00:00:00Z` | **HTTP 500** (same body) |
+  | D (control) | `...T00:00:00Z` | `...T00:00:00Z` | **HTTP 201 Created**, cycle `01a05f81-ffb9-767c-9adc-96ef041e0f6f` persisted |
+
+  So **either** date group alone triggers it, and the UTC-suffixed control succeeds — the failure is the
+  `Kind`, not the payload shape. OpenAPI declares both fields `format: date-time`, so a date-only value is
+  schema-invalid input — but schema-invalid input must be a **400**, never an unhandled 500 that reaches EF.
+
+  FE contract trace (code, not observed at runtime):
+  `src/frontend/src/app/features/performance/components/cycle-form/cycle-form.component.ts:154` uses
+  `<input type="date" formControlName="startDate">` (Angular yields the raw `yyyy-MM-dd` string), and
+  `:645` builds the payload as `startDate: v.startDate` with no conversion; phase dates the same at `:245`.
+  `services/cycle.service.ts:61-65` `create()` POSTs that object verbatim — no interceptor normalises dates
+  (`core/interceptors/` = api-envelope, error, tenant only). The component's own spec seeds `'2026-01-01'`.
+- **Severity rationale:** HIGH, not CRIT — if the code trace holds, no HR user can create an appraisal cycle
+  from the UI, which is the entry point for the entire Performance module (cycles gate goals, self-assessment,
+  manager review and this 360 story); but the API is usable with correct UTC input, and I have not observed
+  the browser failing, so it is not asserted as a total outage.
+- **Notes:** out-of-lane discovery — found while seeding fixtures for US-PRF-005, belongs to US-PRF-004.
+  Not investigated further per REPORT-ONLY + the coordinator's stop instruction.
+
+### ISSUE-432 — FR-3's "configurable minimum peer reviewers" is not configurable anywhere: `Min360PeerReviewers` is a schema default with no write path
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** BE (+ FE)
+- **Module / US / TC:** Performance Management · US-PRF-005 · TC-PRF-005-04 (precondition), TC-PRF-005-14 (step 1)
+- **Title:** The BR-4 release gate reads `AppraisalCycle.Min360PeerReviewers`, but no API request DTO, no UI control and no tenant setting can set it — every cycle silently keeps the EF default of 2, so FR-3's "tenant-configured minimum" is effectively a hardcoded constant.
+- **Root cause (85% confidence — static evidence, no log involved):** the value is written only as a column
+  default (`Configurations/AppraisalCycleConfiguration.cs:68` `HasDefaultValue(2)`, property default
+  `HRM.Domain/Performance/AppraisalCycle.cs:119`). Every other reference is a **read**:
+  `Feedback360Service.cs:352,354,615,618,636`, `ReviewerAssignmentService.cs:116,280`. The create/update
+  inputs omit it entirely — `PerformanceCreateCycleInput` and `PerformanceUpdateCycleInput` in the live
+  `swagger.json` expose `name/type/startDate/endDate/phases/scope/ratingScaleMax/selfWeightPercent/
+  is360Enabled/isCalibrationEnabled/isAnonymousFeedback` and nothing else. Only the read DTOs
+  (`PerformanceFeedback360ResultsDto.minPeerReviewers`, `PerformanceReviewerConfigurationDto.minPeerReviewers`)
+  surface it. `grep -rn "min360\|Min360" src/frontend/src` → **no matches**: the Angular cycle form has no field.
+- **Reproduction steps:**
+  1. `curl -s http://localhost:5000/swagger/v1/swagger.json` → inspect `components.schemas.PerformanceCreateCycleInput.properties` and `PerformanceUpdateCycleInput.properties` — no `min360PeerReviewers` / `minPeerReviewers` key.
+  2. Create a cycle (any payload, see BUG-431 arm D) → `select min360peer_reviewers from appraisal_cycle;` → always `2`.
+  3. `grep -rn "Min360PeerReviewers" src/backend --include=*.cs | grep -v Migrations` → all non-test hits are reads plus the two default declarations.
+- **Evidence:** the API/DB/FE facts above. Enforcement itself is correct at the default —
+  `Release_BelowPeerThreshold_Returns422_AndWritesNoRow` and `Release_ExactlyAtMinimumPeers_Succeeds` both **Passed**
+  in the 74/74 `FullyQualifiedName~Feedback360` run on 2026-09-02.
+- **Severity rationale:** MED — the safety gate works and defaults sensibly, so no results leak below
+  threshold; but a tenant that needs 3 peers (or 1, for a small team) has no way to say so, and it blocks
+  TC-PRF-005-14 step 1 from ever being executed as written.
+
+### ISSUE-433 — INFRA: no login-capable test personas can be created locally, so every multi-persona live authz/IDOR arm across the product is unexecutable
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** INFRA
+- **Module / US / TC:** cross-module · blocks TC-PRF-005-05 steps 1/2/4/5, TC-PRF-005-14 steps 3-6, and the same class everywhere
+- **Title:** The local stack has no `acme` tenant, 3 users total and 0 appraisal cycles. New login-capable personas **cannot be created**: invite tokens are BCrypt-hashed and deliberately never logged, and a real SMTP sender is DI-registered, so `/auth/accept-invitation` cannot be driven. Every live test needing a second persona therefore records BLOCKED rather than a verdict.
+- **Root cause + confidence (~90%):** there is no dev-only seed path for the four standard personas, and the security property that makes invites safe (hashed, unlogged tokens) is exactly what makes them undrivable in a dev loop. Both are correct in isolation; nothing bridges them.
+- **Evidence:** `@test-runner` execution 2026-09-02 — TC-PRF-005-05 steps 1/2/4/5 recorded `blocked: persona-gap`; only step 3 (unauthenticated 401 across five 360 routes) could run live.
+- **Severity rationale:** MED by blast radius rather than depth — it does not break production, but it silently converts a whole *category* of security testing (authz, IDOR, cross-persona) into automated-only coverage, which is how the ledger accumulated blocked arms nobody could clear.
+- **Suggested direction (NOT applied):** a seed script or a dev-only token surface for the four standard personas. **Do not weaken the invite hashing to achieve it.**
+
+### ISSUE-434 — `@test-runner` reports only at the end, so a run that hits its turn ceiling loses everything it found
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST (process)
+- **Module / US / TC:** cross-module · `.claude/agents/team/test-runner.md`
+- **Title:** Two runs in one session hit the 60-turn limit. The first survived only because it happened to write its ledger append before stopping; the second recorded **nothing** after 2.7 hours and 73 tool calls — every TC still `draft`, no finding filed — and its work was recoverable only by resuming the agent and ordering it to stop investigating and write up.
+- **Root cause + confidence (~95%):** the agent contract asks for a verdict table at the end. With a hard turn ceiling that pattern guarantees total loss on any long run. It is a prompt-shape defect, not agent misbehaviour.
+- **Evidence:** agent runs 2026-09-02 (G9 ISSUE-021/BUG-056; G10 US-PRF-005).
+- **Severity rationale:** MED — no production impact, but it destroys expensive investigation and makes long QA runs a coin flip.
+- **Suggested direction (NOT applied):** amend `.claude/agents/team/test-runner.md` to require **record-as-you-go** — flip each TC's status the moment it is judged, file a finding as soon as its shape is known, refine afterwards. Same for the fixture-residue note.
+

@@ -274,7 +274,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | # | Item | Merge gate | Note |
 |---|---|---|---|
 | 1 | ~~`G9` `/verify-fix` the 11 already-fixed~~ | ✅ | **7 closed · 1 partial · 1 parked** — see below |
-| 2 | `G10` `/test-us US-PRF-005` | auto | QA-execution debt |
+| 2 | ~~`G10` `/test-us US-PRF-005`~~ | ✅ | **BLOCKED × 3 — ISSUE-377 NOT discharged.** Found BUG-431 (HIGH) |
 | 3 | `G11` correct 3 register rows | auto | GAP-006 / GAP-030 / GAP-034 |
 | 4 | `G1` part-time overtime on a full-time base | auto | **money, live** |
 | 5 | `G8` performance FE mappers | auto | cheapest fix in the guide |
@@ -327,6 +327,33 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
 
 **Re-sorted:** `ISSUE-423` (HIGH) enters above the remaining MED work. `ISSUE-422` is a **prerequisite for
 `BUG-003` and for any live-API verdict in this queue** — rebuild the dev stack before trusting one.
+
+---
+
+## 🔺 RE-SORTED 2026-09-02 — G10 surfaced a HIGH that outranks the rest of the queue
+
+- [ ] **G16 · BUG-431 · `POST /performance/cycles` 500s on date-only dates — the exact shape the Angular form sends**
+      `System.ArgumentException: Cannot write DateTime with Kind=Unspecified to PostgreSQL type 'timestamp with time zone'`
+      (Serilog `RequestId 0HNO8E8BVKTC7:00000001`). UTC-suffixed dates return 201; `yyyy-MM-dd` 500s.
+      `cycle-form.component.ts:154` is an `<input type="date">`, `:645` passes `v.startDate` unconverted,
+      `cycle.service.ts:61-65` POSTs it verbatim — **no date interceptor anywhere**. So UI cycle creation is
+      plausibly broken outright. **Root cause PROVISIONAL** (85% mechanism / 70% UI blast radius) — it was
+      never reproduced in a browser. **First step is a browser repro, not a fix**; then normalize or 400 at
+      the API and settle which layer owns the conversion. Blocks every live 360 test (cycles are the fixture root).
+
+### 🚧 Also parked at the decision gate by G10
+
+- **ISSUE-433 · the persona gap (INFRA, MED).** No login-capable test personas can be created locally —
+  invite tokens are BCrypt-hashed and never logged, and a real SMTP sender is registered, so
+  `/auth/accept-invitation` is undrivable. This silently converts **every** multi-persona live authz/IDOR arm
+  across the product into automated-only coverage. Needs a seed script or a dev-only token surface.
+  **Do not weaken the invite hashing to achieve it.**
+- **ISSUE-432 · FR-3's configurable peer minimum has no write path** — `Min360PeerReviewers` is a schema
+  default (`AppraisalCycleConfiguration.cs:68`), absent from the create/update DTOs and from the FE. Build it,
+  or record that FR-3 was descoped.
+- **ISSUE-434 · `@test-runner` reports only at the end**, so a run that hits the 60-turn ceiling loses
+  everything. Two runs did; one lost 2.7 hours. Amend `.claude/agents/team/test-runner.md` to require
+  record-as-you-go.
 
 ---
 
