@@ -275,12 +275,13 @@ instances**, so probes 3–5 could not be observed end-to-end.
 |---|---|---|---|
 | 1 | ~~`G9` `/verify-fix` the 11 already-fixed~~ | ✅ | **7 closed · 1 partial · 1 parked** — see below |
 | 2 | ~~`G10` `/test-us US-PRF-005`~~ | ✅ | **BLOCKED × 3 — ISSUE-377 NOT discharged.** Found BUG-431 (HIGH) |
-| 3 | `G11` correct 3 register rows | auto | GAP-006 / GAP-030 / GAP-034 |
-| 4 | `G1` part-time overtime on a full-time base | auto | **money, live** |
-| 5 | `G8` performance FE mappers | auto | cheapest fix in the guide |
-| 6 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
-| 7 | `G13` test theater | auto | |
-| 8 | `G15` Production email guard test | auto | |
+| 3 | ~~`G16` BUG-431 date-only 500~~ | ✅ | **fixed at the API boundary**; 5573/5573; found ISSUE-435 + ISSUE-436 |
+| 4 | `G11` correct 3 register rows | auto | GAP-006 / GAP-030 / GAP-034 |
+| 5 | `G1` part-time overtime on a full-time base | auto | **money, live** |
+| 6 | `G8` performance FE mappers | auto | cheapest fix in the guide |
+| 7 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
+| 8 | `G13` test theater | auto | |
+| 9 | `G15` Production email guard test | auto | |
 | 9 | `G2` `JwtKeyRingOptions` validation | **HELD** | auth/JWT |
 | 10 | `G5` unresolved-tenant HTTP negative test | **HELD** | tenant isolation |
 | 11 | `G14` sweep-job tenant logging | **HELD** | tenant context |
@@ -332,7 +333,7 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
 
 ## 🔺 RE-SORTED 2026-09-02 — G10 surfaced a HIGH that outranks the rest of the queue
 
-- [ ] **G16 · BUG-431 · `POST /performance/cycles` 500s on date-only dates — the exact shape the Angular form sends**
+- [x] **G16 · BUG-431 · FIXED at the API boundary — `UtcDateTimeJsonConverter`, proven failing-first.** ~~`POST /performance/cycles` 500s on date-only dates — the exact shape the Angular form sends**
       `System.ArgumentException: Cannot write DateTime with Kind=Unspecified to PostgreSQL type 'timestamp with time zone'`
       (Serilog `RequestId 0HNO8E8BVKTC7:00000001`). UTC-suffixed dates return 201; `yyyy-MM-dd` 500s.
       `cycle-form.component.ts:154` is an `<input type="date">`, `:645` passes `v.startDate` unconverted,
