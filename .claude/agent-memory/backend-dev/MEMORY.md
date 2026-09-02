@@ -29,3 +29,4 @@
 - [GlitchTip error tracking (US-PLT-006)](reference-glitchtip-error-tracking.md) — Sentry 6.7.0 SDK; IsEnabled DSN inert-guard; scrubber (Sentry only auto-scrubs Authorization); scoped tenant-tag processor; InitializeSdk=false
 - [MFA secret protection (US-PLT-005)](reference-mfa-secret-protection.md) — mfa_secret=DataProtection NOT AES-GCM registry (tenant_id landmine); IsProtected seam + legacy back-fill + report count
 - [Leave pool allocation (DF-19/ISSUE-045)](reference-leave-pool-allocation.md) — persisted FIFO: LeaveLedger.Pool+CarryForwardTrackingId, tracking.ConsumedDays; deduction split, per-pool cancel restore (preserve expiry), expiry reads counter; 1µs tiebreak; legacy fallback
+- [DateTime JSON boundary (BUG-431)](reference-datetime-json-boundary.md) — global Unspecified→UTC converter covers request BODIES only; query-string dates + SignalR are different pipelines

@@ -2647,3 +2647,22 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Severity rationale:** MED — no production impact, but it destroys expensive investigation and makes long QA runs a coin flip.
 - **Suggested direction (NOT applied):** amend `.claude/agents/team/test-runner.md` to require **record-as-you-go** — flip each TC's status the moment it is judged, file a finding as soon as its shape is known, refine afterwards. Same for the fixture-residue note.
 
+### ISSUE-435 — 18 `[FromQuery] DateTime?` params bind as SERVER-LOCAL, so date filters silently shift on any non-UTC host
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** BE
+- **Module / US / TC:** cross-module · sibling of BUG-431 (which fixed the JSON body path only)
+- **Title:** BUG-431's converter covers request **bodies**. Query-string dates never reach a `JsonConverter` — they bind via MVC's `DateTimeModelBinder`, which applies `AdjustToUniversal` **without** `AssumeUniversal`, so `?appliedFrom=2026-01-01` is read as **server-local** and then converted to UTC. No 500 (the Kind ends up `Utc`), but the filter boundary shifts by the host offset.
+- **Root cause + confidence (~85%, NOT reproduced live):** the two binding mechanisms are independent; fixing one does not fix the other.
+- **Evidence:** 18 affected params incl. `ApplicantPipelineController.cs:47-48` → `ApplicantService.cs:335-339`, `EmployeesController.cs:188-189,241-242`, `PayrollAuditController.cs:70-71,118-119`, `AdminMonitoringController.cs:64-65`, `ExitInterviewsController.cs:113-114`. **`AuditLogService.cs:208,215` already hand-patches exactly this**, which is evidence the problem is real and currently handled ad hoc.
+- **Severity rationale:** MED — latent on a UTC host (where the shift is zero), wrong on any other. It reads as "the report is missing a day's rows", which is hard to attribute.
+- **Suggested direction (NOT applied):** a `DateTime` model-binder provider mirroring `UtcDateTimeJsonConverter`, then delete the ad-hoc patch in `AuditLogService`.
+
+### ISSUE-436 — no FE spec in this repo can catch an FE↔BE contract break; four shipped defects share this one cause
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Layer:** TEST (FE)
+- **Module / US / TC:** cross-module
+- **Title:** Every frontend spec mocks the wire via `HttpTestingController`, so a spec asserts the shape its author *believed* the API used. When that belief is wrong the spec still passes and the feature is broken in production. **Four defects found in this audit are one gap, not four:** careers detail 404 (`vacancy-detail.component.spec.ts:77` feeds `'vac-1'`), team-goals always empty (`performance-goal.service.spec.ts:135` flushes a shape the endpoint never returns), onboarding dead route + 405s (specs assert the wrong verb), and BUG-431 (`cycle-form.component.spec.ts:24,83,153,169` assert the exact date shape that 500s). **All four suites are green today.**
+- **Root cause + confidence (~95%):** there is no outbound contract assertion anywhere. `src/app/core/api/generated/api-types.ts` IS generated from `contracts/openapi/hrm-v1.json` and CI enforces it byte-for-byte (`npm run api:types:check`) — but only for *types the FE reads*. Nothing asserts that what a service **sends** conforms to the contract.
+- **Severity rationale:** HIGH by blast radius. It is the mechanism behind this repo's documented dominant defect class, and it makes the FE suite structurally unable to detect it. 4,327 green specs did not catch four live user-facing breaks.
+- **Suggested direction (NOT applied):** assert outbound payloads against the generated request types — the type information already exists and is already enforced; the missing step is applying it on the send path. Cheaper than it looks, and it would have caught all four.
+

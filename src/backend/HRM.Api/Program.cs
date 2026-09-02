@@ -218,6 +218,15 @@ try
         // matching what the Angular frontend consumes. Deserialization is case-insensitive.
         options.JsonSerializerOptions.Converters.Add(
             new System.Text.Json.Serialization.JsonStringEnumConverter());
+
+        // BUG-431: a date-only request value ("2026-01-01" — what <input type="date"> emits) deserializes with
+        // Kind=Unspecified, which Npgsql refuses to write to a `timestamp with time zone` column, so the request
+        // 500'd while the same date with a Z suffix returned 201. These converters normalise every incoming
+        // DateTime/DateTime? to UTC at the boundary, closing it for all 26+ bare DateTime request properties at
+        // once instead of per-DTO. Serialization is unchanged; malformed dates still fail as a 400 (JsonException
+        // → input formatter → ModelState → ValidationFilter). See HRM.Api.Json.UtcDateTimeJsonConverter.
+        options.JsonSerializerOptions.Converters.Add(new HRM.Api.Json.UtcDateTimeJsonConverter());
+        options.JsonSerializerOptions.Converters.Add(new HRM.Api.Json.UtcNullableDateTimeJsonConverter());
     });
 
     builder.Services.AddHttpContextAccessor();
