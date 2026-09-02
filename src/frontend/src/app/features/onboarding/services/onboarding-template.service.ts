@@ -89,18 +89,18 @@ export class OnboardingTemplateService {
     );
   }
 
-  /** Activate a template (FR-7 soft status toggle). */
+  /** Activate a template (FR-7 soft status toggle). The endpoint is a POST. */
   activate(id: string): Observable<IOnboardingTemplateSummary> {
-    return this.http.patch<IOnboardingTemplateSummary>(
+    return this.http.post<IOnboardingTemplateSummary>(
       `${this.base}/${id}/activate`,
       {},
       { withCredentials: true },
     );
   }
 
-  /** Deactivate a template (FR-7 / BR-4 — stays visible, not assignable). */
+  /** Deactivate a template (FR-7 / BR-4 — stays visible, not assignable). POST endpoint. */
   deactivate(id: string): Observable<IOnboardingTemplateSummary> {
-    return this.http.patch<IOnboardingTemplateSummary>(
+    return this.http.post<IOnboardingTemplateSummary>(
       `${this.base}/${id}/deactivate`,
       {},
       { withCredentials: true },

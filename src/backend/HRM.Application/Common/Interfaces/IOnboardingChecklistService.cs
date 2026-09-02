@@ -15,14 +15,40 @@ public sealed record AdHocTaskInput(
     bool IsMandatory,
     int SortOrder);
 
-/// <summary>Input for assigning an onboarding checklist to a new hire (US-ONB-002 AC-2).</summary>
+/// <summary>
+/// BUG-441: one line of the authoritative task set on a replace-mode assignment. Carries a CONCRETE
+/// <paramref name="DueDate"/> (FR-6 inline edits) rather than an offset, and no responsible-user id — the
+/// service re-resolves ownership from the role (FR-3).
+/// </summary>
+public sealed record ResolvedTaskInput(
+    Guid? TemplateTaskId,
+    string Title,
+    string? Description,
+    string? Category,
+    OnboardingResponsibleRole? ResponsibleRole,
+    DateOnly DueDate,
+    bool IsMandatory,
+    int SortOrder);
+
+/// <summary>
+/// Input for assigning an onboarding checklist to a new hire (US-ONB-002 AC-2).
+/// </summary>
+/// <param name="AdditionalTasks">
+/// Legacy FR-5 extras, appended ON TOP of the expanded template.
+/// </param>
+/// <param name="ResolvedTasks">
+/// BUG-441. <c>null</c> = legacy: expand the template, then append <paramref name="AdditionalTasks"/>.
+/// Non-null = replace mode: create exactly these tasks and do NOT expand the template. Trailing + defaulted
+/// so existing callers (e.g. the hire-conversion path) are untouched.
+/// </param>
 public sealed record AssignChecklistInput(
     Guid EmployeeId,
     Guid TemplateId,
     DateOnly? OverrideStartDate,
     ChecklistAssignmentMode Mode,
     IReadOnlyList<AdHocTaskInput> AdditionalTasks,
-    string? IdempotencyKey);
+    string? IdempotencyKey,
+    IReadOnlyList<ResolvedTaskInput>? ResolvedTasks = null);
 
 /// <summary>A single task modification op (US-ONB-002 AC-4/FR-5/FR-6).</summary>
 public sealed record ModifyTaskInput(Guid TaskInstanceId, DateOnly? NewDueDate, bool Remove);
@@ -57,6 +83,23 @@ public interface IOnboardingChecklistService
     /// <summary>AC-1/FR-1: active templates applicable to an employee (by dept + job title + universal).</summary>
     Task<Result<IReadOnlyList<ApplicableTemplateDto>>> GetApplicableTemplatesAsync(
         Guid employeeId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// FR-2/BR-4: resolves what <paramref name="templateId"/> WOULD assign to <paramref name="employeeId"/> —
+    /// the task list, the anchored due dates and the resolved responsible parties — and persists NOTHING.
+    ///
+    /// <para>This is a pure read. It reuses the same start-date anchoring, responsible-party resolution and
+    /// task-construction helpers as <see cref="AssignAsync"/>, so preview and assign cannot disagree, but it
+    /// never calls SaveChanges, never adds an entity to the context, and never touches the assign path's
+    /// idempotency handling. The precedent is AttendancePolicyResolver, which deliberately never lazily
+    /// creates a policy row because a payroll run must not write policy as a side effect.</para>
+    ///
+    /// <para>Validation mirrors assign: 404 when the employee or template is not found in this tenant,
+    /// 409 when the template is inactive (BR-1) — so the preview cannot show a template that assign would
+    /// then reject.</para>
+    /// </summary>
+    Task<Result<ChecklistPreviewDto>> PreviewAsync(
+        Guid employeeId, Guid templateId, CancellationToken cancellationToken = default);
 
     /// <summary>AC-2/AC-3: assign a checklist (creates instance + task instances + outbox; replace/merge).</summary>
     Task<Result<OnboardingChecklistInstanceDto>> AssignAsync(

@@ -65,6 +65,64 @@ public sealed class OnboardingChecklistValidatorTests
             .ShouldHaveValidationErrorFor("AdditionalTasks[0].DueOffsetDays");
     }
 
+    // ── BUG-441: the replace-mode task set ────────────────────────────
+
+    private static AssignChecklistResolvedTask ResolvedTask(
+        string title = "Sign employment contract", DateOnly? dueDate = null) =>
+        new(Guid.NewGuid(), title, null, null, OnboardingResponsibleRole.HR,
+            dueDate ?? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(3)), true, 0);
+
+    [Fact]
+    public void Assign_with_resolved_tasks_only_passes()
+    {
+        var cmd = AssignCmd() with { ResolvedTasks = new[] { ResolvedTask() } };
+
+        _assign.TestValidate(cmd).ShouldNotHaveAnyValidationErrors();
+    }
+
+    /// <summary>
+    /// The two task-set fields are mutually exclusive. Picking a winner silently would discard one set of
+    /// tasks the HR officer actually entered — the same invisible data loss BUG-441 was.
+    /// </summary>
+    [Fact]
+    public void Assign_rejects_both_task_sets_together()
+    {
+        var cmd = AssignCmd(adhoc: new[]
+        {
+            new AssignChecklistAdHocTask("Order security badge", null, null, OnboardingResponsibleRole.HR, null, 2, false, 0),
+        }) with
+        { ResolvedTasks = new[] { ResolvedTask() } };
+
+        _assign.TestValidate(cmd).ShouldHaveValidationErrorFor(x => x.AdditionalTasks);
+    }
+
+    /// <summary>
+    /// A resolved row without a due date is a 400, never <c>default(DateOnly)</c>. Binding a missing date to
+    /// a silent default is exactly how BUG-441 put every task on <c>startDate + 0</c>.
+    /// </summary>
+    [Fact]
+    public void Assign_rejects_resolved_task_without_a_due_date()
+    {
+        var cmd = AssignCmd() with
+        {
+            ResolvedTasks = new[]
+            {
+                new AssignChecklistResolvedTask(
+                    null, "Sign employment contract", null, null, OnboardingResponsibleRole.HR, null, false, 0),
+            },
+        };
+
+        _assign.TestValidate(cmd).ShouldHaveValidationErrorFor("ResolvedTasks[0].DueDate");
+    }
+
+    [Fact]
+    public void Assign_rejects_short_resolved_task_title()
+    {
+        var cmd = AssignCmd() with { ResolvedTasks = new[] { ResolvedTask(title: "ab") } };
+
+        _assign.TestValidate(cmd).ShouldHaveValidationErrorFor("ResolvedTasks[0].Title");
+    }
+
     [Fact]
     public void Modify_requires_at_least_one_change()
     {

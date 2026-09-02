@@ -279,14 +279,49 @@ describe('ChecklistAssignmentComponent', () => {
     expect(arg.employeeId).toBe('emp-1');
     expect(arg.templateId).toBe('tpl-1');
     expect(arg.mode).toBe('merge');
-    expect(arg.additionalTasks.length).toBe(2);
-    expect(arg.additionalTasks[0].sortOrder).toBe(0);
+    expect(arg.resolvedTasks!.length).toBe(2);
+    expect(arg.resolvedTasks![0].sortOrder).toBe(0);
 
     expect(toastrSpy.success).toHaveBeenCalledWith(
       'Onboarding checklist assigned. Notifications sent to 3 people.',
     );
     expect(router.navigate).toHaveBeenCalled();
     expect(component.showConfirmDialog()).toBeFalse();
+  });
+
+  // ─── BUG-441 replace-mode payload ──────────────────────────
+
+  it('sends the on-screen list as the authoritative resolvedTasks, never as additionalTasks', async () => {
+    await setup(null);
+    selectAndPreview();
+
+    // The officer moves the IT task out by five days (FR-6). Screen order is due-date sorted:
+    // 0 = Sign contract (tt-1, 2026-07-01), 1 = IT laptop setup (tt-2, 2026-07-04).
+    component.tasks.at(1).get('dueDate')!.setValue('2026-07-09');
+
+    component.openConfirm();
+    component.assign();
+
+    const arg = serviceSpy.assign.calls.mostRecent().args[0];
+
+    // `additionalTasks` means "extras ON TOP of the template". Echoing the whole list there made the
+    // server create template.Tasks PLUS this list — every template task twice, all at startDate + 0.
+    expect(arg.additionalTasks).toBeUndefined();
+
+    expect(arg.resolvedTasks).toBeDefined();
+    expect(arg.resolvedTasks!.length).toBe(2);
+
+    // templateTaskId echoed so the server can pair each row back to its template task (BR-3).
+    expect(arg.resolvedTasks!.map((t) => t.templateTaskId)).toEqual(['tt-1', 'tt-2']);
+    // sortOrder follows screen order, not the template's original numbering.
+    expect(arg.resolvedTasks!.map((t) => t.sortOrder)).toEqual([0, 1]);
+
+    // The edit survives as a CONCRETE date, and the untouched row keeps its previewed date.
+    expect(arg.resolvedTasks![1].dueDate).toBe('2026-07-09');
+    expect(arg.resolvedTasks![0].dueDate).toBe('2026-07-01');
+
+    // Ownership is re-resolved server-side from the role — the client must not name a user id.
+    expect(Object.keys(arg.resolvedTasks![0])).not.toContain('responsibleUserId');
   });
 
   it('uses the singular "person" when exactly one is notified', async () => {

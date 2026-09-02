@@ -17,7 +17,7 @@ export const CAREERS_ROUTES: Routes = [
       ),
   },
   {
-    path: ':id',
+    path: ':slug',
     loadComponent: () =>
       import(
         './components/careers/vacancy-detail/vacancy-detail.component'

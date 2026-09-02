@@ -41,3 +41,5 @@
 - [Wire migration: parallel split](wire-migration-parallel-split.md) — fan out research per domain concern to scratch fragments; apply the shared-file edits serially with assert-count-1 replacements
 - ["No wire source" comments lie](stale-no-wire-source-comments.md) — mapper comments claiming a field is absent are unverified claims; grep the DTO before filing a backend gap (ISSUE-379, G8)
 - [Export-format token mismatch](wire-export-format-token-mismatch.md) — wire ships lowercase csv/xlsx/pdf; dashboard's ExportFormat union is PascalCase — translate via map + drop unknowns, never cast
+- [Proving a spec arm fails](proving-spec-arm-fails.md) — before/after protocol for bug-encoding specs (git show HEAD:f, not stash), ng test --include filtering, lint DELTA not total
+- [Mutually exclusive wire fields](mutually-exclusive-wire-fields.md) — replace-mode: omit the losing field (not `[]`); hand-write request interfaces (generated request schemas are all-optional)

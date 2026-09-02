@@ -5933,6 +5933,37 @@
         },
         "type": "object"
       },
+      "ApiResponseOfOnboardingChecklistPreviewDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OnboardingChecklistPreviewDto"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseOfOnboardingCompleteOffboardingResultDto": {
         "additionalProperties": false,
         "properties": {
@@ -18825,6 +18856,13 @@
             "nullable": true,
             "type": "string"
           },
+          "resolvedTasks": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingResolvedTaskRequest"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "templateId": {
             "format": "uuid",
             "type": "string"
@@ -18890,6 +18928,93 @@
           "Merge"
         ],
         "type": "string"
+      },
+      "OnboardingChecklistPreviewDto": {
+        "additionalProperties": false,
+        "properties": {
+          "employeeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "employeeName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "startDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingChecklistPreviewTaskDto"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "templateId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "templateName": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OnboardingChecklistPreviewTaskDto": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "dueDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "dueOffsetDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "isMandatory": {
+            "type": "boolean"
+          },
+          "responsibleName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "responsibleRole": {
+            "$ref": "#/components/schemas/OnboardingResponsibleRole"
+          },
+          "responsibleUserId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "status": {
+            "nullable": true,
+            "type": "string"
+          },
+          "templateTaskId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
       },
       "OnboardingChecklistStatus": {
         "enum": [
@@ -20016,6 +20141,44 @@
           "wouldRecommendEmployer": {
             "nullable": true,
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "OnboardingResolvedTaskRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "nullable": true,
+            "type": "string"
+          },
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "dueDate": {
+            "format": "date",
+            "nullable": true,
+            "type": "string"
+          },
+          "isMandatory": {
+            "type": "boolean"
+          },
+          "responsibleRole": {
+            "$ref": "#/components/schemas/OnboardingResponsibleRole"
+          },
+          "sortOrder": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "templateTaskId": {
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "nullable": true,
+            "type": "string"
           }
         },
         "type": "object"
@@ -43739,6 +43902,93 @@
               }
             },
             "description": "Not Found"
+          }
+        },
+        "tags": [
+          "OnboardingChecklists"
+        ]
+      }
+    },
+    "/api/v1/onboarding/checklists/preview": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "employeeId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "templateId",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingChecklistPreviewDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingChecklistPreviewDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfOnboardingChecklistPreviewDto"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           }
         },
         "tags": [

@@ -33,3 +33,4 @@
 - [Assert seeded rows via ApiTestFactory](reference-seeder-assertions-via-apitestfactory.md) — the HttpApi harness really runs DbInitializer; read the row back instead of re-declaring the seed constant (kills tautological seed guards)
 - [Mutation-check: revert BEFORE the report](feedback-mutation-check-revert-before-report.md) — pair mutate+unconditional revert in one bash call; a leftover mutation once got collected as the fix
 - [Payroll FTE overtime plumbing (GAP-022)](reference-payroll-fte-overtime-plumbing.md) — trailing-optional calculator params go inert silently; AttendancePolicyResolver.LoadAllAsync/.For is the batched per-location policy seam
+- [Onboarding checklist preview seam (ISSUE-374)](reference-onboarding-preview-seam.md) — assign's NewTaskFromTemplate is a PURE factory (reuse it); persists-nothing needs a non-zero baseline; exposed the assign task-duplication defect

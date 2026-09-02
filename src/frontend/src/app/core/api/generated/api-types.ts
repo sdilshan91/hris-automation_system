@@ -7868,6 +7868,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/onboarding/checklists/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    employeeId?: string;
+                    templateId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfOnboardingChecklistPreviewDto"];
+                        "text/json": components["schemas"]["ApiResponseOfOnboardingChecklistPreviewDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfOnboardingChecklistPreviewDto"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/onboarding/checklists/tasks/{taskInstanceId}/attachment": {
         parameters: {
             query?: never;
@@ -32931,6 +32993,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfOnboardingChecklistPreviewDto: {
+            code?: string | null;
+            data?: components["schemas"]["OnboardingChecklistPreviewDto"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfOnboardingCompleteOffboardingResultDto: {
             code?: string | null;
             data?: components["schemas"]["OnboardingCompleteOffboardingResultDto"];
@@ -37083,6 +37154,7 @@ export interface components {
             mode?: components["schemas"]["OnboardingChecklistAssignmentMode"];
             /** Format: date */
             overrideStartDate?: string | null;
+            resolvedTasks?: components["schemas"]["OnboardingResolvedTaskRequest"][] | null;
             /** Format: uuid */
             templateId?: string;
         };
@@ -37104,6 +37176,36 @@ export interface components {
         };
         /** @enum {string} */
         OnboardingChecklistAssignmentMode: "Replace" | "Merge";
+        OnboardingChecklistPreviewDto: {
+            /** Format: uuid */
+            employeeId?: string;
+            employeeName?: string | null;
+            /** Format: date */
+            startDate?: string;
+            tasks?: components["schemas"]["OnboardingChecklistPreviewTaskDto"][] | null;
+            /** Format: uuid */
+            templateId?: string;
+            templateName?: string | null;
+        };
+        OnboardingChecklistPreviewTaskDto: {
+            category?: string | null;
+            description?: string | null;
+            /** Format: date */
+            dueDate?: string;
+            /** Format: int32 */
+            dueOffsetDays?: number;
+            isMandatory?: boolean;
+            responsibleName?: string | null;
+            responsibleRole?: components["schemas"]["OnboardingResponsibleRole"];
+            /** Format: uuid */
+            responsibleUserId?: string | null;
+            /** Format: int32 */
+            sortOrder?: number;
+            status?: string | null;
+            /** Format: uuid */
+            templateTaskId?: string | null;
+            title?: string | null;
+        };
         /** @enum {string} */
         OnboardingChecklistStatus: "Active" | "Completed" | "Superseded" | "Cancelled";
         OnboardingClearanceSummaryDto: {
@@ -37476,6 +37578,19 @@ export interface components {
             overallExperienceRating?: number | null;
             responses?: components["schemas"]["OnboardingExitInterviewResponseInput"][] | null;
             wouldRecommendEmployer?: boolean | null;
+        };
+        OnboardingResolvedTaskRequest: {
+            category?: string | null;
+            description?: string | null;
+            /** Format: date */
+            dueDate?: string | null;
+            isMandatory?: boolean;
+            responsibleRole?: components["schemas"]["OnboardingResponsibleRole"];
+            /** Format: int32 */
+            sortOrder?: number;
+            /** Format: uuid */
+            templateTaskId?: string | null;
+            title?: string | null;
         };
         /** @enum {string} */
         OnboardingResponsibleRole: "HR" | "Manager" | "IT" | "Employee" | "Custom";

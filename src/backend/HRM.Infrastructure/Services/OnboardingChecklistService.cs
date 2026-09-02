@@ -163,11 +163,17 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
                 c => c.EmployeeId == input.EmployeeId && c.Status == OnboardingChecklistStatus.Active,
                 cancellationToken);
 
+        // BUG-441: resolve (and vet) the authoritative task set BEFORE anything is written. Null here means
+        // the caller used the legacy contract and the template still gets expanded.
+        IReadOnlyList<(ResolvedTaskInput Input, OnboardingTemplateTask? Source)>? resolvedTasks;
+        var pairing = PairResolvedTasks(input.ResolvedTasks, template);
+        if (pairing.IsFailure)
+            return Result<OnboardingChecklistInstanceDto>.Failure(
+                pairing.Error!, pairing.StatusCode ?? 400, pairing.ErrorCode);
+        resolvedTasks = pairing.Value;
+
         // BR-4: anchor due dates to the override start date or the joining date, but never the past.
-        var startDate = input.OverrideStartDate ?? DateOnly.FromDateTime(employee.DateOfJoining);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        if (startDate < today)
-            startDate = today;
+        var startDate = ResolveStartDate(employee, input.OverrideStartDate);
 
         // FR-3: resolve responsible users once for the assignment.
         var resolution = await ResolveResponsiblePartiesAsync(employee, cancellationToken);
@@ -185,11 +191,21 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
 
             // Add the new task instances directly to the DbSet (not via the tracked parent navigation) so EF
             // states them Added unambiguously; keep the in-memory collection in sync for the response/outbox.
-            foreach (var tt in template.Tasks.OrderBy(t => t.SortOrder))
-                AddTaskInstance(NewTaskFromTemplate(instance.Id, tt, mergeStart, resolution, employee, ++maxSort));
+            if (resolvedTasks is not null)
+            {
+                // BUG-441 replace mode: the supplied set IS the set of tasks to append. The template is
+                // deliberately NOT expanded here — doing both is what created every task twice.
+                foreach (var (line, source) in resolvedTasks)
+                    AddTaskInstance(NewResolvedTask(instance.Id, line, source, resolution, ++maxSort));
+            }
+            else
+            {
+                foreach (var tt in template.Tasks.OrderBy(t => t.SortOrder))
+                    AddTaskInstance(NewTaskFromTemplate(instance.Id, tt, mergeStart, resolution, employee, ++maxSort));
 
-            foreach (var ad in input.AdditionalTasks)
-                AddTaskInstance(NewAdHocTask(instance.Id, ad, mergeStart, resolution, employee, ++maxSort));
+                foreach (var ad in input.AdditionalTasks)
+                    AddTaskInstance(NewAdHocTask(instance.Id, ad, mergeStart, resolution, employee, ++maxSort));
+            }
 
             queuedNotifications = WriteOutbox(instance, resolution, employee);
             await _dbContext.SaveChangesAsync(cancellationToken);
@@ -223,11 +239,21 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
             };
 
             var sort = 0;
-            foreach (var tt in template.Tasks.OrderBy(t => t.SortOrder))
-                instance.Tasks.Add(NewTaskFromTemplate(instance.Id, tt, startDate, resolution, employee, sort++));
+            if (resolvedTasks is not null)
+            {
+                // BUG-441 replace mode: create exactly the supplied rows, with their supplied due dates
+                // (FR-6). No template expansion — that second loop is what duplicated every task.
+                foreach (var (line, source) in resolvedTasks)
+                    instance.Tasks.Add(NewResolvedTask(instance.Id, line, source, resolution, sort++));
+            }
+            else
+            {
+                foreach (var tt in template.Tasks.OrderBy(t => t.SortOrder))
+                    instance.Tasks.Add(NewTaskFromTemplate(instance.Id, tt, startDate, resolution, employee, sort++));
 
-            foreach (var ad in input.AdditionalTasks)
-                instance.Tasks.Add(NewAdHocTask(instance.Id, ad, startDate, resolution, employee, sort++));
+                foreach (var ad in input.AdditionalTasks)
+                    instance.Tasks.Add(NewAdHocTask(instance.Id, ad, startDate, resolution, employee, sort++));
+            }
 
             _dbContext.OnboardingChecklistInstances.Add(instance);
 
@@ -322,6 +348,134 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         // null rather than a 404 — the AC-3 prompt only appears when one already exists.
         return Result<OnboardingChecklistInstanceDto?>.Success(
             instance is null ? null : ToDto(instance, 0));
+    }
+
+    // ── FR-2 / BR-4: preview (a PURE READ — resolves, persists nothing) ─
+
+    /// <inheritdoc />
+    public async Task<Result<ChecklistPreviewDto>> PreviewAsync(
+        Guid employeeId, Guid templateId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<ChecklistPreviewDto>.Failure("Tenant context is not resolved.", 400);
+
+        // AsNoTracking on BOTH reads. A preview must leave nothing in the change tracker that some later
+        // SaveChanges in the same request scope could flush — cf. AttendancePolicyResolver, which never
+        // lazily creates a policy row because a payroll run must not write policy as a side effect.
+        var employee = await _dbContext.Employees
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == employeeId, cancellationToken);
+        if (employee is null)
+            return Result<ChecklistPreviewDto>.Failure("Employee not found.", 404, "employee_not_found");
+
+        var template = await _dbContext.OnboardingChecklistTemplates
+            .AsNoTracking()
+            .Include(t => t.Tasks)
+            .FirstOrDefaultAsync(t => t.Id == templateId, cancellationToken);
+        if (template is null)
+            return Result<ChecklistPreviewDto>.Failure("Template not found.", 404, "template_not_found");
+
+        // BR-1: mirror assign exactly — never preview a template that assign would then refuse.
+        if (!template.IsActive)
+            return Result<ChecklistPreviewDto>.Failure(
+                "This template is inactive and cannot be assigned.", 409, "template_inactive");
+
+        // Same anchoring (BR-4) and same responsible-party resolution (FR-3) the assign path uses. No
+        // override is accepted here: the screen previews the default anchoring and then sends the previewed
+        // startDate back as OverrideStartDate on assign.
+        var startDate = ResolveStartDate(employee, overrideStartDate: null);
+        var resolution = await ResolveResponsiblePartiesAsync(employee, cancellationToken);
+
+        // NewTaskFromTemplate is a PURE FACTORY — it constructs an entity object and does NOT register it on
+        // the DbContext (only AddTaskInstance/instance.Tasks.Add do that, and neither is called here). Reusing
+        // it is what guarantees preview's due dates and owner resolution can never drift from assign's. The
+        // instance id is Guid.Empty because no instance exists; the objects are discarded on return.
+        var sortOrder = 0;
+        var built = template.Tasks
+            .OrderBy(t => t.SortOrder)
+            .Select(t => (
+                Source: t,
+                Task: NewTaskFromTemplate(Guid.Empty, t, startDate, resolution, employee, sortOrder++)))
+            .ToList();
+
+        var names = await ResolveResponsibleNamesAsync(
+            built.Where(b => b.Task.ResponsibleUserId.HasValue).Select(b => b.Task.ResponsibleUserId!.Value),
+            cancellationToken);
+
+        var employeeName = $"{employee.FirstName} {employee.LastName}".Trim();
+
+        return Result<ChecklistPreviewDto>.Success(new ChecklistPreviewDto
+        {
+            EmployeeId = employee.Id,
+            EmployeeName = string.IsNullOrEmpty(employeeName) ? null : employeeName,
+            TemplateId = template.Id,
+            TemplateName = template.TemplateName,
+            StartDate = startDate,
+            Tasks = built.Select(b => new ChecklistPreviewTaskDto
+            {
+                TemplateTaskId = b.Source.Id,
+                Title = b.Task.Title,
+                Description = b.Task.Description,
+                Category = b.Task.Category,
+                ResponsibleRole = b.Task.ResponsibleRole,
+                ResponsibleUserId = b.Task.ResponsibleUserId,
+                ResponsibleName = b.Task.ResponsibleUserId.HasValue
+                    && names.TryGetValue(b.Task.ResponsibleUserId.Value, out var n) ? n : null,
+                DueOffsetDays = b.Source.DueOffsetDays,
+                DueDate = b.Task.DueDate,
+                Status = PendingTaskStatusName, // nothing is assigned yet, so every previewed task is pending.
+                IsMandatory = b.Task.IsMandatory,
+                SortOrder = b.Task.SortOrder,
+            }).ToList(),
+        });
+    }
+
+    /// <summary>
+    /// Wire value of <see cref="OnboardingTaskStatus.Pending"/> in the preview contract. The frontend's
+    /// <c>ChecklistTaskStatus</c> union is lowercase snake ('pending' | 'in_progress' | ...), not the
+    /// PascalCase enum name, so the preview emits the union member verbatim.
+    /// </summary>
+    private const string PendingTaskStatusName = "pending";
+
+    /// <summary>
+    /// BR-4: anchors due-date offsets to the override start date or the employee's joining date, but never
+    /// to a date in the past. Extracted so assign and preview compute the SAME anchor by construction.
+    /// </summary>
+    private static DateOnly ResolveStartDate(Employee employee, DateOnly? overrideStartDate)
+    {
+        var startDate = overrideStartDate ?? DateOnly.FromDateTime(employee.DateOfJoining);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        return startDate < today ? today : startDate;
+    }
+
+    /// <summary>
+    /// Resolves display names for the responsible users, tenant-scoped through the Employees global query
+    /// filter. Deliberately NOT read from the global Users table, which carries no tenant filter — a name
+    /// lookup must not be able to read across tenants. A responsible user with no employee record in this
+    /// tenant (e.g. an HR admin account) simply resolves to no name.
+    /// </summary>
+    private async Task<Dictionary<Guid, string>> ResolveResponsibleNamesAsync(
+        IEnumerable<Guid> userIds, CancellationToken cancellationToken)
+    {
+        var ids = userIds.Distinct().ToList();
+        if (ids.Count == 0)
+            return [];
+
+        var rows = await _dbContext.Employees
+            .AsNoTracking()
+            .Where(e => e.UserId != null && ids.Contains(e.UserId!.Value))
+            .Select(e => new { e.UserId, e.FirstName, e.LastName })
+            .ToListAsync(cancellationToken);
+
+        var names = new Dictionary<Guid, string>();
+        foreach (var r in rows)
+        {
+            var name = $"{r.FirstName} {r.LastName}".Trim();
+            if (r.UserId.HasValue && !string.IsNullOrEmpty(name))
+                names[r.UserId.Value] = name;
+        }
+
+        return names;
     }
 
     // ── AC-4 / FR-5 / FR-6: modify ──────────────────────────────────────
@@ -471,6 +625,102 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
             SortOrder = sortOrder,
             IsDeleted = false,
         };
+
+    /// <summary>
+    /// BUG-441: pairs each authoritative task line with its source template task and vets the set, BEFORE
+    /// any entity is created. Returns <c>Success(null)</c> when the caller used the legacy contract (no
+    /// resolved set), which is the signal to expand the template as before.
+    ///
+    /// <para>Three rejections, all of them invariants this bug taught us to enforce at the boundary:</para>
+    /// <list type="bullet">
+    /// <item>an unknown <c>TemplateTaskId</c> is a 400, never silently downgraded to an ad-hoc task (that
+    /// would let a stale or cross-template id quietly change what gets assigned);</item>
+    /// <item>the same template task twice is a 400 — a client-side re-run of the exact duplication this
+    /// contract exists to eliminate;</item>
+    /// <item>a missing mandatory template task is a 400 (BR-3): replace mode must not become the one write
+    /// path where a mandatory task can be dropped, which <c>ModifyAsync</c> already refuses.</item>
+    /// </list>
+    /// </summary>
+    private static Result<IReadOnlyList<(ResolvedTaskInput Input, OnboardingTemplateTask? Source)>?>
+        PairResolvedTasks(IReadOnlyList<ResolvedTaskInput>? lines, OnboardingChecklistTemplate template)
+    {
+        if (lines is null)
+            return Result<IReadOnlyList<(ResolvedTaskInput, OnboardingTemplateTask?)>?>.Success(null);
+
+        var byId = template.Tasks.ToDictionary(t => t.Id);
+        var paired = new List<(ResolvedTaskInput, OnboardingTemplateTask?)>(lines.Count);
+        var seen = new HashSet<Guid>();
+
+        foreach (var line in lines)
+        {
+            OnboardingTemplateTask? source = null;
+            if (line.TemplateTaskId.HasValue)
+            {
+                if (!byId.TryGetValue(line.TemplateTaskId.Value, out source))
+                    return Result<IReadOnlyList<(ResolvedTaskInput, OnboardingTemplateTask?)>?>.Failure(
+                        $"Task '{line.Title}' references a template task that does not belong to this template.",
+                        400, "unknown_template_task");
+
+                if (!seen.Add(line.TemplateTaskId.Value))
+                    return Result<IReadOnlyList<(ResolvedTaskInput, OnboardingTemplateTask?)>?>.Failure(
+                        $"Template task '{source.Title}' appears more than once in the task list.",
+                        400, "duplicate_template_task");
+            }
+
+            paired.Add((line, source));
+        }
+
+        var missingMandatory = template.Tasks
+            .Where(t => t.IsMandatory && !seen.Contains(t.Id))
+            .Select(t => t.Title)
+            .ToList();
+        if (missingMandatory.Count > 0)
+            return Result<IReadOnlyList<(ResolvedTaskInput, OnboardingTemplateTask?)>?>.Failure(
+                $"Mandatory task(s) cannot be removed: {string.Join(", ", missingMandatory)}.",
+                400, "mandatory_task_missing");
+
+        return Result<IReadOnlyList<(ResolvedTaskInput, OnboardingTemplateTask?)>?>.Success(paired);
+    }
+
+    /// <summary>
+    /// BUG-441: builds ONE task instance from an authoritative (already vetted) client line.
+    ///
+    /// <para>The due date is taken VERBATIM — it is the HR officer's reviewed/edited date (FR-6). It is not
+    /// re-derived from an offset: the previous route could only express <c>anchor + DueOffsetDays</c>, the
+    /// client never sent an offset, and so every task silently landed on <c>startDate + 0</c>.</para>
+    ///
+    /// <para>Ownership is re-resolved server-side (FR-3), never taken from the client. An UNEDITED template
+    /// row keeps the template's own named owner, so it resolves to exactly what the preview displayed; if
+    /// the officer changed the role, the template's owner no longer applies and the new role is resolved
+    /// through the same <see cref="ResolveTaskUser"/> the preview used. Mandatory-ness and the
+    /// requires-document flag likewise come from the template for template rows, so neither can be flipped
+    /// on the wire (BR-3 / US-ONB-003 AC-4).</para>
+    /// </summary>
+    private OnboardingTaskInstance NewResolvedTask(
+        Guid instanceId, ResolvedTaskInput t, OnboardingTemplateTask? source, PartyResolution r, int sortOrder)
+    {
+        var role = t.ResponsibleRole ?? source?.ResponsibleRole ?? OnboardingResponsibleRole.HR;
+        var namedOwner = source is not null && source.ResponsibleRole == role ? source.ResponsibleUserId : null;
+
+        return new OnboardingTaskInstance
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = _tenantContext.TenantId, // FR-7
+            ChecklistInstanceId = instanceId,
+            SourceTemplateTaskId = source?.Id, // null => ad-hoc row the officer added (FR-5).
+            Title = t.Title.Trim(),
+            Description = string.IsNullOrWhiteSpace(t.Description) ? null : t.Description.Trim(),
+            Category = string.IsNullOrWhiteSpace(t.Category) ? null : t.Category.Trim(),
+            ResponsibleRole = role,
+            ResponsibleUserId = ResolveTaskUser(role, namedOwner, r),
+            DueDate = t.DueDate, // FR-6: exactly what the officer confirmed on screen.
+            Status = OnboardingTaskStatus.Pending, // AC-2.
+            IsMandatory = source?.IsMandatory ?? t.IsMandatory,
+            RequiresDocument = source?.RequiresDocument ?? false,
+            SortOrder = sortOrder,
+            IsDeleted = false,
+        };
+    }
 
     private OnboardingTaskInstance NewAdHocTask(
         Guid instanceId, AdHocTaskInput t, DateOnly anchorDate, PartyResolution r, Employee employee, int sortOrder)

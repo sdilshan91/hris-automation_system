@@ -34,7 +34,7 @@ import {
   IAssignedChecklist,
   IChecklistPreview,
   IChecklistTask,
-  IChecklistTaskRequest,
+  IResolvedChecklistTaskRequest,
   countResponsibleParties,
   notificationToast,
   sortTasksByDueDate,
@@ -941,29 +941,40 @@ export class ChecklistAssignmentComponent {
     return this.tasks.controls.map((g) => g.getRawValue() as IChecklistTask);
   }
 
-  /** Build the assign payload; sortOrder follows the on-screen order (FR-3). */
+  /**
+   * Build the assign payload; sortOrder follows the on-screen order (FR-3).
+   *
+   * BUG-441: the on-screen list is the AUTHORITATIVE task set, so it goes in `resolvedTasks` — the
+   * server creates exactly these rows and skips template expansion. It must NOT go in
+   * `additionalTasks`, which means "extras on top of the template": that made the server create
+   * `template.Tasks` *plus* everything echoed here, i.e. every template task twice, all at
+   * `startDate + 0` because an ad-hoc row can only carry an offset — throwing away the officer's
+   * inline due-date edits (FR-6). `additionalTasks` is therefore omitted entirely, not sent empty:
+   * the two fields are mutually exclusive server-side and sending both is a deliberate 400.
+   */
   private toRequest(templateId: string): IAssignChecklistRequest {
-    const tasks: IChecklistTaskRequest[] = this.tasks.controls.map((g, i) => {
-      const v = g.getRawValue();
-      return {
-        id: v.id ?? null,
-        templateTaskId: v.templateTaskId ?? null,
-        title: v.title.trim(),
-        description: v.description?.trim() || null,
-        category: v.category?.trim() || null,
-        responsibleRole: v.responsibleRole ?? null,
-        responsibleUserId: v.responsibleUserId ?? null,
-        dueDate: v.dueDate,
-        isMandatory: v.isMandatory,
-        sortOrder: i,
-      };
-    });
+    const resolvedTasks: IResolvedChecklistTaskRequest[] = this.tasks.controls.map(
+      (g, i) => {
+        const v = g.getRawValue();
+        return {
+          templateTaskId: v.templateTaskId ?? null,
+          title: v.title.trim(),
+          description: v.description?.trim() || null,
+          category: v.category?.trim() || null,
+          responsibleRole: v.responsibleRole ?? null,
+          // Concrete date straight off the form control — the officer's edit, used verbatim.
+          dueDate: v.dueDate,
+          isMandatory: v.isMandatory,
+          sortOrder: i,
+        };
+      },
+    );
     return {
       employeeId: this.resolvedEmployeeId(),
       templateId,
       overrideStartDate: this.preview()?.startDate ?? null,
       mode: this.chosenMode(),
-      additionalTasks: tasks,
+      resolvedTasks,
     };
   }
 

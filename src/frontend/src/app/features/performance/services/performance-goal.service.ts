@@ -9,7 +9,9 @@ import {
   IGoal,
   ISaveGoalsRequest,
   ITeamGoalStatus,
+  TeamGoalsDashboardWire,
   mapActiveCycle,
+  mapTeamGoalStatuses,
 } from '../models/goal.models';
 
 /**
@@ -45,16 +47,16 @@ export class PerformanceGoalService {
 
   /**
    * The manager's direct reports with their goal-setting status + progress for a
-   * cycle (AC-4). Tolerates either a bare array or a `{ data }`-style page so a
-   * backend pagination choice doesn't break the dashboard.
+   * cycle (AC-4). The endpoint returns `TeamGoalsDashboardDto { cycleId, members }`,
+   * so the members list is read from `.members` — see `mapTeamGoalStatuses`.
    */
   getTeamStatus(cycleId: string): Observable<ITeamGoalStatus[]> {
     return this.http
-      .get<ITeamGoalStatus[] | { data: ITeamGoalStatus[] }>(
+      .get<TeamGoalsDashboardWire>(
         `${this.baseUrl}/cycles/${cycleId}/team-dashboard`,
         { withCredentials: true },
       )
-      .pipe(map((res) => this.toArray(res)));
+      .pipe(map(mapTeamGoalStatuses));
   }
 
   /** Goals already saved for one employee in a cycle (AC-1 prefill). */
@@ -140,16 +142,5 @@ export class PerformanceGoalService {
       { employeeId, cycleId, reason },
       { withCredentials: true },
     );
-  }
-
-  /** Accept either a bare array or a `{ data }` page; default to []. */
-  private toArray<T>(res: T[] | { data: T[] } | null | undefined): T[] {
-    if (Array.isArray(res)) {
-      return res;
-    }
-    if (res && Array.isArray((res as { data: T[] }).data)) {
-      return (res as { data: T[] }).data;
-    }
-    return [];
   }
 }

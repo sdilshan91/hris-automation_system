@@ -157,9 +157,10 @@ describe('OnboardingChecklistService', () => {
       templateId: 'tpl-1',
       overrideStartDate: '2026-07-01',
       mode: null,
-      additionalTasks: [
+      // BUG-441: the assignment screen posts its authoritative task set as `resolvedTasks`.
+      // `additionalTasks` (extras on top of the template) is no longer sent by this app.
+      resolvedTasks: [
         {
-          id: null,
           templateTaskId: 'tt-1',
           title: 'Sign contract',
           dueDate: '2026-07-01',
@@ -187,7 +188,7 @@ describe('OnboardingChecklistService', () => {
         employeeId: 'emp-1',
         templateId: 'tpl-1',
         mode: 'replace',
-        additionalTasks: [],
+        resolvedTasks: [],
       })
       .subscribe();
 
@@ -199,7 +200,7 @@ describe('OnboardingChecklistService', () => {
   it('assign surfaces a server error to the subscriber', () => {
     let errored: HttpErrorResponse | undefined;
     service
-      .assign({ employeeId: 'emp-1', templateId: 'tpl-1', additionalTasks: [] })
+      .assign({ employeeId: 'emp-1', templateId: 'tpl-1', resolvedTasks: [] })
       .subscribe({ error: (e) => (errored = e) });
 
     const req = httpMock.expectOne(base);
