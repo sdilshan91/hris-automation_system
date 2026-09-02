@@ -2771,4 +2771,22 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Root cause + confidence (~90%):** nothing asserts that a domain calculator's optional parameters are actually supplied by a non-test caller.
 - **Severity rationale:** MED — this is a money-path defect generator. It produced a silent underpayment once already.
 - **Suggested direction (NOT applied):** a NetArchTest/architecture rule flagging any domain calculator whose optional parameters are never supplied by a production caller — natural work for queue item `E2` (`HRM.ArchitectureTests`), which does not yet exist. Failing that, a manual sweep of every domain calculator's call sites.
+### BUG-448 — three `.cs` files contain literal NUL bytes, so grep, ripgrep and semgrep skip them SILENTLY
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** BE (source encoding) — but the impact is on every text-based audit tool
+- **Module / US / TC:** cross-module · `AuditAnonymizationService.cs:129`, `AesGcmFieldEncryptorTests.cs`, `EncryptingFileStorageTests.cs`
+- **Title:** `const string sentinel = "\x00REDACTED\x00";` embeds two **literal NUL bytes**, so `file(1)` reports the source as `data`. **Verified: `grep -c 'IgnoreQueryFilters'` on `AuditAnonymizationService.cs` returns `0` with exit 1 — while the file actually contains 3 occurrences.** No "Binary file matches" warning; the file is simply absent from results.
+- **Why this is HIGH and not a style nit:** that file holds **two `IgnoreQueryFilters` sites, one a cross-tenant WRITE over `audit_logs`** — exactly the code `.semgrep/tenant-isolation.yml` exists to watch. Semgrep's binary-file handling almost certainly skips it too (~80%, not executable locally). **A source file invisible to every text-based tool, containing the precise shape the security linter guards.**
+- **It also corrupted this session's own measurements.** The G7 baseline of "354 sites" came from grep; grep could not see these. True figure: 265 executable sites **+2 invisible**. Every audit in this session that used grep shares the blind spot.
+- **Root cause + confidence (~98%, verified directly):** the escape form `"\x00"` in C# source emits an actual NUL byte into the file. `"\0REDACTED\0"` has the identical runtime value and keeps the file valid text.
+- **Suggested direction (NOT applied):** replace with `"\0REDACTED\0"`, then add a CI step — `find src/backend -name '*.cs' -not -path '*/obj/*' | xargs file | grep -v text` must return nothing. **The CI step matters more than the fix**: it is what stops a future file going invisible.
+
+### ISSUE-449 — the G7 queue item's own count was inflated ~33% by counting the codebase's documentation of a problem as instances of it
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** cross-module · `GAP-CLOSURE-QUEUE.md:213-215`, `GAP-REGISTER.md:129`
+- **Title:** G7 was filed as "354 `IgnoreQueryFilters()` sites, un-triaged". A census found **88 of the 353 grep hits are XML-doc or inline comments** — including all four `HRM.Application` hits, all five in `AppDbContext.cs`, and both in `CrossTenantScope.cs`. **`HRM.Application` has zero call sites.** The real figure is **265**, which is exactly what `.semgrep/tenant-isolation.yml`'s own header already claimed. The rule header was right; the queue item was not.
+- **Worse, the premise was falsified:** the queue says *"nobody can tell which [are legitimate]"*. `Rls/FLIP-READINESS-2026-08-05.md:33-37` records a completed classification of all 69 sites on policy-carrying tables (7 cross-tenant-by-design, all fixed; 58 safe; 4 unresolved-ambient), and PR #498 closed the same GAP-007 with a written decision to keep the rule at WARNING. **Two prior workstreams already did this work.**
+- **Severity rationale:** MED — it nearly funded a campaign that would have produced 265 rubber-stamps over work already done.
+- **Suggested direction (NOT applied):** correct both ledgers (354→265, remove "nobody can tell which", cite the flip-readiness doc).
 

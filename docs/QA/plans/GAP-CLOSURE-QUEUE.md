@@ -290,7 +290,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 11 | `G5` unresolved-tenant HTTP negative test | **HELD** | tenant isolation |
 | 12 | `G14` sweep-job tenant logging | **HELD** | tenant context |
 | 13 | `G6` roles.sql or correct the claim | **HELD** | isolation/RLS |
-| 14 | `G7` triage 354 `IgnoreQueryFilters` | **HELD** | campaign-shaped |
+| 14 | ~~`G7` triage `IgnoreQueryFilters`~~ | ✅ | **SURVEYED — campaign DECLINED.** 78.9% non-mechanical vs a >20% stop bar; count was 354→**265**; triage already done 2026-08-05 |
 | 14+ | `A3`, `E2`–`E5`, `F1`–`F4` | mixed | **pre-audit scope — re-verify before building** |
 
 **Held items open a PR and the loop moves on**; they do not stall the queue. The gate stands as
