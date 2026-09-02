@@ -31,3 +31,4 @@
 - [Leave pool allocation (DF-19/ISSUE-045)](reference-leave-pool-allocation.md) — persisted FIFO: LeaveLedger.Pool+CarryForwardTrackingId, tracking.ConsumedDays; deduction split, per-pool cancel restore (preserve expiry), expiry reads counter; 1µs tiebreak; legacy fallback
 - [DateTime JSON boundary (BUG-431)](reference-datetime-json-boundary.md) — global Unspecified→UTC converter covers request BODIES only; query-string dates + SignalR are different pipelines
 - [Assert seeded rows via ApiTestFactory](reference-seeder-assertions-via-apitestfactory.md) — the HttpApi harness really runs DbInitializer; read the row back instead of re-declaring the seed constant (kills tautological seed guards)
+- [Mutation-check: revert BEFORE the report](feedback-mutation-check-revert-before-report.md) — pair mutate+unconditional revert in one bash call; a leftover mutation once got collected as the fix
