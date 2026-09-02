@@ -147,6 +147,15 @@ try
     builder.Services.AddValidatorsFromAssembly(typeof(HRM.Application.Common.Behaviors.ValidationBehavior<,>).Assembly);
 
     // ===== JWT Authentication =====
+    // G2: a blank Jwt:PrivateKey makes JwtService generate an EPHEMERAL per-process RSA signing key — every
+    // restart invalidates every issued token, and multi-instance deployments reject each other's. Check it
+    // BEFORE the service is constructed on the next line, so the process cannot reach a state where it is
+    // signing with a key it is about to lose. This is the only opportunity: the service is a singleton and
+    // its TokenValidationParameters are snapshotted once a few lines below, with no IOptionsMonitor seam.
+    // Passing builder.Environment (not configuration["ASPNETCORE_ENVIRONMENT"]) is load-bearing — see the
+    // guard's remarks.
+    JwtSigningKeyStartupGuard.EnsureSigningKeyIsConfigured(builder.Configuration, builder.Environment);
+
     // Build a temporary service provider to get the JwtService for token validation parameters
     var jwtService = new JwtService(builder.Configuration);
     builder.Services.AddSingleton(jwtService);

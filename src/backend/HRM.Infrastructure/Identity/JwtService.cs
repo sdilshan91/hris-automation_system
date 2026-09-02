@@ -36,8 +36,13 @@ public sealed class JwtService : IJwtService
 
         var options = configuration.GetSection("Jwt").Get<JwtKeyRingOptions>() ?? new JwtKeyRingOptions();
 
-        // In production, load from secrets vault / key management service.
-        // For local dev, we generate an RSA key pair on startup.
+        // Load Jwt:PrivateKey from a secrets vault / key management service. When it is blank we generate an
+        // RSA key pair on startup — a LOCAL-DEV-ONLY convenience, because that key is per-process: every
+        // restart invalidates every issued token and sibling instances reject each other's. That is no longer
+        // merely a documented intention: JwtSigningKeyStartupGuard runs in Program.cs immediately before this
+        // constructor and refuses to start outside Development with no key configured. This ctor stays
+        // permissive on purpose — ~30 unit/integration fixtures construct it directly with a blank key, and
+        // the composition root is where the environment is actually known.
         var rsa = RSA.Create(2048);
 
         var privateKeyPem = options.PrivateKey;
