@@ -286,10 +286,10 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 7 | ~~`G3` three mocked-spec breaks + preview + BUG-441~~ | ✅ | 5590 BE · 4329 FE; found + fixed a CRIT |
 | 8 | `G13` test theater | auto | |
 | 9 | ~~`G15` Production email guard test~~ | ✅ | **3 mutations**; M1 proved the old suite could not see the guard deleted |
-| 10 | `G2` `JwtKeyRingOptions` validation | **HELD** | auth/JWT |
-| 11 | `G5` unresolved-tenant HTTP negative test | **HELD** | tenant isolation |
-| 12 | `G14` sweep-job tenant logging | **HELD** | tenant context |
-| 13 | `G6` roles.sql or correct the claim | **HELD** | isolation/RLS |
+| 10 | ~~`G2` JwtKeyRingOptions validation~~ | 🔒 #590 | HELD — allow-list gated; found BUG-446 |
+| 11 | ~~`G5` unresolved-tenant negative test~~ | 🔒 #593 | HELD — invariant, not status codes |
+| 12 | ~~`G14` sweep-job tenant logging~~ | 🔒 #595 | HELD — one mutation stayed green, disclosed |
+| 13 | ~~`G6` correct the append-only claim~~ | ✅ #594 | merged — deleted the mirror instead of guarding it |
 | 14 | ~~`G7` triage `IgnoreQueryFilters`~~ | ✅ | **SURVEYED — campaign DECLINED.** 78.9% non-mechanical vs a >20% stop bar; count was 354→**265**; triage already done 2026-08-05 |
 | 14+ | `A3`, `E2`–`E5`, `F1`–`F4` | mixed | **pre-audit scope — re-verify before building** |
 
