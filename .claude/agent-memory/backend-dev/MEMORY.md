@@ -34,6 +34,7 @@
 - [DateTime JSON boundary (BUG-431)](reference-datetime-json-boundary.md) — global Unspecified→UTC converter covers request BODIES only; query-string dates + SignalR are different pipelines
 - [Guards must be mutation-proven](feedback-guards-must-be-mutation-proven.md) — derive from the source artifact over string-matching it; break it, watch it go red, revert with checksum
 - [Precision, not pessimism, in doc claims](user-wants-precision-not-pessimism-in-doc-claims.md) — correcting an overclaim means naming when it IS true; the app must never own role DDL
+- [LogContext pushes are contained by the async boundary](feedback-logcontext-asynclocal-containment.md) — removing the `using` inside an async method leaves "scope released" arms green; mutate the push, the Guid.Empty guard, or the seam instead
 - [Assert seeded rows via ApiTestFactory](reference-seeder-assertions-via-apitestfactory.md) — the HttpApi harness really runs DbInitializer; read the row back instead of re-declaring the seed constant (kills tautological seed guards)
 - [Mutation-check: revert BEFORE the report](feedback-mutation-check-revert-before-report.md) — pair mutate+unconditional revert in one bash call; a leftover mutation once got collected as the fix
 - [Payroll FTE overtime plumbing (GAP-022)](reference-payroll-fte-overtime-plumbing.md) — trailing-optional calculator params go inert silently; AttendancePolicyResolver.LoadAllAsync/.For is the batched per-location policy seam

@@ -1,3 +1,5 @@
+using HRM.Application.Common.Observability;
+
 namespace HRM.Api.Jobs.Filters;
 
 /// <summary>
@@ -19,8 +21,12 @@ public static class JobLogProperties
     /// <summary>Hangfire's own job id, so a log line can be tied back to a dashboard entry.</summary>
     public const string JobIdKey = "job_id";
 
-    /// <summary>Matches the request-side property name pushed by <c>TenantResolutionMiddleware</c>.</summary>
-    public const string TenantIdKey = "tenant_id";
+    /// <summary>
+    /// Matches the property name pushed by <c>TenantResolutionMiddleware</c> (request path) and by
+    /// <c>TenantJobRunner</c> (one sweep-job iteration) — one shared constant so the three cannot drift apart
+    /// and split an incident query's results.
+    /// </summary>
+    public const string TenantIdKey = LogPropertyNames.TenantId;
 
     /// <summary>The job parameter a per-tenant job carries its scope in.</summary>
     private const string TenantIdParameterName = "tenantId";
@@ -89,7 +95,15 @@ public static class JobLogProperties
     ///
     /// <para><see cref="Guid.Empty"/> is deliberately treated as ABSENT rather than logged. An all-zero
     /// tenant id reads like a real scope to whoever is grepping the log during an incident, which is worse
-    /// than the field simply not being there — absent correctly says "this job is not per-tenant".</para>
+    /// than the field simply not being there.</para>
+    ///
+    /// <para><b>Absent here means "this job declares no tenant ARGUMENT", NOT "this job's lines are
+    /// unattributed".</b> The ~19 sweep jobs take no <c>tenantId</c> parameter — they enumerate tenants
+    /// internally — so this returns null for them and always will; a filter reading the enqueued arguments
+    /// cannot know which tenant the loop is on. Their attribution is supplied per iteration by
+    /// <c>TenantJobRunner</c> instead. Only a genuinely cross-tenant job (one that declares
+    /// <c>SetSystemContext()</c> and never enters that runner, e.g. <c>TokenCleanupJob</c>) ends up with no
+    /// <c>tenant_id</c> on any line — which for it is correct.</para>
     ///
     /// <para>A string argument that parses as a Guid is accepted too: Hangfire round-trips arguments through
     /// JSON, and a job whose parameter is typed <c>string</c> is still telling us its tenant.</para>

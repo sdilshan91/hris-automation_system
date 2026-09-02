@@ -167,7 +167,8 @@ public sealed class TenantResolutionMiddleware
         // Add tenant_id to Serilog log context
         using (Serilog.Context.LogContext.PushProperty("TenantId", tenant.Id))
         using (Serilog.Context.LogContext.PushProperty("TenantSubdomain", tenant.Subdomain))
-        using (Serilog.Context.LogContext.PushProperty("tenant_id", tenant.Id))
+        using (Serilog.Context.LogContext.PushProperty(
+            HRM.Application.Common.Observability.LogPropertyNames.TenantId, tenant.Id))
         using (Serilog.Context.LogContext.PushProperty("tenant_subdomain", tenant.Subdomain))
         {
             await _next(context);

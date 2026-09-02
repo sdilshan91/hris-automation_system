@@ -10,6 +10,11 @@
 //     OnPerforming is synchronous (an AsyncLocal write in a sync callee is visible to its caller). If that
 //     assumption were wrong the filter would compile, run, log nothing extra, and look like a working control.
 //     So it is asserted against a real Serilog pipeline rather than reasoned about.
+//
+// SCOPE NOTE: this file covers only what a filter reading ENQUEUED ARGUMENTS can reach. The ~19 sweep jobs
+// declare no tenantId parameter (they loop over tenants internally), so nothing here attributes them — and
+// that is a limit of this mechanism, not a statement that their lines should go unattributed. Their half
+// lives in SweepJobTenantLogAttributionTests, driven by TenantJobRunner.
 // ============================================================================
 
 using FluentAssertions;
@@ -72,8 +77,30 @@ public sealed class JobLogContextFilterTests
     [Fact]
     public void A_cross_tenant_job_carries_no_tenant_id_rather_than_a_misleading_one()
     {
+        // OnboardingOutboxReconcileJob declares SetSystemContext() and never enters ITenantJobRunner, so it
+        // is genuinely tenant-less end to end and absence here is the final answer for it.
         Properties(type: "OnboardingOutboxReconcileJob", arguments: ("cancellationToken", null))
             .Should().NotContainKey(JobLogProperties.TenantIdKey);
+    }
+
+    [Fact]
+    public void A_sweep_job_gets_no_tenant_from_the_FILTER_because_it_declares_no_tenant_argument()
+    {
+        // GAP-024 second half — PREMISE CORRECTION. The arm above used to be read as "no tenantId argument
+        // ⇒ the job is cross-tenant ⇒ no attribution is correct", which conflated "cross-tenant" with
+        // "iterates every tenant". The ~19 sweep jobs (LeaveAccrualJob.RunAsync() and siblings) take NO
+        // parameters at all and enumerate tenants internally — they are SEQUENTIALLY single-tenant, and
+        // they are the higher-risk class, since one execution touches every tenant's data.
+        //
+        // What is asserted here is a statement about the FILTER'S REACH, not about the job's nature: the
+        // filter only ever sees the enqueued arguments, so it cannot know which tenant the loop is on and
+        // must not guess. Attribution for these jobs is supplied per iteration by TenantJobRunner instead —
+        // see SweepJobTenantLogAttributionTests. Absence HERE no longer means the job's lines go
+        // unattributed; it means this mechanism is not the one that attributes them.
+        Properties(type: "LeaveAccrualJob", method: "RunAsync")
+            .Should().NotContainKey(JobLogProperties.TenantIdKey,
+                "a filter reading enqueued arguments cannot see a loop variable — guessing a tenant here "
+                + "would be a fabricated scope in the log");
     }
 
     [Fact]
