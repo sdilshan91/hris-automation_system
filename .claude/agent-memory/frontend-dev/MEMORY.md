@@ -43,3 +43,4 @@
 - [Export-format token mismatch](wire-export-format-token-mismatch.md) — wire ships lowercase csv/xlsx/pdf; dashboard's ExportFormat union is PascalCase — translate via map + drop unknowns, never cast
 - [Proving a spec arm fails](proving-spec-arm-fails.md) — before/after protocol for bug-encoding specs (git show HEAD:f, not stash), ng test --include filtering, lint DELTA not total
 - [Mutually exclusive wire fields](mutually-exclusive-wire-fields.md) — replace-mode: omit the losing field (not `[]`); hand-write request interfaces (generated request schemas are all-optional)
+- [Worktree frontend setup](project-worktree-frontend-setup.md) — worktrees have no node_modules; symlink the main checkout's, then DELETE the symlink (it is not gitignored) or you hand back a dirty tree
