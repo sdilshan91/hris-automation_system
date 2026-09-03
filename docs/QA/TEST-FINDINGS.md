@@ -2790,3 +2790,31 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Severity rationale:** MED — it nearly funded a campaign that would have produced 265 rubber-stamps over work already done.
 - **Suggested direction (NOT applied):** correct both ledgers (354→265, remove "nobody can tell which", cite the flip-readiness doc).
 
+### BUG-450 — the Departments and Job Titles nav items carry NO permission gate; every Employee and Manager sees two links that dead-end at /forbidden
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** FE
+- **Module / US / TC:** Core HR · US-CHR-004 / US-CHR-005 · TC-CHR-006-11
+- **Title:** `main-layout.component.ts:692-698` declares the Departments and Job Titles nav items with **`label` and `route` only** — no `tenantRoles`, no `permission`. Both routes are `roleGuard(['Tenant Admin','HR Officer'])` (`app.routes.ts:355,366`). So every Employee and Manager is shown two links that lead straight to `/forbidden`.
+- **Root cause + confidence (~98%, verified independently):** the gate was simply never added. This is **ISSUE-210's exact defect** — nav visibility drifting from route access — live in production nav today, and the invariant spec at `main-layout.nav-visibility.spec.ts:177` did not catch it because that arm tests `/performance` specifically rather than sweeping every item.
+- **Evidence:** empirical, not inferred. During E5's pre-fix run the rendered nav for a **Manager** persona printed as `['/dashboard','/departments','/job-titles','/profile/notification-preferences']` — the Manager holds neither role in that guard yet renders both links.
+- **Severity rationale:** HIGH by user impact and breadth — it is every non-HR user of every tenant, on two of the most prominent sidebar entries, and it is the specific failure the codebase has already fixed once and written an invariant for.
+- **Suggested direction (NOT applied):** add `tenantRoles: ['Tenant Admin','HR Officer','Tenant Owner']` to both, mirroring the three gates E5 added. **Then consider widening the `:177` invariant from one route to a sweep** — the reason this survived is that the guard tests a single example rather than the property.
+
+### BUG-451 — the offboarding feature has no entry point anywhere; bare /offboarding redirects an authenticated user to the login page
+- **Type / Severity / Status:** BUG · HIGH · OPEN (needs-decision)
+- **Layer:** FE (+ BE for the fix)
+- **Module / US / TC:** Onboarding/Offboarding · US-ONB-005
+- **Title:** `offboarding.routes.ts` declares only `initiate/:employeeId` and `:offboardingId` — **no `path: ''` index** — so bare `/offboarding` matches nothing, falls through to `app.routes.ts:737`'s `path: '**'` and **redirects to `auth/login`**. And nothing anywhere in the app links to either child route. **989 lines of working components behind six live endpoints, with no way for any user to reach them.**
+- **Root cause + confidence (~95%):** the feature shipped without an index route or a contextual entry point.
+- **Why E5 did not simply add a nav link:** it would have pointed at a route that bounces an authenticated user to login — a worse dead end than the orphan. A spec arm now asserts no persona is offered a bare `/offboarding` link, so it cannot be re-added by reflex.
+- **Two candidate fixes, both outside a nav edit:** (a) an `/offboarding` index page — **needs a backend list endpoint**, since `GET /api/v1/offboarding?employeeId=` returns a single instance, not a list; or (b) a contextual "Initiate Offboarding" action on the employee profile. **Recommendation (b)** — an `:employeeId` route belongs on the employee record, not the sidebar.
+- **Trap for whoever does it:** the employee-profile screen gates HR actions on a role check that excludes HR Manager and Tenant Owner, while the offboarding route guard is `roleGuard(['Tenant Admin','HR Officer','HR Manager'])` + implicit Tenant Owner + `moduleGuard('Onboarding')`. **Reusing the profile's existing gate would recreate ISSUE-210.**
+
+### ISSUE-452 — agent worktrees have no src/frontend/node_modules, and the failure reads like a broken Angular install
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** INFRA (orchestration)
+- **Module / US / TC:** cross-module · sibling of ISSUE-442
+- **Title:** Only the main checkout carries `src/frontend/node_modules`. In a worktree, `npx ng test` fails with *"npm error could not determine executable to run"* — which reads as a broken Angular install rather than a missing dependency tree, so an agent burns turns misdiagnosing it. Symlinking the main checkout's copy works (verified across a full 4,340-spec run and `npm run build`).
+- **Trap:** the symlink is **not** covered by the repo ignore rules — `git status` reports `?? src/frontend/node_modules`, so it must be removed before reporting or the agent hands back a dirty tree.
+- **Suggested direction (NOT applied):** pre-provision the symlink at worktree creation, or document it in the frontend rule. Same family as ISSUE-442 (stale worktree base) — agent worktrees are not provisioned to match what agents are asked to do in them.
+
