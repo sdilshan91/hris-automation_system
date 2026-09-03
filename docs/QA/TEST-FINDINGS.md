@@ -2639,7 +2639,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** a seed script or a dev-only token surface for the four standard personas. **Do not weaken the invite hashing to achieve it.**
 
 ### ISSUE-434 — `@test-runner` reports only at the end, so a run that hits its turn ceiling loses everything it found
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED
+- **Resolution (2026-09-03):** **RESOLVED 2026-09-03** — superseded by ISSUE-443 and fixed there; the record-as-you-go section is now in all six `team/` contracts, not just `@test-runner`.
 - **Layer:** TEST (process)
 - **Module / US / TC:** cross-module · `.claude/agents/team/test-runner.md`
 - **Title:** Two runs in one session hit the 60-turn limit. The first survived only because it happened to write its ledger append before stopping; the second recorded **nothing** after 2.7 hours and 73 tool calls — every TC still `draft`, no finding filed — and its work was recoverable only by resuming the agent and ordering it to stop investigating and write up.
@@ -2698,7 +2699,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** set `worktree.baseRef` to `head`, or have the orchestrator verify the worktree's base matches the working branch before dispatching. **The orchestrator should state the expected base commit in the brief** so a mismatch is detectable by the agent rather than by luck.
 
 ### ISSUE-443 — four agents in one session hit the 60-turn ceiling; the agent contracts report only at the end, so a long run loses everything
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED
+- **Resolution (2026-09-03):** **RESOLVED 2026-09-03** — a `## Record as you go` section was added to all six `.claude/agents/team/*.md` contracts, covering write-as-you-reach-it, revert-before-reporting, `Edit` over `Write` on existing files, write-up-on-resume, and never reporting an unobserved number. Filed after 4 ceiling hits; applied after 8.
 - **Layer:** TEST (process)
 - **Module / US / TC:** cross-module · `.claude/agents/team/*.md`
 - **Title:** Four agents hit the limit on 2026-09-02: two `@test-runner` (one lost 2.7 hours having written nothing — every TC still `draft`, no finding filed), one `@backend-dev` mid-revert of a deliberate mutation, one `@backend-dev` mid-suite-run. Each was recoverable only by resuming it and ordering it to stop investigating and write up. **This generalises `ISSUE-434`, which named only `@test-runner`** — it is every long-running agent contract, not one.
@@ -2817,4 +2819,54 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Title:** Only the main checkout carries `src/frontend/node_modules`. In a worktree, `npx ng test` fails with *"npm error could not determine executable to run"* — which reads as a broken Angular install rather than a missing dependency tree, so an agent burns turns misdiagnosing it. Symlinking the main checkout's copy works (verified across a full 4,340-spec run and `npm run build`).
 - **Trap:** the symlink is **not** covered by the repo ignore rules — `git status` reports `?? src/frontend/node_modules`, so it must be removed before reporting or the agent hands back a dirty tree.
 - **Suggested direction (NOT applied):** pre-provision the symlink at worktree creation, or document it in the frontend rule. Same family as ISSUE-442 (stale worktree base) — agent worktrees are not provisioned to match what agents are asked to do in them.
+
+### ISSUE-453 — every `*PostgresTests` class starts a container AND re-runs all migrations once per TEST, not per class
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Layer:** TEST (INFRA)
+- **Module / US / TC:** cross-module · 92 files matching `HRM.Tests/Integration/*PostgresTests.cs`
+- **Title:** The established fixture shape uses `IAsyncLifetime` on the test class. **xUnit constructs a new class instance per `[Fact]`, so `InitializeAsync` re-fires for every test** — starting a fresh container and re-running the full migration set each time. Measured at **~20s per test**: four tests took 79s wall for 2s of actual test time. The same four under an `IClassFixture` took 40s wall.
+- **Root cause + confidence (~95%, measured):** `IAsyncLifetime` is per-instance; `IClassFixture` is per-class. The pattern was copied across 92 files.
+- **Severity rationale:** HIGH by cost, not correctness. The backend gate runs 20–35 minutes and multiple agents contend over it; this is a large share of that, multiplied across 92 files. It also lengthens every future CI run and every agent's feedback loop.
+- **Suggested direction (NOT applied):** migrate to `IClassFixture<PostgresContainerFixture>` — the pattern E3 slice 1 introduced. **Survey first (this is campaign-shaped), and gate it on ISSUE-454**, because a shared database changes the meaning of any cross-tenant assertion.
+
+### ISSUE-454 — a shared Postgres fixture silently changes the meaning of any cross-tenant assertion, and nothing guards it
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST
+- **Module / US / TC:** cross-module · any `*PostgresTests` sharing a fixture
+- **Title:** A shared-database fixture is only safe for **tenant-scoped** assertions. An arm that queries cross-tenant or asserts a global count changes meaning the moment siblings share a database. E3 caught one by reading — `CleanupService_ExpiresOverdueCompletedExports` asserts a cross-tenant count via `IgnoreQueryFilters`, and a sibling seeds its own overdue export, so a shared DB would have made that count 2 and forced the assertion to be scoped, i.e. **weakened**. It was split into its own class instead, assertions byte-identical.
+- **Root cause + confidence (~90%):** nothing mechanically detects the combination.
+- **Suggested direction (NOT applied):** an architecture rule — a class using `IClassFixture<PostgresContainerFixture>` must contain no `IgnoreQueryFilters`. **Natural work for `E2` (`HRM.ArchitectureTests`)**, and a prerequisite for rolling out ISSUE-453 safely.
+
+### ENH-455 — `HrReportService` is written "InMemory-safe", which is now pure performance cost
+- **Type / Severity / Status:** ENH · MED · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Reports · RPT-001
+- **Title:** The service materialises the full filtered population with `ToListAsync` and then groups, does age math, and resolves department/location names **in memory** (`HrReportService.cs:137`→`:150`, `:187`/`:199`, `:225`/`:227`), and uses `List.Contains` over `HashSet`. These shapes were adopted to keep EF InMemory tests passing.
+- **Why it matters now:** those paths are Postgres-tested as of E3 slice 1, so the workaround is no longer buying anything — it is full-population materialisation before every aggregation, at tenant scale.
+- **It is also why E3's "0 divergence" is a weak signal:** the code under test had already been contorted to avoid SQL, so there was little provider behaviour left to diverge.
+- **Suggested direction (NOT applied):** push grouping into SQL — **after** E3 slices 2–3, so the change is actually covered by Postgres-backed tests rather than InMemory ones.
+
+### BUG-456 — legacy-path overtime is hardcoded at 1.5x while `WeekdayOvertimeMultiplier` is tenant-configurable — a GAP-022 recurrence in the same method
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Payroll · US-PAY-010 · sibling of GAP-022
+- **Title:** `PayrollRunProcessor.cs:1001` calls `PayrollOvertimeCalculator.Compute(...)` supplying `fte:` and `fteScaledBase:` — **G1's fix from this session** — but **still omits `defaultMultiplier`**, which therefore defaults to `1.5m`. `AttendanceSettings.WeekdayOvertimeMultiplier` (`:152`) is persisted, defaults to 1.5 and is tenant-settable. A tenant that configures 2.0x is paid **1.5x** on the legacy-attendance fallback path (the branch taken when `OvertimeMultiplierDetails` is absent).
+- **Root cause + confidence (~95%, verified independently):** exactly the GAP-022 shape. **G1 threaded two of the three optional parameters and left the third inert.**
+- **Why it matters beyond the money:** it is a *recurrence in the method that was just fixed*, which is the strongest possible argument for the `ARCH-004` rule that found it. A human reading the G1 diff would have seen two named arguments added and reasonably concluded the call was now complete.
+- **Severity rationale:** HIGH — real money, though narrower blast radius than GAP-022: only the legacy-attendance path, not every part-time employee.
+- **Suggested direction (NOT applied):** thread the tenant's `WeekdayOvertimeMultiplier` through, with a run-level Testcontainers arm asserting the **persisted** figure — not a unit test of the calculator, which is what let GAP-022 ship. **Confirm with a payroll owner that the weekday multiplier is the right source for this path** before wiring it. Then remove the entry from `KnownInert`.
+
+### GAP-457 — `taxExemptThreshold` is supported by the calculator but has no persisted setting anywhere; PAYE computes with a zero personal allowance
+- **Type / Severity / Status:** GAP · MED · OPEN (needs-decision)
+- **Layer:** BE
+- **Module / US / TC:** Payroll · statutory deductions
+- **Title:** `StatutoryCalculator.ComputeIncomeTaxYtd` accepts `taxExemptThreshold`, and **both** call sites (`StatutoryDeductionResolver.cs:196`, `:205`) omit it — so every tenant computes PAYE with a zero personal allowance.
+- **Why this is MED and not CRITICAL:** `"TaxExempt"` appears **nowhere else in the backend** (verified: zero hits outside the calculator). So this is a **half-built feature**, not a configured value being silently ignored — nobody can currently set an allowance to have it dropped. The agent nearly filed this as a critical money bug and checked first; that check changed the severity.
+- **Suggested direction (NOT applied):** decide — wire it to a real persisted statutory setting, or delete the parameter. Leaving a supported-but-unreachable tax parameter is how it eventually gets wired wrong.
+
+### ISSUE-458 — `.claude/rules/backend.md` project counts are stale after E2
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** DATA (docs)
+- **Title:** The `## Tests` section names only `src/backend/HRM.Tests` — there are now **two** test projects — and `## Nullability` says "All 5 projects set `<Nullable>enable</Nullable>`", now **6**. The substance holds (`HRM.ArchitectureTests` does set it); only the count and the project list are stale. **No test asserts either claim** — `ClaudeMdAccuracyTests` does not count solution projects — so nothing is red.
+- **Suggested direction (NOT applied):** update both, and consider whether the project count is worth a mechanical assertion given `ISSUE-437` (nothing verifies a documented capability exists).
 
