@@ -23,7 +23,12 @@ public sealed class JwtKeyRingOptions
     public string? Issuer { get; set; }
     public string? Audience { get; set; }
 
-    /// <summary>Primary signing key PEM. Blank => an ephemeral random RSA-2048 key is generated (dev/test default).</summary>
+    /// <summary>
+    /// Primary signing key PEM. Blank => an ephemeral random RSA-2048 key is generated (dev/test default).
+    /// That fallback is permitted <b>only</b> in the Development environment: <see cref="JwtSigningKeyStartupGuard"/>
+    /// fails startup anywhere else, because a per-process key invalidates all issued tokens on restart and
+    /// makes multi-instance deployments reject each other's tokens.
+    /// </summary>
     public string? PrivateKey { get; set; }
 
     /// <summary>The <c>kid</c> stamped on tokens signed by <see cref="PrivateKey"/>.</summary>
