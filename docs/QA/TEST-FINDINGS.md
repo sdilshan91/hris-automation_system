@@ -2639,7 +2639,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** a seed script or a dev-only token surface for the four standard personas. **Do not weaken the invite hashing to achieve it.**
 
 ### ISSUE-434 — `@test-runner` reports only at the end, so a run that hits its turn ceiling loses everything it found
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED
+- **Resolution (2026-09-03):** **RESOLVED 2026-09-03** — superseded by ISSUE-443 and fixed there; the record-as-you-go section is now in all six `team/` contracts, not just `@test-runner`.
 - **Layer:** TEST (process)
 - **Module / US / TC:** cross-module · `.claude/agents/team/test-runner.md`
 - **Title:** Two runs in one session hit the 60-turn limit. The first survived only because it happened to write its ledger append before stopping; the second recorded **nothing** after 2.7 hours and 73 tool calls — every TC still `draft`, no finding filed — and its work was recoverable only by resuming the agent and ordering it to stop investigating and write up.
@@ -2698,7 +2699,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** set `worktree.baseRef` to `head`, or have the orchestrator verify the worktree's base matches the working branch before dispatching. **The orchestrator should state the expected base commit in the brief** so a mismatch is detectable by the agent rather than by luck.
 
 ### ISSUE-443 — four agents in one session hit the 60-turn ceiling; the agent contracts report only at the end, so a long run loses everything
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · RESOLVED
+- **Resolution (2026-09-03):** **RESOLVED 2026-09-03** — a `## Record as you go` section was added to all six `.claude/agents/team/*.md` contracts, covering write-as-you-reach-it, revert-before-reporting, `Edit` over `Write` on existing files, write-up-on-resume, and never reporting an unobserved number. Filed after 4 ceiling hits; applied after 8.
 - **Layer:** TEST (process)
 - **Module / US / TC:** cross-module · `.claude/agents/team/*.md`
 - **Title:** Four agents hit the limit on 2026-09-02: two `@test-runner` (one lost 2.7 hours having written nothing — every TC still `draft`, no finding filed), one `@backend-dev` mid-revert of a deliberate mutation, one `@backend-dev` mid-suite-run. Each was recoverable only by resuming it and ordering it to stop investigating and write up. **This generalises `ISSUE-434`, which named only `@test-runner`** — it is every long-running agent contract, not one.

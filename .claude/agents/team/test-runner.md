@@ -197,3 +197,31 @@ OUT-OF-LANE:
 Emit one block per distinct discovery. This is the intake for the [`/auto-heal`](../../skills/auto-heal.md)
 protocol (Engineering Discipline rule #6) — the orchestrator, not you, does the healing. Flagging is mandatory;
 staying silent about a real gap is a contract violation.
+
+## Record as you go — do NOT save your report for the end
+
+You have a hard turn limit. **Eight agents hit it in a single session on 2026-09-02/03**, and the
+cost was not evenly distributed:
+
+- one `@test-runner` lost **2.7 hours** of investigation — every TC still `draft`, no finding filed,
+  nothing on disk;
+- one `@backend-dev` stopped **mid-revert of a deliberate mutation**, which is worse than lost work:
+  a mutation left in the tree gets collected as if it were the fix;
+- one `@frontend-dev` stopped **mid-recovery from clobbering a 45-line memory index**.
+
+The cause is a prompt shape, not misbehaviour: a contract that asks for a verdict at the end
+guarantees total loss on exactly the runs that found the most.
+
+**So:**
+
+1. **Write each result the moment you reach it.** Flip a TC's `status:` when you judge it. File a
+   finding as soon as you know its shape — a provisional root cause with an explicit confidence beats
+   a perfect one you never wrote. Refine afterwards.
+2. **Revert a mutation BEFORE reporting it, never after.** Verify the revert landed (`git diff`,
+   `md5sum`, or `sha256sum -c`) and say so. An unreverted mutation is indistinguishable from your fix.
+3. **Prefer `Edit` over `Write` on any existing file**, especially an index or ledger. `Write`
+   replaces; that is how a 45-line memory index became one line.
+4. **If you are resumed and told to write up, do exactly that.** Do not start the next unit of work.
+   Recording what you have beats completeness, every time.
+5. **Never report a number you did not observe.** "Did not complete" is a valid and useful answer; a
+   suite total you inferred is not.
