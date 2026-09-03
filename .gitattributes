@@ -3,3 +3,22 @@
 # (e.g. `set -o pipefail\r` → invalid option; syntax error near `}`), which silently
 # defeated the ISSUE-312 aborted-run guard in scripts/run-backend-tests.sh (see ISSUE-323).
 *.sh text eol=lf
+
+# Append-only ledgers: use git's union merge driver.
+#
+# Six concurrent PRs in one session each appended findings to TEST-FINDINGS.md and
+# index lines to an agent MEMORY.md. Git's default three-way merge treats these as
+# prose and conflicts on every pair, so each merge dirtied every other open PR — a
+# cascade that cost more time than the work itself. Every one of those conflicts
+# resolved to "keep both sides", because these files are logs, not documents.
+#
+# `union` is SAFE here precisely because nothing ever edits an existing entry:
+# a finding is appended and later amended in place by a single owner, and a memory
+# index only grows.
+#
+# GAP-CLOSURE-QUEUE.md is deliberately NOT listed. Ticking an item REWRITES an
+# existing row, and union would keep both the ticked and unticked copies — silently
+# duplicating queue rows. That file must keep conflicting so a human resolves it.
+docs/QA/TEST-FINDINGS.md            merge=union
+docs/QA/TEST-FINDINGS-RESOLVED.md   merge=union
+.claude/agent-memory/**/MEMORY.md   merge=union
