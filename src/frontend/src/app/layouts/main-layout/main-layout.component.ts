@@ -699,6 +699,19 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 3.75A2.75 2.75 0 0 1 8.75 1h2.5A2.75 2.75 0 0 1 14 3.75v.443c.572.055 1.14.122 1.706.2C17.053 4.582 18 5.75 18 7.07v3.469c0 1.126-.694 2.191-1.83 2.54-1.952.599-4.024.921-6.17.921s-4.219-.322-6.17-.921C2.694 12.73 2 11.665 2 10.539V7.07c0-1.321.947-2.489 2.294-2.676A41.047 41.047 0 0 1 6 4.193V3.75Zm6.5 0v.325a41.622 41.622 0 0 0-5 0V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25ZM10 10a1 1 0 0 0-1 1v.01a1 1 0 0 0 1 1h.01a1 1 0 0 0 1-1V11a1 1 0 0 0-1-1H10Z" clip-rule="evenodd"/><path d="M3 15.055v-.684c.126.053.255.1.39.142 2.092.642 4.313.987 6.61.987 2.297 0 4.518-.345 6.61-.987.135-.041.264-.089.39-.142v.684c0 1.347-.985 2.53-2.363 2.686a41.454 41.454 0 0 1-9.274 0C3.985 17.585 3 16.402 3 15.055Z"/></svg>`,
     },
     {
+      // US-CHR-007 / ISSUE-372 (E5): the Locations master-data page shipped reachable by
+      // URL only — no nav entry anywhere — so a built feature was invisible. Gated with
+      // `tenantRoles` (not a permission proxy) because the route's guard IS a roleGuard and
+      // the permission catalog carries no Location.* key; a proxy would let nav visibility
+      // drift from route access (the ISSUE-210 defect). 'Tenant Owner' is listed explicitly
+      // because roleGuard implicitly widens every tenant guard with it (auth.guard.ts
+      // TENANT_SUPER_ROLES) — omitting it would hide the link from a persona that can enter.
+      label: 'Locations',
+      route: '/locations',
+      tenantRoles: ['Tenant Admin', 'HR Officer', 'Tenant Owner'],
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9.69 18.933c.003.001.006.003.31-.933l-.31.933a.75.75 0 0 0 .62 0l-.31-.933c.304.936.307.934.31.933l.005-.002.014-.005a5.7 5.7 0 0 0 .22-.09 12.1 12.1 0 0 0 2.412-1.407C14.583 16.128 17 13.417 17 9A7 7 0 1 0 3 9c0 4.417 2.417 7.128 4.03 8.43a12.1 12.1 0 0 0 2.411 1.406 5.7 5.7 0 0 0 .22.09l.014.005.005.002ZM10 11.25a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
       label: 'Salary Grades',
       route: '/salary-grades',
       permission: 'Payroll.View',
@@ -709,6 +722,15 @@ export class MainLayoutComponent implements OnInit {
       route: '/employees',
       permission: 'Employee.View.All',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.5 1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5ZM1.615 16.428a1.224 1.224 0 0 1-.569-1.175 6.002 6.002 0 0 1 11.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 0 1 7 18a9.953 9.953 0 0 1-5.385-1.572ZM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 0 0-1.588-3.755 4.502 4.502 0 0 1 5.874 2.636.818.818 0 0 1-.36.98A7.465 7.465 0 0 1 14.5 16Z"/></svg>`,
+    },
+    {
+      // US-CHR-006 / ISSUE-372 (E5): the Organization Tree shipped URL-only. Same
+      // `tenantRoles` reasoning as Locations above; this route's guard admits Manager too,
+      // so the nav gate must list Manager or a manager who can enter sees no link.
+      label: 'Org Tree',
+      route: '/org-tree',
+      tenantRoles: ['Tenant Admin', 'HR Officer', 'Manager', 'Tenant Owner'],
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M8 2.5A1.5 1.5 0 0 1 9.5 1h1A1.5 1.5 0 0 1 12 2.5v1A1.5 1.5 0 0 1 10.5 5h-.25v2.75h3.5A1.75 1.75 0 0 1 15.5 9.5v1.25h.25a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-1a1.5 1.5 0 0 1 1.5-1.5H14V9.5a.25.25 0 0 0-.25-.25h-3.5v1.5h.25a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-1a1.5 1.5 0 0 1 1.5-1.5h.25v-1.5h-3.5a.25.25 0 0 0-.25.25v1.25h.25a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5v-1a1.5 1.5 0 0 1 1.5-1.5h.25V9.5a1.75 1.75 0 0 1 1.75-1.75h3.5V5H9.5A1.5 1.5 0 0 1 8 3.5v-1Z"/></svg>`,
     },
     {
       label: 'Leave',
@@ -1052,6 +1074,18 @@ export class MainLayoutComponent implements OnInit {
       route: '/admin/settings',
       permission: 'Tenant.ManageSettings',
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.993 6.993 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd"/></svg>`,
+    },
+    {
+      // US-CHR-012 / ISSUE-372 (E5): the Custom Fields designer shipped URL-only. Placed
+      // beside Settings because its route lives at /settings/custom-fields. Gated with
+      // `tenantRoles` for the same reason as Locations/Org Tree — the route is
+      // roleGuard(['Tenant Admin']) and there is no Tenant.ManageCustomFields catalog key,
+      // so Tenant.ManageSettings would be a proxy that can drift. 'Tenant Owner' listed
+      // explicitly to match roleGuard's implicit TENANT_SUPER_ROLES widening.
+      label: 'Custom Fields',
+      route: '/settings/custom-fields',
+      tenantRoles: ['Tenant Admin', 'Tenant Owner'],
+      icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M17 2.75a.75.75 0 0 0-1.5 0v5.5a.75.75 0 0 0 1.5 0v-5.5ZM17 15.75a.75.75 0 0 0-1.5 0v1.5a.75.75 0 0 0 1.5 0v-1.5ZM3.75 15a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5a.75.75 0 0 1 .75-.75ZM4.5 2.75a.75.75 0 0 0-1.5 0v5.5a.75.75 0 0 0 1.5 0v-5.5ZM10 11a.75.75 0 0 1 .75.75v5.5a.75.75 0 0 1-1.5 0v-5.5A.75.75 0 0 1 10 11ZM10.75 2.75a.75.75 0 0 0-1.5 0v1.5a.75.75 0 0 0 1.5 0v-1.5ZM10 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3.75 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM16.25 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg>`,
     },
     {
       // US-ADM-007: Tenant Admin approval-workflow definitions (per request type).
