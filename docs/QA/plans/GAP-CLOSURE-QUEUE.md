@@ -396,7 +396,13 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
   issuance, SNI verified on a real tenant subdomain, TLS 1.2 floor, the `admin.*` dead-entry-point warning
   (GAP-038) and where the six missing security headers must live (GAP-033a); plus `BA/STATUS.md:200`'s stale
   **"committed OFF"**, corrected — the operational consequence is the *inverse* of what it implied.
-- [ ] **A3 · Stale-comment sweep** — `RealNotificationDispatcher.cs:32` ("the 12 `LogOnly*` seams are NOT rewired")
+- [x] **A3 · Stale-comment sweep** — ✅ **ALREADY DONE, verified 2026-09-03. No code written.**
+  All three named targets are corrected. `RealNotificationDispatcher` now reads *"The module seams ARE
+  rewired — corrected 2026-08-18"*; `TenantProvisioningService` carries *"the stated reason is FALSE —
+  corrected 2026-08-18 (GAP-029)"*, and GAP-029 itself was closed by C1/#534; and zero job headers still
+  claim something is unwired (`grep` for `NOT rewired|not yet wired|Phase 2+` across `HRM.Api/Jobs` →
+  empty). The item was written before those 2026-08-18 corrections landed.
+  ~~Original:~~ **A3 · Stale-comment sweep** — `RealNotificationDispatcher.cs:32` ("the 12 `LogOnly*` seams are NOT rewired")
   is **false**: one live log-only registration, and it is performance's documented deferral. That sentence is the
   sole source of the plan's P3 *"notification delivery rewire (biggest surface)"* epic. Also
   `TenantProvisioningService.cs:31-34` (which has kept the US-ADM-011 engine dormant for 5 weeks) and ~10 job
