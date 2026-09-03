@@ -2820,3 +2820,29 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Trap:** the symlink is **not** covered by the repo ignore rules — `git status` reports `?? src/frontend/node_modules`, so it must be removed before reporting or the agent hands back a dirty tree.
 - **Suggested direction (NOT applied):** pre-provision the symlink at worktree creation, or document it in the frontend rule. Same family as ISSUE-442 (stale worktree base) — agent worktrees are not provisioned to match what agents are asked to do in them.
 
+### ISSUE-453 — every `*PostgresTests` class starts a container AND re-runs all migrations once per TEST, not per class
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Layer:** TEST (INFRA)
+- **Module / US / TC:** cross-module · 92 files matching `HRM.Tests/Integration/*PostgresTests.cs`
+- **Title:** The established fixture shape uses `IAsyncLifetime` on the test class. **xUnit constructs a new class instance per `[Fact]`, so `InitializeAsync` re-fires for every test** — starting a fresh container and re-running the full migration set each time. Measured at **~20s per test**: four tests took 79s wall for 2s of actual test time. The same four under an `IClassFixture` took 40s wall.
+- **Root cause + confidence (~95%, measured):** `IAsyncLifetime` is per-instance; `IClassFixture` is per-class. The pattern was copied across 92 files.
+- **Severity rationale:** HIGH by cost, not correctness. The backend gate runs 20–35 minutes and multiple agents contend over it; this is a large share of that, multiplied across 92 files. It also lengthens every future CI run and every agent's feedback loop.
+- **Suggested direction (NOT applied):** migrate to `IClassFixture<PostgresContainerFixture>` — the pattern E3 slice 1 introduced. **Survey first (this is campaign-shaped), and gate it on ISSUE-454**, because a shared database changes the meaning of any cross-tenant assertion.
+
+### ISSUE-454 — a shared Postgres fixture silently changes the meaning of any cross-tenant assertion, and nothing guards it
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST
+- **Module / US / TC:** cross-module · any `*PostgresTests` sharing a fixture
+- **Title:** A shared-database fixture is only safe for **tenant-scoped** assertions. An arm that queries cross-tenant or asserts a global count changes meaning the moment siblings share a database. E3 caught one by reading — `CleanupService_ExpiresOverdueCompletedExports` asserts a cross-tenant count via `IgnoreQueryFilters`, and a sibling seeds its own overdue export, so a shared DB would have made that count 2 and forced the assertion to be scoped, i.e. **weakened**. It was split into its own class instead, assertions byte-identical.
+- **Root cause + confidence (~90%):** nothing mechanically detects the combination.
+- **Suggested direction (NOT applied):** an architecture rule — a class using `IClassFixture<PostgresContainerFixture>` must contain no `IgnoreQueryFilters`. **Natural work for `E2` (`HRM.ArchitectureTests`)**, and a prerequisite for rolling out ISSUE-453 safely.
+
+### ENH-455 — `HrReportService` is written "InMemory-safe", which is now pure performance cost
+- **Type / Severity / Status:** ENH · MED · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Reports · RPT-001
+- **Title:** The service materialises the full filtered population with `ToListAsync` and then groups, does age math, and resolves department/location names **in memory** (`HrReportService.cs:137`→`:150`, `:187`/`:199`, `:225`/`:227`), and uses `List.Contains` over `HashSet`. These shapes were adopted to keep EF InMemory tests passing.
+- **Why it matters now:** those paths are Postgres-tested as of E3 slice 1, so the workaround is no longer buying anything — it is full-population materialisation before every aggregation, at tenant scale.
+- **It is also why E3's "0 divergence" is a weak signal:** the code under test had already been contorted to avoid SQL, so there was little provider behaviour left to diverge.
+- **Suggested direction (NOT applied):** push grouping into SQL — **after** E3 slices 2–3, so the change is actually covered by Postgres-backed tests rather than InMemory ones.
+

@@ -40,3 +40,4 @@
 - [Payroll FTE overtime plumbing (GAP-022)](reference-payroll-fte-overtime-plumbing.md) — trailing-optional calculator params go inert silently; AttendancePolicyResolver.LoadAllAsync/.For is the batched per-location policy seam
 - [Onboarding checklist preview seam (ISSUE-374)](reference-onboarding-preview-seam.md) — assign's NewTaskFromTemplate is a PURE factory (reuse it); persists-nothing needs a non-zero baseline; exposed the assign task-duplication defect
 - [Environment-gated startup guards](feedback-environment-gated-guards.md) — allow-list the safe env, take IHostEnvironment not the raw ASPNETCORE_ENVIRONMENT string; Smtp:Host guard is the counter-example
+- [Reports Postgres port + shared container fixture (E3 slice 1)](reference-reports-postgres-port.md) — per-TEST containers cost ~20s each; IClassFixture fixes it; split cross-tenant arms; the connection-string mutation that actually goes RED
