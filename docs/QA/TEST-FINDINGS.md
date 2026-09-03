@@ -2846,3 +2846,27 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **It is also why E3's "0 divergence" is a weak signal:** the code under test had already been contorted to avoid SQL, so there was little provider behaviour left to diverge.
 - **Suggested direction (NOT applied):** push grouping into SQL — **after** E3 slices 2–3, so the change is actually covered by Postgres-backed tests rather than InMemory ones.
 
+### BUG-456 — legacy-path overtime is hardcoded at 1.5x while `WeekdayOvertimeMultiplier` is tenant-configurable — a GAP-022 recurrence in the same method
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Payroll · US-PAY-010 · sibling of GAP-022
+- **Title:** `PayrollRunProcessor.cs:1001` calls `PayrollOvertimeCalculator.Compute(...)` supplying `fte:` and `fteScaledBase:` — **G1's fix from this session** — but **still omits `defaultMultiplier`**, which therefore defaults to `1.5m`. `AttendanceSettings.WeekdayOvertimeMultiplier` (`:152`) is persisted, defaults to 1.5 and is tenant-settable. A tenant that configures 2.0x is paid **1.5x** on the legacy-attendance fallback path (the branch taken when `OvertimeMultiplierDetails` is absent).
+- **Root cause + confidence (~95%, verified independently):** exactly the GAP-022 shape. **G1 threaded two of the three optional parameters and left the third inert.**
+- **Why it matters beyond the money:** it is a *recurrence in the method that was just fixed*, which is the strongest possible argument for the `ARCH-004` rule that found it. A human reading the G1 diff would have seen two named arguments added and reasonably concluded the call was now complete.
+- **Severity rationale:** HIGH — real money, though narrower blast radius than GAP-022: only the legacy-attendance path, not every part-time employee.
+- **Suggested direction (NOT applied):** thread the tenant's `WeekdayOvertimeMultiplier` through, with a run-level Testcontainers arm asserting the **persisted** figure — not a unit test of the calculator, which is what let GAP-022 ship. **Confirm with a payroll owner that the weekday multiplier is the right source for this path** before wiring it. Then remove the entry from `KnownInert`.
+
+### GAP-457 — `taxExemptThreshold` is supported by the calculator but has no persisted setting anywhere; PAYE computes with a zero personal allowance
+- **Type / Severity / Status:** GAP · MED · OPEN (needs-decision)
+- **Layer:** BE
+- **Module / US / TC:** Payroll · statutory deductions
+- **Title:** `StatutoryCalculator.ComputeIncomeTaxYtd` accepts `taxExemptThreshold`, and **both** call sites (`StatutoryDeductionResolver.cs:196`, `:205`) omit it — so every tenant computes PAYE with a zero personal allowance.
+- **Why this is MED and not CRITICAL:** `"TaxExempt"` appears **nowhere else in the backend** (verified: zero hits outside the calculator). So this is a **half-built feature**, not a configured value being silently ignored — nobody can currently set an allowance to have it dropped. The agent nearly filed this as a critical money bug and checked first; that check changed the severity.
+- **Suggested direction (NOT applied):** decide — wire it to a real persisted statutory setting, or delete the parameter. Leaving a supported-but-unreachable tax parameter is how it eventually gets wired wrong.
+
+### ISSUE-458 — `.claude/rules/backend.md` project counts are stale after E2
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** DATA (docs)
+- **Title:** The `## Tests` section names only `src/backend/HRM.Tests` — there are now **two** test projects — and `## Nullability` says "All 5 projects set `<Nullable>enable</Nullable>`", now **6**. The substance holds (`HRM.ArchitectureTests` does set it); only the count and the project list are stale. **No test asserts either claim** — `ClaudeMdAccuracyTests` does not count solution projects — so nothing is red.
+- **Suggested direction (NOT applied):** update both, and consider whether the project count is worth a mechanical assertion given `ISSUE-437` (nothing verifies a documented capability exists).
+
