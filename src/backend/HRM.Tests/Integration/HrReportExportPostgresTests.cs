@@ -1,7 +1,7 @@
 // ============================================================================
-// US-RPT-004: HR report export — service integration tests (InMemory).
+// US-RPT-004: HR report export — service integration tests on REAL POSTGRES (E3, Leg-3 parity).
 //
-// Exercises HrReportExportService over a real AppDbContext (InMemory) with the ITenantContext-driven global
+// Exercises HrReportExportService over a real AppDbContext with the ITenantContext-driven global
 // query filter, the real LocalReportExportStorage (writes to a temp path, which the download path reads back),
 // and a controllable fake IHrReportService so row-count-driven routing can be tested without seeding thousands
 // of employees. Covers:
@@ -10,10 +10,15 @@
 //   - FR-10: a 4th export with 3 already in progress → 429.
 //   - AC-5: a download from another tenant / another user → null (controller → 404); cross-tenant isolation.
 //   - BR-3: an expired export → a distinct Expired result (controller → 410).
+//   (the BR-3 cleanup arm moved to HrReportExportCleanupPostgresTests — see PROVIDER note.)
 //   - FR-9: an audit row ("HrReport.Export") is written on every initiation.
 //
-// PROVIDER: InMemory — same rationale as the other integration tests (the verify gate runs `dotnet test` with
-// no PostgreSQL / Docker).
+// PROVIDER: real PostgreSQL via Testcontainers (was EF InMemory until 2026-09-03, E3 slice 1). Export
+// routing is driven by row counts, ordering and lifecycle state that InMemory — a LINQ-to-Objects provider
+// with no SQL translation, no FK enforcement and no unique indexes — cannot faithfully reproduce. Every
+// assertion is UNCHANGED from the InMemory suite; only the provider and the FK-valid seed rows differ.
+// The BR-3 cleanup arm asserts a CROSS-TENANT count (IgnoreQueryFilters) so it cannot share a database with
+// its siblings; it lives in HrReportExportCleanupPostgresTests with its own container, assertions intact.
 // ============================================================================
 
 using FluentAssertions;
@@ -28,9 +33,19 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HRM.Tests.Integration;
 
-public sealed class HrReportExportIntegrationTests
+[Trait("TC", "TC-RPT-004-PG")]
+public sealed class HrReportExportPostgresTests : IClassFixture<PostgresContainerFixture>
 {
-    private readonly string _dbName = Guid.NewGuid().ToString();
+    private readonly PostgresContainerFixture _pg;
+
+    public HrReportExportPostgresTests(PostgresContainerFixture pg) => _pg = pg;
+
+    private DbContextOptions<AppDbContext> NpgsqlOptions() =>
+        new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(_pg.ConnectionString, n => n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+            .UseSnakeCaseNamingConvention()
+            .Options;
+
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantB = Guid.NewGuid();
     private readonly Guid _userA = Guid.NewGuid();
@@ -107,7 +122,7 @@ public sealed class HrReportExportIntegrationTests
     private AppDbContext Db(Guid tenantId)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
-        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        var options = NpgsqlOptions();
         return new AppDbContext(options, ctx);
     }
 
@@ -115,7 +130,7 @@ public sealed class HrReportExportIntegrationTests
         Guid tenantId, Guid userId, int rowCount)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
-        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
+        var options = NpgsqlOptions();
         var db = new AppDbContext(options, ctx);
         var report = new FakeReportService { RowCount = rowCount };
         var scheduler = new RecordingScheduler();
@@ -411,47 +426,4 @@ public sealed class HrReportExportIntegrationTests
         }
     }
 
-    // ── BR-3 cleanup: expires overdue completed exports ──────────────────────
-
-    [Fact]
-    public async Task CleanupService_ExpiresOverdueCompletedExports()
-    {
-        using (var seed = Db(_tenantA))
-        {
-            seed.HrReportExports.Add(new HrReportExport
-            {
-                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, RequestedByUserId = _userA,
-                ReportType = "headcount", Format = HrReportExportFormat.Csv, FiltersJson = "{}",
-                Status = HrReportExportStatus.Completed, RowCount = 5, FileSizeBytes = 100,
-                FilePath = null,
-                RequestedAt = DateTime.UtcNow.AddDays(-8), CompletedAt = DateTime.UtcNow.AddDays(-8),
-                ExpiresAt = DateTime.UtcNow.AddDays(-1), // overdue
-            });
-            seed.HrReportExports.Add(new HrReportExport
-            {
-                Id = BaseEntity.NewUuidV7(), TenantId = _tenantA, RequestedByUserId = _userA,
-                ReportType = "headcount", Format = HrReportExportFormat.Csv, FiltersJson = "{}",
-                Status = HrReportExportStatus.Completed, RowCount = 5, FileSizeBytes = 100,
-                FilePath = null,
-                RequestedAt = DateTime.UtcNow, CompletedAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.AddDays(6), // still fresh
-            });
-            await seed.SaveChangesAsync();
-        }
-
-        // Cleanup runs in the system context (cross-tenant).
-        var ctx = new MutableTenantContext(); // unresolved == system-ish; IgnoreQueryFilters covers all rows.
-        var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
-        using var db = new AppDbContext(options, ctx);
-        var cleanup = new HrReportExportCleanupService(db, NullLogger<HrReportExportCleanupService>.Instance);
-
-        var result = await cleanup.ExpireOverdueExportsAsync();
-
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be(1); // only the overdue one.
-
-        var expiredCount = await db.HrReportExports.IgnoreQueryFilters()
-            .CountAsync(e => e.Status == HrReportExportStatus.Expired);
-        expiredCount.Should().Be(1);
-    }
 }
