@@ -130,12 +130,14 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
              """);
 
         // GAP-005: audit immutability. roles.sql revokes UPDATE/DELETE on the audit tables from the runtime
-        // role AFTER the broad grant above; mirrored here in the same order for the same reason.
-        await ExecAsync(superCs,
-            $"""
-             REVOKE UPDATE, DELETE ON audit_logs FROM {AppRole};
-             REVOKE UPDATE, DELETE ON employee_field_audit_logs FROM {AppRole};
-             """);
+        // role AFTER the broad grant above (order matters — that grant is deliberately broad).
+        //
+        // These statements are EXTRACTED FROM roles.sql, not restated here. That is the whole point: the
+        // grant block above is a hand-written mirror and so is blind to a roles.sql edit — if someone deleted
+        // the REVOKE from the shipped script, this suite would have gone on happily validating a privilege
+        // set production no longer had. Deriving them instead makes the deletion FAIL
+        // AuditTables_AreAppendOnly_ForTheRuntimeRole_ButPurgeableByOwner_GAP005 below.
+        await ExecAsync(superCs, RevokeStatementsFromRolesSql());
 
         // (3) Simulate the increment-3 reconciler: ENABLE + FORCE RLS on every tenant_id table (excl. users).
         await ExecAsync(superCs,
@@ -733,6 +735,63 @@ public sealed class RlsIsolationPostgresTests : IAsyncLifetime
         await conn.OpenAsync();
         await using var cmd = new NpgsqlCommand(sql, conn);
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// GAP-005 — reads the SHIPPED <c>Persistence/Rls/roles.sql</c> and returns its REVOKE statements
+    /// verbatim, so this fixture applies the privilege set the ops bootstrap script ACTUALLY ships rather
+    /// than a hand-copied restatement of it.
+    ///
+    /// <para>Why only REVOKE: roles.sql as a whole cannot run through Npgsql (it uses the psql-only
+    /// <c>\gexec</c> and <c>:'var'</c> constructs), and the CREATE ROLE / GRANT lines above deliberately
+    /// DIVERGE from it anyway — the fixture uses throwaway passwords and also grants to hrm_owner. The REVOKE
+    /// lines use neither psql construct and name the literal <c>hrm_app</c> role this fixture creates, so they
+    /// execute as-is. Role names are asserted to match rather than assumed.</para>
+    ///
+    /// <para>Scope of the guarantee, stated plainly for reviewers: this binds the TEST to the SCRIPT, so the
+    /// REVOKE cannot be deleted from roles.sql while the suite stays green. It does NOT — and no test can —
+    /// prove that any given ENVIRONMENT ever ran the script; roles.sql is a once-per-database DBA step by
+    /// design, because the app must never own role DDL.</para>
+    ///
+    /// <para>Fails LOUDLY on a parse miss instead of returning nothing: a silently empty result would leave
+    /// the audit tables mutable and surface as a confusing "audit is not append-only" failure that points at
+    /// the wrong culprit.</para>
+    /// </summary>
+    private static string RevokeStatementsFromRolesSql()
+    {
+        var path = Path.Combine(
+            RepoRoot(), "src", "backend", "HRM.Infrastructure", "Persistence", "Rls", "roles.sql");
+        File.Exists(path).Should().BeTrue($"the shipped ops bootstrap script must exist at {path}");
+
+        var revokes = File.ReadLines(path)
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("REVOKE ", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        revokes.Should().NotBeEmpty(
+            "roles.sql must still REVOKE UPDATE/DELETE on the audit tables from the runtime role (GAP-005). " +
+            "If this fires because the statements were REFORMATTED (wrapped across lines) rather than removed, " +
+            "fix this extractor — do NOT re-hardcode the statements here, that is the very mirror it replaces");
+
+        // The extracted SQL names roles literally, so a rename of these constants would silently revoke from
+        // the wrong role (or a nonexistent one). Assert the fixture and the script still agree.
+        AppRole.Should().Be("hrm_app", "the extracted REVOKE statements name this role literally");
+        OwnerRole.Should().Be("hrm_owner", "roles.sql provisions this privileged role literally");
+
+        return string.Join("\n", revokes);
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!);
+        while (dir is not null &&
+               !Directory.Exists(Path.Combine(dir.FullName, "src", "backend", "HRM.Infrastructure")))
+        {
+            dir = dir.Parent;
+        }
+
+        dir.Should().NotBeNull("the repo root (containing src/backend/HRM.Infrastructure) should be an ancestor of the test assembly");
+        return dir!.FullName;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

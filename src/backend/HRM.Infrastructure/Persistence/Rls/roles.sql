@@ -49,8 +49,8 @@ ALTER DEFAULT PRIVILEGES FOR ROLE hrm_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO hrm_app;
 
 -- ── Audit immutability (GAP-005) ────────────────────────────────────────────
--- The audit trail is append-only. Until now that was a CODE CONVENTION only —
--- AuditLogController says as much ("append-only by code convention … REVOKE DEFERRED") — while the
+-- The audit trail is append-only. Before this revoke that was a CODE CONVENTION only — enforced solely by
+-- the absence of an update/delete endpoint on AuditLogController — while the
 -- runtime role held UPDATE and DELETE on every table, audit included. Anything holding the app's
 -- credentials (a SQL-injection foothold, a stray ExecuteDelete, a compromised connection string)
 -- could silently rewrite the one record class the rest of the compliance story rests on.
@@ -70,6 +70,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE hrm_owner IN SCHEMA public
 REVOKE UPDATE, DELETE ON audit_logs FROM hrm_app;
 REVOKE UPDATE, DELETE ON employee_field_audit_logs FROM hrm_app;
 
+-- TESTED: RlsIsolationPostgresTests EXTRACTS the REVOKE statements above from THIS FILE (every line starting
+-- with "REVOKE ") and executes them against a real Postgres, then asserts the runtime role cannot UPDATE or
+-- DELETE audit rows. So deleting a REVOKE here turns that suite red rather than silently weakening prod.
+-- Two consequences if you edit this block: (a) keep each REVOKE on ONE line — a statement wrapped across
+-- lines is extracted truncated and the suite fails loudly; (b) a REVOKE naming a role other than hrm_app /
+-- hrm_owner will fail there until that role is added to the test fixture. Neither test can prove a given
+-- DATABASE was bootstrapped with this script — that remains an operational responsibility.
+--
 -- NEW-AUDIT-TABLE RULE: ALTER DEFAULT PRIVILEGES above grants UPDATE/DELETE on FUTURE tables to
 -- hrm_app, so a newly-added audit table starts out mutable. Add its REVOKE here when you add it —
 -- the same standing obligation as the NEW-TENANT-TABLE RLS RULE. Re-running roles.sql is idempotent

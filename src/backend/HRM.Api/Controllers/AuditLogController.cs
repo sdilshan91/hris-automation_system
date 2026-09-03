@@ -17,11 +17,42 @@ namespace HRM.Api.Controllers;
 ///
 /// <para>Reads (list + detail) require <c>Audit.View</c> (Tenant Owner, Tenant Admin, AND the read-only
 /// Auditor). Export requires <c>Audit.Export</c> (Tenant Owner + Tenant Admin ONLY — the Auditor is read-only
-/// and CANNOT export, FR-7). The table is append-only (AC-5/NFR-3): there is intentionally NO update/delete
-/// endpoint, and as of GAP-005 that is ENFORCED rather than merely conventional — <c>Rls/roles.sql</c> revokes
-/// UPDATE and DELETE on <c>audit_logs</c> and <c>employee_field_audit_logs</c> from the runtime
-/// <c>hrm_app</c> role. The retention purge is the one legitimate deleter and runs on the privileged
-/// connection. A <c>tenant_isolation</c> RLS policy also exists on the table.</para>
+/// and CANNOT export, FR-7).</para>
+///
+/// <para>APPEND-ONLY (AC-5/NFR-3) — what is true, and where. UNCONDITIONALLY: there is intentionally NO
+/// update or delete endpoint here, so no API request can rewrite audit history in ANY environment, and the
+/// retention purge — the one legitimate deleter — runs on the privileged connection.</para>
+///
+/// <para>CONDITIONALLY, GAP-005 adds a second line of defence at the DATABASE layer, which does not depend on
+/// this code staying correct: <c>Rls/roles.sql</c> revokes UPDATE and DELETE on <c>audit_logs</c> and
+/// <c>employee_field_audit_logs</c> from the runtime <c>hrm_app</c> role, so a SQL-injection foothold or a
+/// stray <c>ExecuteDelete</c> on the runtime connection is refused by Postgres (SQLSTATE 42501). This process
+/// CANNOT verify that defence is present, so do not assume it. It holds in an environment only where BOTH:
+/// <list type="number">
+///   <item><description><c>roles.sql</c> has actually been applied to that database. It is an ops/bootstrap
+///     script run once by a DBA and deliberately NOT executed by the app or by EF migrations — the app must
+///     never own role DDL — so whether it ran is an operational fact, not a code fact.</description></item>
+///   <item><description><c>ConnectionStrings:DefaultConnection</c> really authenticates as <c>hrm_app</c>.
+///     The revoke binds to that role and nothing else: a superuser bypasses privilege checks entirely, and
+///     <c>hrm_owner</c> deliberately KEEPS DELETE so the purge works.</description></item>
+/// </list>
+/// Condition (2) demonstrably does NOT hold on the committed defaults: <c>appsettings.Development.json</c>
+/// points <c>DefaultConnection</c> at <c>Username=developer</c>, not <c>hrm_app</c>, so the revoke cannot
+/// apply there whatever the DBA did (and per <c>appsettings.json</c> that local role is additionally a
+/// superuser, which bypasses privilege checks outright).
+/// Both conditions are switched on together by the increment-3 flip documented in <c>appsettings.json</c>
+/// (<c>_comment_PrivilegedConnection</c>), which also sets <c>Rls:Enabled=true</c> — note that flag is an
+/// INDICATOR of the flip, not the mechanism: it gates the tenant GUC, not table privileges.</para>
+///
+/// <para>So: append-only is ENFORCED by the database wherever the platform is fully provisioned, and
+/// CONVENTIONAL (no mutating endpoint + a privileged-only purge path) everywhere else.
+/// <c>RlsIsolationPostgresTests.AuditTables_AreAppendOnly_ForTheRuntimeRole_ButPurgeableByOwner_GAP005</c>
+/// proves the revoke actually bites on a real Postgres, and — because that fixture EXTRACTS the REVOKE
+/// statements from <c>roles.sql</c> rather than restating them — that the shipped script still contains them.
+/// No test can prove a given environment was bootstrapped.</para>
+///
+/// <para>A <c>tenant_isolation</c> RLS policy also exists on the table (shipped dormant; enabled by the same
+/// increment-3 flip).</para>
 /// </summary>
 [ApiController]
 [Route("api/v1/tenant/audit-logs")]
