@@ -8,9 +8,10 @@
 //   - GET /api/v1/leaves/reports/{reportType}/export returns a CSV file inline for a small dataset (AC-5).
 //   - Tenant isolation: HR in Tenant A sees NO Tenant B rows in a report (Test Hint, BR-1/NFR-3).
 //
-// PROVIDER NOTE: same rationale as LopIntegrationTests / TeamLeaveCalendarIntegrationTests — the verify
-// gate runs `dotnet test` with no PostgreSQL bound, so these use the InMemory provider but go through the
-// real composed pipeline (MediatR + query filters), which is what proves tenant isolation.
+// PROVIDER: real PostgreSQL via Testcontainers (was EF InMemory until 2026-09-03, E3 slice 1) through the
+// real composed pipeline (MediatR + query filters). Leave reports are GROUP BY + ordering + pagination, and
+// EF InMemory (a LINQ-to-Objects provider) translates none of it — so the InMemory arm proved the LINQ, not
+// the query. Assertions are UNCHANGED from that arm; only the provider and the (now FK-valid) seed differ.
 //
 // The US-LV-002 entitlement engine is substituted (NSubstitute) so the report aggregation is exercised
 // independently of entitlement resolution (which has its own tests); everything else is the real graph.
@@ -35,15 +36,19 @@ using NSubstitute;
 
 namespace HRM.Tests.Integration;
 
-public sealed class LeaveReportIntegrationTests
+[Trait("TC", "TC-LV-012-PG")]
+public sealed class LeaveReportPostgresTests : IClassFixture<PostgresContainerFixture>
 {
-    private readonly string _dbName = Guid.NewGuid().ToString();
+    private readonly PostgresContainerFixture _pg;
 
     private readonly Guid _tenantA = Guid.NewGuid();
     private readonly Guid _tenantB = Guid.NewGuid();
 
     private readonly Guid _hrAUser = Guid.NewGuid();
     private readonly Guid _hrBUser = Guid.NewGuid();
+
+    private readonly Guid _jobTitleA = Guid.NewGuid();
+    private readonly Guid _jobTitleB = Guid.NewGuid();
 
     private Guid _leaveTypeA;
     private Guid _leaveTypeB;
@@ -57,8 +62,9 @@ public sealed class LeaveReportIntegrationTests
 
     private const int Year = 2026;
 
-    public LeaveReportIntegrationTests()
+    public LeaveReportPostgresTests(PostgresContainerFixture pg)
     {
+        _pg = pg;
         SeedData();
     }
 
@@ -118,7 +124,9 @@ public sealed class LeaveReportIntegrationTests
         services.AddSingleton<ITenantContext>(tenantContext);
         services.AddSingleton(currentUser);
         services.AddSingleton(entitlement);
-        services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
+        services.AddDbContext<AppDbContext>(o => o
+            .UseNpgsql(_pg.ConnectionString, n => n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+            .UseSnakeCaseNamingConvention());
         services.AddScoped<IReportExportStorage, LocalReportExportStorage>();
         services.AddScoped<ITenantLeaveYearResolver, TenantLeaveYearResolver>(); // ISSUE-311: report now reads the fiscal leave year.
         // LeaveReportService now REQUIRES IHolidayProvider (the summary card divides by WORKING days).
@@ -133,7 +141,8 @@ public sealed class LeaveReportIntegrationTests
     private AppDbContext DbFor(Guid tenantId)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(_dbName).Options;
+            .UseNpgsql(_pg.ConnectionString, n => n.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+            .UseSnakeCaseNamingConvention().Options;
         return new AppDbContext(options, new MutableTenantContext { TenantId = tenantId });
     }
 
@@ -151,6 +160,14 @@ public sealed class LeaveReportIntegrationTests
 
         using var db = DbFor(_tenantA);
 
+        // Real FKs are enforced on Postgres (InMemory ignored them): tenant + job-title rows must exist.
+        db.Tenants.AddRange(
+            MakeTenant(_tenantA, $"a{_tenantA:N}"[..12]),
+            MakeTenant(_tenantB, $"b{_tenantB:N}"[..12]));
+        db.JobTitles.AddRange(
+            new JobTitle { Id = _jobTitleA, TenantId = _tenantA, TitleName = "Engineer", IsActive = true },
+            new JobTitle { Id = _jobTitleB, TenantId = _tenantB, TitleName = "Engineer", IsActive = true });
+
         db.Departments.AddRange(
             new Department { Id = _engDeptA, TenantId = _tenantA, Name = "Engineering", Code = "ENG" },
             new Department { Id = _salesDeptA, TenantId = _tenantA, Name = "Sales", Code = "SAL" },
@@ -161,13 +178,19 @@ public sealed class LeaveReportIntegrationTests
             MakeLeaveType(_leaveTypeB, _tenantB));
 
         db.Employees.AddRange(
-            Emp(_empAnn, _tenantA, _engDeptA, "Ann", "A-ANN"),
-            Emp(_empArt, _tenantA, _engDeptA, "Art", "A-ART"),
-            Emp(_empCarol, _tenantA, _salesDeptA, "Carol", "A-CAR"),
-            Emp(_empBen, _tenantB, _deptB, "Ben", "B-BEN"));
+            Emp(_empAnn, _tenantA, _engDeptA, "Ann", "A-ANN", _jobTitleA),
+            Emp(_empArt, _tenantA, _engDeptA, "Art", "A-ART", _jobTitleA),
+            Emp(_empCarol, _tenantA, _salesDeptA, "Carol", "A-CAR", _jobTitleA),
+            Emp(_empBen, _tenantB, _deptB, "Ben", "B-BEN", _jobTitleB));
 
         db.SaveChanges();
     }
+
+    private static Tenant MakeTenant(Guid id, string subdomain) => new()
+    {
+        Id = id, Subdomain = subdomain, Name = subdomain,
+        DefaultCountryCode = "LK", FiscalYearStartMonth = 1,
+    };
 
     private static LeaveType MakeLeaveType(Guid id, Guid tenantId) => new()
     {
@@ -176,12 +199,12 @@ public sealed class LeaveReportIntegrationTests
         Gender = LeaveTypeGender.All, DisplayOrder = 1, IsActive = true,
     };
 
-    private static Employee Emp(Guid id, Guid tenantId, Guid deptId, string first, string empNo) => new()
+    private static Employee Emp(Guid id, Guid tenantId, Guid deptId, string first, string empNo, Guid jobTitleId) => new()
     {
         Id = id, TenantId = tenantId, UserId = null, EmployeeNo = empNo,
-        FirstName = first, LastName = "X", Email = $"{first}@t.com".ToLowerInvariant(),
+        FirstName = first, LastName = "X", Email = $"{first}.{id:N}@t.com".ToLowerInvariant(),
         DateOfJoining = new DateTime(2020, 1, 1), DepartmentId = deptId,
-        JobTitleId = Guid.NewGuid(), EmploymentType = EmploymentType.FullTime,
+        JobTitleId = jobTitleId, EmploymentType = EmploymentType.FullTime,
         Status = EmployeeStatus.Active, IsActive = true,
     };
 
