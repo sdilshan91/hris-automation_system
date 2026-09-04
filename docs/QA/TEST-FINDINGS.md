@@ -2910,12 +2910,13 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** correct all four; fix alongside [[BUG-460]] since they describe the same fields.
 
 ### ISSUE-462 — `docs/BA/STATUS.md:117` says the per-tenant API-call counter was deferred; it shipped the next day
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · ✅ **RESOLVED #612** (verified 2026-09-04 via `/verify-fix`)
 - **Layer:** DATA (ledger)
 - **Module / US / TC:** Platform · US-PLT-004
 - **Title:** STATUS.md:117 states the counter was *"deliberately deferred as its own slice"* and that a partial build "would leave the `ApiCalls` gauge FAKE rather than honestly `Available:false`". It shipped **2026-07-31**, commit `b9906626`, with every component the line says is missing: table + unique index + dormant RLS policy (`20260731012730_Platform_TenantApiUsage.cs:14-66`), hot-path write (`ApiCallCounterMiddleware.cs:80-101`), flusher (`Program.cs:420`), and a gauge reporting `Available: true` (`PlatformMonitoringService.cs:553-567`). STATUS.md was last touched 2026-08-18 and still carries the stale text.
 - **Severity rationale:** MED. **Reverse drift** — the ledger is pessimistic, so it causes wasted rebuilding rather than false confidence. The 2026-09-01 audit measured 29% stale-pessimistic entries; this is another.
 - **Suggested direction (NOT applied):** correct the line. F4's executor is permitted to fix this one sentence since the BA reads exactly it.
+- **Verification (#612):** Verified 2026-09-04 by direct file read. The stale deferral sentence at `STATUS.md:117` is struck through and followed by a dated correction citing commit `b9906626` and the shipped components. My first grep appeared to show it unfixed — it was matching the **struck-through original inside the correction**, the same shape as [[ISSUE-481]].
 
 ### ISSUE-463 — the traceability matrix is missing 5 stories outright, not the 3 GAP-030 counts
 - **Type / Severity / Status:** ISSUE · MED · OPEN
@@ -2934,12 +2935,13 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** **no rename** (IDs are trait-bound to code). Ensure any coverage check reads frontmatter, not filenames.
 
 ### ISSUE-465 — GAP-030 is listed as both parked-at-the-decision-gate and scheduled as F4
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **RESOLVED #613** (verified 2026-09-04 via `/verify-fix`)
 - **Layer:** DATA (ledger)
 - **Module / US / TC:** queue hygiene
 - **Title:** `GAP-CLOSURE-QUEUE.md:256` lists GAP-030 under *"🚧 Parked at the decision gate — NOT auto-scheduled"*, while `:305` and `:871` schedule it as F4. `COMPLETION-PLAN.md:115` repeats the parked framing.
 - **Severity rationale:** LOW, but it is **the same failure mode** as the duplicate execution-table rows fixed in #605: two statements about one item, and "the topmost unticked item" becomes ambiguous.
 - **Suggested direction (NOT applied):** remove the parked entry rather than the F4 row — the premise was verified 2026-09-04, the work is doc-authoring, and there is no actual decision gate.
+- **Verification (#613):** Verified 2026-09-04 by direct file read. GAP-030 no longer appears in the parked-at-the-decision-gate list; its three remaining mentions are a narrative reference, a note citing this finding, and the ticked `F4` row.
 
 ### ISSUE-466 — the shrink-only story baseline makes any TEST-STATUS row addition a two-file change
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
@@ -2985,21 +2987,23 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Severity rationale:** MED as a process finding. The recurrence rate is the signal: 3 in one day, and the E4b instance had **itself been written to correct an earlier stale claim**. That is a comment that went stale, was fixed, and went stale again — which says the practice regenerates the defect faster than the corrections land.
 - **Suggested direction (NOT applied) — and deliberately not a guard:** the cheap mechanical win is small and should be sized honestly. The likelier-useful directions are (a) extend `/retro`'s existing setup-drift pass to sample high-traffic source comments that make cross-file or runtime claims, since that pass already exists to recheck whether documented claims are still true; and (b) treat a long explanatory comment asserting *another* file's or environment's behaviour as the smell — those are the ones that rot, because nothing near them changes when the thing they describe does. **A human should decide whether (a) is worth the cadence cost; I am not proposing a code change.**
 ### BUG-471 — all three plan-override admin calls hit a URL the API does not serve; the console feature is a live 404
-- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Type / Severity / Status:** BUG · HIGH · ✅ **RESOLVED #617** (verified 2026-09-04 via `/verify-fix`)
 - **Layer:** FE / BE (contract)
 - **Module / US / TC:** Admin Console · US-ADM-009 AC-5 / US-ADM-012 BR-6
 - **Title:** `subscription-plan.service.ts:130-167` calls `/system/tenants/{id}/plan-overrides` for **all three** override operations. `AdminPlansController.cs:130-163` serves `/system/plans/overrides`. Every call is a **live 404**. `PlanLimitOverride` is enforced correctly everywhere it is read — it is simply **not settable from the admin console**, only by direct API call.
 - **Root cause + confidence (~95%, both sides read directly):** FE/BE contract drift, unguarded because the FE spec mocks the wire.
 - **Severity rationale:** HIGH. A documented admin capability is dead at the wire, and it is the *escape hatch* for plan limits — the mechanism an operator reaches for when a tenant needs an exception. It fails silently to anyone not watching the network tab. This is the same leg-2 class as [[BUG-460]] and the same mocked-spec blind spot recorded four times before.
 - **Suggested direction (NOT applied):** correct the three FE URLs. Fix [[BUG-472]] in the same change — it is currently masked by this 404 and will surface the moment this is fixed.
+- **Verification (#617):** Verified 2026-09-04 against a **freshly rebuilt** frontend image (the running stack was 2 days stale — [[ISSUE-422]]). The served bundle now calls `system/plans/overrides`; the only surviving `plan-overrides` strings are the component selector `app-plan-overrides-section`, file paths and a comment quoting the old URL — **no live HTTP call**. Source-confirmed: **no controller serves a `plan-overrides` route**, while `AdminPlansController` serves `GET/POST overrides` and `DELETE overrides/{id}` under `api/v1/system/plans`. ⚠ **Precision correction to my own wording:** I filed this as "a live 404". On a non-admin host every `/system/*` path returns **403** from a host guard *before* routing — a definitely-nonexistent route returns the identical body — so 404 is what an authenticated System Admin on the admin host would see, not what a casual probe shows. The substance stands; the headline was imprecise, which is the [[ENH-485]] pattern applied to my own finding.
 
 ### BUG-472 — the plan-limit field list uses camelCase keys the backend rejects, and is wrong in two more ways
-- **Type / Severity / Status:** BUG · MED · OPEN
+- **Type / Severity / Status:** BUG · MED · ✅ **RESOLVED #617** (verified 2026-09-04 via `/verify-fix`)
 - **Layer:** FE
 - **Module / US / TC:** Admin Console · US-ADM-012
 - **Title:** `plan.models.ts:165-174` `LIMIT_FIELDS` uses **camelCase** keys, which the backend rejects as `limit_key_invalid`. It also includes `auditLogRetentionDays` — never a valid override key — and **omits** `maxTemplateLanguageVariants`.
 - **Severity rationale:** MED. Blocks nothing *today* only because [[BUG-471]]'s 404 means no request ever reaches validation. It becomes the immediate next failure once that URL is fixed — so fixing BUG-471 alone would move a 404 to a 400 and look like a regression.
 - **Suggested direction (NOT applied):** fix with [[BUG-471]], not after it.
+- **Verification (#617):** Verified 2026-09-04 in the rebuilt bundle: `max_employees`, `max_api_calls_per_month` and the previously-missing `max_template_language_variants` are all present as snake_case limit keys. `auditLogRetentionDays` still appears — **correctly**: it is a real plan **column** (camelCase, editable in the plan editor), just not a valid override **key**, a distinction `plan.models.ts:151` documents explicitly. Shipped with [[BUG-471]] deliberately, since fixing the URL alone would have turned a 404 into a `limit_key_invalid` 400 and read as a regression.
 
 ### BUG-473 — the usage-gauge path bypasses the lookup built to fix BUG-307, and displays "unlimited" while the gates 403
 - **Type / Severity / Status:** BUG · MED · OPEN
@@ -3060,20 +3064,22 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Confidence:** ~90% that the widening is real as described; it is contingent on Google routing through this guard, which is the stated reuse plan.
 
 ### ISSUE-481 — `docs/BA/STATUS.md` contradicts itself about US-PRF-011, 60 lines apart
-- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Type / Severity / Status:** ISSUE · HIGH · ✅ **RESOLVED #621** (verified 2026-09-04 via `/verify-fix`)
 - **Layer:** DATA (ledger)
 - **Module / US / TC:** Performance · US-PRF-011 · GAP-021
 - **Title:** `STATUS.md:229` records US-PRF-011 as rescoped and calls the "US-PRF-010 dead-end" premise **"verified FALSE"**. `STATUS.md:289` — same file — still lists the story as *"(unblocks US-PRF-010 dead-end)"*. ISSUE-348 retracted that premise and is RESOLVED (`TEST-FINDINGS-RESOLVED.md:6026-6035`).
 - **Severity rationale:** HIGH for a ledger issue. Anyone scoping F3 from line 289 builds toward an unblocker that does not exist, and `RecommendationService.cs:469-479` confirms no dead-end: the BR-2 gate passes whenever a manager review is submitted.
 - **Suggested direction (NOT applied):** strike the parenthetical at `:289` and point it at the §1b rescope.
+- **Verification (#621):** Verified 2026-09-04 by direct file read — no stack needed, the artifact IS the fix. `docs/BA/STATUS.md:289` no longer asserts the retracted "unblocks US-PRF-010 dead-end" premise; the only remaining occurrence is inside the correction note that quotes what the line used to say and why it was wrong.
 
 ### ISSUE-482 — US-PRF-011's own AC-3 still states the retracted unblocker, and it is the AC an implementer reads first
-- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Type / Severity / Status:** ISSUE · HIGH · ✅ **RESOLVED #621** (verified 2026-09-04 via `/verify-fix`)
 - **Layer:** DATA (BA story)
 - **Module / US / TC:** Performance · US-PRF-011
 - **Title:** §3 AC-3 says phase completion *"unblocks US-PRF-010 recommendation generation (removes the `calibration_incomplete` trap)"*. §1b — the **rescope that supersedes §3** — removed that as fictional. The stale skeleton sits above the corrected table in the same file.
 - **Severity rationale:** HIGH. This is the single most likely source of wrong-scope work on F3: the §3 skeleton is where an implementer starts reading. Two documents disagreeing is bad; one document disagreeing with itself in reading order is worse.
 - **Suggested direction (NOT applied):** rewrite §3 AC-3 to the §1b wording **before** F3 is picked up.
+- **Verification (#621):** Verified 2026-09-04 by direct file read. Zero assertions of the retracted unblocker remain in `US-PRF-011.md` §3 AC-3, and a precedence banner now states that §1b supersedes §3 — the ordering trap, not just the one stale cell, since §3 is the section an implementer reads first.
 
 ### BUG-483 — ISSUE-350 is RESOLVED but its user-visible symptom is still live; the FE drops the field that fixed it
 - **Type / Severity / Status:** BUG · MED · OPEN
