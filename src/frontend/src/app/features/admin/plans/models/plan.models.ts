@@ -106,10 +106,15 @@ export interface IPlanUpsert {
  * override (if present and not expired) > plan field.
  */
 export interface IPlanLimitOverride {
+  /** Server-assigned id. `DELETE /system/plans/overrides/{overrideId}` keys on THIS, not on `limitKey`. */
+  id: string;
   limitKey: string;
   value: number | null;
   expiresAt: string | null;
 }
+
+/** The fields a caller supplies when upserting an override; the id comes back from the server. */
+export type IPlanLimitOverrideDraft = Omit<IPlanLimitOverride, 'id'>;
 
 /**
  * Canonical module list for the module-entitlement toggles (FR-6). CoreHR is
@@ -139,14 +144,18 @@ export const CANONICAL_MODULES: IModuleOption[] = [
 
 /**
  * The numeric limit fields shared by the editor and the comparison view. Each
- * is "Unlimited" when null (BR-3). `limitKey` matches the BE override key so the
- * overrides UI can reuse the same vocabulary.
+ * is "Unlimited" when null (BR-3).
+ *
+ * BUG-472 — this used to also carry a `limitKey` that the overrides UI reused as the
+ * BE override vocabulary. It is NOT the same vocabulary, and conflating them is the
+ * bug: plan COLUMNS are camelCase and include `auditLogRetentionDays`; override KEYS
+ * are snake_case, exclude audit-log retention, and include a key with no plan column
+ * at all (`max_template_language_variants`). The two lists are now separate —
+ * see OVERRIDE_LIMIT_FIELDS.
  */
 export interface ILimitField {
   /** Form control name on the editor's limits group. */
   controlName: keyof IPlanLimitNumbers;
-  /** Override key (FR-4) — same vocabulary the BE uses for plan_limit_override. */
-  limitKey: string;
   label: string;
 }
 
@@ -163,14 +172,40 @@ export interface IPlanLimitNumbers {
 }
 
 export const LIMIT_FIELDS: ILimitField[] = [
-  { controlName: 'maxEmployees', limitKey: 'maxEmployees', label: 'Max employees' },
-  { controlName: 'maxStorageGb', limitKey: 'maxStorageGb', label: 'Max storage (GB)' },
-  { controlName: 'maxApiCallsPerMonth', limitKey: 'maxApiCallsPerMonth', label: 'Max API calls / month' },
-  { controlName: 'maxEmailSendsPerMonth', limitKey: 'maxEmailSendsPerMonth', label: 'Max email sends / month' },
-  { controlName: 'maxCustomRoles', limitKey: 'maxCustomRoles', label: 'Max custom roles' },
-  { controlName: 'maxCustomFieldsPerEntity', limitKey: 'maxCustomFieldsPerEntity', label: 'Max custom fields / entity' },
-  { controlName: 'maxWorkflows', limitKey: 'maxWorkflows', label: 'Max workflows' },
-  { controlName: 'auditLogRetentionDays', limitKey: 'auditLogRetentionDays', label: 'Audit log retention (days)' },
+  { controlName: 'maxEmployees', label: 'Max employees' },
+  { controlName: 'maxStorageGb', label: 'Max storage (GB)' },
+  { controlName: 'maxApiCallsPerMonth', label: 'Max API calls / month' },
+  { controlName: 'maxEmailSendsPerMonth', label: 'Max email sends / month' },
+  { controlName: 'maxCustomRoles', label: 'Max custom roles' },
+  { controlName: 'maxCustomFieldsPerEntity', label: 'Max custom fields / entity' },
+  { controlName: 'maxWorkflows', label: 'Max workflows' },
+  { controlName: 'auditLogRetentionDays', label: 'Audit log retention (days)' },
+];
+
+/** One selectable key in the per-tenant overrides UI (AC-5 / FR-4). */
+export interface IOverrideLimitField {
+  /** Canonical BE override key — snake_case, validated against PlanLimitKeys. */
+  limitKey: string;
+  label: string;
+}
+
+/**
+ * The ONLY keys `POST /system/plans/overrides` accepts (BUG-472).
+ *
+ * Mirrors `HRM.Domain.Authorization.PlanLimitKeys`; `UpsertPlanLimitOverrideValidator`
+ * rejects anything else with `limit_key_invalid`. Keep this list in sync with that class —
+ * note `audit_log_retention_days` is deliberately absent (it is a plan column, not an
+ * overridable limit) and `max_template_language_variants` has no plan column of its own.
+ */
+export const OVERRIDE_LIMIT_FIELDS: IOverrideLimitField[] = [
+  { limitKey: 'max_employees', label: 'Max employees' },
+  { limitKey: 'max_storage_gb', label: 'Max storage (GB)' },
+  { limitKey: 'max_api_calls_per_month', label: 'Max API calls / month' },
+  { limitKey: 'max_email_sends_per_month', label: 'Max email sends / month' },
+  { limitKey: 'max_custom_roles', label: 'Max custom roles' },
+  { limitKey: 'max_custom_fields_per_entity', label: 'Max custom fields / entity' },
+  { limitKey: 'max_workflows', label: 'Max workflows' },
+  { limitKey: 'max_template_language_variants', label: 'Max template language variants' },
 ];
 
 /** Feature-flag descriptors for the toggle grid + comparison view. */
@@ -236,15 +271,17 @@ export function limitDisplay(value: number | null): string {
 //     plan. `create()` claimed `IPlanDetail`; every field but those two was undefined.
 //   • PUT  /system/plans/{id} returns a bare `ApiResponse` with no `data` at all.
 //     `update()` claimed `IPlanDetail`; the whole object was undefined.
-//   • The three per-tenant override routes this service calls do not exist on the API
-//     (see the service docstring) — the wire types below describe the DTOs the real
-//     `/system/plans/overrides` routes use, which is the closest honest reading.
+//   • The three override routes were addressed at a per-tenant path the API has never
+//     served, so every call 404'd (BUG-471). Fixed: the service now calls the real
+//     `/system/plans/overrides` routes and these wire types are their DTOs.
 
 export type PlanListItemWire = Schema<'SubscriptionPlansPlanListItemDto'>;
 export type PlanDetailWire = Schema<'SubscriptionPlansPlanDetailDto'>;
 export type PlanFeatureFlagsWire = Schema<'SubscriptionPlansPlanFeatureFlagsDto'>;
 export type PlanCreateResultWire = Schema<'SubscriptionPlansCreatePlanResultDto'>;
 export type PlanLimitOverrideWire = Schema<'SubscriptionPlansPlanLimitOverrideDto'>;
+export type PlanLimitOverrideUpsertWire =
+  Schema<'SubscriptionPlansUpsertPlanLimitOverrideCommand'>;
 
 /**
  * What `POST /system/plans` ACTUALLY returns. The plan editor discards the response
@@ -320,15 +357,15 @@ export function mapPlanCreateResult(w: PlanCreateResultWire): IPlanCreateResult 
 }
 
 /**
- * `limitKey` / `value` / `expiresAt` all exist on the wire DTO 1:1. The wire also
- * carries `id`, `tenantId`, `createdAt` and `updatedAt`, which this view-model does
- * not need — but `id` is what the real DELETE route keys on (see the service's
- * `deleteOverride` note).
+ * `id` / `limitKey` / `value` / `expiresAt` all exist on the wire DTO 1:1; `id` is what
+ * `DELETE /system/plans/overrides/{overrideId}` keys on, so the view-model carries it.
+ * `tenantId` / `createdAt` / `updatedAt` are dropped — nothing renders them.
  */
 export function mapPlanLimitOverride(
   w: PlanLimitOverrideWire,
 ): IPlanLimitOverride {
   return {
+    id: w.id ?? '',
     limitKey: w.limitKey ?? '',
     value: w.value ?? null,
     expiresAt: w.expiresAt ?? null,

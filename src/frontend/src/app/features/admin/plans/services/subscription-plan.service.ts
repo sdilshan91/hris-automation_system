@@ -8,11 +8,13 @@ import {
   IPlanDetail,
   IPlanUpsert,
   IPlanLimitOverride,
+  IPlanLimitOverrideDraft,
   IPlanCreateResult,
   PlanListItemWire,
   PlanDetailWire,
   PlanCreateResultWire,
   PlanLimitOverrideWire,
+  PlanLimitOverrideUpsertWire,
   mapPlanSummary,
   mapPlanDetail,
   mapPlanCreateResult,
@@ -35,20 +37,15 @@ import {
  *   PUT    /system/plans/{id}                             update (AC-3; code immutable)
  *   POST   /system/plans/{id}/archive                     archive (AC-4)
  *   DELETE /system/plans/{id}                             delete (may 409 if referenced, FR-7)
- *   GET    /system/tenants/{tenantId}/plan-overrides      list overrides (AC-5)      ← 404, see below
- *   PUT    /system/tenants/{tenantId}/plan-overrides      replace overrides (AC-5)   ← 404, see below
- *   DELETE /system/tenants/{tenantId}/plan-overrides/{key} remove one override       ← 404, see below
+ *   GET    /system/plans/overrides?tenantId={id}          list a tenant's overrides (AC-5)
+ *   POST   /system/plans/overrides                        upsert ONE override (AC-5)
+ *   DELETE /system/plans/overrides/{overrideId}           remove ONE override, keyed by id (AC-5)
  *
- * ⚠ REPORTED, NOT FIXED HERE (D1 admin wire-type migration is types-only): the three
- * per-tenant override routes above DO NOT EXIST in contracts/openapi/hrm-v1.json. The
- * API serves overrides at a PLAN-rooted, non-tenant-scoped address with different verbs
- * and cardinality:
- *     GET    /system/plans/overrides                 → PlanLimitOverrideDto[]
- *     POST   /system/plans/overrides                 → upserts ONE override
- *     DELETE /system/plans/overrides/{overrideId}    → keyed by override ID, not limitKey
- * Repointing them is a behaviour change (`saveOverrides` replace-set vs single upsert;
- * `deleteOverride` limitKey vs id) that needs a product decision, so this pass migrates
- * only the TYPES and leaves the URLs alone rather than guessing.
+ * BUG-471: the override routes were previously addressed as a per-tenant sub-resource
+ * (`/system/tenants/{tenantId}/plan-overrides`) that the API has never served — all three
+ * were live 404s, so the admin console could read but never write an override. They are
+ * now plan-rooted, matching AdminPlansController. The overrides API is single-item
+ * (upsert-one / delete-one-by-id); the UI drives it one action at a time.
  *
  * Envelope: the global apiEnvelopeInterceptor strips `ApiResponse<T>`, so these
  * methods consume BARE payloads. All requests use withCredentials (httpOnly
@@ -60,8 +57,8 @@ export class SubscriptionPlanService {
 
   /** `/api/v1/system/plans` — plans are rooted at the `/v1/system` namespace. */
   private readonly baseUrl = `${environment.apiBaseUrl}/system/plans`;
-  /** `/api/v1/system/tenants` — per-tenant override sub-resource. */
-  private readonly tenantsUrl = `${environment.apiBaseUrl}/system/tenants`;
+  /** `/api/v1/system/plans/overrides` — plan-rooted, tenant selected by query/body. */
+  private readonly overridesUrl = `${environment.apiBaseUrl}/system/plans/overrides`;
 
   /** AC-1 / FR-5: list all plans (with active tenant count). */
   list(): Observable<IPlanSummary[]> {
@@ -124,52 +121,44 @@ export class SubscriptionPlanService {
 
   // ─── Per-tenant plan limit overrides (AC-5 / FR-4) ───────────
 
-  /**
-   * GET overrides currently configured for a tenant.
-   *
-   * ⚠ The URL is a live 404 (see the class docstring) — the API serves this at
-   * `/system/plans/overrides`. The response TYPE is migrated to the contract DTO the
-   * real route returns, which is the shape this method has always meant to consume.
-   */
+  /** GET the overrides currently configured for a tenant (AC-5). */
   getOverrides(tenantId: string): Observable<IPlanLimitOverride[]> {
     return this.http
-      .get<PlanLimitOverrideWire[]>(
-        `${this.tenantsUrl}/${tenantId}/plan-overrides`,
-        { withCredentials: true },
-      )
+      .get<PlanLimitOverrideWire[]>(this.overridesUrl, {
+        params: { tenantId },
+        withCredentials: true,
+      })
       .pipe(map((rows) => (rows ?? []).map(mapPlanLimitOverride)));
   }
 
   /**
-   * PUT the full set of overrides for a tenant (replace semantics).
+   * Create or update ONE override and return the persisted row (AC-5 / FR-4).
    *
-   * ⚠ Live 404 (see the class docstring). The real API upserts ONE override per POST
-   * to `/system/plans/overrides` and returns a single DTO, so replace-set semantics do
-   * not exist server-side at all — reconciling that needs a decision, not a mapper.
+   * The endpoint is an upsert keyed on (tenantId, limitKey), so re-posting an existing
+   * key replaces its value rather than duplicating it. `limitKey` must be a canonical
+   * snake_case key (OVERRIDE_LIMIT_FIELDS) or the BE rejects it as `limit_key_invalid`.
    */
-  saveOverrides(
+  upsertOverride(
     tenantId: string,
-    overrides: IPlanLimitOverride[],
-  ): Observable<IPlanLimitOverride[]> {
+    override: IPlanLimitOverrideDraft,
+  ): Observable<IPlanLimitOverride> {
+    const body: PlanLimitOverrideUpsertWire = {
+      tenantId,
+      limitKey: override.limitKey,
+      value: override.value,
+      expiresAt: override.expiresAt,
+    };
     return this.http
-      .put<PlanLimitOverrideWire[]>(
-        `${this.tenantsUrl}/${tenantId}/plan-overrides`,
-        overrides,
-        { withCredentials: true },
-      )
-      .pipe(map((rows) => (rows ?? []).map(mapPlanLimitOverride)));
+      .post<PlanLimitOverrideWire>(this.overridesUrl, body, {
+        withCredentials: true,
+      })
+      .pipe(map(mapPlanLimitOverride));
   }
 
-  /**
-   * DELETE a single override (by limit key) for a tenant.
-   *
-   * ⚠ Live 404 (see the class docstring), and additionally unreachable: no component
-   * calls this method. The real route keys on the override's `id`, not its `limitKey`.
-   */
-  deleteOverride(tenantId: string, limitKey: string): Observable<void> {
-    return this.http.delete<void>(
-      `${this.tenantsUrl}/${tenantId}/plan-overrides/${limitKey}`,
-      { withCredentials: true },
-    );
+  /** DELETE one override by its own id (NOT its limit key) (AC-5). */
+  deleteOverride(overrideId: string): Observable<void> {
+    return this.http.delete<void>(`${this.overridesUrl}/${overrideId}`, {
+      withCredentials: true,
+    });
   }
 }

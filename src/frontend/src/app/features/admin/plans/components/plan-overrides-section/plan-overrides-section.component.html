@@ -10,14 +10,21 @@
       <div class="h-9 rounded bg-neutral-50"></div>
     </div>
   } @else {
+    <!-- Load failure: an unknown list, NOT an empty one (BUG-471) -->
+    @if (loadError(); as err) {
+      <p class="text-sm text-red-600 py-2" role="alert" data-testid="overrides-error">{{ err }}</p>
+    }
+
     <!-- Existing overrides -->
     @if (overrides().length === 0) {
-      <p class="text-sm text-neutral-400 py-2" data-testid="overrides-empty">
-        {{ 'admin.plans.overrides.empty' | translate }}
-      </p>
+      @if (!loadError()) {
+        <p class="text-sm text-neutral-400 py-2" data-testid="overrides-empty">
+          {{ 'admin.plans.overrides.empty' | translate }}
+        </p>
+      }
     } @else {
       <ul class="divide-y divide-neutral-100" data-testid="overrides-list">
-        @for (o of overrides(); track o.limitKey) {
+        @for (o of overrides(); track o.id) {
           <li class="flex items-center justify-between py-2.5 text-sm" data-testid="override-row">
             <div>
               <span class="font-medium text-neutral-800">{{ labelFor(o.limitKey) }}</span>
@@ -32,7 +39,7 @@
               type="button"
               class="text-xs text-red-500 hover:text-red-700 transition-colors"
               [disabled]="isSaving()"
-              (click)="remove(o.limitKey)"
+              (click)="remove(o)"
               [attr.data-testid]="'override-remove-' + o.limitKey"
             >
               {{ 'common.remove' | translate }}

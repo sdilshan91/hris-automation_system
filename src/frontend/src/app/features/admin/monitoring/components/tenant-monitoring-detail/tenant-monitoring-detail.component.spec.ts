@@ -22,7 +22,7 @@ describe('TenantMonitoringDetailComponent', () => {
   const historyUrl = `${environment.apiBaseUrl}/system/tenants/t-1/lifecycle/history`;
   // US-ADM-009 AC-5: the plan-overrides child (rendered for System Admin only)
   // loads the tenant's overrides on init.
-  const overridesUrl = `${environment.apiBaseUrl}/system/tenants/t-1/plan-overrides`;
+  const overridesUrl = `${environment.apiBaseUrl}/system/plans/overrides`;
   // US-ADM-010 AC-6: the export dialog's panel loads history from the system path.
   const exportUrl = `${environment.apiBaseUrl}/system/tenants/t-1/data-exports`;
 
@@ -104,7 +104,7 @@ describe('TenantMonitoringDetailComponent', () => {
     // US-ADM-009: the plan-overrides child (System Admin only) fires its own GET
     // once it renders. Flush any such pending request so verify() stays clean —
     // it is exercised explicitly in its own component spec.
-    httpMock.match(overridesUrl).forEach((r) => r.flush([]));
+    httpMock.match((r) => r.url === overridesUrl).forEach((r) => r.flush([]));
     // US-ADM-010: if a test opened the export dialog, its panel fires a history
     // GET — flush any such pending request so verify() stays clean.
     httpMock.match(exportUrl).forEach((r) => r.flush([]));

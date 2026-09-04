@@ -25,7 +25,8 @@ describe('SubscriptionPlanService', () => {
 
   // Plans are rooted at /api/v1/system/plans (NOT /api/admin).
   const base = `${environment.apiBaseUrl}/system/plans`;
-  const tenants = `${environment.apiBaseUrl}/system/tenants`;
+  // Overrides are plan-rooted, not a per-tenant sub-resource (BUG-471).
+  const overrides = `${base}/overrides`;
 
   /**
    * D1 — these fixtures are the WIRE shapes (`Schema<'…'>`), not the view models.
@@ -86,7 +87,7 @@ describe('SubscriptionPlanService', () => {
     {
       id: 'o-1',
       tenantId: 't-1',
-      limitKey: 'maxEmployees',
+      limitKey: 'max_employees',
       value: 500,
       expiresAt: null,
       createdAt: '2026-01-01T00:00:00Z',
@@ -234,39 +235,60 @@ describe('SubscriptionPlanService', () => {
     req.flush(null);
   });
 
-  it('GET overrides projects the wire DTO onto the override view-model (AC-5)', () => {
+  it('GET /system/plans/overrides?tenantId= lists a tenant\'s overrides (AC-5, BUG-471)', () => {
     let result: IPlanLimitOverride[] | undefined;
     service.getOverrides('t-1').subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${tenants}/t-1/plan-overrides`);
+    // The tenant is a QUERY parameter on the plan-rooted route — the old
+    // /system/tenants/{id}/plan-overrides address is not served by the API at all.
+    const req = httpMock.expectOne(
+      (r) => r.url === overrides && r.params.get('tenantId') === 't-1',
+    );
     expect(req.request.method).toBe('GET');
+    expect(req.request.withCredentials).toBeTrue();
     req.flush(overridesWire);
 
-    // The wire also carries id/tenantId/createdAt/updatedAt; the view-model drops them.
+    // `id` is retained (DELETE keys on it); tenantId/createdAt/updatedAt are dropped.
     expect(result).toEqual([
-      { limitKey: 'maxEmployees', value: 500, expiresAt: null },
+      { id: 'o-1', limitKey: 'max_employees', value: 500, expiresAt: null },
     ]);
   });
 
-  it('PUT overrides projects the replaced set through the mapper (AC-5)', () => {
-    let result: IPlanLimitOverride[] | undefined;
+  it('POST /system/plans/overrides upserts ONE override and returns the row (AC-5, BUG-471)', () => {
+    let result: IPlanLimitOverride | undefined;
     service
-      .saveOverrides('t-1', [
-        { limitKey: 'maxEmployees', value: 500, expiresAt: null },
-      ])
+      .upsertOverride('t-1', {
+        limitKey: 'max_employees',
+        value: 500,
+        expiresAt: null,
+      })
       .subscribe((r) => (result = r));
 
-    const req = httpMock.expectOne(`${tenants}/t-1/plan-overrides`);
-    expect(req.request.method).toBe('PUT');
-    req.flush(overridesWire);
+    const req = httpMock.expectOne(overrides);
+    expect(req.request.method).toBe('POST');
+    // UpsertPlanLimitOverrideCommand — tenantId travels in the BODY, and the limit key
+    // must be the canonical snake_case one or the BE returns limit_key_invalid.
+    expect(req.request.body).toEqual({
+      tenantId: 't-1',
+      limitKey: 'max_employees',
+      value: 500,
+      expiresAt: null,
+    });
+    req.flush(overridesWire[0]);
 
-    expect(result?.[0].limitKey).toBe('maxEmployees');
+    expect(result).toEqual({
+      id: 'o-1',
+      limitKey: 'max_employees',
+      value: 500,
+      expiresAt: null,
+    });
   });
 
-  it('DELETE removes one override', () => {
-    service.deleteOverride('t-1', 'maxEmployees').subscribe();
+  it('DELETE /system/plans/overrides/{overrideId} removes one override by ID (AC-5, BUG-471)', () => {
+    service.deleteOverride('o-1').subscribe();
 
-    const req = httpMock.expectOne(`${tenants}/t-1/plan-overrides/maxEmployees`);
+    // Keyed on the override's own id — NOT its limitKey.
+    const req = httpMock.expectOne(`${overrides}/o-1`);
     expect(req.request.method).toBe('DELETE');
     req.flush(null);
   });
