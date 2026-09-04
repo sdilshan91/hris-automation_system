@@ -100,6 +100,17 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    `GAP-CLOSURE-QUEUE.md`, `COMPLETION-PLAN.md` — **re-read immediately before every write**: another session may
    have appended since you last looked, and writing back a copy you cached earlier in the
    turn silently deletes their work.
+9. **Keep open PRs mergeable — the merge queue is the mechanism.** Six concurrent PRs
+   produced six cascading conflicts in one session (2026-09-02/03); **every one was in a
+   ledger/queue/memory file, none in `src/`**. The standing fix is a **GitHub merge queue** on
+   the working branch, batched (`max_entries_to_merge: 5`, `grouping_strategy: ALLGREEN`) so
+   five PRs cost one CI run rather than five serial ones — it must be enabled in the **web UI**
+   (the REST API rejects the `merge_queue` rule), and the branch-protection API is **not** a
+   substitute: it blocks every docs-only PR. Until it is on: **sync the base into your branch
+   before opening the PR**, and **keep ledger writes out of feature PRs** — bookkeeping batched
+   into one docs-only PR merges in minutes and is what would have prevented all six.
+   `merge=union` already covers the append-only ledgers. Full rationale and settings:
+   [.claude/skills/pr-pipeline.md](.claude/skills/pr-pipeline.md).
 
 ## Advisor Stance (how to talk to the user)
 
