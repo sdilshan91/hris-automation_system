@@ -3003,7 +3003,7 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-012 BR
 - **Title:** `SubscriptionPlanService.cs:314-333`'s plan-edit sweep updates `EnabledModules` and `UpdatedAt` only — it does **not** re-stamp `Tenant.MaxEmployees` or `Tenant.AuditLogRetentionDays`. `ChangeTenantPlanAsync` **does** re-stamp both. So changing a tenant's plan is consistent, but editing the plan's limits leaves every existing tenant on stale snapshots.
-- **Severity rationale:** MED. Silent limit drift, and the inconsistency between the two paths means testing one proves nothing about the other.
+- **Severity rationale:** ~~MED~~ → **HIGH, re-rated 2026-09-04.** Filed as "silent limit drift", which understated it. `AuditLogPurgeService.cs:41` reads `Tenant.AuditLogRetentionDays` **RAW**, so a stale snapshot makes the **daily purge job delete audit rows on the wrong retention window** — raise a plan from 90 to 365 days and history is still destroyed at 90. That is data loss against an intended compliance setting, not drift. The inconsistency between the two write paths also means testing one proves nothing about the other.
 - **Suggested direction (NOT applied):** re-stamp both fields in the sweep, or stop denormalizing them.
 
 ### ISSUE-476 — `[Trait("TC","TC-ADM-012")]` binds 7 test files to a test case document that does not exist
@@ -3086,3 +3086,62 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Title:** `GAP-020` was reworded on 2026-09-04 because its headline ("no way to rotate a compromised JWT signing key") was false while its substance was real. `GAP-021`'s headline says calibration hit *"the exact trap the story warned against"* — the story's warning was the **ISSUE-290 trap** (a permission string *checked but absent from the catalog*, making the feature unreachable), and the build **avoided** it: `CyclesController.cs:200` authorizes on catalog-real, actually-granted permissions. The real defect is coarse-grained authorization — calibration cannot be delegated without also granting org-wide review/publish — which is a genuine but lesser gap.
 - **Severity rationale:** LOW individually; recorded because it is now **twice in two items**, and both times the inflated headline drove scheduling. GAP-020 was nearly scheduled as a vulnerability fix; GAP-021 reads as a repeat of a known trap it did not repeat.
 - **Suggested direction (NOT applied):** when a queue item is drafted from a register row, verify the row's **characterisation** against code, not just its existence. That check is cheap and has now paid twice.
+
+### ISSUE-486 — the BUG-307 anti-regression guard is blind to batched projections, which is why BUG-473 shipped
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Layer:** TEST
+- **Module / US / TC:** Platform · US-ADM-012 · `PlanLimitLookupUsageGuardTests`
+- **Title:** `PlanLimitLookupUsageGuardTests.cs:26-28` matches only the hand-written shape `.Select(p => (long?)p.Field)`. `PlatformMonitoringService` resolved plan limits through a **batched** projection — `.Select(p => new { p.Code, p.MaxEmployees, ... })` — and was therefore **invisible to the guard for the whole of [[BUG-473]]'s lifetime**. The guard's own doc promises it "blocks the eleventh copy". **It did not block this one.**
+- **Root cause + confidence (~95%):** the guard was written against the exact syntax of the ten call sites it was retiring, so it pins a *spelling*, not the *rule*. Any caller that reads plan limits by another shape passes it silently.
+- **Severity rationale:** HIGH. This is a guard that **reports safety it does not provide** — strictly worse than no guard, because it stopped anyone looking. It is the direct reason a fail-open on a revenue-affecting limit reached production, and nothing prevents the next one.
+- **Suggested direction (NOT applied):** widen to the batched shape, **or** add a positive arm asserting `PlatformMonitoringService` actually reaches `PlanLimitLookup`. Widening changes blast radius across four projects and may flag legitimate batch projections, so it needs its own allow-list decision — which is why it was flagged rather than fixed in-lane.
+
+### BUG-487 — the platform console reported a different employee cap than the gates enforce, and ignored purchased overrides
+- **Type / Severity / Status:** BUG · MED · OPEN *(fix in flight — P1.1 branch; only `/verify-fix` may close it)*
+- **Layer:** BE
+- **Module / US / TC:** Platform / Admin Console · US-ADM-012 AC-4
+- **Title:** Two defects in one expression. `PlatformMonitoringService.cs:258` (dashboard sweep) and `:321` (per-tenant detail) computed `int? limit = t.MaxEmployees ?? plan?.MaxEmployees` — **snapshot first**. All five enforcement services compute `effective.Value ?? tenant.MaxEmployees` — **plan first**. **Opposite precedence**, so the console can report a cap the system does not enforce, and this needs **no staleness at all**: a snapshot that merely *differs* from its plan is enough. Second, **neither monitoring site consulted `PlanLimitOverrides`** for the employee limit — overrides reached only the storage/email/API gauges — so a tenant who **purchased** a cap increase saw the un-raised number.
+- **Root cause + confidence (~95%, both sides read directly):** the precedence ternary was hand-copied into **five** enforcement services and a sixth, inverted, copy in monitoring — the S-1 shape `PlanLimitLookup`'s own class doc was written to condemn, regrown after that fix. Monitoring was the **only** inverted copy; the five enforcement gates agreed with each other.
+- **Severity rationale:** MED. Not a security or data defect, but an operator making a capacity decision from the console is reading a number the system will not honour — and the overrides half means the console silently under-reports what a customer has paid for.
+- **Suggested direction:** one shared `WithSnapshotFallback` helper so there is a single answer to "what is this tenant's cap". Discovered by [[ISSUE-486]]'s blind spot; filed separately because the guard gap outlives this fix.
+
+### ISSUE-488 — BUG-473's fix is inert on screen: the FE will not render ConfigurationError
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** FE
+- **Module / US / TC:** Admin Console · US-ADM-012 AC-4
+- **Title:** The P1.1 fix adds a `LimitStatus` field (`Enforced` | `Unlimited` | `ConfigurationError`) to `TenantUsageSummaryDto` / `UsageGaugeDto`. The change is additive and deserialization-safe, so nothing breaks — **but the System Admin dashboard will not render the `ConfigurationError` state**, so the operator-facing half of [[BUG-473]] remains unfixed. The backend now knows the difference and the screen still does not show it.
+- **Severity rationale:** MED. Worth recording loudly because it is the **leg-2 reachability** pattern this codebase fails most: a correct backend behind a UI that cannot express it. [[BUG-460]] and [[BUG-483]] are the same shape, and this would have become the third if it went unrecorded.
+- **Suggested direction (NOT applied):** render `ConfigurationError` distinctly — **not** as "Unlimited" and **not** as a blank cap. Natural to batch with `P1.2`, which is already in the same dashboards.
+
+### BUG-489 — the audit purge still reads a raw retention snapshot, and a dangling plan_id is never swept
+- **Type / Severity / Status:** BUG · MED · **needs-decision**
+- **Layer:** BE (destructive scheduled job)
+- **Module / US / TC:** Platform · GAP-004 · `AuditLogPurgeService`
+- **Title:** `AuditLogPurgeService.cs:41` reads `tenant.AuditLogRetentionDays` **raw**, with a hardcoded `<= 0 ? 90` and no plan lookup. P1.1 keeps the snapshot fresh via the **plan-edit path only**. A tenant with a **dangling `plan_id` is deliberately never swept by any path** (documented fail-open), so it keeps whatever retention it was first stamped with **forever** — and the daily purge acts on that value, deleting audit rows.
+- **Severity rationale:** MED, and it is the residue of [[ISSUE-474]] rather than a duplicate: 474 is closed by P1.1 for the plan-edit path, this is the path that remains. It destroys data on a stale window, which is why it is a BUG and not drift.
+- **Needs from a human:** what should an unresolvable `plan_id` mean to a **destructive** job — fail closed and never purge, use `StrictestConfiguredAsync`, or keep the 90-day default? Changing a delete job's behaviour on a config error is not a call to make in-lane.
+
+### ISSUE-490 — `PlanEditableFields` omits `MaxTemplateLanguageVariants`
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console · US-ADM-009
+- **Title:** `SubscriptionPlan` carries `MaxTemplateLanguageVariants`, but `SubscriptionPlanDtos.cs:56` `PlanEditableFields` does not — so that limit appears uneditable through the admin plan API. Note it is also the key [[BUG-472]] found **missing from the FE `LIMIT_FIELDS`**, so the same limit is unreachable from two directions.
+- **Severity rationale:** LOW. **Second-hand — surfaced by a survey sub-agent and NOT independently verified; confidence ~70%. Check before acting.** Recorded with its provenance rather than presented as established, because an unverified finding stated confidently is how bad ledger rows are born.
+- **Suggested direction (NOT applied):** decide whether the limit is meant to be editable at all, then align the DTO and the FE field list together.
+
+### ISSUE-491 — an orphaned XML doc block leaves `PlanLimitLookup.ResolveAsync` undocumented
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** BE (docs-in-code)
+- **Module / US / TC:** Platform · `PlanLimitLookup.cs`
+- **Title:** Two consecutive `<summary>` blocks sit above `StrictestConfiguredAsync`. The first — describing `ResolveAsync`, *"preserving the distinction between plan-not-found and plan-found-no-cap"* — binds to the wrong member. So `ResolveAsync` is effectively undocumented, and `StrictestConfiguredAsync` carries a doc describing a different method.
+- **Severity rationale:** LOW, but pointed: this is the **eighth** recorded case in this repo of documentation detached from the thing it describes, in the very file whose class doc is the canonical explanation of the bug class. Whoever reads it to understand the rule is reading the wrong summary.
+- **Suggested direction (NOT applied):** move the orphaned block onto the `ResolveAsync` overloads. Trivial.
+
+### ISSUE-492 — running the test script from the main repo while working in a worktree yields a false GREEN
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST (process)
+- **Module / US / TC:** cross-cutting · agent workflow
+- **Title:** Observed live 2026-09-04. An agent working in `.claude/worktrees/agent-*` invoked `scripts/run-backend-tests.sh` from the **repo root** rather than its worktree. The run reported `Passed! 3` — against the **main tree's** copy of the test class, which did not contain the agent's new test at all. The real run, from the worktree, was RED. A pass was reported for code that was never executed.
+- **Root cause + confidence (100%, self-reported by the agent that hit it):** the script takes a solution path relative to `$PWD`, and both trees contain a valid solution at the same relative path, so the wrong-tree invocation succeeds instead of erroring.
+- **Severity rationale:** MED. It manufactures a **false green**, which is the failure mode this repo has spent the most effort eliminating — and unlike test theater, nothing in the code review can see it. It is the third false-green of the day, after the plan-override specs pinning URLs the API never served and [[ISSUE-465]]'s inert `ledger-lock` guard.
+- **Suggested direction (NOT applied):** have the script refuse to run when `$PWD` is not the git top-level of the solution it was handed (`git rev-parse --show-toplevel` compared against the solution's realpath), or print the resolved worktree prominently in its header. Fail loudly on ambiguity rather than testing the wrong tree silently.
