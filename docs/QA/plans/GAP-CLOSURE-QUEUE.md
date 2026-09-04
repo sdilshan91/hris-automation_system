@@ -272,6 +272,42 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > reconciled against merged PRs. **Still genuinely open:** `E3` (slice 1 only), `F1` (blocked on a BA story),
 > `F3`, `G4` (parked).
 
+## ▶ RE-PRIORITIZED 2026-09-04 — this supersedes the table below
+
+The original `G`/`E`/`F` queue is **exhausted except for four items**, and 34 findings were filed on
+2026-09-04 alone that were never sequenced. This is the order the loop now follows. Sorted by the file's
+own rule — severity × blast-radius × unblocks-others — with three decisions taken (recorded inline).
+
+| # | item | why here |
+|---|---|---|
+| **P0.1** | `ISSUE-481` + `ISSUE-482` | **Prerequisites to P2, and nearly free.** `STATUS.md` contradicts itself about US-PRF-011 sixty lines apart, and the story's own §3 AC-3 still states a premise §1b retracted — **§3 is what an implementer reads first**. Fixing these after F3 is built is fixing them too late. |
+| **P1.1** | `BUG-473` + `ISSUE-474` | Plan-limit correctness, one area, one PR. A gauge reading **"unlimited"** for a tenant the gates are 403-ing actively misleads an operator; a limit-only plan edit leaves `Tenant.MaxEmployees` stale while `ChangeTenantPlanAsync` re-stamps it, so testing one path proves nothing about the other. |
+| **P1.2** | `BUG-460` + `BUG-483` | **The same defect twice**: the FE receives real computed telemetry and discards it, and `metricsStatus` is hardcoded so working data renders as absent. Both are leg-2 reachability — the highest-value class in this codebase. `BUG-483` also sits in the code P2 touches. |
+| **P1.3** | `BUG-467` + `ISSUE-468` | RLS reconciler runs **after** seeding; a least-privilege connection would 42501 before enforcement is disabled. Masked today only because every environment seeds on BYPASSRLS/superuser. **Will be HELD for human review** — tenant-isolation infrastructure. |
+| **P2** | `F3 · GAP-021 calibration` | The last real feature gap. BE **M** → permissions **S** → FE **M–L** → QA **S**. Build from **§1b**, not §3. |
+| **P3** | `ISSUE-476`, `ISSUE-484`, `ISSUE-463` | Traceability debt. `ISSUE-484` is why no `/test-all` pass can ever select US-PRF-011 — invisible **by construction**, not by verdict. |
+| **P4.1** | `ISSUE-454` guard | Small, and `HRM.ArchitectureTests` (shipped by `E2`, #602) is exactly the place for it. Unblocks P4.2. |
+| **P4.2** | `ISSUE-453` **survey first** | Campaign-shaped: 92 files. Run the `/campaign` survey and let the **>20% non-mechanical stop bar** decide. `G7`'s survey DECLINED at 78.9%; this one may too, and that is an acceptable outcome. |
+| **P4.3** | `E3` slices 2–3 | Gated on P4.2. 117 test files still InMemory. |
+| **P5** | `F1`, `G4`, `DECISION-477` | Blocked on authoring, not on engineering. |
+
+### Decisions taken 2026-09-04 — do not re-litigate
+
+- **`Performance.Calibrate` is ADDED and OR-ed with the existing three** (`PublishAll`/`Manage`/`ReviewAll`),
+  not substituted for them. Added to the catalog, the **FE role-editor mirror** (omit it there and the
+  permission can never be granted), and the HR Officer / HR Manager / Tenant Admin bundles. Replacing them
+  would silently strip calibrate from every existing HR user on deploy absent a `role_permission` data
+  migration — a silent failure, which is the worst kind.
+- **`ISSUE-453`: guard first, then survey.** Write `ISSUE-454`'s rule, then let the campaign survey decide
+  the 92-file rollout. Do **not** pre-commit to the conversion.
+- **`DECISION-478`: amend tech-doc §47.2 to the shipped reality**, rather than converge the nine gates on
+  one shape. Non-breaking, unblocks AC-3's "limit reached — upgrade" UX soonest, and the spec has been wrong
+  for months with no client written against it — so the spec is the cheaper thing to move. Fix only
+  `max_employees`'s inconsistency *with itself* across three sites. Confidence 70%; revisit if a public API
+  contract is ever published.
+
+---
+
 ## ▶ EXECUTION ORDER — decided 2026-09-01, this is what the loop follows
 
 > **Serial, top-down, one item per iteration.** That is this file's own invariant and it is what makes
