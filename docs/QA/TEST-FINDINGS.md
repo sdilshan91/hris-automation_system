@@ -17,11 +17,23 @@
 > **Layer:** `FE · BE · DB · TEST · DATA · INFRA`
 
 ## Summary
-| Type | Open | Other | Total |
-|---|---|---|---|
-| BUG | 54 | 3 retracted | 57 |
-| ISSUE | 103 | 0 | 103 |
-| ENH | 9 | 0 | 9 |
+
+> **Counts are ASSERTED, not maintained by hand.** `LedgerTraceabilityTests.TheSummaryTable_MatchesTheActualCounts`
+> recomputes this table from the two ledger files and fails if it drifts. The previous hand-written table read
+> **169 total while 232 live entries existed** — stale by 63, in the index a human reads first, with nothing
+> checking it. That is the same class as `ISSUE-437` (nothing verifies a documented claim), applied to the
+> ledger's own front page.
+
+| Type | Live | Archived | Total |
+|---|---:|---:|---:|
+| BUG | 44 | 168 | 212 |
+| ISSUE | 149 | 296 | 445 |
+| ENH | 22 | 2 | 24 |
+| DECISION | 3 | 0 | 3 |
+| **TOTAL** | **218** | **466** | **684** |
+
+<!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
+
 
 > **Reconciliation note (2026-07-04, Wave 0 of `plans/archive/FIX-FINDINGS-PLAN-2026-07-04.md`):** the table above is the
 > historical snapshot and is **not** current. A fix campaign (PRs **#114–#136**, "Phase A/B/D") landed ~38
