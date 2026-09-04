@@ -5,9 +5,12 @@
 # App:     http://localhost:4200
 # API:     http://localhost:5000  (Swagger at /swagger, Hangfire at /hangfire)
 #
-# Note: the Angular bundle calls the API at http://localhost:5000 from the *browser*,
-# so the backend port MUST be published to the host (it is). The frontend container
-# does not talk to the backend container-to-container.
+# Note: the Angular bundle is built with the `development` configuration, whose apiBaseUrl is
+# RELATIVE (`/api/v1`). The browser therefore calls the frontend's own origin (:4200) and nginx
+# proxies /api and /hubs to the backend container — so the frontend container DOES talk to the
+# backend container-to-container. (This note previously said the opposite; it predated the
+# 2026-06-30 switch to a relative base URL and was corrected under queue item E4.)
+# The backend port stays published for Swagger, Hangfire and direct API probing.
 name: hris
 
 services:
