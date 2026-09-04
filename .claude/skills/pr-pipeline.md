@@ -105,7 +105,27 @@ job reports `skipping` on them. That was tried and reverted the same day.
    tests has almost nothing to collide on; bookkeeping batched into one docs-only PR merges in
    ~4 minutes instead of ~60. Every conflict in the 2026-09-02/03 session was bookkeeping colliding
    with bookkeeping.
-3. **`merge=union` already covers the append-only ledgers** (`.gitattributes`, landed #596), which
-   removed most of the recurrence. `GAP-CLOSURE-QUEUE.md` is deliberately excluded — ticking an item
-   rewrites an existing row, and union would silently duplicate it.
+3. **`merge=union` helps LOCALLY ONLY — GitHub does not honour it.** Corrected 2026-09-04 after the
+   claim above was written and proved wrong the same day. Controlled A/B on this repo:
+
+   | merge of the same two branches | result |
+   |---|---|
+   | local, `-c merge.union.driver=false` | **CONFLICT** in `TEST-FINDINGS.md` |
+   | local, attribute honoured | **clean** |
+   | GitHub (`mergeable`) | **`CONFLICTING`** |
+
+   GitHub's merge machinery ignores `.gitattributes` merge drivers, so **every PR touching an
+   append-only ledger still goes `DIRTY` behind a sibling merge and still cannot auto-merge.** What
+   union actually buys is that the fix is a *trivial local rebase* (auto-resolved, nothing to hand-merge)
+   instead of manual conflict surgery. That is worth having — it is not conflict prevention.
+
+   **This also limits the merge queue.** The queue rebases entries with GitHub's machinery, so it will
+   hit the same ledger conflicts. It solves the *code* cascade; it does **not** solve this one.
+
+   ⚠ **The only thing that actually prevents ledger conflicts is not writing to a ledger from two open
+   PRs at once.** Batch bookkeeping into one docs PR and merge it before opening the next. Every conflict
+   in the 2026-09-02/04 sessions would have been prevented by that and by nothing else.
+
+   `GAP-CLOSURE-QUEUE.md` stays excluded from union regardless — ticking an item rewrites an existing
+   row, and union would silently duplicate it (which it did; see #605).
 

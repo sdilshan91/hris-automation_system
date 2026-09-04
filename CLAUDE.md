@@ -109,7 +109,10 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    substitute: it blocks every docs-only PR. Until it is on: **sync the base into your branch
    before opening the PR**, and **keep ledger writes out of feature PRs** — bookkeeping batched
    into one docs-only PR merges in minutes and is what would have prevented all six.
-   `merge=union` already covers the append-only ledgers. Full rationale and settings:
+   ⚠ **`merge=union` works locally only — GitHub ignores `.gitattributes` merge drivers** (A/B-verified
+   2026-09-04), so ledger PRs still go `DIRTY` and still need a local rebase; the queue will not fix
+   that either. **Only one open PR writing to a given ledger at a time actually prevents it.**
+   Full rationale and settings:
    [.claude/skills/pr-pipeline.md](.claude/skills/pr-pipeline.md).
 
 ## Advisor Stance (how to talk to the user)
