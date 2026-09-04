@@ -179,15 +179,15 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ### Re-sorted to the TOP — severity × blast-radius (two are money/compliance)
 
-- [ ] **G1 · Part-time overtime is paid on a full-time base** — `PayrollRunProcessor.cs:977-978` calls
+- [x] **G1 · Part-time overtime is paid on a full-time base** — `PayrollRunProcessor.cs:977-978` calls
       `PayrollOvertimeCalculator.Compute` with **4 of 7** args, so `fte=1.0` always. `FteScaledOvertimeBase`
       is persisted, settable and **inert**. Add the FTE thread-through + an integration arm that proves it
       end-to-end (`OvertimeFteBaseTests.cs:10-13` admits it only proves the math). **Money defect.** (GAP-022)
-- [ ] **G2 · Blank `Jwt:PrivateKey` in Production yields an ephemeral per-process key** — add
+- [x] **G2 · Blank `Jwt:PrivateKey` in Production yields an ephemeral per-process key** — add
       `IValidateOptions`/`ValidateOnStart` for `JwtKeyRingOptions`; today `JwtService.cs:41-47` silently
       generates one, so every restart invalidates all tokens and multi-instance deploys reject each other's.
       Belongs to no GAP row. **Fail loudly at startup, as `A2` did for the other secrets.**
-- [ ] **G3 · Three live user-facing breaks whose specs mock the broken shape** — one branch, three fixes,
+- [x] **G3 · Three live user-facing breaks whose specs mock the broken shape** — one branch, three fixes,
       and **fix the specs in the same PR or the detector stays broken**:
       (a) careers detail 404 — list links `v.id` (GUID), route matches `{slug}` (`careers-page.component.ts:141`
           vs `CareersController.cs:53`); spec feeds `'vac-1'`.
@@ -202,47 +202,47 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ### Isolation invariants held by convention — schedule the cheap mitigations
 
-- [ ] **G5 · HTTP-level negative test for an unresolved tenant** — layers 1/2/4 of the tenant off-switch are
+- [x] **G5 · HTTP-level negative test for an unresolved tenant** — layers 1/2/4 of the tenant off-switch are
       fail-open by construction; only ~494 hand-written `!IsResolved` guards across 104 service files
       prevent a leak. The missing negative test in `HRM.Tests/Integration/Http/` is the cheapest thing that
       would catch the first omitted guard. (GAP-001)
-- [ ] **G6 · Make audit append-only true, or stop claiming it** — nothing runs `roles.sql` (not the app, EF,
+- [x] **G6 · Make audit append-only true, or stop claiming it** — nothing runs `roles.sql` (not the app, EF,
       `ops/`, `scripts/` or CI), and `RlsIsolationPostgresTests.cs:431` hand-mirrors the revoke in its fixture.
       Either wire the file into a documented apply step, or correct `AuditLogController.cs:21-23`, which
       states append-only is "ENFORCED rather than merely conventional". (GAP-005)
-- [ ] **G7 · Triage the 354 `IgnoreQueryFilters()` sites** — measured 354 in non-test `src/backend` (the
+- [x] **G7 · Triage the 354 `IgnoreQueryFilters()` sites** — measured 354 in non-test `src/backend` (the
       register said 270); **zero** carry `// nosemgrep`. Campaign-shaped. Note the "RLS backstops them"
       rationale does not hold in dev/CI, where `Rls:Enabled=false`. (GAP-007)
 
 ### Cheap wins the audit found already half-done
 
-- [ ] **G8 · `ISSUE-379` row 5 + the two sibling rows — FE-mapper only** — `availableExportFormats`,
+- [x] **G8 · `ISSUE-379` row 5 + the two sibling rows — FE-mapper only** — `availableExportFormats`,
       `ratingScaleMax`/`finalScore`/`cycleName`, `scoreScaleMax`/`cycleLabel` **all ship on the wire**;
       the mappers hardcode `[]`/`0`/`''`/`null` under comments asserting the wire lacks them. ~10 lines,
       closes several HIGH-rated symptoms. **Correct the comments in the same PR — they are the mechanism
       by which the ledger and the code drifted.**
-- [ ] **G9 · `/verify-fix` the 11 verified-fixed findings** — `BUG-003`, `BUG-056`, `BUG-298`, `BUG-301`,
+- [x] **G9 · `/verify-fix` the 11 verified-fixed findings** — `BUG-003`, `BUG-056`, `BUG-298`, `BUG-301`,
       `BUG-307`, `ISSUE-021`, `ISSUE-232`, `ISSUE-280`, `ISSUE-362`, `ISSUE-364`, `BUG-003 (ATT-004 ext)`.
       Each has `file:line` proof. **Not work — corrections.** `ISSUE-364`'s header says OPEN while its own
       body says RESOLVED; `BUG-307`'s entry still claims nine sites remain when all ten were migrated.
-- [ ] **G10 · `/test-us US-PRF-005`** — `ISSUE-377` is **QA-execution debt, not code**: the release endpoint
+- [x] **G10 · `/test-us US-PRF-005`** — `ISSUE-377` is **QA-execution debt, not code**: the release endpoint
       shipped, but `TC-PRF-005-04/05/14` are still `status: draft`. **Do not close it by editing frontmatter.**
-- [ ] **G11 · Correct the GAP register's four wrong rows** — `GAP-006` (only 3 of 6 entities were holes; the
+- [x] **G11 · Correct the GAP register's four wrong rows** — `GAP-006` (only 3 of 6 entities were holes; the
       "add 6 lines" framing **would have regressed** — the other 3 are deliberately allow-listed with RLS
       policies), `GAP-030` ("zero test cases" is false), `GAP-034` (there are **zero** axe assertions, not
       non-executing ones) *(GAP-020's reword is **F2**'s, not this item's)*.
 
 ### Test-health items (the suites that hid the breaks above)
 
-- [ ] **G13 · Two pieces of test theater** — `PlanModulesEntitlementTests.cs:118-126` assigns
+- [x] **G13 · Two pieces of test theater** — `PlanModulesEntitlementTests.cs:118-126` assigns
       `seeded = PlanModules.All` then asserts it equals `PlanModules.All`; `DbInitializer.cs:446` cites a
       guard `PlanModulesSeedDriftTests` that does not exist. Also `ISSUE-286`'s fix has only a negative arm,
       so dropping `LocationId` on import would leave the suite green.
-- [ ] **G14 · `GAP-024` sweep-job tenant logging** — ~19 multi-tenant sweep jobs get no `tenant_id`;
+- [x] **G14 · `GAP-024` sweep-job tenant logging** — ~19 multi-tenant sweep jobs get no `tenant_id`;
       `TenantJobRunner.cs:31-40` sets `ITenantContext` but never `LogContext.PushProperty`, and
       `JobLogContextFilterTests.cs:72-77` pins that as intended. Isolation forensics are blind on the
       *higher-risk* job class.
-- [ ] **G15 · `GAP-015` Production email guard has no test** — `EmailSenderDiRegistrationTests` never sets an
+- [x] **G15 · `GAP-015` Production email guard has no test** — `EmailSenderDiRegistrationTests` never sets an
       environment name, so the Production branch is never entered; a regression dropping the throw is caught
       by nothing.
 
@@ -266,6 +266,12 @@ instances**, so probes 3–5 could not be observed end-to-end.
 
 ---
 
+> **Bookkeeping note (2026-09-04).** Every `G`-series detail bullet below still read `- [ ]` while the
+> execution-order table recorded the same items ✅ — the identical two-statements-about-one-item ambiguity
+> that #605 fixed in the table itself, and that `ISSUE-465` recorded for GAP-030. The bullets are now
+> reconciled against merged PRs. **Still genuinely open:** `E3` (slice 1 only), `F1` (blocked on a BA story),
+> `F3`, `G4` (parked).
+
 ## ▶ EXECUTION ORDER — decided 2026-09-01, this is what the loop follows
 
 > **Serial, top-down, one item per iteration.** That is this file's own invariant and it is what makes
@@ -285,7 +291,7 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 5 | ~~`G1` part-time overtime on a full-time base~~ | ✅ | **FIXED** — 2 arms failed pre-fix, 5578/5578 after |
 | 6 | ~~`G8` performance FE mappers~~ | ✅ | **7 of 8 comments were false**; 5 arms failed pre-fix; 4333 green |
 | 7 | ~~`G3` three mocked-spec breaks + preview + BUG-441~~ | ✅ | 5590 BE · 4329 FE; found + fixed a CRIT |
-| 8 | `G13` test theater | auto | |
+| 8 | ~~`G13` test theater~~ | ✅ #604 | **2 of 3 parts already done** — verified, not rebuilt; only the Feedback360 fixture was real |
 | 9 | ~~`G15` Production email guard test~~ | ✅ | **3 mutations**; M1 proved the old suite could not see the guard deleted |
 | 10 | ~~`G2` JwtKeyRingOptions validation~~ | 🔒 #590 | HELD — allow-list gated; found BUG-446 |
 | 11 | ~~`G5` unresolved-tenant negative test~~ | 🔒 #593 | HELD — invariant, not status codes |
@@ -849,22 +855,22 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
   browser spot-check would have hidden it. `NginxSecurityHeaderInheritanceTests` now fails if any future
   `location` block repeats the mistake. 3/3 mutations RED. Gate 5444/5444 + 4104/4104.
   **Spawned:** BUG-308 (HSTS dead behind the TLS proxy — in flight), ISSUE-383 (Swagger ordering).
-- [ ] **E2 · `HRM.ArchitectureTests`** *(audit 2026-09-01 confirmed the project genuinely does not exist —
+- [x] **E2 · `HRM.ArchitectureTests`** *(audit 2026-09-01 confirmed the project genuinely does not exist —
       that is this item's premise, not a defect in it. A `G12` filed against it was withdrawn as a misreading.)* — ~6 NetArchTest rules. Mechanically catches the GAP-006 class forever.
   **Highest durable value per effort in the tail.**
 - [ ] **E3 · Leg-3 parity** — port the InMemory integration suites on stateful paths to Testcontainers, worst-first:
   **reports (12 of 14 InMemory, on `GROUP BY`/ordering code) → leave (18 of 26) → admin-console provisioning/
   lifecycle** (subdomain uniqueness and owner FKs are exactly what InMemory ignores).
-- [ ] **E4 · QA rig** — the FE nginx has no `/api` proxy (browser QA cannot reach the API), and seed data has
+- [x] **E4 · QA rig** — the FE nginx has no `/api` proxy (browser QA cannot reach the API), and seed data has
   1 employee / 0 cycles / 0 offboarding instances. **Both blocked full runtime verification in iteration 0.**
-- [ ] **E5 · Nav orphans** — `/locations`, `/org-tree`, `/settings/custom-fields`, `/offboarding`,
+- [x] **E5 · Nav orphans** — `/locations`, `/org-tree`, `/settings/custom-fields`, `/offboarding`,
   `/exit-interview/analytics` are routed with no nav entry or inbound link.
   **+ `offboarding/initiate/:employeeId`** (found by the B4 wiring audit, 2026-08-23) — reachable only by
   typing the URL; the natural entry point is the employee profile of a terminated employee.
 
 ### Tier F — reclassified / decisions pending
 
-- [ ] **BUG-471 · plan-override console is a live 404** — **HIGH, re-sorted above F1/F3 on 2026-09-04** per rule #6.
+- [x] **BUG-471 · plan-override console is a live 404** — **HIGH, re-sorted above F1/F3 on 2026-09-04** per rule #6.
       All three FE override calls hit `/system/tenants/{id}/plan-overrides`; the API serves `/system/plans/overrides`.
       The escape hatch for plan limits is unreachable from the console. Fix **BUG-472 in the same change** — its
       camelCase `LIMIT_FIELDS` keys are masked by this 404 and would turn it into a 400 that reads as a regression.
@@ -905,7 +911,7 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
   ⚠ **Build from §1b of the story, NOT §3** — §3's AC-3 still carries a retracted unblocker ([[ISSUE-482]]).
   ⚠ **Decide deliberately whether `Performance.Calibrate` is OR-ed with the existing three or replaces them** —
   replacing silently strips calibrate from every existing HR user without a `role_permission` data migration.
-- [ ] **F4 · GAP-030** — author the FR/BR/NFR of US-ADM-012 / US-PLT-004 **from the shipped code**; add matrix rows
+- [x] **F4 · GAP-030** — author the FR/BR/NFR of US-ADM-012 / US-PLT-004 **from the shipped code**; add matrix rows
   (three, not two — US-ADM-011 is also absent).
 
 ---
