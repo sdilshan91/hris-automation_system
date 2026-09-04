@@ -26,4 +26,15 @@ the seed **call sites** (leaving the shared member intact) is invisible to every
 in all four DB-reading arms. If the assertion is about what the seeder *did*, it has to read the
 database.
 
+**The `e2e` tenant is no longer single-employee (2026-09-04).** `SeedE2EDevTenantAsync` now calls
+`E2EDemoDataSeeder` (`HRM.Infrastructure/Persistence/Seed/`), which adds 9 more employees (10 total,
+`E2E-0001`..`E2E-0010`, with a real reporting tree), 3 departments, 5 job titles, one **Active**
+appraisal cycle + 5 phases + 9 participants, 10 reviewer assignments / 6 `Feedback360` / 18 items, and
+2 offboarding instances + 10 task instances. Do NOT write an HttpApi arm that assumes the `e2e` tenant
+is empty or has exactly one employee. Per-tenant persona suites are unaffected —
+`ApiTestFactory.CreateClientWithPermissionsAsync` mints a **fresh tenant** per call, not the `e2e` one.
+
+The cycle window is anchored to `DateTime.UtcNow` **at first seed** and frozen by the idempotency
+guard, so an old dev DB will eventually show an elapsed cycle; recreate the volume to refresh it.
+
 See also [[feedback-integration-tests-inmemory]] for the InMemory-vs-Testcontainers split.

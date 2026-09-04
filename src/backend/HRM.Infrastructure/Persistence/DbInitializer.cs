@@ -1163,11 +1163,14 @@ public static class DbInitializer
         // Employee linked to the owner user so employee-self-service endpoints (Leave apply, Attendance
         // clock-in/status) work in E2E — they fail-closed 403 unless Employee.UserId == the acting user.
         // Employee requires a Department + JobTitle (both required FKs), so seed those first. Idempotent.
-        var hasEmployee = await db.Employees
+        // The id (not just existence) is needed: it is the root of the demo org chart E2EDemoDataSeeder builds.
+        var ownerEmployeeId = await db.Employees
             .IgnoreQueryFilters()
-            .AnyAsync(e => e.TenantId == tenant.Id && e.UserId == user.Id, ct);
+            .Where(e => e.TenantId == tenant.Id && e.UserId == user.Id)
+            .Select(e => e.Id)
+            .FirstOrDefaultAsync(ct);
 
-        if (!hasEmployee)
+        if (ownerEmployeeId == Guid.Empty)
         {
             var department = await db.Departments
                 .IgnoreQueryFilters()
@@ -1204,11 +1207,12 @@ public static class DbInitializer
 
             await db.SaveChangesAsync(ct);
 
+            ownerEmployeeId = BaseEntity.NewUuidV7();
             db.Employees.Add(new Employee
             {
-                Id = BaseEntity.NewUuidV7(),
+                Id = ownerEmployeeId,
                 TenantId = tenant.Id,
-                EmployeeNo = "E2E-0001",
+                EmployeeNo = E2EDemoDataSeeder.OwnerEmployeeNo,
                 FirstName = "E2E",
                 LastName = "Owner",
                 Email = E2EOwnerEmail,
@@ -1224,6 +1228,12 @@ public static class DbInitializer
             await db.SaveChangesAsync(ct);
             logger.LogInformation("Seeded DEV E2E employee linked to owner user {Email}", user.Email);
         }
+
+        // DEV-ONLY demo data: an org chart, an in-progress appraisal cycle (phases + participants), a 360
+        // round and two offboarding instances. Without it the Performance and Offboarding modules render
+        // their empty state on the dev/QA stack and cannot be exercised at all. Idempotent, and reachable
+        // ONLY from here — i.e. only from RunAsync's IsDevelopment() branch.
+        await E2EDemoDataSeeder.SeedAsync(db, tenant.Id, ownerEmployeeId, logger, ct);
     }
 
     /// <summary>
