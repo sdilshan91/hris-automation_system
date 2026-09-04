@@ -397,9 +397,8 @@ public sealed class UserManagementService : IUserManagementService
                 403, "plan_unresolvable");
         }
 
-        long? effectiveCap = effective.Source == PlanLimitResolver.LimitSource.Override
-            ? effective.Value                                  // override wins (null = unlimited)
-            : effective.Value ?? (long?)tenant.MaxEmployees;   // else plan value, else snapshot
+        // Precedence override > plan > snapshot, via the ONE shared helper (see PlanLimitLookup).
+        long? effectiveCap = effective.WithSnapshotFallback(tenant.MaxEmployees);
 
         if (effectiveCap is { } cap)
         {

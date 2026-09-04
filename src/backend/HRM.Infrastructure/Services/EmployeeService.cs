@@ -1252,9 +1252,10 @@ public sealed class EmployeeService : IEmployeeService
                 "Your subscription plan could not be resolved. Please contact your administrator.", 403);
         }
 
-        long? limit = effective.Source == PlanLimitResolver.LimitSource.Override
-            ? effective.Value                                  // override wins (null = unlimited)
-            : effective.Value ?? (long?)tenant.MaxEmployees;   // else plan value, else snapshot
+        // Precedence override > plan > snapshot, via the ONE shared helper. This exact ternary was hand-written
+        // in five services, and PlatformMonitoringService's sixth copy had it INVERTED (snapshot ?? plan), so
+        // the dashboard could report a cap this gate does not enforce.
+        long? limit = effective.WithSnapshotFallback(tenant.MaxEmployees);
 
         if (limit is null)
             return Result.Success(); // unlimited

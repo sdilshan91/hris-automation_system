@@ -810,9 +810,8 @@ public sealed class CustomFieldService : ICustomFieldService
             return strictest is { } s ? (int)s : DefaultMaxCustomFields;
         }
 
-        long? limit = effective.Source == PlanLimitResolver.LimitSource.Override
-            ? effective.Value                                   // override wins
-            : effective.Value ?? (long?)tenant.MaxCustomFields; // else plan value, else snapshot
+        // Precedence override > plan > snapshot, via the ONE shared helper (see PlanLimitLookup).
+        long? limit = effective.WithSnapshotFallback(tenant.MaxCustomFields);
         return limit is { } v ? (int)v : DefaultMaxCustomFields; // final hard fallback: 20
     }
 

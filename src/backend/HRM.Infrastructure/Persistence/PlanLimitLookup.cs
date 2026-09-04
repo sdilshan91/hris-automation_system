@@ -62,6 +62,79 @@ public static class PlanLimitLookup
         /// Distinct from <see cref="IsConfigurationError"/>, which merely looks the same in the old code.
         /// </summary>
         public bool IsUnlimited => !IsConfigurationError && Value is null;
+
+        /// <summary>
+        /// The cap the system ACTUALLY ENFORCES, given the tenant's denormalized snapshot column
+        /// (<c>Tenant.MaxEmployees</c> / <c>MaxWorkflows</c> / <c>MaxCustomFields</c> / ...).
+        /// Precedence: <b>override &gt; plan &gt; snapshot</b>. An override wins outright — a null override
+        /// value is a deliberate "no cap", so it must NOT fall through to a stale snapshot. Otherwise the live
+        /// plan value wins, and the snapshot is only a fallback for tenants provisioned before the plan
+        /// defined that limit.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// <b>Why this is a method and not six copies of one ternary.</b> It was five copies
+        /// (<c>EmployeeService</c>, <c>BulkEmployeeImportService</c>, <c>UserManagementService</c>,
+        /// <c>WorkflowService</c>, <c>CustomFieldService</c>) and <c>PlatformMonitoringService</c> hand-wrote a
+        /// SIXTH with the precedence <b>INVERTED</b> — <c>snapshot ?? plan</c>. So the System Admin dashboard
+        /// reported one cap while every enforcement gate applied another, and no staleness was required to
+        /// make them diverge: a snapshot that merely DIFFERS from the plan was enough. A dashboard that
+        /// contradicts the system's own enforcement is worse than no dashboard. There is now one answer to
+        /// "what is this tenant's cap", and it lives here.
+        /// </para>
+        /// <para>
+        /// Callers must still check <see cref="IsConfigurationError"/> FIRST: this method cannot distinguish
+        /// "unlimited" from "unresolvable plan_id", which is precisely the collapse BUG-307 is about.
+        /// </para>
+        /// </remarks>
+        /// <param name="snapshot">The tenant's denormalized limit column; null when never stamped.</param>
+        public long? WithSnapshotFallback(long? snapshot)
+            => Source == PlanLimitResolver.LimitSource.Override
+                ? Value                 // override wins (null = a deliberate unlimited, never a snapshot fallback)
+                : Value ?? snapshot;    // else the live plan value, else the snapshot
+    }
+
+    /// <summary>
+    /// The in-memory half of <c>ResolveAsync</c>, for callers that have ALREADY batch-loaded the plan rows and
+    /// the tenant's overrides.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>PlatformMonitoringService</c> renders every tenant on one dashboard and pre-loads
+    /// <c>subscription_plans</c> and <c>plan_limit_overrides</c> into dictionaries precisely so it does not
+    /// issue three queries per tenant per limit key. Forcing it through the async overload would turn one
+    /// dashboard read into an N&#215;4&#215;3 query storm — so it hand-wrote the resolution instead, and the
+    /// hand-written copy is what discarded <see cref="EffectivePlanLimit.PlanExists"/> (BUG-473): an
+    /// unresolvable <c>plan_id</c> rendered as "unlimited" on the very dashboard an operator would consult
+    /// while the enforcement gates were returning 403 for that same tenant.
+    /// </para>
+    /// <para>
+    /// This method exists so the "plans exist but this tenant points at none of them" rule has exactly ONE
+    /// implementation regardless of how the rows were fetched; <see cref="ResolveCoreAsync"/> delegates to it
+    /// rather than repeating it.
+    /// </para>
+    /// </remarks>
+    /// <param name="anyPlansConfigured">
+    /// Whether the deployment has ANY subscription plans at all. False ⇒ plan-based limiting is simply not in
+    /// use, which is not a misconfiguration — see <see cref="EffectivePlanLimit.IsConfigurationError"/>.
+    /// </param>
+    /// <param name="planFound">Whether a plan row matched the tenant's <c>plan_id</c>.</param>
+    /// <param name="planValue">That plan's value for this key; null = unlimited, or no plan row at all.</param>
+    public static EffectivePlanLimit ResolveFromLoaded(
+        string limitKey,
+        bool anyPlansConfigured,
+        bool planFound,
+        long? planValue,
+        IEnumerable<PlanLimitOverride>? overrides,
+        DateTime nowUtc)
+    {
+        var resolved = PlanLimitResolver.Resolve(limitKey, planValue, overrides, nowUtc);
+
+        return new EffectivePlanLimit(
+            // "No plans configured anywhere" counts as resolvable: nothing to enforce, nothing broken.
+            PlanExists: planFound || !anyPlansConfigured,
+            Value: resolved.Value,
+            Source: resolved.Source);
     }
 
     /// <summary>
@@ -174,12 +247,7 @@ public static class PlanLimitLookup
 
         long? planValue = planRow is null ? null : planSelector(planRow);
 
-        var resolved = PlanLimitResolver.Resolve(limitKey, planValue, overrides, nowUtc);
-
-        return new EffectivePlanLimit(
-            // "No plans configured anywhere" counts as resolvable: nothing to enforce, nothing broken.
-            PlanExists: planRow is not null || !anyPlansConfigured,
-            Value: resolved.Value,
-            Source: resolved.Source);
+        // Delegated so the PlanExists rule has ONE implementation, shared with the batch-loading callers.
+        return ResolveFromLoaded(limitKey, anyPlansConfigured, planRow is not null, planValue, overrides, nowUtc);
     }
 }

@@ -100,13 +100,47 @@ public enum UsageBand
 }
 
 /// <summary>
+/// BUG-473 — why a usage gauge cannot say "unlimited" with a bare null limit.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A null <c>Limit</c> used to mean two irreconcilable things: the tenant's plan genuinely sets no cap
+/// (<c>enterprise</c> ships <c>max_employees = NULL</c>), and the tenant's <c>plan_id</c> matches no plan at
+/// all. The dashboard rendered both as UNLIMITED, while the enforcement gates — which DO keep the distinction
+/// via <c>PlanLimitLookup.EffectivePlanLimit.IsConfigurationError</c> — returned 403 for the second case.
+/// </para>
+/// <para>
+/// So the console told an operator "no cap, nothing to see here" about the exact tenant whose users were being
+/// refused. A dashboard that contradicts the system's own enforcement is the worst possible operator signal:
+/// it actively redirects the investigation away from the cause. This field makes the three states nameable and
+/// distinct, so "unlimited" is only ever claimed when it is true.
+/// </para>
+/// </remarks>
+public static class PlanLimitStatus
+{
+    /// <summary>A real, numeric cap resolved from the plan, an override, or the tenant snapshot.</summary>
+    public const string Enforced = "Enforced";
+
+    /// <summary>Genuinely no cap — a resolvable plan (or an explicit override) that says "unlimited" (BR-3).</summary>
+    public const string Unlimited = "Unlimited";
+
+    /// <summary>
+    /// The tenant's <c>plan_id</c> matches NO configured plan and no override supplies a value. NOT unlimited:
+    /// the enforcement gates fail closed (403) on exactly this state, so the gauge must show a misconfiguration,
+    /// never an allowance.
+    /// </summary>
+    public const string ConfigurationError = "ConfigurationError";
+}
+
+/// <summary>
 /// A single per-tenant usage gauge (AC-2 / US-ADM-012 AC-4 / US-PLT-004). All four gauges are now REAL:
 /// Employees = active employees vs plan limit; Storage = cumulative stored bytes (all four size-bearing tables,
 /// in MB) vs <c>max_storage_gb</c>; EmailSends = month-to-date successful sends vs <c>max_email_sends_per_month</c>;
 /// ApiCalls = month-to-date persisted API calls (off the <c>tenant_api_usage</c> aggregate) vs
 /// <c>max_api_calls_per_month</c>.
-/// A null <see cref="Limit"/> with <see cref="Available"/> true means UNLIMITED (BR-3): <see cref="UsagePercent"/>
-/// and <see cref="Band"/> are null (no cap to divide against), while <see cref="Used"/> still reports real usage.
+/// A null <see cref="Limit"/> with <see cref="Available"/> true means there is no number to divide against, so
+/// <see cref="UsagePercent"/> and <see cref="Band"/> are null while <see cref="Used"/> still reports real usage.
+/// <b>Read <see cref="LimitStatus"/> to know WHY</b> — a null limit is "unlimited" only when it says so.
 /// </summary>
 public sealed record UsageGaugeDto(
     string Resource,
@@ -114,7 +148,13 @@ public sealed record UsageGaugeDto(
     int? Used,
     int? Limit,
     double? UsagePercent,
-    UsageBand? Band);
+    UsageBand? Band,
+
+    /// <summary>
+    /// BUG-473: which of the three <see cref="PlanLimitStatus"/> states produced <see cref="Limit"/>. Distinguishes
+    /// a deliberate unlimited from an unresolvable <c>plan_id</c>, which both used to render as a bare null.
+    /// </summary>
+    string LimitStatus);
 
 /// <summary>
 /// Per-tenant usage summary row for the System Admin dashboard table (AC-2 / FR-2). The employee gauge drives
@@ -133,6 +173,13 @@ public sealed record TenantUsageSummaryDto(
     double? UsagePercent,
     UsageBand? Band,
     bool LimitKnown,
+
+    /// <summary>
+    /// BUG-473: why <see cref="EmployeeLimit"/> is what it is — see <see cref="PlanLimitStatus"/>.
+    /// <see cref="LimitKnown"/> alone is false for BOTH "unlimited" and "broken plan_id"; this separates them.
+    /// </summary>
+    string LimitStatus,
+
     IReadOnlyList<UsageGaugeDto> Gauges);
 
 /// <summary>
