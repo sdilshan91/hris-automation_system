@@ -82,8 +82,20 @@ export function isModuleEntitled(
  *
  * Usage: `canActivate: [moduleGuard('Payroll'), roleGuard([...])]`
  */
-export function moduleGuard(module: string): CanActivateFn {
-  return () => {
+/**
+ * BUG-493: like roleGuard/permissionGuard, this publishes the key it enforces on the returned
+ * function so a sidebar nav item's `module` tag can be checked against the route it links to
+ * mechanically instead of by hand. The guard body reads the same `module` closure variable that
+ * is published, so the two cannot diverge. See auth.guard.ts for the full rationale.
+ */
+export type ModuleGuardFn = CanActivateFn & { readonly moduleKey: string };
+
+export function isModuleGuard(fn: unknown): fn is ModuleGuardFn {
+  return typeof fn === 'function' && typeof (fn as ModuleGuardFn).moduleKey === 'string';
+}
+
+export function moduleGuard(module: string): ModuleGuardFn {
+  const guard: CanActivateFn = () => {
     const tenantService = inject(TenantService);
     const router = inject(Router);
 
@@ -93,4 +105,6 @@ export function moduleGuard(module: string): CanActivateFn {
 
     return router.createUrlTree(['/forbidden']);
   };
+
+  return Object.assign(guard, { moduleKey: module });
 }
