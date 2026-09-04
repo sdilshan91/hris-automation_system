@@ -33,6 +33,16 @@ internal static class BackendSource
     /// </summary>
     internal static IReadOnlyList<SourceFile> ProductionSources => ProductionSourcesLazy.Value;
 
+    /// <summary>
+    /// Every <c>.cs</c> file in <c>HRM.Tests</c>, parsed. Separate from <see cref="ProductionSources"/>
+    /// because a rule about test structure must NOT scan production code, and vice versa — a rule whose
+    /// scope quietly widens starts reporting failures the reader cannot act on.
+    /// </summary>
+    internal static IReadOnlyList<SourceFile> TestSources => TestSourcesLazy.Value;
+
+    private static readonly Lazy<IReadOnlyList<SourceFile>> TestSourcesLazy =
+        new(() => LoadProject("HRM.Tests").ToArray());
+
     internal static string ProjectDir(string projectName) => Path.Combine(BackendRoot, projectName);
 
     internal static string ProjectFile(string projectName) =>
@@ -55,6 +65,28 @@ internal static class BackendSource
             $"Could not locate HRM.sln walking up from '{AppContext.BaseDirectory}'. The architecture " +
             "rules read the real backend source tree; they cannot fall back to a copy without silently " +
             "becoming a guard over stale files. Fix the lookup — do not stub this out.");
+    }
+
+    private static IEnumerable<SourceFile> LoadProject(string project)
+    {
+        var projectDir = ProjectDir(project);
+        if (!Directory.Exists(projectDir))
+            throw new InvalidOperationException(
+                $"Project directory '{projectDir}' does not exist. An architecture rule that scans " +
+                "nothing passes everything, so this throws rather than silently succeeding.");
+
+        foreach (var path in Directory.EnumerateFiles(projectDir, "*.cs", SearchOption.AllDirectories))
+        {
+            if (IsExcluded(path, projectDir))
+                continue;
+
+            var text = File.ReadAllText(path);
+            yield return new SourceFile(
+                project,
+                path,
+                Path.GetRelativePath(BackendRoot, path).Replace('\\', '/'),
+                CSharpSyntaxTree.ParseText(text, path: path));
+        }
     }
 
     private static IEnumerable<SourceFile> LoadProductionSources()
