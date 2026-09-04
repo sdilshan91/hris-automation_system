@@ -869,9 +869,19 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
       The escape hatch for plan limits is unreachable from the console. Fix **BUG-472 in the same change** — its
       camelCase `LIMIT_FIELDS` keys are masked by this 404 and would turn it into a 400 that reads as a regression.
       Outranks both remaining `F` items: it is a dead documented capability, they are a new feature and a build-out.
-- [ ] **F1 · GAP-019b Google sign-in** — **not billing, and not covered by the billing parking decision.**
-  `EntraSsoService.cs:544` is generic OIDC and names itself the reuse path. *(Apple stays externally gated on the
-  developer subscription.)*
+- [ ] **F1 · GAP-019b Google sign-in** — **RE-SCOPED 2026-09-04 after premise verification: M–L, not M, and it
+  needs a BA story first.** The reclassification out of billing holds. But `EntraSsoService.cs:544` is a **clause in a
+  doc comment**, not a method, and the class is Microsoft-specific at every decision point that matters: issuer
+  validation hardcodes `login.microsoftonline.com/{tid}` and **throws** without a `tid` (`:481-497`); the required-claims
+  gate rejects an empty `tid`/`oid` (`:206-216`) — Google emits neither; the isolation allow-list is GUID-validated
+  Entra directory ids; admin-consent onboarding is a Microsoft-only protocol; persistence is a single
+  `User.EntraObjectId` column with `IdentityProvider` written as the literal `"entra"` in four places. **Reuse is real
+  but is the crypto/session plumbing** (PKCE, nonce, protected state, discovery+JWKS, code exchange, `GetEmail`,
+  `IsEmailVerified`) — roughly the hard 40%. The identity model, issuer trust, allow-list semantics and persistence are
+  new. The `external_login` table the tech doc specifies (`§:1753-1762`) was **never built**.
+  **Blocked on authoring:** no BA story exists, and both `US-AUTH-001:81` and `CR-AUTH-001:164-165` explicitly defer
+  non-Microsoft OIDC. *(Register nit: "named sample stories" plural is wrong — §5.2 has **one** Google story and
+  **zero** Apple.)* **Design decision already made — see [[DECISION-480]]: per-provider allow-lists.**
 - [x] **F2 · GAP-020** — **DONE 2026-09-04.** Register reworded; the old text ("no way to rotate a compromised
   JWT signing key") was **false** — a tested `kid`-based ring with overlap validation keys exists. Rating done:
   **attacker-exploitable NONE/Informational (92%)**, **operational-recovery MEDIUM (80%)** — schedule as
@@ -879,9 +889,22 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
   Residual work filed as **ISSUE-459** (runbook lives only in an XML doc comment; rolling restart contains only
   partially; no forged-token detection). A **global token epoch** remains genuinely absent and is a separate,
   larger item — it is the only lever for invalidating all sessions for a non-key reason.
-- [ ] **F3 · GAP-021 calibration** — `CyclePhase.CompletedOn` + a real `Performance.Calibrate` permission + the FE
-  workspace. Note the downstream consumer: `RecommendationService.cs:470-479`'s BR-2 gate is a **proxy** that
-  passes with zero calibrations applied.
+- [ ] **F3 · GAP-021 calibration** — **premise VERIFIED 2026-09-04, stays as written, with two corrections.**
+  `CyclePhase.CompletedOn` genuinely does not exist (0 hits repo-wide, no phase-level state machine at all);
+  `Performance.Calibrate` genuinely does not exist; there is genuinely no FE calibration surface; and
+  `RecommendationService.cs:469-479`'s BR-2 gate genuinely passes with zero calibrations applied — it checks only that
+  a manager review was submitted, so its `calibration_incomplete` error code **describes a check the code does not do**.
+  **Correction 1:** "data model shipped" undersells it — a routed, dispatched, DI-registered write+read path shipped
+  (`PerformanceCalibrationService`, `ApplyCalibrationCommand`, `GetCalibrationCohortQuery`, both endpoints at
+  `CyclesController.cs:179-214`, 8 unit facts + a real-Postgres isolation arm), and the **generated FE contract already
+  has the endpoints**. This is not a from-scratch build; the backend is unusually solid and the failure is **leg 2**.
+  **Correction 2:** the "exact trap the story warned against" framing is wrong — see [[ENH-485]].
+  **Scope:** BE **M** (`CompletedOn` + complete-phase command + swap the BR-2 predicate, and fix its two named
+  consumers `CyclePhaseTransitionJob.cs:65` and `AppraisalCycleService.cs:571-577`) · FE **M–L** (workspace + the
+  [[BUG-483]] 3-line map fix) · permissions **S** · QA **S** ([[ISSUE-484]]).
+  ⚠ **Build from §1b of the story, NOT §3** — §3's AC-3 still carries a retracted unblocker ([[ISSUE-482]]).
+  ⚠ **Decide deliberately whether `Performance.Calibrate` is OR-ed with the existing three or replaces them** —
+  replacing silently strips calibrate from every existing HR user without a `role_permission` data migration.
 - [ ] **F4 · GAP-030** — author the FR/BR/NFR of US-ADM-012 / US-PLT-004 **from the shipped code**; add matrix rows
   (three, not two — US-ADM-011 is also absent).
 

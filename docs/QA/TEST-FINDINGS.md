@@ -3029,3 +3029,60 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Title:** The nine limit gates return **403, 409 and 422** and **four carry no machine code at all**, against tech-doc §47.2's single `PLAN_LIMIT_EXCEEDED` shape with `{limit, current, planCode}`. `max_employees` is inconsistent *with itself* across three sites, which also use two different denominators.
 - **Why parked:** reconciling to the documented shape is a **breaking change** for any client branching on the current codes. Deciding it inside a BA authoring task would have been the wrong place; the story instead documents the current state honestly.
 - **Needs from a human:** whether to converge on §47.2 (breaking) or amend §47.2 to the shipped reality. **AC-3's "limit reached — upgrade" UX is blocked on this either way.**
+
+### ISSUE-479 — GAP-017 still reads OPEN in the register; it was fixed and test-bound on 2026-08-08
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** Authentication · GAP-017 · TC-AUTH-161
+- **Title:** `GAP-REGISTER.md:139` carries GAP-017 ("Unverified email accepted for SSO domain allow-listing — no `xms_edov`/`email_verified` check anywhere") as an open, un-annotated row. The check **exists and is tested**: `EntraSsoService.cs:546-563` `IsEmailVerified` iterates `{ "xms_edov", "email_verified" }` (bool-or-string, absence ⇒ false), `SsoIsolationGuard.cs:81` gates the domain rule on it (`domainMatches && emailVerified`) and JIT requires it again at `:91`. `TEST-FINDINGS-RESOLVED.md:1230-1231` marks it **RESOLVED 2026-08-08**, and `TRACEABILITY-MATRIX.md:159` binds AC-7 to `UnverifiedEmail_CannotSatisfyTheDomainRule_GAP017`.
+- **Severity rationale:** MED. **Reverse drift** — a *security* row reading OPEN when the control shipped invites someone to rebuild it, and worse, invites the conclusion that this platform ships unverified-email SSO. Found while verifying F1, where the stale row nearly became a design input.
+- **Suggested direction (NOT applied):** annotate the register row RESOLVED with its TC, the way other closed rows are. Only `/verify-fix` closes findings; the register is a different document and this is its correction.
+
+### DECISION-480 — SSO domain allow-lists must be PER-PROVIDER (decided 2026-09-04)
+- **Type / Severity / Status:** DECISION · HIGH · **DECIDED — record, do not re-litigate**
+- **Layer:** BE / DB / product
+- **Module / US / TC:** Authentication · GAP-019b / F1
+- **Title:** `Tenant.AllowedEmailDomains` (`Tenant.cs:171`) has **no provider dimension**, and `SsoIsolationGuard.Evaluate(settings, tid, email, emailVerified)` (`SsoIsolationGuard.cs:53`) admits on `tidAllowed || domainAllowed`. Today that reads "trust these domains, via Entra". Route a second provider through the same guard and **every tenant that allow-listed `acme.com` for Entra silently also admits any Google account at `acme.com`** — with no admin act and no notice.
+- **Why it is sharper for Google specifically:** `tidAllowed` can never be true (Google issues no `tid`), so admission rests **entirely** on the domain rule, i.e. entirely on `email_verified`. The guard's own comment (`SsoIsolationGuard.cs:74-76`) relies on a backstop — *"The tid rule is unaffected — it is bound to the issuing directory and cannot be self-asserted"* — that **has no Google equivalent**. A secondary rule becomes a single point of failure.
+- **DECISION (2026-09-04):** **per-provider allow-lists.** Domain trust is declared per provider; enabling Google grants nothing until an admin adds domains for Google specifically. Costs a schema change + migration, validator work (`TenantAuthSettingsValidator.cs:57-59`, `:106-115`) and a Tenant Admin UI change (`sso-settings.component.ts`) — accepted, because no existing tenant's trust may widen without an explicit act. §3.4 designates cross-tenant leakage zero-tolerance.
+- **Confidence:** ~90% that the widening is real as described; it is contingent on Google routing through this guard, which is the stated reuse plan.
+
+### ISSUE-481 — `docs/BA/STATUS.md` contradicts itself about US-PRF-011, 60 lines apart
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** Performance · US-PRF-011 · GAP-021
+- **Title:** `STATUS.md:229` records US-PRF-011 as rescoped and calls the "US-PRF-010 dead-end" premise **"verified FALSE"**. `STATUS.md:289` — same file — still lists the story as *"(unblocks US-PRF-010 dead-end)"*. ISSUE-348 retracted that premise and is RESOLVED (`TEST-FINDINGS-RESOLVED.md:6026-6035`).
+- **Severity rationale:** HIGH for a ledger issue. Anyone scoping F3 from line 289 builds toward an unblocker that does not exist, and `RecommendationService.cs:469-479` confirms no dead-end: the BR-2 gate passes whenever a manager review is submitted.
+- **Suggested direction (NOT applied):** strike the parenthetical at `:289` and point it at the §1b rescope.
+
+### ISSUE-482 — US-PRF-011's own AC-3 still states the retracted unblocker, and it is the AC an implementer reads first
+- **Type / Severity / Status:** ISSUE · HIGH · OPEN
+- **Layer:** DATA (BA story)
+- **Module / US / TC:** Performance · US-PRF-011
+- **Title:** §3 AC-3 says phase completion *"unblocks US-PRF-010 recommendation generation (removes the `calibration_incomplete` trap)"*. §1b — the **rescope that supersedes §3** — removed that as fictional. The stale skeleton sits above the corrected table in the same file.
+- **Severity rationale:** HIGH. This is the single most likely source of wrong-scope work on F3: the §3 skeleton is where an implementer starts reading. Two documents disagreeing is bad; one document disagreeing with itself in reading order is worse.
+- **Suggested direction (NOT applied):** rewrite §3 AC-3 to the §1b wording **before** F3 is picked up.
+
+### BUG-483 — ISSUE-350 is RESOLVED but its user-visible symptom is still live; the FE drops the field that fixed it
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** FE / BE
+- **Module / US / TC:** Performance · US-PRF-011 · ISSUE-350
+- **Title:** ISSUE-350's fix added `CycleProgressDto.CalibrationCompleted` (`PerformanceDashboardDtos.cs:130`). The **frontend never reads it** — absent from `ICycleProgress` (`dashboard.models.ts:113-119`) and dropped by `mapCycleProgress` (`:266-275`) — while `performance-dashboard.service.spec.ts:64` **mocks `calibrationCompleted: 38` and stays green**. Separately, the finding's other two cited defects are untouched: `CyclePhaseTransitionJob.cs:65` still hard-skips any phase that is not GoalSetting/SelfAssessment/ManagerReview, and `AppraisalCycleService.cs:571-577` still scores a Calibration phase `_ => 0` with overdue suppressed at `:585-586`. The cycle timeline therefore still renders Calibration at a permanent 0%.
+- **Severity rationale:** MED. It is the **FE-mocks-a-shape-nothing-reads** pattern — a spec that pins a field the app discards, so the fix is green in CI and invisible in the product. Fifth recorded instance of a mocked spec concealing a contract break.
+- **Suggested direction (NOT applied):** the 3-line FE map fix belongs in F3's frontend slice; the job/scoring defects belong in its backend slice, since `CyclePhase.CompletedOn` is what they are waiting on. **Reopen ISSUE-350 or supersede it with this finding — its RESOLVED status is inaccurate.**
+
+### ISSUE-484 — US-PRF-011 is the only shipped performance story with no TC and no TEST-STATUS row
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST / DATA
+- **Module / US / TC:** Performance · US-PRF-011
+- **Title:** `TEST-STATUS.md` has rows for US-PRF-001..010 and **none** for US-PRF-011; `docs/QA/performance/` has no `TC-PRF-011-*` file. Leg 3 is carried entirely by xUnit (8 behavioural facts plus a real-Postgres isolation arm — the backend here is unusually solid).
+- **Severity rationale:** MED. Critical Rule #4 traceability is broken, and the practical consequence is that **no `/test-all` pass will ever select this story** — it is invisible to the testing loop by construction, not by verdict.
+- **Suggested direction (NOT applied):** author `TC-PRF-011-01..NN` against the **rescoped §1b** ACs (not §3 — see [[ISSUE-482]]) and add the TEST-STATUS row, as part of F3.
+
+### ENH-485 — two register rows in a row had accurate substance and inflated headlines
+- **Type / Severity / Status:** ENH · LOW · OPEN
+- **Layer:** process
+- **Module / US / TC:** cross-cutting · GAP-REGISTER
+- **Title:** `GAP-020` was reworded on 2026-09-04 because its headline ("no way to rotate a compromised JWT signing key") was false while its substance was real. `GAP-021`'s headline says calibration hit *"the exact trap the story warned against"* — the story's warning was the **ISSUE-290 trap** (a permission string *checked but absent from the catalog*, making the feature unreachable), and the build **avoided** it: `CyclesController.cs:200` authorizes on catalog-real, actually-granted permissions. The real defect is coarse-grained authorization — calibration cannot be delegated without also granting org-wide review/publish — which is a genuine but lesser gap.
+- **Severity rationale:** LOW individually; recorded because it is now **twice in two items**, and both times the inflated headline drove scheduling. GAP-020 was nearly scheduled as a vulnerability fix; GAP-021 reads as a repeat of a known trap it did not repeat.
+- **Suggested direction (NOT applied):** when a queue item is drafted from a register row, verify the row's **characterisation** against code, not just its existence. That check is cheap and has now paid twice.
