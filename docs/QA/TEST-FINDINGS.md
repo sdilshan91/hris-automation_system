@@ -2972,3 +2972,60 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
   - A file-existence + line-in-range checker — the obvious first idea, and the shape `ClaudeMdAccuracyTests` already uses for markdown links — would have caught **zero** of the seven, because every cited file still exists and every cited line is still in range.
 - **Severity rationale:** MED as a process finding. The recurrence rate is the signal: 3 in one day, and the E4b instance had **itself been written to correct an earlier stale claim**. That is a comment that went stale, was fixed, and went stale again — which says the practice regenerates the defect faster than the corrections land.
 - **Suggested direction (NOT applied) — and deliberately not a guard:** the cheap mechanical win is small and should be sized honestly. The likelier-useful directions are (a) extend `/retro`'s existing setup-drift pass to sample high-traffic source comments that make cross-file or runtime claims, since that pass already exists to recheck whether documented claims are still true; and (b) treat a long explanatory comment asserting *another* file's or environment's behaviour as the smell — those are the ones that rot, because nothing near them changes when the thing they describe does. **A human should decide whether (a) is worth the cadence cost; I am not proposing a code change.**
+### BUG-471 — all three plan-override admin calls hit a URL the API does not serve; the console feature is a live 404
+- **Type / Severity / Status:** BUG · HIGH · OPEN
+- **Layer:** FE / BE (contract)
+- **Module / US / TC:** Admin Console · US-ADM-009 AC-5 / US-ADM-012 BR-6
+- **Title:** `subscription-plan.service.ts:130-167` calls `/system/tenants/{id}/plan-overrides` for **all three** override operations. `AdminPlansController.cs:130-163` serves `/system/plans/overrides`. Every call is a **live 404**. `PlanLimitOverride` is enforced correctly everywhere it is read — it is simply **not settable from the admin console**, only by direct API call.
+- **Root cause + confidence (~95%, both sides read directly):** FE/BE contract drift, unguarded because the FE spec mocks the wire.
+- **Severity rationale:** HIGH. A documented admin capability is dead at the wire, and it is the *escape hatch* for plan limits — the mechanism an operator reaches for when a tenant needs an exception. It fails silently to anyone not watching the network tab. This is the same leg-2 class as [[BUG-460]] and the same mocked-spec blind spot recorded four times before.
+- **Suggested direction (NOT applied):** correct the three FE URLs. Fix [[BUG-472]] in the same change — it is currently masked by this 404 and will surface the moment this is fixed.
+
+### BUG-472 — the plan-limit field list uses camelCase keys the backend rejects, and is wrong in two more ways
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** FE
+- **Module / US / TC:** Admin Console · US-ADM-012
+- **Title:** `plan.models.ts:165-174` `LIMIT_FIELDS` uses **camelCase** keys, which the backend rejects as `limit_key_invalid`. It also includes `auditLogRetentionDays` — never a valid override key — and **omits** `maxTemplateLanguageVariants`.
+- **Severity rationale:** MED. Blocks nothing *today* only because [[BUG-471]]'s 404 means no request ever reaches validation. It becomes the immediate next failure once that URL is fixed — so fixing BUG-471 alone would move a 404 to a 400 and look like a regression.
+- **Suggested direction (NOT applied):** fix with [[BUG-471]], not after it.
+
+### BUG-473 — the usage-gauge path bypasses the lookup built to fix BUG-307, and displays "unlimited" while the gates 403
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Platform / Admin Console · US-ADM-002
+- **Title:** `PlatformMonitoringService.cs:455-459` (and `:256`) calls `PlanLimitResolver` **directly** rather than `PlanLimitLookup`, so it carries **no `IsConfigurationError` handling**. An unresolvable `plan_id` therefore renders as **"unlimited"** in the console while the enforcement gates return 403 for the same tenant.
+- **Root cause + confidence (~90%):** the lookup wrapper was introduced for `BUG-307` and this call site was not migrated.
+- **Severity rationale:** MED. It is **the exact BUG-307 case the lookup exists to prevent**, re-entering through a path nobody re-checked, and it produces the worst kind of operator signal: a dashboard that contradicts the system's own enforcement.
+- **Suggested direction (NOT applied):** route both call sites through `PlanLimitLookup`.
+
+### ISSUE-474 — a limit-only plan edit leaves the tenant's denormalized limit snapshots stale
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Admin Console · US-ADM-012 BR
+- **Title:** `SubscriptionPlanService.cs:314-333`'s plan-edit sweep updates `EnabledModules` and `UpdatedAt` only — it does **not** re-stamp `Tenant.MaxEmployees` or `Tenant.AuditLogRetentionDays`. `ChangeTenantPlanAsync` **does** re-stamp both. So changing a tenant's plan is consistent, but editing the plan's limits leaves every existing tenant on stale snapshots.
+- **Severity rationale:** MED. Silent limit drift, and the inconsistency between the two paths means testing one proves nothing about the other.
+- **Suggested direction (NOT applied):** re-stamp both fields in the sweep, or stop denormalizing them.
+
+### ISSUE-476 — `[Trait("TC","TC-ADM-012")]` binds 7 test files to a test case document that does not exist
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST / DATA
+- **Module / US / TC:** Admin Console · US-ADM-012
+- **Title:** A real `[Trait("TC", "TC-ADM-012")]` appears across **7** test files, and TEST-FINDINGS entries cite the id as though a document backs it — but `docs/QA/admin-console/TC-ADM-012.md` **does not exist**. The trait binds to nothing readable.
+- **Severity rationale:** MED. Traceability is Critical Rule #4, and this is the failure inverted from the usual one: the *tests* exist and the *document* does not, so every automated check that starts from the trait reports coverage that a human cannot follow.
+- **Suggested direction (NOT applied):** author `TC-ADM-012.md` (qa-engineer's lane) — the arms already exist, so this is documenting what is green.
+
+### DECISION-477 — should Offboarding be an independently sellable module? It currently gates under Onboarding
+- **Type / Severity / Status:** DECISION · MED · **PARKED at the decision gate**
+- **Layer:** BE / product
+- **Module / US / TC:** Admin Console · US-ADM-012
+- **Title:** `ModuleEntitlementMiddleware.cs:64-65` gates offboarding **and** exit-interviews under the **Onboarding** module; there is no separate Offboarding module in `PlanModules`. Whether it should be separately sellable is a pricing/packaging call, not a BA authoring one.
+- **Why parked:** splitting ripples into the plan editor, the FE `CANONICAL_MODULES` list, `ISSUE-353`'s drift guard and the normalization migration. Guessing either way writes an FR that is expensive to reverse. Recorded as an open question in `US-ADM-012 §10` rather than decided.
+- **Needs from a human:** a product call on packaging.
+
+### DECISION-478 — reconciling the 403/409/422 limit-gate divergence is a breaking API change
+- **Type / Severity / Status:** DECISION · MED · **PARKED at the decision gate**
+- **Layer:** BE / API contract
+- **Module / US / TC:** Admin Console · US-ADM-012 AC-3
+- **Title:** The nine limit gates return **403, 409 and 422** and **four carry no machine code at all**, against tech-doc §47.2's single `PLAN_LIMIT_EXCEEDED` shape with `{limit, current, planCode}`. `max_employees` is inconsistent *with itself* across three sites, which also use two different denominators.
+- **Why parked:** reconciling to the documented shape is a **breaking change** for any client branching on the current codes. Deciding it inside a BA authoring task would have been the wrong place; the story instead documents the current state honestly.
+- **Needs from a human:** whether to converge on §47.2 (breaking) or amend §47.2 to the shipped reality. **AC-3's "limit reached — upgrade" UX is blocked on this either way.**
