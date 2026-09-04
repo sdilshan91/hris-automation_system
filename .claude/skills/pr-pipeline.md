@@ -122,6 +122,14 @@ job reports `skipping` on them. That was tried and reverted the same day.
    **This also limits the merge queue.** The queue rebases entries with GitHub's machinery, so it will
    hit the same ledger conflicts. It solves the *code* cascade; it does **not** solve this one.
 
+   **Mechanised as `scripts/ledger-lock.sh` (2026-09-04).** Run it **before opening any PR**; it exits 1
+   naming the PR that already holds a ledger your branch writes. `--rebase` additionally rebases and
+   force-pushes your own `DIRTY` PRs (union auto-resolves the append-only ones locally; a **rewritten**
+   row — a queue tick — will still need hands, because `GAP-CLOSURE-QUEUE.md` is deliberately not union).
+   Fails open if `gh`/`jq` are absent, and both are registered in `scripts/doctor.sh`'s capability tier so
+   the guard cannot rot unnoticed the way `csharp-lsp` did for 12 days. Override:
+   `CLAUDE_DISABLE_LEDGER_LOCK=1`.
+
    ⚠ **The only thing that actually prevents ledger conflicts is not writing to a ledger from two open
    PRs at once.** Batch bookkeeping into one docs PR and merge it before opening the next. Every conflict
    in the 2026-09-02/04 sessions would have been prevented by that and by nothing else.
