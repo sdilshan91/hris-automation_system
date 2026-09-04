@@ -862,9 +862,13 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
 - [ ] **F1 · GAP-019b Google sign-in** — **not billing, and not covered by the billing parking decision.**
   `EntraSsoService.cs:544` is generic OIDC and names itself the reuse path. *(Apple stays externally gated on the
   developer subscription.)*
-- [ ] **F2 · GAP-020** — reword the register (rotation **is** possible via config + restart); the real gap is
-  **no runtime rotation and no global token epoch**. Route to `/security-audit` for an exploitability rating
-  **before** scheduling, as the plan already asked and nobody has done.
+- [x] **F2 · GAP-020** — **DONE 2026-09-04.** Register reworded; the old text ("no way to rotate a compromised
+  JWT signing key") was **false** — a tested `kid`-based ring with overlap validation keys exists. Rating done:
+  **attacker-exploitable NONE/Informational (92%)**, **operational-recovery MEDIUM (80%)** — schedule as
+  ops-resilience, not a vulnerability fix. Also found GAP-020 was double-counting GAP-019's §11.1 rotate-UI line.
+  Residual work filed as **ISSUE-459** (runbook lives only in an XML doc comment; rolling restart contains only
+  partially; no forged-token detection). A **global token epoch** remains genuinely absent and is a separate,
+  larger item — it is the only lever for invalidating all sessions for a non-key reason.
 - [ ] **F3 · GAP-021 calibration** — `CyclePhase.CompletedOn` + a real `Performance.Calibrate` permission + the FE
   workspace. Note the downstream consumer: `RecommendationService.cs:470-479`'s BR-2 gate is a **proxy** that
   passes with zero calibrations applied.
