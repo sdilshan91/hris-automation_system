@@ -291,6 +291,26 @@ own rule — severity × blast-radius × unblocks-others — with three decision
 | **P4.3** | `E3` slices 2–3 | Gated on P4.2. 117 test files still InMemory. |
 | **P5** | `F1`, `G4`, `DECISION-477` | Blocked on authoring, not on engineering. |
 
+### Staleness-audit outcome 2026-09-04 — and the findings it added
+
+A 20-finding code-verified sample of the 100 unscheduled findings. **15% wholly wasted if scheduled**
+(2 already-fixed, 1 obsolete); **30%** counting rows that merely overstate what remains. At n=20 the 95%
+CI is roughly 3–38%, so it **cannot resolve** the prior "29% stale" claim — and it showed that figure is
+ambiguous between two numbers differing by 2×. **Settle which the 29% counted before tiering the other 80.**
+
+| tier | item | why |
+|---|---|---|
+| **DONE** | ~~`BUG-450`~~ ✅ #626 | HIGH, and it had been sitting **unscheduled**. Departments/Job Titles had **no** gate; every Employee and Manager saw two links dead-ending at `/forbidden`. Mutation-proven, 4345/4345. |
+| **P1.5** | `BUG-493` | The same class one level up: ~8 nav items gate on a *permission proxy* while their route gates on `roleGuard`. **One sweeping spec — every nav item's gate vs its route's guard, per persona — is worth more than BUG-450's two-line fix**, because it closes the class rather than two instances. |
+| **P1.6** | `ISSUE-117` · `ISSUE-372` | Both re-scoped by the audit and both cheap. `ISSUE-117` is a **two-line** fix — the sanitizer is already DI-registered and used by four sibling services, and there are **two** write sites, not the one filed. `ISSUE-372` is two dead buttons in the live payroll UI **with green specs mocking both non-existent endpoints** — test theater actively masking it. |
+| **P3** | `ISSUE-498` · `ISSUE-495` · `ISSUE-496` | Ledger and doc corrections. `ISSUE-498` carries the per-entry re-scopes; apply them **before** tiering the remaining 80. |
+| **P4** | `ISSUE-494` | `origin/main` is **987 commits** behind. Anything defaulting to it targets a 2.5-month-old tree — it already broke `ledger-lock`'s merge base (#619). |
+| **P5** | `ISSUE-497` → then `ENH-009` | **Pin `ClosedXML` before scheduling `ENH-009`'s XLSX half**, or its behavioural test proves nothing. `ENH-009` itself is mis-filed: an ENH that is really a 12-writer security-hardening gap, and the sample's only genuinely campaign-shaped item. |
+| **`/verify-fix` debt** | `ISSUE-321` · `ISSUE-132` | Code-verified ALREADY-FIXED (PRs #386, #384) but **not** test-verified — the audit read code, it did not run tests. Close via `/verify-fix`, not by fiat. |
+| **close as OBSOLETE** | `ISSUE-168` | Premise falsified: `PermissionCatalog.cs:736` now grants HR Officer `Payroll.Configure`, so the comment it calls wrong is now **true**. |
+
+---
+
 ### Findings scheduled 2026-09-04 — the 14 that had no home
 
 An audit of the 33 findings filed on 2026-09-04 found **19 referenced in this queue and 14 referenced

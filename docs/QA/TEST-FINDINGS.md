@@ -26,11 +26,11 @@
 
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
-| BUG | 44 | 168 | 212 |
-| ISSUE | 149 | 296 | 445 |
+| BUG | 45 | 168 | 213 |
+| ISSUE | 154 | 296 | 450 |
 | ENH | 22 | 2 | 24 |
 | DECISION | 3 | 0 | 3 |
-| **TOTAL** | **218** | **466** | **684** |
+| **TOTAL** | **224** | **466** | **690** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -3163,3 +3163,59 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Root cause + confidence (100%, self-reported by the agent that hit it):** the script takes a solution path relative to `$PWD`, and both trees contain a valid solution at the same relative path, so the wrong-tree invocation succeeds instead of erroring.
 - **Severity rationale:** MED. It manufactures a **false green**, which is the failure mode this repo has spent the most effort eliminating — and unlike test theater, nothing in the code review can see it. It is the third false-green of the day, after the plan-override specs pinning URLs the API never served and [[ISSUE-465]]'s inert `ledger-lock` guard.
 - **Suggested direction (NOT applied):** have the script refuse to run when `$PWD` is not the git top-level of the solution it was handed (`git rev-parse --show-toplevel` compared against the solution's realpath), or print the resolved worktree prominently in its header. Fail loudly on ambiguity rather than testing the wrong tree silently.
+
+### BUG-493 — ~8 nav items gate on a permission proxy while their route gates on roleGuard
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** FE
+- **Module / US / TC:** cross-module · `main-layout.component.ts` vs `app.routes.ts`
+- **Title:** Surfaced by the 2026-09-04 staleness audit while verifying [[BUG-450]]. Roughly **eight** nav items gate on a *permission key* while the route they point at gates on `roleGuard` — Employees (`Employee.View.All` vs `roleGuard` at `app.routes.ts:580`), Reports (`Reports.View` vs `roleGuard` at `:343`), plus Payroll, Recruitment, Onboarding and Salary Grades. Two different gate systems deciding the same question.
+- **Root cause + confidence (~85%):** the permission catalog has no key for several of these areas, so a *proxy* permission was chosen; a proxy is only ever coincidentally aligned with a role guard. This is the exact drift mechanism `ISSUE-210` was filed for, and the reason `Locations` explicitly documents choosing `tenantRoles` over a proxy.
+- **Severity rationale:** MED and distinct from [[BUG-450]] — that was items with **no** gate, this is items with the **wrong kind** of gate. Both directions are possible: a link shown to someone the route rejects (dead-ends at `/forbidden`), or hidden from someone it would admit.
+- **Suggested direction (NOT applied):** **one sweeping spec** — assert every nav item's gate against its route's guard, per persona. The auditor's judgement, which I agree with: that single spec is worth more than [[BUG-450]]'s two-line fix, because it closes the whole class instead of two instances. [[BUG-450]]'s spec deliberately asserts an invariant rather than route names for the same reason, but it covers only the Core-HR pair.
+
+### ISSUE-494 — `origin/main` is 987 commits behind the working branch, and things silently default to it
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** INFRA (repo topology)
+- **Module / US / TC:** cross-cutting
+- **Title:** `origin/main` is `7ea6ce61`, dated **2026-06-23** — **987 commits** behind `test/local-subdomains`. Verified directly. Anything that defaults to the repo's default branch therefore targets a ~2.5-month-old tree: `origin/HEAD` resolution, worktree base refs, PR-diff bases, and any tool that assumes "main is the integration branch". This already bit once today — `scripts/ledger-lock.sh` resolved its merge base via `origin/HEAD` → `origin/main` and produced a diff listing most of the tree (fixed in #619).
+- **Severity rationale:** MED. It is not broken so much as **misleading by default**, and the failure is silent: a tool picks the wrong base and reports a plausible wrong answer rather than an error.
+- **Suggested direction (NOT applied):** either reconcile `main` with the working branch, or state explicitly in `CLAUDE.md` that `main` is **not** the integration branch and that tooling must target `test/local-subdomains`. Broader than [[ISSUE-442]], which records only the worktree symptom.
+
+### ISSUE-495 — `.editorconfig`'s own comment asserts the BOM rule is already satisfied; it is not
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** DATA (docs-in-config)
+- **Module / US / TC:** cross-cutting · relates to [[ISSUE-391]]
+- **Title:** `.editorconfig:54-55` states *"all 290 files under Migrations/ carry one [a BOM]"*. Verified: there are **295** migration files and **5 lack the BOM** the same config mandates — which is precisely the defect [[ISSUE-391]]'s CHARSET half records. **The config that declares the rule asserts the rule is already met.**
+- **Severity rationale:** LOW in isolation. Recorded because it is the **ninth** instance of documentation outliving the thing it describes, and the second in a *config* file rather than prose — a reader checking whether the BOM rule holds finds a confident claim that it does and stops. That is the same mechanism that kept [[BUG-473]] and the E4 proxy alive.
+- **Suggested direction (NOT applied):** correct the count and the claim when [[ISSUE-391]]'s CHARSET half is closed.
+
+### ISSUE-496 — a source comment cites `ISSUE-372`, which is a different finding in this ledger
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** FE (docs-in-code)
+- **Module / US / TC:** core-hr · `main-layout.component.ts:701-704`
+- **Title:** The Locations nav comment credits its gate to *"US-CHR-007 / ISSUE-372 (E5)"*. `ISSUE-372` in `TEST-FINDINGS.md` is the **payroll `validate-formula`/`reorder`** finding. The comment is using a commit-local GAP/E-numbering that collides with the ledger's ID sequence.
+- **Severity rationale:** LOW, but the same class as the `BUG-060` → `BUG-303` collision already recorded as GAP-L8, and it defeats any automated trace from code back to a finding.
+- **Suggested direction (NOT applied):** sweep source comments citing `ISSUE-`/`BUG-` ids against the ledger. Mechanically checkable, unlike most of [[ENH-470]]'s cases — a cited id either exists with a matching subject or it does not.
+
+### ISSUE-497 — `ClosedXML` is pinned to a wildcard on a pre-1.0 package
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** BE (dependency)
+- **Module / US / TC:** cross-module exports · relates to [[ENH-009]]
+- **Title:** `HRM.Infrastructure.csproj:58` carries `ClosedXML Version="0.*"` — an unpinned wildcard on a **pre-1.0** package, where minor releases may change behaviour freely. Concretely: whether a leading `=` in a cell becomes a live formula is version-dependent, so [[ENH-009]]'s XLSX exposure **can change with no code edit and no PR**.
+- **Severity rationale:** MED. A build that is not reproducible across time, on the exact dependency whose behaviour a security finding turns on.
+- **Suggested direction (NOT applied):** pin an explicit version **before** scheduling [[ENH-009]]'s XLSX half, so its behavioural test means something.
+
+### ISSUE-498 — a 20-finding staleness audit re-scoped five ledger entries; three understate their own scope
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** cross-cutting
+- **Title:** A code-verified audit of 20 unscheduled findings (2026-09-04) found **15% wholly wasted if scheduled** (2 ALREADY-FIXED, 1 OBSOLETE) and **30%** once rows that merely *overstate* what remains are counted. Per-entry corrections it produced:
+  - **[[ISSUE-321]]** ALREADY-FIXED — entities, DbSets (`AppDbContext.cs:71-73`), migration `20260719125705`, persistence `EmployeeService.cs:874-940`, route `EmployeesController.cs:118` (PR #386). Awaiting `/verify-fix`.
+  - **[[ISSUE-132]]** ALREADY-FIXED — the command was deleted; `ApplicantPortalTokenService.cs:174-193` builds and dispatches the link (PR #384). Awaiting `/verify-fix`.
+  - **[[ISSUE-168]]** **OBSOLETE — its premise is falsified.** `PermissionCatalog.cs:736` now grants HR Officer `Payroll.Configure`, so the controller comment it calls wrong is now **true**.
+  - **[[ENH-009]] understates itself badly** — filed against **one** CSV writer; it spans **12** across attendance, payroll, leave, core-HR, recruitment, performance and audit. It is a security-hardening gap filed as an ENH, and the only genuinely campaign-shaped item in the sample (~80% mechanical).
+  - **[[ISSUE-117]] understates itself** — names one write site; `InterviewService.cs:112` **and `:186`** both bypass a sanitizer that is DI-registered and already used by four sibling services. Two-line fix.
+  - **[[ISSUE-148]](c) is factually wrong** — it says "≥1000% rejects"; the validator is `InclusiveBetween(0,1000)`, so exactly 1000% is **accepted**.
+  - **[[ISSUE-039]]**, **[[ISSUE-175]]**, **[[ISSUE-384]]** are PARTIALLY-FIXED with only a residual open.
+- **Severity rationale:** MED. **Reverse drift in both directions at once** — rows that overstate remaining work waste scheduling, and rows that understate their scope (ENH-009, ISSUE-117) get mis-sized, which is the more expensive error because it survives the fix.
+- **Suggested direction (NOT applied):** apply these corrections before tiering the remaining 80 orphans. **And settle what the 2026-09-01 audit's "29% stale" actually counted** — if it included partial landings, this sample's 30% matches almost exactly; if it meant wholly-fixed, 15% says the prior figure was high. The two numbers differ by 2× and drive different decisions.
