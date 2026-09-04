@@ -1,10 +1,11 @@
 ---
 module: Admin Console
-total_user_stories: 10
+total_user_stories: 12
+total_user_stories_with_tc_docs: 10
 total_test_cases: 217
 created: 2026-06-16
-updated: 2026-06-17
-status: complete
+updated: 2026-09-04
+status: incomplete
 ---
 
 # Admin Console -- Test Matrix
@@ -837,14 +838,65 @@ status: complete
 
 ---
 
-## Module Totals — Admin Console COMPLETE
+## Module Totals — Admin Console INCOMPLETE (2 stories uncovered)
 
-All 10 Admin Console user stories (US-ADM-001 .. US-ADM-010) now have IEEE 829 test coverage. US-ADM-010 is the LAST story; the module test suite is complete.
+US-ADM-001 .. US-ADM-010 have IEEE 829 test coverage. **US-ADM-010 is no longer the last story** — two
+further Admin Console stories shipped and have **no TC doc at all**, so the module test suite is *not*
+complete. Corrected 2026-09-04 (F4 / GAP-030); the previous "COMPLETE" claim was written 2026-06-17,
+before either story existed.
 
 | Metric | Value |
 |--------|-------|
-| User stories covered | 10 (US-ADM-001 .. US-ADM-010) — COMPLETE |
-| Total test cases | 217 (193 prior + 24 for US-ADM-010) |
+| User stories in module | **12** (US-ADM-001 .. US-ADM-012) |
+| User stories with TC docs | **10** (US-ADM-001 .. US-ADM-010) |
+| User stories with NO TC doc | **2** — US-ADM-011 (workflow runtime, shipped 2026-07-10) · US-ADM-012 (plan/module governance, shipped 2026-07-30) |
+| Total test cases | 217 (193 prior + 24 for US-ADM-010) — **unchanged**: the two rows added 2026-09-04 contribute zero TC docs |
 | Functional ID scheme | per-story suffix TC-ADM-{NNN}-XX |
 | ISO ID range (module) | TC-ADM-ISO-001 .. TC-ADM-ISO-031 |
-| AC coverage | Every AC of every story has >= 1 test case (deferred sub-parts honestly marked status: blocked) |
+| AC coverage | US-ADM-001..010: every AC has >= 1 test case (deferred sub-parts honestly marked status: blocked). **US-ADM-011 (12 AC) and US-ADM-012 (5 AC): 0 AC test-bound** — see the two sections below |
+
+---
+
+## US-ADM-011 — AC → TC Coverage (NO TC DOCS)
+
+> **Added 2026-09-04 (F4 / GAP-030).** The story is fully authored to IEEE 830 (FR-1..13, NFR-1..5,
+> BR-1..8, `status: ready`) and shipped 2026-07-10 (PRs #238/#239/#240). It has **no TC document**.
+> Real regression coverage exists as xUnit suites, but **none carries a `[Trait("TC", …)]`**, so no arm
+> binds to a TC id and nothing here may be marked `pass`. Authoring this suite is a standing P0
+> (`docs/QA/BLOCKERS.md`).
+
+| AC | Backing arm in code (untraited) | Status |
+|----|--------------------------------|--------|
+| AC-1 instance created + definition version snapshotted | `WorkflowRuntimeServiceTests`, `WorkflowEntityWiringPostgresTests` | covered in code, **not test-bound** |
+| AC-2 step advance on approval | `WorkflowRuntimeServiceTests` | covered in code, **not test-bound** |
+| AC-3 `ConditionJson` evaluation skips a step | `WorkflowEvaluatorTests` | covered in code, **not test-bound** |
+| AC-4 parallel group advances only when all approve | `WorkflowRuntimeParallelPostgresTests`, `WorkflowMultiApproverTests` | covered in code, **not test-bound** |
+| AC-5 SLA elapse → idempotent auto-escalation | `WorkflowSlaEscalationPostgresTests` | covered in code, **not test-bound** |
+| AC-6 delegation to backup when approver on leave | `WorkflowDelegationPostgresTests` | covered in code, **not test-bound** |
+| AC-7 in-flight instances stay on snapshotted version | `WorkflowRestoreConflictPostgresTests` | covered in code, **not test-bound** |
+| AC-8 real `inFlightCount` blocks definition delete | `WorkflowServiceTests` | covered in code, **not test-bound** |
+| AC-9 **multi-tenant isolation** of instances/step-instances | EF global query filters; `WorkflowEntityWiringPostgresTests` | covered in code, **not test-bound** |
+| AC-10 non-approver decision → 403 | `WorkflowInstanceReadPermissionAttributeTests` | covered in code, **not test-bound** |
+| AC-11 fallback to legacy path when no Active definition | `DefaultLeaveWorkflowSeedPostgresTests`, `WorkflowLeaveDecisionDefectsPostgresTests` | covered in code, **not test-bound** |
+| AC-12 concurrent decisions — exactly one transition wins | `WorkflowRuntimeConcurrencyPostgresTests` | covered in code, **not test-bound** |
+
+**0/12 AC test-bound.** FE instance/step-chain viewer deferred → ISSUE-272 (FR-12 UI).
+
+---
+
+## US-ADM-012 — AC → TC Coverage (TRAIT WITHOUT A TC DOC)
+
+> **Added 2026-09-04 (F4 / GAP-030).** Shipped 2026-07-30 in six phases. A real
+> `[Trait("TC", "TC-ADM-012")]` exists across seven test files — but **`TC-ADM-012.md` does not exist**,
+> so the trait binds to no readable test case. The id is referenced by TEST-FINDINGS entries that
+> assume a document behind it.
+
+| AC | Requirement | Backing arm under `[Trait("TC","TC-ADM-012")]` | Status |
+|----|-------------|-----------------------------------------------|--------|
+| AC-1 | Disabled module's API is 403'd server-side | `ModuleEntitlementMiddlewareTests`, `ModuleEntitlementApiTests`, `PlanModulesEntitlementTests`, `PlanModulesSeedDriftApiTests` | **met**, trait-bound but **no TC doc** |
+| AC-2 | FE route guard blocks navigation + hides nav entry | *(FE — Karma specs for `module.guard.ts`; not trait-bound)* | **met**, **not test-bound** |
+| AC-3 | At-limit action blocked with an upgrade message | `InvitePlanLimitAgreementTests`, `PlanLimitLookupPostgresTests` (via TC-ADM-009-19) | **PARTIAL — 8 of 9 limit keys block. `max_api_calls_per_month` is validated, metered and displayed but NEVER blocks; there is no enforcement point for it.** |
+| AC-4 | Per-tenant usage counters tracked and readable | `PlatformMonitoringUsageGaugesPostgresTests`, `SubscriptionPlanModuleSweepPostgresTests`, `AdminTenantPlanChangeApiTests` | **met**, trait-bound but **no TC doc** |
+| AC-5 | **Multi-tenant** — each tenant gated by its own plan, no entitlement bleed | `ModuleEntitlementApiTests`, scoped `ITenantContext` + EF global query filters | **met**, trait-bound but **no TC doc** |
+
+**0/5 AC bound to an IEEE 829 document**; AC-3 is additionally **PARTIAL in product code**.

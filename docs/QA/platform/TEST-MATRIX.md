@@ -13,8 +13,33 @@
 | User Story | Title | Priority | Test Cases | Status |
 |-----------|-------|----------|-----------|--------|
 | US-PLT-002 | PostgreSQL RLS as defense-in-depth tenant isolation | Should Have | TC-PLT-002-RLS | automated |
+| US-PLT-004 | Observability & platform NFRs (OTel, health, per-tenant usage, SLOs) | Should Have | **(none authored)** — no TC doc in this directory binds `user_story: US-PLT-004` | **unbound** — green xUnit arms exist but carry no `[Trait("TC", …)]`, so nothing is traceable |
 | US-PLT-005 | Encryption-at-rest for sensitive PII (KEK/rotation) | Must Have | TC-PLT-P34, TC-PLT-003, TC-PLT-004, TC-PLT-006, TC-PLT-007 | automated |
 | US-PLT-006 | Error tracking via self-hosted GlitchTip | Should Have | TC-PLT-008, TC-PLT-009, TC-PLT-010, TC-PLT-011, TC-PLT-012, TC-PLT-013, TC-PLT-014, TC-PLT-ISO-001 | draft (007-006 net-new, 0% built) |
+
+## US-PLT-004 — AC → TC Coverage
+
+> **Added 2026-09-04 (F4 / GAP-030).** US-PLT-004 shipped 2026-07-30 (+ the per-tenant API-call counter
+> 2026-07-31, commit `b9906626`) but has **never had a TC doc**. This section records the coverage hole
+> honestly rather than leaving the story absent from the matrix. **No row here may be marked `pass`.**
+>
+> ⚠ **`TC-PLT-004.md` is NOT this story's test case.** Its frontmatter binds `user_story: US-PLT-005`
+> (bulk re-encrypt sweep). The filename collision is an artefact of the trait-driven naming scheme —
+> **read frontmatter, never filenames.** The same applies to TC-PLT-003/006/007.
+
+| AC | Requirement | Test Case(s) | Backing arms in code (untraited) | Status |
+|----|-------------|--------------|----------------------------------|--------|
+| AC-1 | OTel traces + metrics emitted to a configured exporter/store | *(none)* | `ObservabilityExtensionsTests` covers the **producer** side only | **UNMET — producer only.** No collector/Tempo/Prometheus/Grafana in any compose file or `ops/`; there is no store for the exporter to reach. |
+| AC-2 | `/health/live` + `/health/ready` report liveness/readiness accurately | *(none)* | `PlatformMonitoringRedisHealthTests` | **met, untraced** — Postgres hard-fails; Redis reports **Degraded, not Unhealthy**; no Hangfire check. |
+| AC-3 | Monitoring shows real error-rate %, P95 latency, SLA/uptime (no hard-coded nulls) | *(none)* | `PlatformMonitoringIntegrationTests`, `PlatformMonitoringUsageGaugesPostgresTests` | **PARTIAL.** BE computes real values; the **FE computes `latencyTrend24h`/`topErrors` and then discards them** (never rendered) and `metricsStatus` is hardcoded. |
+| AC-4 | Per-tenant counters (API calls, storage, emails) recorded + exposed | *(none)* | `TenantApiCallUsagePostgresTests`, `PlatformMonitoringUsageGaugesPostgresTests` | **met, untraced** — API-call counter shipped `b9906626` (table + migration + dormant RLS policy + hot-path write + live gauge). |
+| AC-5 | An SLO (e.g. login p95) is instrumented and measurable | *(none)* | — | **UNMET.** No login-latency SLI: `LoginCommandHandler` records an **outcome counter only**, and `/api/v1/auth` sits on the shared allow-list, so login is **excluded** from `tenant_latency_bucket`. |
+| Multi-tenant | Usage/latency counters and monitoring aggregates are tenant-scoped | *(none)* | `TenantApiCallUsagePostgresTests` (tenant-scoped upsert), EF global query filters | **met, untraced** |
+
+**Coverage verdict: 0/5 AC test-bound.** AC-2/AC-4 and the isolation guarantee have green arms that
+carry no `[Trait("TC", …)]`, so they bind to no TC id. AC-1, AC-3 and AC-5 are **genuinely unmet in
+product code** — authoring TCs for them would produce specs that cannot pass, so they are recorded as
+unmet here and in [`US-PLT-004`](../../BA/platform/US-PLT-004.md) §4-§10 rather than papered over.
 
 ## US-PLT-006 — AC → TC Coverage
 
