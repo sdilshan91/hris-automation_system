@@ -689,13 +689,35 @@ export class MainLayoutComponent implements OnInit {
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 0 0-1.414 0l-7 7a1 1 0 0 0 1.414 1.414L4 10.414V17a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-6.586l.293.293a1 1 0 0 0 1.414-1.414l-7-7Z"/></svg>`,
     },
     {
+      // BUG-450: this item shipped with NO gate at all. The nav filter treats a missing
+      // `permission` as "visible to everyone" (`if (!item.permission) return true`), so every
+      // Employee and Manager in every tenant was shown a prominent link that dead-ends at
+      // /forbidden — the route is `roleGuard(['Tenant Admin', 'HR Officer'])`.
+      // `tenantRoles` (not a permission proxy) for the same reason Locations documents below:
+      // the route's guard IS a roleGuard, and gating nav on a permission key would let
+      // visibility drift from access (the ISSUE-210 defect). 'Tenant Owner' is listed
+      // explicitly because roleGuard implicitly widens every tenant guard with
+      // TENANT_SUPER_ROLES (auth.guard.ts:63,76) — omit it and the link hides from a persona
+      // that can actually enter.
       label: 'Departments',
       route: '/departments',
+      tenantRoles: ['Tenant Admin', 'HR Officer', 'Tenant Owner'],
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.25 2A2.25 2.25 0 0 0 2 4.25v2.5A2.25 2.25 0 0 0 4.25 9h2.5A2.25 2.25 0 0 0 9 6.75v-2.5A2.25 2.25 0 0 0 6.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 2 13.25v2.5A2.25 2.25 0 0 0 4.25 18h2.5A2.25 2.25 0 0 0 9 15.75v-2.5A2.25 2.25 0 0 0 6.75 11h-2.5Zm9-9A2.25 2.25 0 0 0 11 4.25v2.5A2.25 2.25 0 0 0 13.25 9h2.5A2.25 2.25 0 0 0 18 6.75v-2.5A2.25 2.25 0 0 0 15.75 2h-2.5Zm0 9A2.25 2.25 0 0 0 11 13.25v2.5A2.25 2.25 0 0 0 13.25 18h2.5A2.25 2.25 0 0 0 18 15.75v-2.5A2.25 2.25 0 0 0 15.75 11h-2.5Z" clip-rule="evenodd"/></svg>`,
     },
     {
+      // BUG-450: this item shipped with NO gate at all. The nav filter treats a missing
+      // `permission` as "visible to everyone" (`if (!item.permission) return true`), so every
+      // Employee and Manager in every tenant was shown a prominent link that dead-ends at
+      // /forbidden — the route is `roleGuard(['Tenant Admin', 'HR Officer'])`.
+      // `tenantRoles` (not a permission proxy) for the same reason Locations documents below:
+      // the route's guard IS a roleGuard, and gating nav on a permission key would let
+      // visibility drift from access (the ISSUE-210 defect). 'Tenant Owner' is listed
+      // explicitly because roleGuard implicitly widens every tenant guard with
+      // TENANT_SUPER_ROLES (auth.guard.ts:63,76) — omit it and the link hides from a persona
+      // that can actually enter.
       label: 'Job Titles',
       route: '/job-titles',
+      tenantRoles: ['Tenant Admin', 'HR Officer', 'Tenant Owner'],
       icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 3.75A2.75 2.75 0 0 1 8.75 1h2.5A2.75 2.75 0 0 1 14 3.75v.443c.572.055 1.14.122 1.706.2C17.053 4.582 18 5.75 18 7.07v3.469c0 1.126-.694 2.191-1.83 2.54-1.952.599-4.024.921-6.17.921s-4.219-.322-6.17-.921C2.694 12.73 2 11.665 2 10.539V7.07c0-1.321.947-2.489 2.294-2.676A41.047 41.047 0 0 1 6 4.193V3.75Zm6.5 0v.325a41.622 41.622 0 0 0-5 0V3.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25ZM10 10a1 1 0 0 0-1 1v.01a1 1 0 0 0 1 1h.01a1 1 0 0 0 1-1V11a1 1 0 0 0-1-1H10Z" clip-rule="evenodd"/><path d="M3 15.055v-.684c.126.053.255.1.39.142 2.092.642 4.313.987 6.61.987 2.297 0 4.518-.345 6.61-.987.135-.041.264-.089.39-.142v.684c0 1.347-.985 2.53-2.363 2.686a41.454 41.454 0 0 1-9.274 0C3.985 17.585 3 16.402 3 15.055Z"/></svg>`,
     },
     {

@@ -185,4 +185,67 @@ describe('MainLayoutComponent nav visibility (ISSUE-210 / TC-PRF-001-13)', () =>
 
     expect(renderedRoutes()).not.toContain('/performance');
   });
+
+  // ── BUG-450 ────────────────────────────────────────────────────────────────────────────
+  // Departments and Job Titles shipped with NO gate at all — not the wrong gate, none. The
+  // filter reads `if (!item.permission) return true`, so an ungated item is visible to
+  // EVERYONE, and both routes are roleGuard(['Tenant Admin','HR Officer']). Every Employee
+  // and Manager in every tenant was shown two prominent links that dead-end at /forbidden.
+  //
+  // This is asserted as an INVARIANT over the whole nav rather than as two route names,
+  // because the defect class is "an item with no gate", not "these two items". A test naming
+  // /departments and /job-titles would go green the moment someone adds a third ungated
+  // item — which is exactly how this one survived: the sibling arm below pins /performance
+  // alone, and these two sat beside it unnoticed.
+  const CORE_HR_ADMIN_ROUTES = ['/departments', '/job-titles'];
+
+  it('an employee-only principal sees no Core-HR master-data link (BUG-450)', () => {
+    loginAs(['Employee'], ['Employee.View.Own']);
+
+    fixture = TestBed.createComponent(MainLayoutComponent);
+    fixture.detectChanges();
+
+    const shown = renderedRoutes();
+    for (const route of CORE_HR_ADMIN_ROUTES) {
+      expect(shown)
+        .withContext(
+          `${route} is guarded by roleGuard(['Tenant Admin','HR Officer']); showing it to an ` +
+            'Employee is a link that dead-ends at /forbidden (BUG-450)'
+        )
+        .not.toContain(route);
+    }
+  });
+
+  it('a Manager still sees no Core-HR master-data link (BUG-450)', () => {
+    // Manager is the persona most likely to be mistaken for an admin. The route guard does
+    // not admit it, so the nav must not either.
+    loginAs(['Manager'], ['Employee.View.Team']);
+
+    fixture = TestBed.createComponent(MainLayoutComponent);
+    fixture.detectChanges();
+
+    const shown = renderedRoutes();
+    for (const route of CORE_HR_ADMIN_ROUTES) {
+      expect(shown).not.toContain(route);
+    }
+  });
+
+  it('HR Officer and Tenant Owner both DO see them — the gate must not overshoot (BUG-450)', () => {
+    // The failure mode opposite to the bug: a gate that hides the link from someone who can
+    // enter. 'Tenant Owner' is in the list because roleGuard implicitly widens every tenant
+    // guard with TENANT_SUPER_ROLES (auth.guard.ts:63,76), so a nav gate omitting it would
+    // hide a working page from the tenant's owner.
+    for (const role of ['HR Officer', 'Tenant Owner']) {
+      loginAs([role], []);
+      fixture = TestBed.createComponent(MainLayoutComponent);
+      fixture.detectChanges();
+
+      const shown = renderedRoutes();
+      for (const route of CORE_HR_ADMIN_ROUTES) {
+        expect(shown)
+          .withContext(`${role} passes the route guard, so the nav must show ${route}`)
+          .toContain(route);
+      }
+    }
+  });
 });
