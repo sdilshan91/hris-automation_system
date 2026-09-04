@@ -36978,6 +36978,7 @@ export interface components {
             employeeLimit?: number | null;
             gauges?: components["schemas"]["MonitoringUsageGaugeDto"][] | null;
             limitKnown?: boolean;
+            limitStatus?: string | null;
             name?: string | null;
             plan?: string | null;
             status?: string | null;
@@ -36994,6 +36995,7 @@ export interface components {
             band?: components["schemas"]["MonitoringUsageBand"];
             /** Format: int32 */
             limit?: number | null;
+            limitStatus?: string | null;
             resource?: string | null;
             /** Format: double */
             usagePercent?: number | null;
