@@ -864,6 +864,11 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
 
 ### Tier F — reclassified / decisions pending
 
+- [ ] **BUG-471 · plan-override console is a live 404** — **HIGH, re-sorted above F1/F3 on 2026-09-04** per rule #6.
+      All three FE override calls hit `/system/tenants/{id}/plan-overrides`; the API serves `/system/plans/overrides`.
+      The escape hatch for plan limits is unreachable from the console. Fix **BUG-472 in the same change** — its
+      camelCase `LIMIT_FIELDS` keys are masked by this 404 and would turn it into a 400 that reads as a regression.
+      Outranks both remaining `F` items: it is a dead documented capability, they are a new feature and a build-out.
 - [ ] **F1 · GAP-019b Google sign-in** — **not billing, and not covered by the billing parking decision.**
   `EntraSsoService.cs:544` is generic OIDC and names itself the reuse path. *(Apple stays externally gated on the
   developer subscription.)*
