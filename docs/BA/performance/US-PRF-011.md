@@ -60,11 +60,13 @@ used to justify a committee workspace.
 - Employee ratings (US-PRF-003) exist for the cohort under calibration.
 
 ## 3. Acceptance Criteria (SKELETON — expand before build)
+
+> ⚠ **§1b above supersedes this section.** §3 is the original skeleton, written before the build and before the 2026-09-01 audit. Where the two disagree, **§1b wins** — it is the rescope. This banner exists because the stale AC-3 here was, per [[ISSUE-482]], "the single most likely source of wrong-scope work on this item": an implementer reads §3 first and stops.
 | # | Given | When | Then |
 |---|-------|------|------|
 | AC-1 | A cycle with calibration enabled and rated employees | The facilitator opens the calibration workspace | A cohort view (e.g. rating distribution / grid) is shown for review. |
 | AC-2 | The committee adjusts an employee's calibrated rating | They save the adjustment | The calibrated rating is persisted with an audit trail (who/why), distinct from the original manager rating. |
-| AC-3 | Calibration review is finished | The facilitator marks the phase **complete** | The cycle's calibration state transitions to complete — **unblocking US-PRF-010 recommendation generation** (removes the `calibration_incomplete` trap). |
+| AC-3 | Calibration review is finished | The facilitator marks the phase **complete** | `CyclePhase.CompletedOn` is set for the Calibration phase — the first phase-level state in the model. Consumers then read that fact instead of proxying for it: `RecommendationService.cs:469-479`'s BR-2 gate (which today checks only that a manager review was submitted, so its `calibration_incomplete` code **describes a check it does not perform**), `CyclePhaseTransitionJob.cs:65` (hard-skips Calibration) and `AppraisalCycleService.cs:571-577` (scores it `_ => 0`). ⚠ **CORRECTED 2026-09-04 ([[ISSUE-482]]).** This cell previously claimed completion **"unblocks US-PRF-010 recommendation generation (removes the `calibration_incomplete` trap)"**. There is no lockout to remove — [[ISSUE-348]] retracted that premise and §1b already struck it as `AC-4 REMOVED`. The stale text survived here in **§3, which is the section an implementer reads first**, above the rescope that supersedes it. |
 | AC-4 | Two tenants run calibration | Any calibration action runs | All calibration data is tenant-isolated. |
 
 ## 4–10. Requirements (TO AUTHOR)
