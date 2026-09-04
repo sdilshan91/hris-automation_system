@@ -36,15 +36,38 @@ LEDGERS=(
 command -v gh >/dev/null 2>&1 || { echo "ledger-lock: gh not on PATH — skipping (fail-open)"; exit 0; }
 
 BASE="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
-open_json="$(gh pr list --state open --json number,headRefName,files,mergeStateStatus 2>/dev/null)" || {
+open_json="$(gh pr list --state open --json number,headRefName,baseRefName,files,mergeStateStatus 2>/dev/null)" || {
   echo "ledger-lock: could not reach GitHub — skipping (fail-open)"; exit 0; }
 
-# Which ledgers does MY branch touch (vs its merge base)?
+# Resolve the branch this work actually targets. `origin/HEAD` is NOT it: it points at the repo default
+# (`main`) while this repo develops on a long-lived working branch, so it produced a merge base hundreds
+# of commits back and a diff listing most of the tree. Prefer, in order:
+#   1. $LEDGER_LOCK_BASE   2. the branch open PRs target   3. the current branch's upstream   4. origin/HEAD
+base_ref="${LEDGER_LOCK_BASE:-}"
+if [[ -z "$base_ref" ]]; then
+  base_ref="$(jq -r '[.[].baseRefName] | if length>0 then (group_by(.) | max_by(length) | .[0]) else empty end' <<<"$open_json" 2>/dev/null)"
+  [[ -n "$base_ref" ]] && base_ref="origin/$base_ref"
+fi
+[[ -z "$base_ref" ]] && base_ref="$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || true)"
+[[ -z "$base_ref" ]] && base_ref="$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null || true)"
+merge_base="$(git merge-base HEAD "$base_ref" 2>/dev/null || echo HEAD)"
+
+# Which ledgers does MY branch touch? The committed diff vs that merge base, PLUS staged and unstaged
+# work — this is normally run BEFORE committing, and a check that sees only commits passes vacuously then.
+#
+# Collected into a variable rather than piped into `grep -q`. Under `set -o pipefail`, `grep -q` exits on
+# the first match, SIGPIPEs `git diff`, and the PIPELINE reports failure — so the test read false EXACTLY
+# when the file matched. The guard was inverted by its own safety flag, and the fixture test that "verified"
+# it could not see this, because the bug was in ACQUIRING the data, not in filtering it.
+changed="$( { git diff --name-only "$merge_base"...HEAD 2>/dev/null;
+              git diff --name-only HEAD 2>/dev/null;
+              git diff --name-only --cached 2>/dev/null; } | sort -u )"
+
 mine=()
 for f in "${LEDGERS[@]}"; do
-  if git diff --name-only "$(git merge-base HEAD origin/HEAD 2>/dev/null || echo HEAD)"...HEAD 2>/dev/null | grep -qx "$f"; then
-    mine+=("$f")
-  fi
+  case $'\n'"$changed"$'\n' in
+    *$'\n'"$f"$'\n'*) mine+=("$f") ;;
+  esac
 done
 
 conflicts=0

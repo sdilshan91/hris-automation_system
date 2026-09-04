@@ -286,7 +286,7 @@
 | ~~1~~ | ~~**US-PLT-005**~~ — ✅ **DONE 2026-07-29** (Scope A; AC-1/3/4 were already built, AC-2 closed N/A by ADR) | net-new story | — |
 | ~~2~~ | ~~**US-ADM-012**~~ — ✅ **DONE 2026-07-30**, six phases (normalization · FE gating · plan propagation + plan-change endpoint · module gate · limit keys · usage gauges) | net-new story | — |
 | 3 | **US-PLT-004** — observability NFRs. ⚠ **Smaller than the stub implies:** AC-2 (health live/ready) already built + tested; `HRM.*` meters already started. Real remainder = LGTM stack, Serilog→OTel sink, domain meters, API-call counter | net-new story | — *(check GlitchTip overlap before standing up LGTM)* |
-| 4 | **US-PRF-011** — performance calibration workspace | net-new story | — *(unblocks US-PRF-010 dead-end)* |
+| 4 | **US-PRF-011** — performance calibration workspace | net-new story | — *(see the **§1b rescope** in the story. The "unblocks US-PRF-010 dead-end" note that stood here until 2026-09-04 was **false** — [[ISSUE-348]] retracted it, line 229 of this same file already called the premise "verified FALSE", and `RecommendationService.cs:469-479` confirms no lockout exists. Corrected under [[ISSUE-481]].)* |
 | 5 | **US-PLT-002** — RLS prod flip | **ops**, not dev | user's deploy step (`Rls/README.md` §3b) |
 | 6 | ~40 `[x]` stories with **unbuilt ACs** | deferred ACs | see the Deferred-AC table below |
 | 7 | P6 deferred FE (ISSUE-271/272/267), P7 LOW tail (~150 LOW + 20 ENH), BUG-098 | finding-driven | `docs/QA/TEST-FINDINGS.md` |
