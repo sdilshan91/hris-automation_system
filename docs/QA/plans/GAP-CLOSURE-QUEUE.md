@@ -277,12 +277,8 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 2 | ~~`G10` `/test-us US-PRF-005`~~ | ✅ | **BLOCKED × 3 — ISSUE-377 NOT discharged.** Found BUG-431 (HIGH) |
 | 3 | ~~`G16` BUG-431 date-only 500~~ | ✅ | **fixed at the API boundary**; 5573/5573; found ISSUE-435 + ISSUE-436 |
 | 4 | ~~`G11` correct 3 register rows~~ | ✅ | **#582** — GAP-006's "add 6 filters" would have REGRESSED 3 |
-| 5 | `G1` part-time overtime on a full-time base | auto | **money, live** |
-| 6 | ~~`G8` performance FE mappers~~ | ✅ | **7 of 8 comments were false**; 5 arms failed pre-fix; 4333 green |
 | 5 | ~~`G1` part-time overtime on a full-time base~~ | ✅ | **FIXED** — 2 arms failed pre-fix, 5578/5578 after |
-| 6 | `G8` performance FE mappers | auto | cheapest fix in the guide |
-| 7 | `G3` the three mocked-spec breaks | auto | code **and** specs, one branch |
-| 6 | `G8` performance FE mappers | auto | cheapest fix in the guide |
+| 6 | ~~`G8` performance FE mappers~~ | ✅ | **7 of 8 comments were false**; 5 arms failed pre-fix; 4333 green |
 | 7 | ~~`G3` three mocked-spec breaks + preview + BUG-441~~ | ✅ | 5590 BE · 4329 FE; found + fixed a CRIT |
 | 8 | `G13` test theater | auto | |
 | 9 | ~~`G15` Production email guard test~~ | ✅ | **3 mutations**; M1 proved the old suite could not see the guard deleted |
@@ -292,6 +288,14 @@ instances**, so probes 3–5 could not be observed end-to-end.
 | 13 | ~~`G6` correct the append-only claim~~ | ✅ #594 | merged — deleted the mirror instead of guarding it |
 | 14 | ~~`G7` triage `IgnoreQueryFilters`~~ | ✅ | **SURVEYED — campaign DECLINED.** 78.9% non-mechanical vs a >20% stop bar; count was 354→**265**; triage already done 2026-08-05 |
 | 14+ | `A3`, `E2`–`E5`, `F1`–`F4` | mixed | **pre-audit scope — re-verify before building** |
+
+> **Why this table had duplicate rows (2026-09-04).** Rows 5, 6 and 7 each appeared **twice** — once
+> ticked, once not — after a run of conflict resolutions during the six-PR cascade. Ticking an item
+> **rewrites an existing row**, so a resolution that keeps "both sides" silently produces two rows for
+> one item and makes "the topmost unticked item" ambiguous. This is exactly why this file is
+> **deliberately excluded** from the `merge=union` `.gitattributes` entry that covers the append-only
+> ledgers: union would cause this on *every* merge rather than occasionally. Resolve conflicts here by
+> hand, keeping the **ticked** row.
 
 **Held items open a PR and the loop moves on**; they do not stall the queue. The gate stands as
 written (decided 2026-09-01): a human reviews every auth/JWT and tenant-isolation diff.
