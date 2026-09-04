@@ -63,3 +63,49 @@ exists to prevent. `/test-all` and `@test-runner` remain fully report-only regar
 A genuine doubt does **not** halt the queue. File a `DECISION` finding, park that item at the
 decision-gate, re-sort, continue with the next unblocked item, and report every parked
 question in the turn summary. Never guess in the dark to keep moving.
+
+## Keeping PRs mergeable — the merge queue (decided 2026-09-04)
+
+Six PRs open at once produced **six cascading conflicts in one session**. Every single one was in
+`TEST-FINDINGS.md`, `GAP-CLOSURE-QUEUE.md` or an agent `MEMORY.md`. **None was in `src/`.**
+Each merge dirtied every other open PR, and the rebasing cost more time than the work.
+
+### The rule: a GitHub merge queue on the working branch
+
+GitHub serialises merges and rebases each entry itself, so a PR can never go stale between
+"CI green" and "merged". **It must be configured with batching**, or it makes idle time worse rather
+than better — this repo's backend gate runs ~30-60 minutes, so five sequential entries would be a
+five-hour queue.
+
+**Settings that matter** (Settings → Branches → rule for `test/local-subdomains` → Require merge queue):
+
+| Setting | Value | Why |
+|---|---|---|
+| `grouping_strategy` | `ALLGREEN` | batch merges only if the whole batch is green |
+| `max_entries_to_merge` | `5` | **five PRs cost ONE CI run, not five** — this is the setting that protects idle time |
+| `max_entries_to_build` | `5` | build the batch together |
+| `min_entries_to_merge_wait_minutes` | `5` | brief wait so entries actually accumulate into a batch |
+| `check_response_timeout_minutes` | `120` | the backend gate has taken 60+ min under agent contention |
+| `merge_method` | `SQUASH` | matches existing practice |
+
+**This must be enabled through the web UI.** The `merge_queue` ruleset rule is rejected by the REST
+API (`Invalid rule 'merge_queue'`, no field named, on every parameter variation) — verified
+2026-09-04 on a public repo with admin rights, so it is not a plan or permission gate.
+
+⚠ **Do NOT reach for the branch-protection API as a substitute.** It does not carry merge-queue
+settings, and marking `Backend (build + test)` required **blocks every docs-only PR**, because that
+job reports `skipping` on them. That was tried and reverted the same day.
+
+### Until the queue is on — and worth doing anyway
+
+1. **Sync the base into your branch before opening the PR.** Cheap, correct, and it removes
+   conflicts that exist at creation time. It does **not** prevent the cascade, because these
+   conflicts appear *after* opening when a sibling merges — so it is hygiene, not the fix.
+2. **Prefer keeping ledger writes out of feature PRs.** A feature PR that touches only code and
+   tests has almost nothing to collide on; bookkeeping batched into one docs-only PR merges in
+   ~4 minutes instead of ~60. Every conflict in the 2026-09-02/03 session was bookkeeping colliding
+   with bookkeeping.
+3. **`merge=union` already covers the append-only ledgers** (`.gitattributes`, landed #596), which
+   removed most of the recurrence. `GAP-CLOSURE-QUEUE.md` is deliberately excluded — ticking an item
+   rewrites an existing row, and union would silently duplicate it.
+
