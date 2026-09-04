@@ -41,6 +41,8 @@ echo "Capability — silently dead if absent:"
 check cap "csharp-ls (C# LSP)"          csharp-ls                  "dotnet tool install --global csharp-ls"
 check cap "typescript-language-server"  typescript-language-server "npm install -g typescript-language-server"
 check cap "docker (Testcontainers)"     docker                     "integration tests need a Docker daemon"
+check cap "gh (ledger-lock, PR gate)"  gh                         "install GitHub CLI — scripts/ledger-lock.sh fails open without it"
+check cap "jq (ledger-lock)"           jq                         "install jq — scripts/ledger-lock.sh needs it to read open-PR file lists"
 
 # The typescript-lsp trap: `npm i -g typescript` now resolves to 7.x (the native port),
 # whose lib/ has no tsserver.js, so the language server dies at initialize. Pin to the
