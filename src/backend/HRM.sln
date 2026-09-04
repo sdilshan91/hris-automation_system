@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.Infrastructure", "HRM.I
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.Tests", "HRM.Tests\HRM.Tests.csproj", "{7CE46AF6-FF5D-49F1-8995-A1C7AF3C5B72}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HRM.ArchitectureTests", "HRM.ArchitectureTests\HRM.ArchitectureTests.csproj", "{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,6 +85,18 @@ Global
 		{7CE46AF6-FF5D-49F1-8995-A1C7AF3C5B72}.Release|x64.Build.0 = Release|Any CPU
 		{7CE46AF6-FF5D-49F1-8995-A1C7AF3C5B72}.Release|x86.ActiveCfg = Release|Any CPU
 		{7CE46AF6-FF5D-49F1-8995-A1C7AF3C5B72}.Release|x86.Build.0 = Release|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Debug|x64.Build.0 = Debug|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Debug|x86.Build.0 = Debug|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Release|x64.ActiveCfg = Release|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Release|x64.Build.0 = Release|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Release|x86.ActiveCfg = Release|Any CPU
+		{AAA23D1F-29CE-4F40-886C-3AE767DD9E9B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
