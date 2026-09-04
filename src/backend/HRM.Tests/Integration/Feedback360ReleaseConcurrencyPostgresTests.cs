@@ -269,7 +269,13 @@ public sealed class Feedback360ReleaseConcurrencyPostgresTests : IAsyncLifetime
         {
             Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, CycleId = _cycleId,
             RevieweeEmployeeId = _revieweeId, ReleasedAt = DateTime.UtcNow,
-            ReleasedByEmployeeId = Guid.Empty, IsDeleted = false,
+            // Mirror what the service actually wrote rather than hardcoding a value (queue item G13). This
+            // used to read `Guid.Empty`, which is the ISSUE-382#2 defect value — the placeholder the service
+            // falls back to when the releasing user has no linked employee record. Baking it into the fixture
+            // meant that resolving ISSUE-382#2 (making the field nullable, or requiring a real employee) would
+            // surface HERE as a test break rather than as the fix it is. Reading it off the winner row keeps
+            // this arm about the thing it is named for — the unique index — and about nothing else.
+            ReleasedByEmployeeId = first.Value!.ReleasedByEmployeeId, IsDeleted = false,
         });
 
         var act = async () => await db.SaveChangesAsync();
