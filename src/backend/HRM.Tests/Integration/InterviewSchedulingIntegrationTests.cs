@@ -111,6 +111,7 @@ public sealed class InterviewSchedulingIntegrationTests
         // recording fake to assert the schedule/clear behaviour explicitly.
         if (reminderScheduler is not null)
             services.AddSingleton(reminderScheduler);
+        services.AddSingleton<IHtmlSanitizer, GanssHtmlSanitizer>();   // ISSUE-117: InterviewService now sanitizes notes on write
         services.AddScoped<IInterviewService, InterviewService>();
 
         services.AddMediatR(cfg =>
@@ -517,5 +518,60 @@ public sealed class InterviewSchedulingIntegrationTests
 
         byA1.Value!.Should().ContainSingle();
         byA1.Value[0].Interviewers.Single().EmployeeId.Should().Be(_empA1);
+    }
+
+    // ── ISSUE-117: interview notes are sanitized, not merely trimmed ───────────────────────
+    //
+    // Notes are free text authored by one user and rendered to others. Before this, both write
+    // paths stored `Trim(input.Notes)` verbatim, while the platform's IHtmlSanitizer was already
+    // registered and used by OfferService, VacancyService, ApplicantService and ReviewSignoffService.
+    // So the platform HAD the layer and this one service skipped it — the ledger's "platform-wide
+    // pattern" framing was wrong, and worth stating because it changes the fix from a design
+    // decision into a two-line omission.
+    //
+    // Asserted on BOTH paths deliberately. The finding named only the create site; sanitizing one of
+    // two leaves the field reachable unsanitized by EDITING an interview instead of creating one,
+    // which would have read as fixed and shipped the hole.
+
+    private const string ScriptPayload = "<script>alert('xss')</script>Panel went well";
+
+    [Fact]
+    public async Task Schedule_SanitizesNotes_NotJustTrims_ISSUE117()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+
+        var cmd = Schedule(_applicantA, new[] { _empA1 }) with { Notes = "  " + ScriptPayload + "  " };
+        var created = await mediator.Send(cmd);
+
+        created.IsSuccess.Should().BeTrue(created.Error);
+        created.Value!.Notes.Should().NotContain("<script>",
+            "notes are rendered to other users, so a bare Trim stores markup verbatim (ISSUE-117)");
+        created.Value!.Notes.Should().Contain("Panel went well",
+            "sanitizing must strip the markup, not discard the author's text");
+    }
+
+    [Fact]
+    public async Task Update_SanitizesNotes_TheSecondWritePathTheFindingDidNotName_ISSUE117()
+    {
+        var mediator = BuildPipeline(_tenantA, _userA);
+
+        var created = await mediator.Send(Schedule(_applicantA, new[] { _empA1 }));
+        created.IsSuccess.Should().BeTrue(created.Error);
+
+        var updated = await mediator.Send(new UpdateInterviewCommand(
+            created.Value!.Id,
+            InterviewType.Video,
+            DateOnly.FromDateTime(DateTime.UtcNow.AddDays(6)),
+            new TimeOnly(11, 0),
+            45,
+            null,
+            "https://meet.example.com/x",
+            ScriptPayload,
+            new[] { _empA1 }));
+
+        updated.IsSuccess.Should().BeTrue(updated.Error);
+        updated.Value!.Notes.Should().NotContain("<script>",
+            "the UPDATE path is the one the finding omitted; leaving it raw makes the fix cosmetic");
+        updated.Value!.Notes.Should().Contain("Panel went well");
     }
 }

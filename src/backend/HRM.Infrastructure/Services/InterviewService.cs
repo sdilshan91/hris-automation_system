@@ -27,6 +27,7 @@ public sealed class InterviewService : IInterviewService
     private readonly IRecruitmentNotificationService _notifications;
     private readonly IInterviewReminderScheduler? _reminderScheduler;
     private readonly IConfiguration _configuration;
+    private readonly IHtmlSanitizer _sanitizer;
     private readonly ILogger<InterviewService> _logger;
 
     /// <summary>BR-5/FR-4: default reminder lead time (hours) when not configured.</summary>
@@ -37,6 +38,7 @@ public sealed class InterviewService : IInterviewService
         ITenantContext tenantContext,
         IRecruitmentNotificationService notifications,
         IConfiguration configuration,
+        IHtmlSanitizer sanitizer,
         ILogger<InterviewService> logger,
         IInterviewReminderScheduler? reminderScheduler = null)
     {
@@ -44,6 +46,7 @@ public sealed class InterviewService : IInterviewService
         _tenantContext = tenantContext;
         _notifications = notifications;
         _configuration = configuration;
+        _sanitizer = sanitizer;
         _logger = logger;
         _reminderScheduler = reminderScheduler;
     }
@@ -109,7 +112,13 @@ public sealed class InterviewService : IInterviewService
             DurationMinutes = input.DurationMinutes,
             Location = Trim(input.Location),
             VideoLink = Trim(input.VideoLink),
-            Notes = Trim(input.Notes),
+            // ISSUE-117: sanitize, do not merely trim. Interview notes are free text authored by one
+            // user and rendered to others (the panel, the candidate-facing summary), so a bare Trim
+            // stores markup verbatim. The sanitizer is a registered singleton
+            // (DependencyInjection.cs:899) already used by OfferService, VacancyService,
+            // ApplicantService and ReviewSignoffService — this service was the one that skipped it, so
+            // the platform HAS the layer and recruitment had a hole in it, rather than lacking a layer.
+            Notes = _sanitizer.Sanitize(Trim(input.Notes)),
             Status = InterviewStatus.Scheduled,
             IsDeleted = false,
             Interviewers = interviewerIds.Select(empId => new InterviewInterviewer
@@ -183,7 +192,10 @@ public sealed class InterviewService : IInterviewService
         interview.DurationMinutes = input.DurationMinutes;
         interview.Location = Trim(input.Location);
         interview.VideoLink = Trim(input.VideoLink);
-        interview.Notes = Trim(input.Notes);
+        // ISSUE-117: the UPDATE path, which the finding did not name — it recorded only the create
+        // site. Sanitizing one of two write paths leaves the field reachable unsanitized by editing an
+        // interview instead of creating one, which would have read as fixed.
+        interview.Notes = _sanitizer.Sanitize(Trim(input.Notes));
 
         // Reconcile the interviewer set by employee id directly on the junction DbSet (the interview is
         // loaded WITHOUT Include, so there is no tracked nav-collection to fight the add/remove — which
