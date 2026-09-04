@@ -249,27 +249,38 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
         // US-PLT-004: real month-to-date API-call usage per tenant (persisted by the counter flusher).
         var apiCallsByTenant = await TenantApiCallUsage.CountThisMonthByTenantAsync(_db, nowUtc, cancellationToken: cancellationToken);
 
+        // BUG-473: "plans exist and this tenant matches none of them" is a CONFIGURATION ERROR, not an
+        // unlimited allowance — but "this deployment configures no plans at all" is neither. Only the plan
+        // COUNT can tell those apart, so it is captured once for the whole sweep.
+        var anyPlansConfigured = planLimits.Count > 0;
+
         var summaries = new List<TenantUsageSummaryDto>(tenants.Count);
         foreach (var t in tenants)
         {
             var active = countByTenant.TryGetValue(t.Id, out var c) ? c : 0;
-            var plan = limitByPlanCode.GetValueOrDefault(t.PlanId);
-
-            int? limit = t.MaxEmployees ?? plan?.MaxEmployees;
-
+            var presence = new PlanPresence(anyPlansConfigured, limitByPlanCode.TryGetValue(t.PlanId, out var plan));
             var overrides = overridesByTenant.GetValueOrDefault(t.Id);
+
+            // Employee cap: the SAME helper and the SAME precedence (override > plan > snapshot) the
+            // enforcement gates apply. This used to read `t.MaxEmployees ?? plan?.MaxEmployees` — the exact
+            // INVERSE — so the console could report a cap the system does not enforce, with no staleness
+            // required: a snapshot that merely differed from the plan was enough.
+            var employee = ResolveLimit(PlanLimitKeys.MaxEmployees, presence, plan?.MaxEmployees, overrides, nowUtc);
+            var employeeCap = employee.IsConfigurationError ? null : employee.WithSnapshotFallback(t.MaxEmployees);
+
             var storageGauge = BuildStorageGauge(
                 storageByTenant.GetValueOrDefault(t.Id),
-                ResolveLongLimit(PlanLimitKeys.MaxStorageGb, plan?.MaxStorageGb, overrides, nowUtc));
+                ResolveLimit(PlanLimitKeys.MaxStorageGb, presence, plan?.MaxStorageGb, overrides, nowUtc));
             var emailGauge = BuildEmailGauge(
                 emailByTenant.GetValueOrDefault(t.Id),
-                (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
+                ResolveLimit(PlanLimitKeys.MaxEmailSendsPerMonth, presence, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
             var apiGauge = BuildApiCallsGauge(
                 apiCallsByTenant.GetValueOrDefault(t.Id),
-                ResolveLongLimit(PlanLimitKeys.MaxApiCallsPerMonth, plan?.MaxApiCallsPerMonth, overrides, nowUtc));
+                ResolveLimit(PlanLimitKeys.MaxApiCallsPerMonth, presence, plan?.MaxApiCallsPerMonth, overrides, nowUtc));
 
             summaries.Add(BuildSummary(
-                t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, active, limit, storageGauge, emailGauge, apiGauge));
+                t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, active, ToGaugeLimit(employeeCap),
+                LimitStatusOf(employee, employeeCap), storageGauge, emailGauge, apiGauge));
         }
 
         // Quota-breach queue (FR-3): tenants >= 80% on the employee limit, sorted by severity (percent) desc.
@@ -318,13 +329,22 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             .Select(p => new { p.MaxEmployees, p.MaxStorageGb, p.MaxEmailSendsPerMonth, p.MaxApiCallsPerMonth })
             .FirstOrDefaultAsync(cancellationToken);
 
-        int? limit = t.MaxEmployees ?? plan?.MaxEmployees;
+        // BUG-473: same three-state resolution as the dashboard sweep. A deployment with NO plans is not
+        // misconfigured; a tenant pointing at a plan that does not exist is.
+        var presence = new PlanPresence(
+            await _db.SubscriptionPlans.AnyAsync(cancellationToken),
+            Found: plan is not null);
 
         // AC-4 usage gauges for this one tenant (same shared, anti-drift helpers; onlyTenant-scoped scans).
         var overrides = await _db.PlanLimitOverrides
             .Where(o => o.TenantId == tenantId)
             .ToListAsync(cancellationToken);
         var nowUtc = DateTime.UtcNow;
+
+        // Same helper, same precedence (override > plan > snapshot) as every enforcement gate.
+        var employee = ResolveLimit(PlanLimitKeys.MaxEmployees, presence, plan?.MaxEmployees, overrides, nowUtc);
+        var employeeCap = employee.IsConfigurationError ? null : employee.WithSnapshotFallback(t.MaxEmployees);
+
         var usedBytes = (await TenantStorageUsage.ComputeBytesByTenantAsync(_db, tenantId, cancellationToken))
             .GetValueOrDefault(tenantId);
         var emailsSent = (await TenantEmailSendUsage.CountSentThisMonthByTenantAsync(_db, nowUtc, tenantId, cancellationToken))
@@ -333,7 +353,7 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             .GetValueOrDefault(tenantId);
 
         var storageGauge = BuildStorageGauge(
-            usedBytes, ResolveLongLimit(PlanLimitKeys.MaxStorageGb, plan?.MaxStorageGb, overrides, nowUtc));
+            usedBytes, ResolveLimit(PlanLimitKeys.MaxStorageGb, presence, plan?.MaxStorageGb, overrides, nowUtc));
 
         // TC-ADM-002-17: uptime from the retained probe history. Stays NULL when there is no history — the TC
         // forbids a fabricated figure, and "no data" is a different statement from "100% up".
@@ -356,12 +376,13 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             .Select(x => (object)new { hourUtc = x.HourUtc, p95Ms = x.P95Ms, requests = x.Requests })
             .ToArray();
         var emailGauge = BuildEmailGauge(
-            emailsSent, (int?)ResolveLongLimit(PlanLimitKeys.MaxEmailSendsPerMonth, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
+            emailsSent, ResolveLimit(PlanLimitKeys.MaxEmailSendsPerMonth, presence, plan?.MaxEmailSendsPerMonth, overrides, nowUtc));
         var apiGauge = BuildApiCallsGauge(
-            apiCalls, ResolveLongLimit(PlanLimitKeys.MaxApiCallsPerMonth, plan?.MaxApiCallsPerMonth, overrides, nowUtc));
+            apiCalls, ResolveLimit(PlanLimitKeys.MaxApiCallsPerMonth, presence, plan?.MaxApiCallsPerMonth, overrides, nowUtc));
 
         var summary = BuildSummary(
-            t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, activeEmployees, limit, storageGauge, emailGauge, apiGauge);
+            t.Id, t.Name, t.Subdomain, t.Status.ToString(), t.PlanId, activeEmployees, ToGaugeLimit(employeeCap),
+            LimitStatusOf(employee, employeeCap), storageGauge, emailGauge, apiGauge);
         var employeeGauge = summary.Gauges.First(g => g.Resource == "Employees");
 
         // Owner email (operational, not PII per BR-2): the user assigned the Tenant Owner role for this tenant.
@@ -423,14 +444,15 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     /// </summary>
     private static TenantUsageSummaryDto BuildSummary(
         Guid tenantId, string name, string subdomain, string status, string plan, int activeEmployees, int? limit,
-        UsageGaugeDto storageGauge, UsageGaugeDto emailGauge, UsageGaugeDto apiGauge)
+        string limitStatus, UsageGaugeDto storageGauge, UsageGaugeDto emailGauge, UsageGaugeDto apiGauge)
     {
         var percent = MonitoringClassifiers.ComputePercent(activeEmployees, limit);
         var band = percent is { } p ? MonitoringClassifiers.ClassifyBand(p) : (UsageBand?)null;
 
         var gauges = new List<UsageGaugeDto>
         {
-            new("Employees", Available: true, Used: activeEmployees, Limit: limit, UsagePercent: percent, Band: band),
+            new("Employees", Available: true, Used: activeEmployees, Limit: limit, UsagePercent: percent,
+                Band: band, LimitStatus: limitStatus),
             storageGauge,
             apiGauge,
             emailGauge,
@@ -447,31 +469,66 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             UsagePercent: percent,
             Band: band,
             LimitKnown: limit is not null,
+            LimitStatus: limitStatus,
             Gauges: gauges);
     }
 
     /// <summary>
-    /// Resolves the effective limit for a plan-limit key (override &gt; plan; null = UNLIMITED per BR-3) via the
-    /// shared <see cref="PlanLimitResolver"/>, so the gauge and any enforcement gate resolve limits identically.
+    /// Whether this deployment configures subscription plans at all, and whether THIS tenant's <c>plan_id</c>
+    /// matched one. Bundled so the two booleans cannot be swapped at a call site — they mean opposite things.
     /// </summary>
-    private static long? ResolveLongLimit(
-        string key, int? planValue, IEnumerable<PlanLimitOverride>? overrides, DateTime nowUtc)
-        => PlanLimitResolver.Resolve(key, planValue, overrides, nowUtc).Value;
+    private readonly record struct PlanPresence(bool AnyConfigured, bool Found);
+
+    /// <summary>
+    /// Resolves a plan-limit key for one tenant from the ALREADY batch-loaded plan row + overrides, through the
+    /// same <see cref="PlanLimitLookup"/> the enforcement gates use.
+    /// </summary>
+    /// <remarks>
+    /// BUG-473: this replaced a <c>ResolveLongLimit</c> that called <c>PlanLimitResolver.Resolve(...).Value</c>
+    /// directly and threw away <c>PlanExists</c> — which is the ONE thing <see cref="PlanLimitLookup"/> was
+    /// built to preserve. The gauge therefore could not tell a deliberate unlimited from a broken
+    /// <c>plan_id</c>, and rendered the broken case as "unlimited" while the gates 403'd the same tenant.
+    /// </remarks>
+    private static PlanLimitLookup.EffectivePlanLimit ResolveLimit(
+        string key, PlanPresence presence, int? planValue,
+        IEnumerable<PlanLimitOverride>? overrides, DateTime nowUtc)
+        => PlanLimitLookup.ResolveFromLoaded(key, presence.AnyConfigured, presence.Found, planValue, overrides, nowUtc);
+
+    /// <summary>
+    /// Which of the three <see cref="PlanLimitStatus"/> states a gauge is in. <paramref name="effectiveCap"/> is
+    /// the FINAL cap after any snapshot fallback, so a plan with no value but a stamped tenant snapshot reads
+    /// Enforced rather than Unlimited.
+    /// </summary>
+    private static string LimitStatusOf(PlanLimitLookup.EffectivePlanLimit resolved, long? effectiveCap)
+        => resolved.IsConfigurationError ? PlanLimitStatus.ConfigurationError
+            : effectiveCap is null ? PlanLimitStatus.Unlimited
+            : PlanLimitStatus.Enforced;
+
+    /// <summary>Narrows a resolved cap to the gauge's <c>int?</c> field, saturating rather than wrapping.</summary>
+    private static int? ToGaugeLimit(long? cap)
+        => cap is { } v ? (int)Math.Min(v, int.MaxValue) : null;
 
     /// <summary>
     /// The REAL storage gauge (US-ADM-012 AC-4). <paramref name="usedBytes"/> is the cumulative stored bytes across
-    /// all four size-bearing tables (<see cref="TenantStorageUsage"/>); <paramref name="limitGb"/> is the resolved
-    /// <c>max_storage_gb</c> cap (null ⇒ UNLIMITED per BR-3). <c>Used</c>/<c>Limit</c> are expressed in MEGABYTES
-    /// (the gauge carries no unit field and byte counts overflow <see cref="int"/>); the percentage is computed on
-    /// exact BYTES. A null limit is represented as real usage with a null limit/percent — never a divide-by-null.
+    /// all four size-bearing tables (<see cref="TenantStorageUsage"/>); <paramref name="limit"/> is the resolved
+    /// <c>max_storage_gb</c> cap. <c>Used</c>/<c>Limit</c> are expressed in MEGABYTES (the gauge carries no unit
+    /// field and byte counts overflow <see cref="int"/>); the percentage is computed on exact BYTES. A capless
+    /// gauge is real usage with a null limit/percent — never a divide-by-null.
     /// </summary>
-    private static UsageGaugeDto BuildStorageGauge(long usedBytes, long? limitGb)
+    private static UsageGaugeDto BuildStorageGauge(long usedBytes, PlanLimitLookup.EffectivePlanLimit limit)
     {
         const long bytesPerMb = 1024L * 1024L;
         var usedMb = (int)Math.Min(usedBytes / bytesPerMb, int.MaxValue);
 
-        if (limitGb is not { } gb)
-            return new UsageGaugeDto("Storage", Available: true, Used: usedMb, Limit: null, UsagePercent: null, Band: null);
+        // BUG-473: an unresolvable plan_id is a MISCONFIGURATION, not an unlimited allowance. It renders with no
+        // cap either way, so only LimitStatus keeps it from reading as the reassuring "no limit" it is not.
+        if (limit.IsConfigurationError)
+            return new UsageGaugeDto("Storage", Available: true, Used: usedMb, Limit: null, UsagePercent: null,
+                Band: null, LimitStatus: PlanLimitStatus.ConfigurationError);
+
+        if (limit.Value is not { } gb)
+            return new UsageGaugeDto("Storage", Available: true, Used: usedMb, Limit: null, UsagePercent: null,
+                Band: null, LimitStatus: PlanLimitStatus.Unlimited);
 
         var limitBytes = gb * 1024L * bytesPerMb;
         var limitMb = (int)Math.Min(gb * 1024L, int.MaxValue);
@@ -479,19 +536,27 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
             ? (usedBytes > 0 ? 100d : 0d)
             : Math.Round((double)usedBytes / limitBytes * 100d, 1);
         return new UsageGaugeDto("Storage", Available: true, Used: usedMb, Limit: limitMb,
-            UsagePercent: percent, Band: MonitoringClassifiers.ClassifyBand(percent));
+            UsagePercent: percent, Band: MonitoringClassifiers.ClassifyBand(percent),
+            LimitStatus: PlanLimitStatus.Enforced);
     }
 
     /// <summary>
     /// The REAL email-sends gauge (US-ADM-012 AC-4): month-to-date successful Email sends vs the resolved
     /// <c>max_email_sends_per_month</c> cap (null ⇒ UNLIMITED per BR-3 ⇒ null percent/band, never divide-by-null).
     /// </summary>
-    private static UsageGaugeDto BuildEmailGauge(int sentThisMonth, int? limit)
+    private static UsageGaugeDto BuildEmailGauge(int sentThisMonth, PlanLimitLookup.EffectivePlanLimit limit)
     {
-        var percent = MonitoringClassifiers.ComputePercent(sentThisMonth, limit);
+        // BUG-473: unresolvable plan_id ⇒ configuration error, NOT unlimited.
+        if (limit.IsConfigurationError)
+            return new UsageGaugeDto("EmailSends", Available: true, Used: sentThisMonth, Limit: null,
+                UsagePercent: null, Band: null, LimitStatus: PlanLimitStatus.ConfigurationError);
+
+        var cap = ToGaugeLimit(limit.Value);
+        var percent = MonitoringClassifiers.ComputePercent(sentThisMonth, cap);
         var band = percent is { } p ? MonitoringClassifiers.ClassifyBand(p) : (UsageBand?)null;
-        return new UsageGaugeDto("EmailSends", Available: true, Used: sentThisMonth, Limit: limit,
-            UsagePercent: percent, Band: band);
+        return new UsageGaugeDto("EmailSends", Available: true, Used: sentThisMonth, Limit: cap,
+            UsagePercent: percent, Band: band,
+            LimitStatus: cap is null ? PlanLimitStatus.Unlimited : PlanLimitStatus.Enforced);
     }
 
     /// <summary>
@@ -550,20 +615,26 @@ public sealed class PlatformMonitoringService : IPlatformMonitoringService
     /// always be fully populated.</summary>
     private const int SlaUptimeWindowDays = 30;
 
-    private static UsageGaugeDto BuildApiCallsGauge(long usedThisMonth, long? limit)
+    private static UsageGaugeDto BuildApiCallsGauge(long usedThisMonth, PlanLimitLookup.EffectivePlanLimit limit)
     {
         var usedForDisplay = (int)Math.Min(usedThisMonth, int.MaxValue);
 
-        if (limit is not { } cap)
+        // BUG-473: unresolvable plan_id ⇒ configuration error, NOT unlimited.
+        if (limit.IsConfigurationError)
             return new UsageGaugeDto("ApiCalls", Available: true, Used: usedForDisplay, Limit: null,
-                UsagePercent: null, Band: null);
+                UsagePercent: null, Band: null, LimitStatus: PlanLimitStatus.ConfigurationError);
+
+        if (limit.Value is not { } cap)
+            return new UsageGaugeDto("ApiCalls", Available: true, Used: usedForDisplay, Limit: null,
+                UsagePercent: null, Band: null, LimitStatus: PlanLimitStatus.Unlimited);
 
         var limitForDisplay = (int)Math.Min(cap, int.MaxValue);
         var percent = cap <= 0
             ? (usedThisMonth > 0 ? 100d : 0d)
             : Math.Round((double)usedThisMonth / cap * 100d, 1);
         return new UsageGaugeDto("ApiCalls", Available: true, Used: usedForDisplay, Limit: limitForDisplay,
-            UsagePercent: percent, Band: MonitoringClassifiers.ClassifyBand(percent));
+            UsagePercent: percent, Band: MonitoringClassifiers.ClassifyBand(percent),
+            LimitStatus: PlanLimitStatus.Enforced);
     }
 
     private async Task<bool> TryCanConnectAsync(CancellationToken cancellationToken)

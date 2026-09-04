@@ -18,10 +18,15 @@ namespace HRM.Infrastructure.Services;
 ///
 /// <para>Key rules: code is UNIQUE + IMMUTABLE (FR-3/BR-5 — create checks uniqueness, update never touches it);
 /// archive sets IsActive=false (AC-4); delete is REJECTED when any tenant references the plan code (FR-7/BR-5);
-/// every write is audited to the system audit log (NFR-3). Numeric LIMITS are read live from the plan at runtime,
-/// so a limit edit benefits existing tenants immediately (AC-3). The MODULE list is different: each tenant carries
-/// a denormalized <c>EnabledModules</c> snapshot that the module gate reads, so a change to the plan's module list
-/// must be propagated — see <see cref="RecomputeTenantsOnPlanAsync"/> (ISSUE-342).</para>
+/// every write is audited to the system audit log (NFR-3).</para>
+///
+/// <para><b>Which edits need propagating, and which do not.</b> MOST numeric limits are read live from the plan
+/// at runtime via <see cref="PlanLimitLookup"/>, so editing them benefits existing tenants immediately (AC-3)
+/// and needs no sweep. THREE fields are different because they are DENORMALIZED onto every tenant row and read
+/// from there: <c>EnabledModules</c> (the module gate reads the tenant snapshot — ISSUE-342),
+/// <c>MaxEmployees</c>, and <c>AuditLogRetentionDays</c> (<c>AuditLogPurgeService</c> reads the tenant column
+/// RAW, with no plan lookup at all — ISSUE-474). A change to any of those three must be swept out to the
+/// tenants on the plan; see <see cref="RecomputeTenantsOnPlanAsync"/>.</para>
 /// </summary>
 public sealed class SubscriptionPlanService : ISubscriptionPlanService
 {
@@ -127,8 +132,13 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
 
         var before = ToAuditState(plan);
         // Capture the normalized module set BEFORE the edit so we only sweep when it actually changed — an
-        // unrelated edit (price, name, a numeric limit) must not churn every tenant on the plan (ISSUE-342).
+        // unrelated edit (price, name, a live-read numeric limit) must not churn every tenant (ISSUE-342).
         var modulesBefore = plan.EnabledModules.ToList();
+        // ISSUE-474: the two limits that are DENORMALIZED onto every tenant, captured for the same reason.
+        // Every other numeric limit really is read live off the plan, so only these two need sweeping.
+        var maxEmployeesBefore = plan.MaxEmployees;
+        var retentionDaysBefore = plan.AuditLogRetentionDays;
+
         ApplyEditableFields(plan, fields); // never touches Code (immutable, FR-3/BR-5)
         plan.UpdatedAt = DateTime.UtcNow;
 
@@ -137,8 +147,18 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
         // which a tenant's entitlement disagrees with its plan). Order-insensitive set comparison.
         var moduleListChanged = !new HashSet<string>(modulesBefore, StringComparer.Ordinal)
             .SetEquals(plan.EnabledModules);
+
+        // ISSUE-474: a limit-only edit must sweep too. Gating the sweep on the MODULE list alone meant the
+        // exact scenario in the finding — raise audit retention from 90 to 365 days, touching no module —
+        // never ran the sweep at all, so re-stamping inside it would have fixed nothing. AuditLogPurgeService
+        // reads Tenant.AuditLogRetentionDays RAW, with no plan lookup, so the daily purge job would keep
+        // destroying audit history on the old 90-day window: irreversible data loss against a compliance
+        // setting the operator believes they just changed.
+        var snapshotLimitsChanged =
+            plan.MaxEmployees != maxEmployeesBefore || plan.AuditLogRetentionDays != retentionDaysBefore;
+
         IReadOnlyList<string> affectedSubdomains = Array.Empty<string>();
-        if (moduleListChanged)
+        if (moduleListChanged || snapshotLimitsChanged)
             affectedSubdomains = await RecomputeTenantsOnPlanAsync(plan, cancellationToken);
 
         WriteAudit("Plan.Updated", plan.Id, before, after: ToAuditState(plan), plan.UpdatedAt.Value);
@@ -150,8 +170,9 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
             await _resolutionCache.InvalidateManyAsync(affectedSubdomains, cancellationToken);
 
         _logger.LogInformation(
-            "Updated subscription plan {Code} ({PlanId}); recomputed {TenantCount} tenant(s) after a module-list change={ModuleListChanged}.",
-            plan.Code, plan.Id, affectedSubdomains.Count, moduleListChanged);
+            "Updated subscription plan {Code} ({PlanId}); recomputed {TenantCount} tenant(s) "
+            + "(moduleListChanged={ModuleListChanged}, snapshotLimitsChanged={SnapshotLimitsChanged}).",
+            plan.Code, plan.Id, affectedSubdomains.Count, moduleListChanged, snapshotLimitsChanged);
         return Result.Success();
     }
 
@@ -292,7 +313,8 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
     // ── ISSUE-342: plan-edit module propagation sweep ───────────────────────────
 
     /// <summary>
-    /// Recomputes and re-stamps <c>Tenant.EnabledModules</c> for every non-deleted tenant on this plan, using the
+    /// Recomputes and re-stamps the tenant snapshots this plan owns — <c>EnabledModules</c>, <c>MaxEmployees</c>
+    /// and <c>AuditLogRetentionDays</c> — for every non-deleted tenant on this plan, using the
     /// SAME derivation as provisioning + the plan-change endpoint (<see cref="PlanModules.DeriveTenantModules"/>)
     /// so the three call sites cannot drift. Tenants join a plan by STRING CODE
     /// (<c>Tenant.PlanId == plan.Code</c> — there is no FK), and this runs in the system context, so tenants are
@@ -310,6 +332,16 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
     /// at current scale (tens–hundreds of tenants per plan) the added write latency is negligible. If a single
     /// plan ever spans thousands of tenants, move this to a batched Hangfire job — the derivation + cache seams
     /// are already shared, so that move is local to this method and its caller.</para>
+    ///
+    /// <para><b>ISSUE-474 — why the LIMIT columns are re-stamped here too, not just the modules.</b> This sweep
+    /// used to write <c>EnabledModules</c> and <c>UpdatedAt</c> only, while
+    /// <c>TenantLifecycleService.ChangeTenantPlanAsync</c> re-stamped <c>MaxEmployees</c> and
+    /// <c>AuditLogRetentionDays</c> as well — two paths onto the same columns, disagreeing, so a test of either
+    /// one proved nothing about the other. The consequence is worse than the "silent limit drift" it was filed
+    /// as: <c>AuditLogPurgeService</c> reads <c>Tenant.AuditLogRetentionDays</c> RAW (there is no plan lookup
+    /// and no resolver in that path), so a stale snapshot makes the DAILY purge job delete audit rows on the
+    /// wrong retention window. Raise a plan from 90 to 365 days and audit history is still destroyed at 90 —
+    /// irreversible data loss against an intended compliance setting, not drift.</para>
     /// </summary>
     private async Task<IReadOnlyList<string>> RecomputeTenantsOnPlanAsync(
         SubscriptionPlan plan, CancellationToken cancellationToken)
@@ -326,6 +358,13 @@ public sealed class SubscriptionPlanService : ISubscriptionPlanService
         foreach (var tenant in tenants)
         {
             tenant.EnabledModules = derived.ToList(); // fresh list per tenant (jsonb column; don't share a reference)
+
+            // ISSUE-474: the same two snapshot columns ChangeTenantPlanAsync stamps. Staged into the SAME
+            // SaveChanges as the plan edit, so the plan row and every tenant snapshot commit atomically —
+            // the deliberate in-transaction choice documented above is unchanged.
+            tenant.MaxEmployees = plan.MaxEmployees;
+            tenant.AuditLogRetentionDays = plan.AuditLogRetentionDays;
+
             tenant.UpdatedAt = now;
         }
 

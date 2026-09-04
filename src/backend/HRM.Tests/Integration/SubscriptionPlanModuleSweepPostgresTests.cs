@@ -3,9 +3,14 @@
 //
 // When a plan's MODULE list changes, every tenant on that plan (joined by string code, Tenant.PlanId ==
 // SubscriptionPlan.Code — there is no FK) must have its denormalized Tenant.EnabledModules snapshot recomputed
-// via the shared PlanModules.DeriveTenantModules and its resolution cache invalidated. A non-module edit
-// (price/name/limit) must NOT sweep, and a tenant whose PlanId is dangling (points at a plan that was never
-// seeded, e.g. the "default" DbInitializer stamps) must be left untouched (fail open).
+// via the shared PlanModules.DeriveTenantModules and its resolution cache invalidated. A tenant whose PlanId is
+// dangling (points at a plan that was never seeded, e.g. the "default" DbInitializer stamps) must be left
+// untouched (fail open).
+//
+// ISSUE-474 widened what counts as a sweep-worthy edit. THREE plan fields are denormalized onto every tenant
+// row and read from there: EnabledModules, MaxEmployees and AuditLogRetentionDays. A change to any of them must
+// sweep; an edit that touches none of them (price/name, or a limit that IS read live off the plan) must still
+// NOT sweep, so the no-churn guarantee is unchanged — Update_NonModuleEdit_DoesNotSweep still holds it.
 //
 // HARNESS = real Postgres via Testcontainers (NOT InMemory), deliberately: this touches (1) the jsonb
 // EnabledModules column round-trip and (2) a cross-tenant IgnoreQueryFilters sweep — both of which InMemory
@@ -92,7 +97,7 @@ public sealed class SubscriptionPlanModuleSweepPostgresTests : IAsyncLifetime
         cache.Invalidated.Should().NotContain(onOtherPlan);
     }
 
-    // ── A non-module edit (price/name) must NOT sweep — no tenant churn, no cache invalidation ──
+    // ── An edit touching NO denormalized field (price/name) must NOT sweep — no churn, no cache invalidation ──
 
     [Fact]
     public async Task Update_NonModuleEdit_DoesNotSweep()
@@ -126,6 +131,105 @@ public sealed class SubscriptionPlanModuleSweepPostgresTests : IAsyncLifetime
         }
 
         cache.Invalidated.Should().BeEmpty("a non-module plan edit must not invalidate any tenant's cache");
+    }
+
+    // ── ISSUE-474: a LIMIT-ONLY edit must sweep the two denormalized snapshot columns, and the purge follows ──
+
+    /// <summary>
+    /// ISSUE-474. Two failures compound here and the second is the dangerous one.
+    ///
+    /// <para>(1) <c>RecomputeTenantsOnPlanAsync</c> wrote <c>EnabledModules</c> and <c>UpdatedAt</c> only, so
+    /// <c>Tenant.MaxEmployees</c> and <c>Tenant.AuditLogRetentionDays</c> went stale — while
+    /// <c>TenantLifecycleService.ChangeTenantPlanAsync</c> re-stamped both. Two paths onto the same columns,
+    /// disagreeing, so testing either proved nothing about the other.</para>
+    ///
+    /// <para>(2) The sweep was gated on the MODULE list changing, so this scenario — raise a limit, touch no
+    /// module — never entered the sweep at all. Re-stamping inside a method that does not run is not a fix.</para>
+    ///
+    /// <para>The last arm is why this is data loss and not drift: <c>AuditLogPurgeService</c> reads
+    /// <c>Tenant.AuditLogRetentionDays</c> RAW — no plan lookup, no resolver. The seeded audit row is 100 days
+    /// old: inside a 365-day window, outside a 90-day one. Whether it survives is decided entirely by which
+    /// retention the DAILY purge job reads, so a stale snapshot silently destroys audit history against the
+    /// compliance setting the operator believes they just raised.</para>
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ADM-009-474")]
+    public async Task Update_LimitOnlyEdit_ReStampsBothSnapshotColumns_AndThePurgeWindowFollows_ISSUE474()
+    {
+        var code = UniqueCode();
+        var sub = SubOf("limits");
+        Guid tenantId;
+
+        await using (var seed = Db())
+        {
+            var plan = Plan(code, new() { PlanModules.CoreHr, PlanModules.Leave });
+            plan.MaxEmployees = 100;
+            plan.AuditLogRetentionDays = 90;
+            seed.SubscriptionPlans.Add(plan);
+
+            var tenant = Tenant(sub, code, new() { PlanModules.CoreHr, PlanModules.Leave });
+            tenant.MaxEmployees = 100;          // snapshot agrees with the plan at seed time
+            tenant.AuditLogRetentionDays = 90;
+            seed.Tenants.Add(tenant);
+            tenantId = tenant.Id;
+
+            seed.AuditLogs.Add(new AuditLog
+            {
+                Id = BaseEntity.NewUuidV7(),
+                TenantId = tenantId,
+                EventType = "Issue474.RetentionProbe",
+                CreatedAt = DateTime.UtcNow.AddDays(-100),
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var cache = new RecordingResolutionCache();
+        await using (var db = Db())
+        {
+            var planId = await db.SubscriptionPlans.Where(p => p.Code == code).Select(p => p.Id).SingleAsync();
+            // A LIMIT-ONLY edit: {Leave} normalizes back to {CoreHR, Leave}, i.e. the module set is UNCHANGED.
+            var result = await Service(db, cache).UpdateAsync(planId, Fields(
+                maxEmployees: 250,
+                auditLogRetentionDays: 365,
+                modules: new[] { PlanModules.Leave }));
+            result.IsSuccess.Should().BeTrue(result.Error);
+        }
+
+        await using (var verify = Db())
+        {
+            var tenant = await verify.Tenants.IgnoreQueryFilters().SingleAsync(t => t.Subdomain == sub);
+
+            tenant.EnabledModules.Should().Equal(
+                new[] { PlanModules.CoreHr, PlanModules.Leave },
+                "the module set genuinely did not change — this arm must not be passing for the ISSUE-342 reason");
+            tenant.MaxEmployees.Should().Be(250,
+                "a plan-limit edit must re-stamp the denormalized Tenant.MaxEmployees snapshot, exactly as "
+                + "TenantLifecycleService.ChangeTenantPlanAsync already does");
+            tenant.AuditLogRetentionDays.Should().Be(365,
+                "AuditLogPurgeService reads THIS column raw, so leaving it stale is a retention change that "
+                + "changes the price and not the behaviour");
+        }
+
+        // The consequence. Run the real purge job at the real clock and confirm the 100-day-old row survives.
+        int deleted;
+        await using (var purgeDb = Db())
+        {
+            deleted = await new AuditLogPurgeService(purgeDb, NullLogger<AuditLogPurgeService>.Instance)
+                .PurgeExpiredAsync(DateTime.UtcNow);
+        }
+
+        deleted.Should().Be(0,
+            "with the snapshot re-stamped to 365 days nothing in this container is expired; a stale 90-day "
+            + "snapshot would have deleted the 100-day-old probe row");
+
+        await using (var after = Db())
+        {
+            (await after.AuditLogs.IgnoreQueryFilters()
+                    .CountAsync(a => a.TenantId == tenantId && a.EventType == "Issue474.RetentionProbe"))
+                .Should().Be(1,
+                    "audit history inside the tenant's INTENDED 365-day retention window must survive the daily "
+                    + "purge — destroying it is irreversible loss against a compliance setting");
+        }
     }
 
     // ── Fail-open: a tenant whose PlanId is dangling ("default", never seeded as a plan) is left untouched ──
@@ -200,6 +304,7 @@ public sealed class SubscriptionPlanModuleSweepPostgresTests : IAsyncLifetime
         string name = "Plan",
         decimal priceMonthly = 99m,
         int? maxEmployees = 100,
+        int auditLogRetentionDays = 90,
         IReadOnlyList<string>? modules = null) => new(
         Name: name,
         Description: null,
@@ -215,7 +320,7 @@ public sealed class SubscriptionPlanModuleSweepPostgresTests : IAsyncLifetime
         MaxCustomRoles: null,
         MaxCustomFieldsPerEntity: null,
         MaxWorkflows: null,
-        AuditLogRetentionDays: 90,
+        AuditLogRetentionDays: auditLogRetentionDays,
         SlaTier: "standard",
         EnabledModules: modules ?? new[] { PlanModules.Leave },
         FeatureFlags: new PlanFeatureFlagsDto(false, false, false, false, false));

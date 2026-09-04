@@ -1214,9 +1214,8 @@ public sealed class BulkEmployeeImportService : IBulkEmployeeImportService
                 "Your subscription plan could not be resolved. Please contact your administrator.", 403);
         }
 
-        long? effectiveCap = effective.Source == PlanLimitResolver.LimitSource.Override
-            ? effective.Value                                  // override wins (null = unlimited)
-            : effective.Value ?? (long?)tenant.MaxEmployees;   // else plan value, else snapshot
+        // Precedence override > plan > snapshot, via the ONE shared helper (see PlanLimitLookup).
+        long? effectiveCap = effective.WithSnapshotFallback(tenant.MaxEmployees);
 
         if (effectiveCap is not { } cap)
             return Result<int>.Success(requestedCount); // No limit

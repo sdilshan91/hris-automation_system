@@ -18298,6 +18298,10 @@
           "limitKnown": {
             "type": "boolean"
           },
+          "limitStatus": {
+            "nullable": true,
+            "type": "string"
+          },
           "name": {
             "nullable": true,
             "type": "string"
@@ -18348,6 +18352,10 @@
             "format": "int32",
             "nullable": true,
             "type": "integer"
+          },
+          "limitStatus": {
+            "nullable": true,
+            "type": "string"
           },
           "resource": {
             "nullable": true,

@@ -610,9 +610,8 @@ public sealed class WorkflowService : IWorkflowService
                 403, "plan_unresolvable");
         }
 
-        long? limit = effective.Source == PlanLimitResolver.LimitSource.Override
-            ? effective.Value
-            : effective.Value ?? (long?)tenant.MaxWorkflows;
+        // Precedence override > plan > snapshot, via the ONE shared helper (see PlanLimitLookup).
+        long? limit = effective.WithSnapshotFallback(tenant.MaxWorkflows);
 
         if (limit is null)
             return Result.Success();
