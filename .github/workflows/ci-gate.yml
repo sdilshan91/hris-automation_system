@@ -46,9 +46,10 @@ jobs:
   # runs on docs PRs — which matters, because a .md is a very plausible place to paste a connection
   # string.
   changes:
-    name: Detect docs-only change
+    name: Classify the change (docs | frontend | backend | fullstack)
     runs-on: ubuntu-latest
     outputs:
+      scope: ${{ steps.filter.outputs.scope }}
       docs_only: ${{ steps.filter.outputs.docs_only }}
     steps:
       - uses: actions/checkout@v4
@@ -57,44 +58,93 @@ jobs:
 
       - id: filter
         name: Classify the diff
+        # ── WHY A SCOPE TAG AND NOT A BOOLEAN ──────────────────────────────────────────────────
+        # This was `docs_only`: true or false, i.e. "the narrow docs gate" or "absolutely everything".
+        # So a PR touching four files under src/frontend ran the full 5,600-test backend suite and a
+        # real PostgreSQL migration apply — roughly 25 minutes of a 30-minute gate proving nothing
+        # about that diff. Measured on #628, which is frontend-only.
+        #
+        # The classifier now emits ONE tag and the jobs key off it. The tag is printed to the job
+        # summary so a reviewer can see the decision that was made and challenge it, rather than
+        # having to infer it from which jobs happen to be grey.
+        #
+        # ── THE ASYMMETRY, WHICH IS THE WHOLE DESIGN ───────────────────────────────────────────
+        # A frontend change CANNOT break the backend, so `frontend` skips backend + migrations.
+        # A backend change CAN break the frontend: `npm run api:types:check` lives in the FRONTEND
+        # job and is what catches a C# DTO change failing to reach the generated TypeScript models.
+        # That check caught real drift on #624 the day before this was written, and the FE↔BE drift
+        # it guards against once broke 9 of 13 modules. So `backend` still runs the frontend job.
+        # The saving there would have been ~3 minutes and the risk was a silent contract break —
+        # a bad trade, and the reason this is not symmetric.
+        #
+        # ── FAIL SAFE ──────────────────────────────────────────────────────────────────────────
+        # Anything not positively recognised falls to `fullstack`. A path nobody anticipated must
+        # never cause a gate to be skipped; the cost of over-running is minutes, the cost of
+        # under-running is a defect shipped behind a green tick.
         run: |
           set -euo pipefail
+
+          emit() {
+            echo "scope=$1" >> "$GITHUB_OUTPUT"
+            # docs_only kept for any consumer still reading it; scope is the source of truth.
+            [ "$1" = "docs" ] && echo "docs_only=true" >> "$GITHUB_OUTPUT" || echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### CI scope: \`$1\`"
+              echo ""
+              echo "$2"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "==> scope=$1 — $2"
+          }
+
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "Not a pull_request event — running the full gate."
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            emit fullstack "Not a pull_request event — running the full gate."
             exit 0
           fi
+
           base='${{ github.event.pull_request.base.sha }}'
           head='${{ github.event.pull_request.head.sha }}'
           files=$(git diff --name-only "$base" "$head")
           echo "Changed files:"; echo "$files" | sed 's/^/  /'
+
           if [ -z "$files" ]; then
-            echo "Empty diff — running the full gate (fail safe)."
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            emit fullstack "Empty diff — running the full gate (fail safe)."
             exit 0
           fi
-          # Anything outside docs/**.md forces the full gate. Note CLAUDE.md is at the repo ROOT and is
-          # therefore NOT docs-only — correct, since two tests read it.
-          #
-          # Written as "capture the non-matching lines, test for non-empty" rather than the shorter
-          # `grep -qvE`. That shorter form is NOT portable: GNU grep (what runners use) exits 0 here,
-          # but ugrep — the grep on at least one dev machine in this project — exits 1 for the same
-          # input, which would silently invert this decision and skip the full gate on a code change.
-          # This form behaves identically on both and can be tested locally.
-          nondocs=$(printf '%s\n' "$files" | grep -vE '^docs/.+\.md$' || true)
-          if [ -n "$nondocs" ]; then
-            echo "Non-docs paths present — running the full gate:"
-            printf '%s\n' "$nondocs" | sed 's/^/  /'
-            echo "docs_only=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "docs/**.md only — running the narrowed docs gate."
-            echo "docs_only=true" >> "$GITHUB_OUTPUT"
+
+          # Each classifier captures the NON-matching lines and tests for emptiness, rather than the
+          # shorter `grep -qvE`. That shorter form is NOT portable: GNU grep (what runners use) exits 0
+          # here, but ugrep — the grep on at least one dev machine in this project — exits 1 for the
+          # same input, which would silently invert the decision. This form behaves identically on both
+          # and can be tested locally.
+
+          # DOCS: docs/**.md, plus root *.md and .claude/**.md. CLAUDE.md and the skills/rules files ARE
+          # covered by the docs gate now that ClaudeMdAccuracyTests is in its filter — widening this
+          # WITHOUT that addition would have silently stopped running the CLAUDE.md guard on exactly
+          # the commits that edit CLAUDE.md. The two changes are one change.
+          non_docs=$(printf '%s\n' "$files" | grep -vE '^(docs/.+\.md|[^/]+\.md|\.claude/.+\.md)$' || true)
+          if [ -z "$non_docs" ]; then
+            emit docs "Markdown only (docs/, root, .claude/) — running the narrowed docs gate."
+            exit 0
           fi
+
+          non_fe=$(printf '%s\n' "$files" | grep -vE '^src/frontend/' || true)
+          if [ -z "$non_fe" ]; then
+            emit frontend "src/frontend/ only — skipping backend + migrations; running frontend + E2E."
+            exit 0
+          fi
+
+          non_be=$(printf '%s\n' "$files" | grep -vE '^src/backend/' || true)
+          if [ -z "$non_be" ]; then
+            emit backend "src/backend/ only — full backend gate, and the FRONTEND job still runs because api:types:check lives there."
+            exit 0
+          fi
+
+          emit fullstack "Mixed or shared paths (scripts/, .github/, contracts/, config) — running the full gate."
 
   docs-gate:
     name: Docs gate (the tests that read markdown)
     needs: changes
-    if: needs.changes.outputs.docs_only == 'true'
+    if: needs.changes.outputs.scope == 'docs'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -110,13 +160,26 @@ jobs:
         # TEST-FINDINGS.md, and it is the guard the whole gap-closure programme relies on. If a docs
         # PR could skip it, the drift guard would stop running on exactly the commits that edit the
         # ledgers.
+        #
+        # ── ClaudeMdAccuracyTests WAS MISSING, AND THAT WAS LOAD-BEARING ────────────────────────
+        # Running the sync command above lists ClaudeMdAccuracyTests, EmployeeProfileService and
+        # EmployeeFieldAuditPairingGuard as markdown readers; this filter named none of them. It was
+        # harmless ONLY by accident: CLAUDE.md and .claude/**.md fell outside the old `^docs/.+\.md$`
+        # classifier, so they triggered the FULL gate, which ran the guard anyway. The narrow filter
+        # was silently compensating for the incomplete docs gate.
+        #
+        # That made the obvious optimisation a trap. Widening the classifier to cover .claude/**.md
+        # WITHOUT this line would have stopped running the CLAUDE.md accuracy guard on precisely the
+        # commits that edit CLAUDE.md — two individually sensible changes that together disable a
+        # guard. They ship in one commit for that reason.
         run: |
           dotnet test src/backend/HRM.sln --nologo \
-            --filter "FullyQualifiedName~LedgerTraceability|FullyQualifiedName~AuthEmailLinkRoute|FullyQualifiedName~PasswordHashingWorkFactor|FullyQualifiedName~LopAuthorityPayroll"
+            --filter "FullyQualifiedName~LedgerTraceability|FullyQualifiedName~AuthEmailLinkRoute|FullyQualifiedName~PasswordHashingWorkFactor|FullyQualifiedName~LopAuthorityPayroll|FullyQualifiedName~ClaudeMdAccuracy|FullyQualifiedName~EmployeeProfileService|FullyQualifiedName~EmployeeFieldAuditPairingGuard"
 
   backend:
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    # Skipped for a frontend-only diff: nothing under src/frontend/ can change backend behaviour.
+    if: needs.changes.outputs.scope == 'backend' || needs.changes.outputs.scope == 'fullstack'
     name: Backend (build + test)
     runs-on: ubuntu-latest
     steps:
@@ -172,7 +235,8 @@ jobs:
 
   migrations:
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    # Skipped for a frontend-only diff: nothing under src/frontend/ can change backend behaviour.
+    if: needs.changes.outputs.scope == 'backend' || needs.changes.outputs.scope == 'fullstack'
     name: Migrations (real PostgreSQL apply)
     # Applies the EF Core migration chain to a real PostgreSQL service container
     # and asserts the expected schema exists. This catches non-discoverable /
@@ -262,7 +326,9 @@ jobs:
 
   frontend:
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    # Runs for BACKEND-only too, deliberately — api:types:check lives here and is what catches a C#
+    # DTO change that never reached the generated TypeScript models.
+    if: needs.changes.outputs.scope != 'docs'
     name: Frontend (build + test)
     runs-on: ubuntu-latest
     defaults:
@@ -302,7 +368,9 @@ jobs:
 
   e2e:
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    # Runs for BACKEND-only too, deliberately — api:types:check lives here and is what catches a C#
+    # DTO change that never reached the generated TypeScript models.
+    if: needs.changes.outputs.scope != 'docs'
     name: E2E (Playwright — real browser → Angular → API → Postgres)
     # GAP-034. The suite existed but nothing ran it, and "just add a Playwright step" was wrong twice:
     #
