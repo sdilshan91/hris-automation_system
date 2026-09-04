@@ -252,12 +252,17 @@ instances**, so probes 3–5 could not be observed end-to-end.
   maintenance mode, broadcasts, growth/churn, platform report definitions + scheduling, Google/Apple
   sign-in). **No story exists for any of them.** Author or record the deferral.
 - **GAP-037** — outbound webhooks: documented Phase-2 deferral, but tech-doc `:639`'s NFR table reads as built.
-- **GAP-020** — no *online* JWT rotation lever and no global revocation cutoff; containment needs a rolling restart.
-- **GAP-030** — two BA stories are stubs (their code IS test-covered).
+- **GAP-020** — **rated 2026-09-04 (`F2`, #607): NOT a vulnerability** (attacker-exploitable NONE/Informational, 92%) —
+  the parked question is narrower than the row used to imply. Rotation works today (`kid` ring + overlap keys). What is
+  genuinely absent is a **global token epoch**: the only lever for invalidating all sessions for a *non-key* reason
+  (suspected mass session theft, an IdP incident). That is a product call on cost vs. an unmeasured need — parked.
+  Operational residue (runbook, rolling-restart partial containment, no forged-token detection) is `ISSUE-459`, not parked.
 - `ISSUE-289`, `ISSUE-301`, `ISSUE-400`, `ISSUE-380` items 2–4 — product calls, not build work.
-- **`ISSUE-365`** — **owned by `E4` (QA rig), not a separate item.** Pick one there: add the `/api` proxy to
-  `nginx.conf`, or stop publishing `4200:80`. **Do not**
-  implement the shared `storageState` the finding proposes; `playwright.config.ts:15` forbids it (2026-08-11).
+- ~~**`ISSUE-365`**~~ — **ADDRESSED 2026-09-04 by `E4` lane A (#606, held for review).** The `/api` + `/hubs` proxy was
+  added to `nginx.conf` rather than un-publishing `4200:80`. Note the finding *understated* it: the cause was the
+  2026-06-30 switch to a **relative** `apiBaseUrl`, and the `Dockerfile`/`docker-compose.yml` comments both asserted the
+  missing proxy was harmless — which is why the premise kept re-verifying as fine. The shared `storageState` the finding
+  proposes was **not** implemented; `playwright.config.ts:15` forbids it (2026-08-11).
 
 ---
 

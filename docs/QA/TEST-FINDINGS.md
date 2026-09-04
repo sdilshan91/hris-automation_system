@@ -2879,3 +2879,60 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Root cause + confidence (~85%):** live rotation is an explicit non-goal (`JwtKeyRingOptions.cs:7` says so), which is defensible — but the operational wrapper that a non-goal requires was never written. The field-encryption key, by contrast, got a README, an admin endpoint and a watchdog job.
 - **Severity rationale:** MED as an **operational recovery (MTTC)** gap, **not** a vulnerability. There is no attacker-reachable primitive: the precondition is already holding the signing key, i.e. total compromise. Rated NONE/Informational as an exploitable vuln (92% confidence) and MEDIUM as an ops gap (80%). Recording both because sizing this item's *urgency* off the phrase "compromised signing key" is how it has been mis-scheduled before.
 - **Suggested direction (NOT applied):** write the rotation runbook where an on-call operator will find it (alongside the encryption-key runbook), and state the rolling-restart caveat explicitly in it. A global token epoch is a **separate, larger** item — it is the only lever for invalidating all sessions for a *non-key* reason (suspected mass session theft, an IdP incident) and today no such lever exists.
+### BUG-460 — the platform monitoring FE computes real telemetry and then throws it away
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** FE
+- **Module / US / TC:** Platform · US-PLT-004 AC-3
+- **Title:** `latencyTrend24h` and `topErrors` are computed by the backend (`PlatformMonitoringService.cs:355-357`, `:344-346`), serialized, and mapped in `monitoring.models.ts:342-343` — then **never bound in either template**. Both panels hard-code "Not available — requires observability pipeline" (`monitoring-dashboard.component.html:153-159`, `tenant-monitoring-detail.component.html:220-234`). Compounding it, `MetricsStatus` is unconditionally `RequiresObservabilityPipeline` (`PlatformMonitoringService.cs:163`, `:402`) **even when error-rate, P95 and SLA uptime are all real**, so any FE logic keyed on `requiresObservability()` hides working data.
+- **Root cause + confidence (~95%, verified by direct read):** the panels were stubbed before the backend shipped and were never revisited; the hardcoded status made the stub look correct.
+- **Severity rationale:** MED. This is **leg-2 (reachability)** failure — the highest-value gap class in this codebase. A working backend behind a placeholder reads to every operator as "the feature does not exist", and US-PLT-004 AC-3 is marked satisfied.
+- **Suggested direction (NOT applied):** bind the two fields and make `metricsStatus` conditional on which gauges are actually available.
+
+### ISSUE-461 — four source comments assert "always null / always empty" on the line above real computed values
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** BE / FE (docs-in-code)
+- **Module / US / TC:** Platform · US-PLT-004
+- **Title:** `PlatformMonitoringService.cs:156-160` says `AggregateErrorRatePercent` is *"STILL NULL, deliberately"*; the very next statement (`:161`) assigns a value computed at `:128-137`. Same drift at `MonitoringDtos.cs:81,83,192` and `monitoring.models.ts:76-79` ("gauges are DEFERRED with `available === false`").
+- **Root cause + confidence (~95%):** comments written before the build, never revisited.
+- **Severity rationale:** MED, and higher than a normal comment nit for one specific reason: **these are exactly the sentences a BA authoring requirements would lift verbatim into an NFR.** F4 had to be explicitly instructed to trust the code over these comments. This repo has now recorded **six** cases of a comment outliving its code and causing real work.
+- **Suggested direction (NOT applied):** correct all four; fix alongside [[BUG-460]] since they describe the same fields.
+
+### ISSUE-462 — `docs/BA/STATUS.md:117` says the per-tenant API-call counter was deferred; it shipped the next day
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** Platform · US-PLT-004
+- **Title:** STATUS.md:117 states the counter was *"deliberately deferred as its own slice"* and that a partial build "would leave the `ApiCalls` gauge FAKE rather than honestly `Available:false`". It shipped **2026-07-31**, commit `b9906626`, with every component the line says is missing: table + unique index + dormant RLS policy (`20260731012730_Platform_TenantApiUsage.cs:14-66`), hot-path write (`ApiCallCounterMiddleware.cs:80-101`), flusher (`Program.cs:420`), and a gauge reporting `Available: true` (`PlatformMonitoringService.cs:553-567`). STATUS.md was last touched 2026-08-18 and still carries the stale text.
+- **Severity rationale:** MED. **Reverse drift** — the ledger is pessimistic, so it causes wasted rebuilding rather than false confidence. The 2026-09-01 audit measured 29% stale-pessimistic entries; this is another.
+- **Suggested direction (NOT applied):** correct the line. F4's executor is permitted to fix this one sentence since the BA reads exactly it.
+
+### ISSUE-463 — the traceability matrix is missing 5 stories outright, not the 3 GAP-030 counts
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** cross-module · GAP-030
+- **Title:** Absent from `docs/QA/TRACEABILITY-MATRIX.md` entirely: **US-ADM-011, US-ADM-012, US-PLT-001, US-PLT-003, US-PLT-004**. Additionally **US-ADM-008/009/010** have coverage summaries (`:4725`, `:4746`, `:4777`) and backward rows but **no forward-traceability row** — the Admin Console forward table stops at US-ADM-007 carrying a stale `TOTAL 147`. US-PLT-001 and US-PLT-003 are `[x]` in STATUS.md yet appear nowhere in the matrix.
+- **Severity rationale:** MED. Traceability is Critical Rule #4; a matrix that silently omits 8 stories cannot support the claim it exists to support.
+- **Suggested direction (NOT applied):** F4 covers 3 by design and is deliberately **not** widened. The remaining 5 (+3 forward rows +the stale TOTAL) are this finding.
+
+### ISSUE-464 — `TC-PLT-004.md` binds US-PLT-005, so any filename-based coverage check false-positives
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** Platform
+- **Title:** `docs/QA/platform/TC-PLT-004.md:3` has frontmatter `user_story: US-PLT-005` (encryption). TC-PLT-003/006/007 are likewise offset. Documented at `platform/TEST-MATRIX.md:43-45`, but any grep for "does US-PLT-004 have a TC" returns a **false positive**.
+- **Severity rationale:** LOW — pre-existing and documented, but it is a live trap for exactly the automated checks this repo keeps adding.
+- **Suggested direction (NOT applied):** **no rename** (IDs are trait-bound to code). Ensure any coverage check reads frontmatter, not filenames.
+
+### ISSUE-465 — GAP-030 is listed as both parked-at-the-decision-gate and scheduled as F4
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** DATA (ledger)
+- **Module / US / TC:** queue hygiene
+- **Title:** `GAP-CLOSURE-QUEUE.md:256` lists GAP-030 under *"🚧 Parked at the decision gate — NOT auto-scheduled"*, while `:305` and `:871` schedule it as F4. `COMPLETION-PLAN.md:115` repeats the parked framing.
+- **Severity rationale:** LOW, but it is **the same failure mode** as the duplicate execution-table rows fixed in #605: two statements about one item, and "the topmost unticked item" becomes ambiguous.
+- **Suggested direction (NOT applied):** remove the parked entry rather than the F4 row — the premise was verified 2026-09-04, the work is doc-authoring, and there is no actual decision gate.
+
+### ISSUE-466 — the shrink-only story baseline makes any TEST-STATUS row addition a two-file change
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** TEST
+- **Module / US / TC:** cross-module
+- **Title:** `LedgerTraceabilityTests.cs:38-58` hard-codes a baseline of 60 done-stories that have no TEST-STATUS row. `TheBaseline_HasNoStaleEntries` (`:170-180`) **fails** the moment a story gains a TEST-STATUS row while its baseline entry remains. This is **by design** — the baseline must only shrink — but it is undocumented outside the test, so it surfaces as a mysterious unrelated failure.
+- **Severity rationale:** LOW as a defect, but a real trap: the tempting "fix" is to revert the ledger row or weaken the assertion, both of which defeat the guard.
+- **Suggested direction (NOT applied):** note the coupling in `.claude/rules/ledgers.md` so it is discoverable before someone hits it.
