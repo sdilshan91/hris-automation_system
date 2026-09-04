@@ -291,6 +291,24 @@ own rule — severity × blast-radius × unblocks-others — with three decision
 | **P4.3** | `E3` slices 2–3 | Gated on P4.2. 117 test files still InMemory. |
 | **P5** | `F1`, `G4`, `DECISION-477` | Blocked on authoring, not on engineering. |
 
+### Findings scheduled 2026-09-04 — the 14 that had no home
+
+An audit of the 33 findings filed on 2026-09-04 found **19 referenced in this queue and 14 referenced
+nowhere but the ledger**. A finding sitting in a 218-entry file with no tier is not tracked; it is stored.
+These now have a tier.
+
+| tier | findings | why grouped |
+|---|---|---|
+| **P1.4 — checks that report safety they do not provide** | `ISSUE-486` (HIGH) · `ISSUE-492` | **The session's sharpest pattern: THREE false-greens in one day.** `ISSUE-486` — the BUG-307 guard matches one spelling and was blind to the batched projection, so it never saw `BUG-473`. `ISSUE-492` — running the test script from the repo root while in a worktree reports `Passed!` for code never executed. The third was `ledger-lock` itself, shipped inert and fixed in #619. A guard that reports safety it lacks is worse than none, because it stops anyone looking. **Fix these before trusting any further green.** |
+| **P1.2 (fold in)** | `ISSUE-488` · `ISSUE-461` | Same dashboards and same files as `BUG-460`/`BUG-483`. `ISSUE-488` is the FE half of `BUG-473` — without it that fix is inert on screen. `ISSUE-461`'s four "always null" comments sit on the very fields `BUG-460` is about. |
+| **P3 — ledger + docs truth** | `ISSUE-479` · `ISSUE-464` · `ISSUE-466` · `ISSUE-491` | Register/TC/doc corrections. `ISSUE-479` matters most: a **security** row reading OPEN when the control shipped invites someone to rebuild it. |
+| **P4 — test infrastructure** | `ISSUE-469` | `ApiTestFactory` mints an unresolvable plan, so every persona suite runs with plan limits silently disabled — directly relevant to P1.1's subject matter. |
+| **P5 — needs a human** | `BUG-489` · `ENH-470` · `ISSUE-490` | `BUG-489`: what should an unresolvable `plan_id` mean to a **destructive** job? `ENH-470`: a filed **negative result** — the guard I proposed would have caught 0 of 7 cases, so the suggestion is process, not code. `ISSUE-490`: **unverified, ~70% confidence, second-hand — verify before acting.** |
+| **in flight** | `BUG-487` | Being fixed by `P1.1`; stays OPEN until `/verify-fix`. |
+| **`/verify-fix` debt** | `BUG-471` · `BUG-472` · `ISSUE-481` · `ISSUE-482` · `ISSUE-462` · `ISSUE-465` | **Six findings whose fixes are MERGED but which still read OPEN.** Only `/verify-fix` may close a finding, so this is correct-by-policy and wrong-in-effect: the ledger currently under-reports progress by about 20%. This is the same reverse drift the 2026-09-01 audit measured at 29%, and `ISSUE-479`/`ISSUE-462` are *themselves* findings about it. **Run `/verify-fix` on the batch before it grows.** |
+
+---
+
 ### Decisions taken 2026-09-04 — do not re-litigate
 
 - **`Performance.Calibrate` is ADDED and OR-ed with the existing three** (`PublishAll`/`Manage`/`ReviewAll`),

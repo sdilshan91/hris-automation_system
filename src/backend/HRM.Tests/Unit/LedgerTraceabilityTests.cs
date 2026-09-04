@@ -258,6 +258,62 @@ public sealed class LedgerTraceabilityTests
     }
 
     /// <summary>
+    /// <summary>
+    /// The Summary table at the head of TEST-FINDINGS.md must match the ledgers it summarises.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It did not. On 2026-09-04 the hand-written table read <b>169 total while 218 findings existed</b> — stale
+    /// by 49, in the index a reader sees FIRST, with nothing checking it. Every other guard in this file protects
+    /// the ledger's contents; none protected its front page, so the one number a human is most likely to quote
+    /// was the one number nobody verified.
+    /// </para>
+    /// <para>
+    /// This is the <c>ISSUE-437</c> shape — "nothing verifies a documented claim" — applied to the ledger itself,
+    /// and it is why the counts are now ASSERTED rather than maintained. A stale summary is not cosmetic: it
+    /// under-reports the backlog, and this repo has already measured 29% stale-pessimistic drift once.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void TheSummaryTable_MatchesTheActualCounts()
+    {
+        var live = Read("docs", "QA", "TEST-FINDINGS.md");
+        var entry = new Regex(@"^### (BUG|ISSUE|ENH|DECISION)-\d+", RegexOptions.Multiline);
+
+        var liveCounts = entry.Matches(live).GroupBy(m => m.Groups[1].Value)
+                              .ToDictionary(g => g.Key, g => g.Count());
+
+        var archivePath = Path.Combine(RepoRoot(), "docs", "QA", "TEST-FINDINGS-RESOLVED.md");
+        var archiveCounts = File.Exists(archivePath)
+            ? entry.Matches(File.ReadAllText(archivePath)).GroupBy(m => m.Groups[1].Value)
+                   .ToDictionary(g => g.Key, g => g.Count())
+            : new Dictionary<string, int>();
+
+        // Parse the table's own rows: | TYPE | live | archived | total |
+        var row = new Regex(@"^\|\s*\**(BUG|ISSUE|ENH|DECISION)\**\s*\|\s*\**(\d+)\**\s*\|\s*\**(\d+)\**\s*\|",
+                            RegexOptions.Multiline);
+        var declared = row.Matches(live)
+            .ToDictionary(m => m.Groups[1].Value,
+                          m => (Live: int.Parse(m.Groups[2].Value), Archived: int.Parse(m.Groups[3].Value)));
+
+        declared.Should().NotBeEmpty(
+            "TEST-FINDINGS.md must carry a Summary table with one row per finding type — without it there is no "
+            + "front-page count for this guard to hold honest");
+
+        foreach (var kind in new[] { "BUG", "ISSUE", "ENH", "DECISION" })
+        {
+            var actualLive = liveCounts.GetValueOrDefault(kind, 0);
+            var actualArchived = archiveCounts.GetValueOrDefault(kind, 0);
+            declared.Should().ContainKey(kind);
+            declared[kind].Live.Should().Be(actualLive,
+                "the Summary row for {0} must match the {1} live '### {0}-NNN' entries actually in "
+                + "TEST-FINDINGS.md. Do not hand-edit the table to go green — recount it.", kind, actualLive);
+            declared[kind].Archived.Should().Be(actualArchived,
+                "the Summary row for {0} must match the {1} archived entries in TEST-FINDINGS-RESOLVED.md",
+                kind, actualArchived);
+        }
+    }
+
     /// The findings ledger is SPLIT (2026-09-01): live findings in TEST-FINDINGS.md, terminal ones in
     /// TEST-FINDINGS-RESOLVED.md. Every guard here reads the UNION, because a story row may legitimately
     /// blame a finding that has since been archived — resolving it against the working file alone would
