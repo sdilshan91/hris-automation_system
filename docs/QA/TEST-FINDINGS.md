@@ -2936,3 +2936,28 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Title:** `LedgerTraceabilityTests.cs:38-58` hard-codes a baseline of 60 done-stories that have no TEST-STATUS row. `TheBaseline_HasNoStaleEntries` (`:170-180`) **fails** the moment a story gains a TEST-STATUS row while its baseline entry remains. This is **by design** — the baseline must only shrink — but it is undocumented outside the test, so it surfaces as a mysterious unrelated failure.
 - **Severity rationale:** LOW as a defect, but a real trap: the tempting "fix" is to revert the ledger row or weaken the assertion, both of which defeat the guard.
 - **Suggested direction (NOT applied):** note the coupling in `.claude/rules/ledgers.md` so it is discoverable before someone hits it.
+
+### BUG-467 — the RLS reconciler runs AFTER seeding, so a disable-run can 42501 before it disables anything
+- **Type / Severity / Status:** BUG · MED · OPEN
+- **Layer:** BE / DB (INFRA)
+- **Module / US / TC:** Platform · tenant isolation · `DbInitializer.cs:113`
+- **Title:** `ReconcileRowLevelSecurityAsync` is called **after** the seeding step. Sequence that breaks: run once with `Rls:Enabled=true` (RLS forced on ~112 tables), then restart with `Rls:Enabled=false` **and** a blank `PrivilegedConnection` while `DefaultConnection` points at `hrm_app`. `GuardRlsConfiguration` does not fire (the flag is false), `ConnectionRoutingInterceptor` goes inert (`DependencyInjection.cs:58-72`, `ConnectionRoutingInterceptor.cs:76-80`), and every seeder INSERT then runs as `hrm_app` with a blank GUC **against still-forced tables → 42501** — before line 113 ever gets the chance to disable enforcement.
+- **Root cause + confidence (~85%):** ordering. The reconciler's *disable* branch is the one operation that must precede seeding, and it is sequenced after it.
+- **Severity rationale:** MED, not HIGH: **blocked today by nothing**, because every current environment seeds on a BYPASSRLS or superuser role, which masks it entirely. It becomes a startup failure the moment someone runs the app under a least-privilege connection — i.e. exactly the hardening direction this platform is heading in. Found by the `E4` seed work, which had to confirm RLS could not silently swallow its inserts.
+- **Suggested direction (NOT applied):** move the reconciler's DISABLE branch before `SeedAsync`. Deliberately not fixed in E4b — reconciler ordering is tenant-isolation infrastructure and would have pushed a dev-seed PR into mandatory human review.
+
+### ISSUE-468 — `DbInitializer`'s RLS comment cites a flag location and a compose setting that are both wrong
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** BE (docs-in-code)
+- **Module / US / TC:** Platform · `DbInitializer.cs:105-112`
+- **Title:** The comment asserts "the Docker dev stack sets `Rls__Enabled=true`" and cites `appsettings.json:20-22`. Both are false against the current tree: the flag lives at `appsettings.json:48-50`, and **no compose file sets `Rls__Enabled` at all** (`docker.env.example:11` sets `ASPNETCORE_ENVIRONMENT=Development`, so Docker resolves to `Rls:Enabled=false`).
+- **Severity rationale:** LOW, with an aggravating detail: **this comment was itself written to correct an earlier stale claim**, and has now gone stale in turn. It actively misleads anyone reasoning about RLS in dev — which is the reasoning [[BUG-467]] depends on. **Seventh** recorded case in this repo of a comment outliving its code.
+- **Suggested direction (NOT applied):** correct both facts; fix alongside [[BUG-467]] since they concern the same block.
+
+### ISSUE-469 — the test factory mints tenants with an unresolvable plan, re-manufacturing the fail-open BUG-307 fixed
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** TEST
+- **Module / US / TC:** cross-module · `ApiTestFactory.cs:230`
+- **Title:** `CreateClientWithPermissionsAsync` mints persona tenants with `PlanId = "default"`, which **matches no row in `subscription_plans`**. `BUG-307` fixed exactly this in the seeder (`DbInitializer.cs:71` now uses `"enterprise"`) because an unresolvable plan makes every plan-limit lookup return null and read as **unlimited**. The test harness still manufactures the fail-open.
+- **Severity rationale:** LOW by blast radius, but it is a **coverage hole with a shape worth noting**: any persona-based suite runs with plan limits silently disabled, so a plan-limit regression cannot be caught there. That matters more now — the `F4` audit found `max_api_calls_per_month` is metered and displayed but **never enforced**, and this is precisely the class of defect these tests could not see.
+- **Suggested direction (NOT applied):** point the factory at a real plan. Shared fixture across ~35 classes in the HttpApi collection, so it needs its own change and a full-suite run.
