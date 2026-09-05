@@ -27,6 +27,7 @@ function makeOverview(
       locations: [],
     },
     completionRate: 72,
+  calibrationCompleted: 38,   // BUG-483
     averageScore: 81,
     scoreScaleMax: 100,
     ratedCount: 40,
@@ -50,6 +51,7 @@ function makeOverview(
       selfAssessmentComplete: 45,
       managerReviewComplete: 40,
       signedOff: 36,
+    calibrationCompleted: 38,   // BUG-483: the API sends it; ICycleProgress now carries it
     },
     availableExportFormats: ['Csv', 'Excel'],
     ...overrides,

@@ -116,6 +116,14 @@ export interface ICycleProgress {
   selfAssessmentComplete: number;
   managerReviewComplete: number;
   signedOff: number;
+  /**
+   * BUG-483: the API has sent this since ISSUE-350's fix, and this interface dropped it — so the fix
+   * was green in CI and invisible in the product. `null` is meaningful and is NOT flattened to 0: the
+   * backend sends null when the cycle has no calibration phase, which is a different statement from
+   * "nobody has been calibrated yet". Flattening it would re-make the fabrication the SLA-uptime and
+   * P95 fields explicitly refuse to make.
+   */
+  calibrationCompleted: number | null;
 }
 
 /** The whole dashboard overview — one payload for every AC-1 widget. */
@@ -127,6 +135,13 @@ export interface IDashboardOverview {
   filterOptions: IDashboardFilterOptions;
   /** % of reviews completed → the completion donut (AC-1). 0–100. */
   completionRate: number;
+  /**
+   * BUG-483: how many participants have had a calibrated rating applied. The API has sent this since
+   * ISSUE-350's fix; nothing here read it, so the fix was green in CI and invisible in the product.
+   * `null` means the cycle has no calibration phase — a different statement from "nobody calibrated
+   * yet", so it is not flattened to 0.
+   */
+  calibrationCompleted: number | null;
   /** Average performance score across the scoped+filtered population (AC-1). */
   averageScore: number | null;
   /** The scale the scores are on (e.g. 100). Used to compute bar/donut percents. */
@@ -272,6 +287,8 @@ export function mapCycleProgress(
     selfAssessmentComplete: w?.selfAssessmentCompleted ?? 0,
     managerReviewComplete: w?.managerReviewCompleted ?? 0,
     signedOff: w?.signedOff ?? 0,
+    // BUG-483: `?? null`, deliberately not `?? 0` — see the field's doc above.
+    calibrationCompleted: w?.calibrationCompleted ?? null,
   };
 }
 
@@ -357,6 +374,7 @@ export function mapDashboardOverview(
       locations: [],
     },
     completionRate: w.progress?.completionRate ?? 0,
+    calibrationCompleted: w.progress?.calibrationCompleted ?? null,   // BUG-483
     averageScore: w.averageScore ?? null,
     scoreScaleMax: w.ratingScaleMax ?? 0,
     ratedCount: w.scoredEmployeeCount ?? 0,
