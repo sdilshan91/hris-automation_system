@@ -30,6 +30,33 @@ public sealed class PlanLimitLookupUsageGuardTests
         @"\.Select\(\s*p\s*=>\s*\(long\?\)p\.\w+\s*\)",
         RegexOptions.Compiled);
 
+    /// <summary>
+    /// ISSUE-486 — the BATCHED shape, which this guard was blind to for BUG-473's entire lifetime.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="AmbiguousLookup"/> pins one SPELLING: a single nullable cast off the plan row. A caller
+    /// that batches instead — <c>.Select(p =&gt; new { p.Code, p.MaxEmployees, ... })</c> and then resolves
+    /// from the dictionary — reads the same columns, collapses "no plan" and "NULL limit" the same way, and
+    /// was **invisible here**. That is exactly what <c>PlatformMonitoringService</c> did, which is why
+    /// <c>BUG-473</c> shipped: the platform dashboard reported "unlimited" for a tenant the enforcement
+    /// gates were 403-ing.
+    /// </para>
+    /// <para>
+    /// This guard's own doc promised it "blocks the eleventh copy". It did not block that one. A guard that
+    /// reports safety it does not provide is worse than no guard, because it stops anyone looking.
+    /// </para>
+    /// <para>
+    /// The rule is deliberately NOT "no batched projection". Batching is legitimate and is the right shape
+    /// for a dashboard resolving many tenants in one pass. The rule is that a file doing it must ALSO reach
+    /// <c>PlanLimitLookup</c>, so the plan-exists distinction survives. Measured when written: exactly one
+    /// file batches, and it complies.
+    /// </para>
+    /// </remarks>
+    private static readonly Regex BatchedLimitProjection = new(
+        @"\.Select\(\s*p\s*=>\s*new\s*\{[^}]*\bMax[A-Za-z]+",
+        RegexOptions.Compiled);
+
     private static DirectoryInfo BackendRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
@@ -99,6 +126,54 @@ public sealed class PlanLimitLookupUsageGuardTests
     /// The positive half. Without this, deleting every plan-limit check in the product would satisfy the arm
     /// above — an absence assertion is green both when the rule holds and when the subject is gone.
     /// </summary>
+    [Fact]
+    public void AnyFile_BatchProjectingPlanLimits_MustReachTheSharedLookup_ISSUE486()
+    {
+        var offenders = ProductionSources()
+            .Where(f =>
+            {
+                var text = File.ReadAllText(f);
+                // Same "only where it is actually a PLAN lookup" narrowing as the arm above: batching is a
+                // perfectly good shape, and is the right one for a dashboard resolving many tenants at once.
+                return text.Contains("SubscriptionPlans", StringComparison.Ordinal)
+                       && BatchedLimitProjection.IsMatch(text)
+                       && !text.Contains("PlanLimitLookup", StringComparison.Ordinal);
+            })
+            .Select(Path.GetFileName)
+            .OrderBy(f => f)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "a file that batch-projects plan limit columns is reading exactly what PlanLimitLookup exists to "
+            + "interpret: dictionary-miss resolution collapses \"this tenant's plan does not exist\" and "
+            + "\"the plan says unlimited\" into the same null, and only PlanLimitLookup keeps them apart. "
+            + "Batching is fine; resolving without the helper is not. This arm exists because the "
+            + "single-column rule above pins one SPELLING and was blind to this one for the whole of "
+            + "BUG-473 (ISSUE-486). Offenders:\n{0}",
+            string.Join("\n", offenders));
+    }
+
+    /// <summary>
+    /// The batched rule must be looking at something — a scan that matches nothing passes everything.
+    /// </summary>
+    [Fact]
+    public void TheBatchedRule_IsActuallyScanningSomething_ISSUE486()
+    {
+        var batching = ProductionSources()
+            .Count(f =>
+            {
+                var text = File.ReadAllText(f);
+                return text.Contains("SubscriptionPlans", StringComparison.Ordinal)
+                       && BatchedLimitProjection.IsMatch(text);
+            });
+
+        batching.Should().BeGreaterThan(0,
+            "no production file matches the batched-projection shape, so this rule is inert and would report "
+            + "success over any amount of drift. Exactly one file matched when it was written "
+            + "(PlatformMonitoringService, compliant). If that query was rewritten, WIDEN the pattern — do "
+            + "not delete the rule, or the eleventh copy returns wearing the twelfth spelling.");
+    }
+
     [Fact]
     public void TheSharedLookup_IsActuallyUsed_BUG307()
     {
