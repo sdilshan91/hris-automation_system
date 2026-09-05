@@ -22,6 +22,38 @@
 # has seen the figure is how you end up lowering the gate.
 set -uo pipefail
 
+# ── ISSUE-492: refuse to test a DIFFERENT tree than the one you are standing in ────────────────
+# `dotnet test src/backend/HRM.sln` resolves that path against $PWD. Both the main checkout and every
+# .claude/worktrees/* worktree contain a valid solution at the SAME relative path, so invoking this from
+# the repo root while working in a worktree silently tests the WRONG TREE — and reports `Passed!` for
+# code that was never compiled.
+#
+# Observed 2026-09-04: an agent working in a worktree ran this from the repo root, got `Passed! 3`, and
+# that run had executed the MAIN tree's copy of the class, without the agent's new test in it at all. The
+# real run, from the worktree, was RED. A pass was reported for code that did not run.
+#
+# Fail LOUDLY on the mismatch rather than testing the wrong thing quietly. Silence is the whole defect.
+for arg in "$@"; do
+  case "$arg" in
+    *.sln|*.slnx|*.csproj)
+      [ -e "$arg" ] || continue
+      target_root="$(cd "$(dirname "$arg")" && git rev-parse --show-toplevel 2>/dev/null || true)"
+      here_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+      if [ -n "$target_root" ] && [ -n "$here_root" ] && [ "$target_root" != "$here_root" ]; then
+        {
+          echo "ISSUE-492 GATE: refusing to run -- the solution you passed lives in a DIFFERENT working tree."
+          echo "  you are in : $here_root"
+          echo "  target is  : $target_root  ($arg)"
+          echo ""
+          echo "  Both trees hold a solution at the same relative path, so this would have tested the other"
+          echo "  one and printed a 'Passed!' line for code that never ran. cd to the tree you mean."
+        } >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
+
 coverage_args=()
 if [ "${COVERAGE:-0}" = "1" ]; then
   coverage_args=(--collect:"XPlat Code Coverage")
