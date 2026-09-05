@@ -106,6 +106,11 @@ describe('PerformanceDashboardService (US-PRF-007)', () => {
     expect(result?.scoreScaleMax).toBe(100); // ← ratingScaleMax
     expect(result?.ratedCount).toBe(40); // ← scoredEmployeeCount
     expect(result?.completionRate).toBe(72); // ← progress.completionRate (nested)
+    // BUG-483: this mock has carried `calibrationCompleted: 38` since ISSUE-350's fix, and NOTHING
+    // asserted it — the field was dropped by ICycleProgress and mapCycleProgress, so the API sent it,
+    // the spec mocked it, and the app threw it away while CI stayed green. Asserting the mocked value
+    // is what turns this fixture from decoration into a contract.
+    expect(result?.calibrationCompleted).toBe(38); // ← progress.calibrationCompleted (nested)
     expect(result?.histogram.length).toBe(2); // ← scoreDistribution
     expect(result?.histogram[0].label).toBe('0–50');
     expect(result?.departmentAverages[0].departmentName).toBe('Engineering');
