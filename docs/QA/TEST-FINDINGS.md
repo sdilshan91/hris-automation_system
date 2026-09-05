@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 154 | 296 | 450 |
+| ISSUE | 155 | 296 | 451 |
 | ENH | 22 | 2 | 24 |
 | DECISION | 3 | 0 | 3 |
-| **TOTAL** | **224** | **466** | **690** |
+| **TOTAL** | **225** | **466** | **691** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -3219,3 +3219,13 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
   - **[[ISSUE-039]]**, **[[ISSUE-175]]**, **[[ISSUE-384]]** are PARTIALLY-FIXED with only a residual open.
 - **Severity rationale:** MED. **Reverse drift in both directions at once** — rows that overstate remaining work waste scheduling, and rows that understate their scope (ENH-009, ISSUE-117) get mis-sized, which is the more expensive error because it survives the fix.
 - **Suggested direction (NOT applied):** apply these corrections before tiering the remaining 80 orphans. **And settle what the 2026-09-01 audit's "29% stale" actually counted** — if it included partial landings, this sample's 30% matches almost exactly; if it meant wholly-fixed, 15% says the prior figure was high. The two numbers differ by 2× and drive different decisions.
+
+### ISSUE-499 — the AC-12 concurrency test asserts a race outcome as if it were deterministic
+- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Layer:** TEST (and a contract question for BE)
+- **Module / US / TC:** Workflow · AC-12 · `WorkflowRuntimeConcurrencyPostgresTests`
+- **Title:** `ConcurrentApprovals_SameStep_ExactlyOneWins_NoDoubleAdvance_AC12` asserts `loser.StatusCode == 409` / `step_already_decided`. **The loser's rejection code is not deterministic.** Both callers are the step-1 approver. `WorkflowRuntimeService` loads the step at `instance.CurrentStepOrder` (`:249`), returns **409** if that step is already decided (`:265`), and **403 `not_step_approver`** if the caller is not its approver (`:280`). When the winner advances `CurrentStepOrder` 1 → 2 **before** the loser evaluates, the loser loads **step 2** — undecided, so no 409 — and `_approver1` is not step 2's approver, so it returns **403**. Observed as `Expected loser.StatusCode to be 409, but found 403`.
+- **Root cause + confidence (~90%, traced through the service):** the assertion pins one of two legitimate interleavings. The **single-winner invariant is sound** — exactly one caller advances, and no double-advance occurs; only the *rejection code* varies.
+- **Why the previous fix did not hold:** `ISSUE-275` (RESOLVED 2026-07-11) treated this as pure resource contention and addressed it with `maxParallelThreads:4` plus `EnableRetryOnFailure`. That reduced the frequency without removing the cause, because the cause is the assertion. The suite has since grown to **5,654 tests / 398 container starts**, so contention is back up and the flake with it — it failed **twice consecutively** on #628, a **frontend-only** PR that touches zero backend files, and once previously on a PR touching only `.claude/hooks/`.
+- **Severity rationale:** MED. It is not a product defect, but it produces **false red on PRs that cannot have caused it**, which is the most expensive kind of noise: it trains people to re-run rather than read. Directly linked to [[ISSUE-453]] — the 398 per-test container starts are what generate the contention this surfaces under.
+- **Suggested direction (NOT applied):** assert the invariant that actually holds — exactly one winner, no double-advance, and the loser **rejected** — accepting either 409 or 403 with the reason stated. **Separately, decide whether 403 is the right contract**: a caller who genuinely was the approver and merely lost the race is told "you are not the approver", which is misleading. If 409 is the intended answer, the fix belongs in the service, not the test — and only then should the test pin 409.
