@@ -2965,13 +2965,19 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Severity rationale:** MED, not HIGH: **blocked today by nothing**, because every current environment seeds on a BYPASSRLS or superuser role, which masks it entirely. It becomes a startup failure the moment someone runs the app under a least-privilege connection — i.e. exactly the hardening direction this platform is heading in. Found by the `E4` seed work, which had to confirm RLS could not silently swallow its inserts.
 - **Suggested direction (NOT applied):** move the reconciler's DISABLE branch before `SeedAsync`. Deliberately not fixed in E4b — reconciler ordering is tenant-isolation infrastructure and would have pushed a dev-seed PR into mandatory human review.
 
-### ISSUE-468 — `DbInitializer`'s RLS comment cites a flag location and a compose setting that are both wrong
+### ISSUE-468 — `DbInitializer`'s RLS comment cites a stale flag location *(one of the two claims here was itself wrong)*
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Layer:** BE (docs-in-code)
 - **Module / US / TC:** Platform · `DbInitializer.cs:105-112`
-- **Title:** The comment asserts "the Docker dev stack sets `Rls__Enabled=true`" and cites `appsettings.json:20-22`. Both are false against the current tree: the flag lives at `appsettings.json:48-50`, and **no compose file sets `Rls__Enabled` at all** (`docker.env.example:11` sets `ASPNETCORE_ENVIRONMENT=Development`, so Docker resolves to `Rls:Enabled=false`).
+- **Title:** The comment cites `appsettings.json:20-22`; the flag actually lives at `appsettings.json:48-50`. That single line reference is stale.
+- **⚠ CORRECTED 2026-09-05 — this finding OVERSTATED the problem, and was itself checked rather than trusted.** It claimed a second error: that the comment's *"the Docker dev stack sets `Rls__Enabled=true`"* is false because **"no compose file sets `Rls__Enabled` at all"**. **That is wrong.** `docker.env:55` sets `Rls__Enabled=true`, and `docker-compose.yml` loads it via `env_file`. The original claim inspected `docker.env.example` and generalised from it. Verified directly while executing [[BUG-467]]:
+  - `appsettings.json:48-50` → `"Rls": { "Enabled": true }` ✔ (comment's *content* correct, its *line number* stale)
+  - `docker.env:55` → `Rls__Enabled=true` ✔ (comment correct)
+  - `appsettings.Development.json:14-16` → `"Rls": { "Enabled": false }` ✔ (comment correct)
+  So **one** fact of three was wrong, not two. Only the line reference was corrected in [[BUG-467]]'s change; the rest of the comment is accurate and was deliberately left alone.
+- **Why this is recorded rather than quietly narrowed:** a finding that overstates sends someone to "fix" a comment that is already true, and this ledger has spent two days measuring the *opposite* error (five findings that understated their scope — [[ISSUE-498]]). Both directions cost, and a finding corrected silently teaches nothing. It also argues for the same discipline in both directions: **verify the premise before acting on it, including when the premise is one of your own findings.**
 - **Severity rationale:** LOW, with an aggravating detail: **this comment was itself written to correct an earlier stale claim**, and has now gone stale in turn. It actively misleads anyone reasoning about RLS in dev — which is the reasoning [[BUG-467]] depends on. **Seventh** recorded case in this repo of a comment outliving its code.
-- **Suggested direction (NOT applied):** correct both facts; fix alongside [[BUG-467]] since they concern the same block.
+- **Suggested direction:** ✅ the line reference was corrected alongside [[BUG-467]] (same block). Nothing else in the comment needs changing.
 
 ### ISSUE-469 — the test factory mints tenants with an unresolvable plan, re-manufacturing the fail-open BUG-307 fixed
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
@@ -2984,7 +2990,7 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Type / Severity / Status:** ENH · MED · OPEN
 - **Layer:** TEST / process
 - **Module / US / TC:** cross-cutting
-- **Title:** Seven recorded cases, **three found on 2026-09-04 alone**: E4's `Dockerfile`/`docker-compose.yml` claim that the browser calls `localhost:5000` (asserting a missing proxy was harmless — it was the bug); [[ISSUE-461]]'s four monitoring comments asserting "always null / always empty" directly above real computed assignments; [[ISSUE-468]]'s RLS comment citing the wrong `appsettings.json` lines *and* a compose setting no compose file makes. Each cost real investigation time, and two of them actively **prevented** a correct premise verification — a reader checking the premise found a confident comment and stopped.
+- **Title:** Seven recorded cases, **three found on 2026-09-04 alone**: E4's `Dockerfile`/`docker-compose.yml` claim that the browser calls `localhost:5000` (asserting a missing proxy was harmless — it was the bug); [[ISSUE-461]]'s four monitoring comments asserting "always null / always empty" directly above real computed assignments; [[ISSUE-468]]'s RLS comment citing the wrong `appsettings.json` lines *(the second half of that finding — a compose setting supposedly unset — turned out to be **wrong**; `docker.env:55` does set it, corrected 2026-09-05)*. Each cost real investigation time, and two of them actively **prevented** a correct premise verification — a reader checking the premise found a confident comment and stopped.
 - **The analysis that matters, and it is negative:** I initially proposed a mechanical guard. On examination **it would catch almost none of these.** Breaking the seven down by detectability:
   - **Semantically false claims** — "the browser calls localhost:5000", "always null, deliberately", "the Docker dev stack sets `Rls__Enabled=true`". These are prose assertions about runtime behaviour. **No static check can evaluate them.** This is the large majority.
   - **Stale location citations** — `appsettings.json:20-22` when the key is at `:48-50`. Mechanically checkable (assert the cited key/symbol appears near the cited line), but this is **one partial case out of seven**.
