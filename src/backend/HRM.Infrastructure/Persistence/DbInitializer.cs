@@ -92,6 +92,23 @@ public static class DbInitializer
 
         await SeedAsync(dbContext, logger, cancellationToken);
 
+        // BUG-467: roll enforcement OFF *before* seeding, not only after.
+        //
+        // The reconciler used to run once, at the end. That is fine while every environment seeds on a
+        // BYPASSRLS or superuser role — which is exactly why this stayed invisible — and it breaks the moment
+        // the app runs least-privilege. Sequence: run once with Rls:Enabled=true (RLS forced on ~112 tables),
+        // then restart with Rls:Enabled=false AND a blank PrivilegedConnection while DefaultConnection points
+        // at hrm_app. GuardRlsConfiguration does not fire (the flag is false), ConnectionRoutingInterceptor
+        // goes inert, and every seeder INSERT then runs as hrm_app with a blank GUC against still-FORCED
+        // tables -> 42501, before the call at the end ever gets to disable enforcement.
+        //
+        // Only the DISABLE half moves. The ENABLE half deliberately stays AFTER seeding: turning enforcement
+        // on first would make the seeder itself run under RLS, which is a different and worse problem than
+        // the one being fixed here.
+        var rlsConfiguration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        await ReconcileRowLevelSecurityAsync(
+            dbContext, rlsConfiguration, logger, cancellationToken, disableOnly: true);
+
         // DEV/TEST-ONLY: seed the E2E business tenant + owner login. Gated strictly to Development so it
         // never runs in Staging/Production. The host environment is resolved from DI (null-safe).
         var environment = scope.ServiceProvider.GetService<IHostEnvironment>();
@@ -104,13 +121,12 @@ public static class DbInitializer
         // migrate + seed so the schema, the dormant policies (migration 20260710120000), and the seed data all
         // exist first. Gated + idempotent.
         // ⚠ GAP-L10 (2026-08-10): this used to say "a no-op on every current environment (Rls:Enabled=false)".
-        // STALE — appsettings.json:20-22 ships "Rls": { "Enabled": true } with a fail-closed startup guard, and
+        // STALE — appsettings.json:48-50 ships "Rls": { "Enabled": true } with a fail-closed startup guard, and
         // the Docker dev stack sets Rls__Enabled=true. It is appsettings.Development.json that overrides it to
         // false, so DEV and CI run on two isolation layers while production runs on three. Do not read the
         // remaining "Rls:Enabled = false" mentions below as the shipped default; they describe that BRANCH
         // (Rls:Enabled=false everywhere).
-        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        await ReconcileRowLevelSecurityAsync(dbContext, configuration, logger, cancellationToken);
+        await ReconcileRowLevelSecurityAsync(dbContext, rlsConfiguration, logger, cancellationToken);
     }
 
     /// <summary>
@@ -136,14 +152,25 @@ public static class DbInitializer
     /// flag is true but the connected role bypasses RLS (superuser/BYPASSRLS — e.g. dev's <c>developer</c>), logs a
     /// WARNING because isolation is NOT actually enforced for that connection.</para>
     /// </summary>
+    /// <param name="disableOnly">
+    /// BUG-467. When true this is the PRE-SEED pass, whose only job is to roll enforcement off so the seeder
+    /// can write. It returns immediately when the flag says enforcement should be ON, leaving that work to the
+    /// post-seed call — enabling RLS before seeding would make the seeder run under it.
+    /// </param>
     public static async Task ReconcileRowLevelSecurityAsync(
-        AppDbContext db, IConfiguration configuration, ILogger logger, CancellationToken ct)
+        AppDbContext db, IConfiguration configuration, ILogger logger, CancellationToken ct,
+        bool disableOnly = false)
     {
         // RLS is a real-Postgres feature — the EF InMemory provider implements none of it.
         if (!db.Database.IsRelational())
             return;
 
         var enabled = configuration.GetValue("Rls:Enabled", false);
+
+        // BUG-467: the pre-seed pass exists only to roll enforcement OFF. If the flag says it should be ON,
+        // do nothing and let the post-seed call handle it.
+        if (disableOnly && enabled)
+            return;
 
         // The exact policy-bearing set from migration 20260710120000: a `tenant_id` column on a base table,
         // excluding the global identity/tenant tables. Discovered by reflection over information_schema (never
