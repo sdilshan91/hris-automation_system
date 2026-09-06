@@ -12201,9 +12201,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["ApiResponse"];
-                        "text/json": components["schemas"]["ApiResponse"];
-                        "text/plain": components["schemas"]["ApiResponse"];
+                        "application/json": components["schemas"]["ApiResponseOfPayrollSalaryComponentInUseDto"];
+                        "text/json": components["schemas"]["ApiResponseOfPayrollSalaryComponentInUseDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfPayrollSalaryComponentInUseDto"];
                     };
                 };
             };
@@ -33443,6 +33443,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfPayrollSalaryComponentInUseDto: {
+            code?: string | null;
+            data?: components["schemas"]["PayrollSalaryComponentInUseDto"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfPayrollSalaryStructureDto: {
             code?: string | null;
             data?: components["schemas"]["PayrollSalaryStructureDto"];
@@ -38608,6 +38617,12 @@ export interface components {
             typeName?: string | null;
             /** Format: date-time */
             updatedAt?: string | null;
+        };
+        PayrollSalaryComponentInUseDto: {
+            /** Format: int32 */
+            affectedEmployeeCount?: number;
+            /** Format: int32 */
+            affectedStructureCount?: number;
         };
         PayrollSalaryComponentListItemDto: {
             calculationMethod?: components["schemas"]["CalculationMethod"];
