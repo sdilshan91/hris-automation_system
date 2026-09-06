@@ -176,6 +176,112 @@ public sealed class StatutoryRuleMultiCountryPostgresTests : IAsyncLifetime
         await act.Should().NotThrowAsync();
     }
 
+    // (f) ISSUE-299 — the create-path duplicate pre-check must compare NORMALIZED-to-normalized.
+    //     A dirty stored country_code ("lk ", "lk", "LK ") comes from a seed/import/psql write that bypassed the
+    //     service's normalize-on-save. Pre-fix the pre-check ran `country_code = 'LK'` and the unique index is on
+    //     the RAW column too, so NEITHER fired: the duplicate was created. The resolver, however, matches on
+    //     upper(btrim(country_code)) (arm (e) above), so BOTH rows then matched and SelectEffectiveByType picked
+    //     an arbitrary winner on an identical EffectiveFrom → a WRONG TAX RATE on real payroll. Must be 409.
+    //     Real Postgres, not InMemory: the fix has to TRANSLATE to upper(btrim(...)); InMemory would happily
+    //     client-evaluate Trim()/ToUpper() and green a fix that throws at runtime.
+    [Theory]
+    [Trait("Issue", "ISSUE-299")]
+    [InlineData("lk ")]  // whitespace-dirty
+    [InlineData("lk")]   // case-dirty
+    [InlineData("LK ")]  // trailing space only
+    public async Task Create_WhenAnUnNormalizedDuplicateIsAlreadyStored_Returns409_OnPostgres(string storedCode)
+    {
+        var (tc, cu) = Actors();
+        await using var seed = CreateContext(tc, cu);
+        await seed.Database.MigrateAsync();
+
+        // Seeded directly through the DbContext: the service would normalize it away.
+        seed.StatutoryRules.Add(RawIncomeTax(storedCode, new DateOnly(2026, 4, 1), isDeleted: false));
+        await seed.SaveChangesAsync();
+
+        await using var db = CreateContext(tc, cu);
+        // Same RuleType + FiscalYear ("2026-2027") and an OVERLAPPING window (both open-ended from 2026-04-01).
+        var created = await BuildService(db, tc, cu).CreateAsync(
+            IncomeTax("LK", new DateOnly(2026, 4, 1), null));
+
+        created.IsFailure.Should().BeTrue("the stored '" + storedCode + "' is the same country as 'LK'");
+        created.StatusCode.Should().Be(409);
+        created.ErrorCode.Should().Be("duplicate_statutory_rule");
+
+        await using var verify = CreateContext(tc, cu);
+        (await verify.StatutoryRules.CountAsync()).Should().Be(1, "no second row may be written");
+    }
+
+    // (f2) Do NOT over-tighten: a genuinely DIFFERENT country is still allowed alongside a dirty row.
+    [Fact]
+    [Trait("Issue", "ISSUE-299")]
+    public async Task Create_DifferentCountry_StillSucceedsAlongsideADirtyRow_OnPostgres()
+    {
+        var (tc, cu) = Actors();
+        await using var seed = CreateContext(tc, cu);
+        await seed.Database.MigrateAsync();
+        seed.StatutoryRules.Add(RawIncomeTax("lk ", new DateOnly(2026, 4, 1), isDeleted: false));
+        await seed.SaveChangesAsync();
+
+        await using var db = CreateContext(tc, cu);
+        var created = await BuildService(db, tc, cu).CreateAsync(
+            IncomeTax("IN", new DateOnly(2026, 4, 1), null));
+
+        created.IsSuccess.Should().BeTrue(created.Error);
+    }
+
+    // (g) ISSUE-299 — the fiscal-year clone path must not PROPAGATE a dirty country_code into the target FY.
+    //     Pre-fix `CountryCode = src.CountryCode` copied "lk " verbatim, minting a fresh evasive row every year.
+    [Fact]
+    [Trait("Issue", "ISSUE-299")]
+    public async Task CloneFiscalYear_NormalizesADirtyCountryCode_OnPostgres()
+    {
+        var (tc, cu) = Actors();
+        await using var seed = CreateContext(tc, cu);
+        await seed.Database.MigrateAsync();
+
+        var raw = RawIncomeTax("lk ", new DateOnly(2025, 4, 1), isDeleted: false);
+        raw.FiscalYear = "2025-2026";
+        seed.StatutoryRules.Add(raw);
+        await seed.SaveChangesAsync();
+
+        await using var db = CreateContext(tc, cu);
+        var cloned = await BuildService(db, tc, cu).CloneFiscalYearAsync(
+            "2025-2026", "2026-2027", new DateOnly(2026, 4, 1), new DateOnly(2027, 3, 31));
+        cloned.IsSuccess.Should().BeTrue(cloned.Error);
+
+        await using var verify = CreateContext(tc, cu);
+        var clone = await verify.StatutoryRules.AsNoTracking()
+            .SingleAsync(r => r.FiscalYear == "2026-2027");
+        clone.CountryCode.Should().Be("LK", "a dirty source must not propagate into the cloned fiscal year");
+    }
+
+    // (g2) ISSUE-299 — the clone's target-FY collision guard must also compare normalized-to-normalized:
+    //      a dirty "lk " already in the TARGET year must block cloning a clean "LK" source into it.
+    [Fact]
+    [Trait("Issue", "ISSUE-299")]
+    public async Task CloneFiscalYear_WhenTargetHoldsAnUnNormalizedSameCountryRule_Returns409_OnPostgres()
+    {
+        var (tc, cu) = Actors();
+        await using var seed = CreateContext(tc, cu);
+        await seed.Database.MigrateAsync();
+
+        var source = RawIncomeTax("LK", new DateOnly(2025, 4, 1), isDeleted: false);
+        source.FiscalYear = "2025-2026";
+        var dirtyTarget = RawIncomeTax("lk ", new DateOnly(2026, 4, 1), isDeleted: false);
+        dirtyTarget.FiscalYear = "2026-2027";
+        seed.StatutoryRules.AddRange(source, dirtyTarget);
+        await seed.SaveChangesAsync();
+
+        await using var db = CreateContext(tc, cu);
+        var cloned = await BuildService(db, tc, cu).CloneFiscalYearAsync(
+            "2025-2026", "2026-2027", new DateOnly(2026, 4, 1), null);
+
+        cloned.IsFailure.Should().BeTrue();
+        cloned.StatusCode.Should().Be(409);
+        cloned.ErrorCode.Should().Be("target_fiscal_year_exists");
+    }
+
     // (e) TAX-3 normalization guard on REAL Postgres: a raw/seed/import write can store an un-normalized
     //     country_code — either case-dirty ("lk") OR whitespace-dirty ("LK ") — bypassing the service's
     //     normalize-on-save. The resolver matches on upper(btrim(country_code)) to EXACTLY mirror the cumulative
