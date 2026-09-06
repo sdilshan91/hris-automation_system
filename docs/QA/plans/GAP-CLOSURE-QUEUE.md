@@ -349,6 +349,50 @@ Cheapest possible reduction, and it stops the ledger manufacturing phantom work.
 | **`ISSUE-367`** | LOW → **MED** | Renders *"in use by **0** active employees. Reassign them before deleting."* `affectedEmployeeCount` has zero backend occurrences; two specs mock the phantom field and keep it green. |
 | **`ISSUE-373`** | HIGH → **MED**, but split | "17 gaps" is **6 rows / 9 fields**. Keep one out: `trend:'Flat'` is hardcoded *and rendered* — **wrong data beats missing data.** |
 
+## 🔺 AUTO-HEAL 2026-09-07 — 11 findings from the T1/T3 batch, and one HIGH that jumps the queue
+
+Filed from `OUT-OF-LANE:` blocks raised while fixing `ISSUE-036`, `ISSUE-169`, `ISSUE-299` and `ISSUE-369`.
+Recording the process failure too: these sat in transcripts for a full batch before being written down.
+Rule #6 says a discovery that only ever appears in a transcript was not tracked — that is exactly what
+happened, and it was caught by the user asking, not by the loop.
+
+**Jumps the queue — ahead of the remaining T3:**
+
+- **`ISSUE-501` (HIGH)** — `SocialSecurityInputValidator` has the ISSUE-169 defect one field over, on **EPF/ETF
+  contribution rates**. Same `numeric(5,2)`, same silent rounding, same echo. Statutory contribution rates
+  are a legal obligation, which is why this outranks the rest of the batch. Fix is the one-line
+  `PrecisionScale` already proven in #652 — cheap, and the tests to mirror already exist.
+
+**Then, as one coherent slice (same idiom, disjoint files):**
+
+- `ISSUE-502` (MED) — `PayrollAdjustment.Amount`, **highest blast radius of the three**: an adjustment
+  amount reaches a payslip untransformed.
+- `ISSUE-503` (MED) — `SalaryStructureComponentInputDto.OverrideValue`. Silent-rounding only; that service
+  already re-fetches, so the ISSUE-369 echo half does not apply.
+
+**Parked at the decision gate:**
+
+- **`DECISION-504`** — 32 `numeric(18,2)` columns, 5 validators enforcing the contract. `ISSUE-152`,
+  `ISSUE-369`, and now `501`/`502`/`503` are the **same defect found five times, one at a time, by
+  testers**. Sweep the remaining ~27, or add a Roslyn rule that closes the class? Recommendation: the
+  rule, plus a one-time sweep to make it pass. **Do not schedule 502/503 as a mechanical batch until this
+  is answered** — the answer changes whether they are hand-fixed or fall out of the sweep.
+- `ENH-509` (LOW) — orphaned leave attachments need a retention period before a sweeper can be written.
+
+**Scheduled normally:**
+
+- `ISSUE-505` (MED) — statutory unique index on the raw `country_code`; ISSUE-299 survives under
+  concurrency. Needs a migration, so it is human-gated regardless.
+- `ISSUE-506` (MED) — `StatutoryRuleIntegrationTests` header claims a validation pipeline it does not
+  register. **Test-integrity, not a defect** — but it is the reason #652's arms went elsewhere, and the
+  next author to trust that header writes a green no-op.
+- `ISSUE-508` (MED) — leave attachments are invisible to the storage-quota sum. `TenantStorageUsage`'s own
+  ISSUE-340 comment warns a new size-bearing table must be added to **both** methods; the warning has now
+  been missed twice. Fix it with a registry, not a third point-fix.
+- `ISSUE-507` (LOW) — `FiscalYear` compared raw, same evasion class as ISSUE-299.
+- `ISSUE-510` (LOW) — `SelfAssessmentAttachmentsController` still has no `[RequestSizeLimit]`.
+- `ISSUE-511` (LOW) — AngleSharp advisory; permanent build noise is what hides the next one.
+
 ## 🔺 AUTO-HEAL 2026-09-06 — a HIGH that outranks the rest of T3
 
 `ISSUE-500` — **FE specs structurally cannot catch an FE↔BE contract break.** Filed after FOUR defects

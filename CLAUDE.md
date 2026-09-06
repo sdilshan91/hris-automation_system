@@ -66,6 +66,12 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    time reality does. Protocol: [`/auto-heal`](.claude/skills/auto-heal.md). This does **not** bypass
    the report-only boundary, the test-integrity rule, or the decision-gate — it *tracks and ranks*;
    the human still decides gated work.
+   **File it the moment it surfaces — never batch to the end of a run.** The same turn a sub-agent
+   returns an `OUT-OF-LANE:` block, it goes to `TEST-FINDINGS.md` and the queue, *before* the next
+   queue item. On 2026-09-07 eleven such findings sat in transcripts across one batch; one was a
+   **HIGH** on EPF/ETF statutory contribution rates, and it was written down only because the user
+   asked. The ledger-lock rule constrains **where** a filing lands, never **when** — if a ledger PR is
+   open, append to its branch rather than deferring.
    **Mandatory inside any loop or long task** — `/implement-all`, `/test-all`, `/campaign`,
    `/loop` — and it covers **everything** surfaced, not just defects: nice-to-haves and gaps
    are filed too, as `ENH` in the same `TEST-FINDINGS.md` (one ledger keeps the shared ID
