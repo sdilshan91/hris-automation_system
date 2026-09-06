@@ -272,6 +272,65 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > reconciled against merged PRs. **Still genuinely open:** `E3` (slice 1 only), `F1` (blocked on a BA story),
 > `F3`, `G4` (parked).
 
+## ▶ THE 94 — every unscheduled finding, batched (2026-09-06)
+
+`scripts/findings-status.sh` reported **94 findings documented but never scheduled** out of 225 live
+(124 scheduled, 7 deliberately deferred). They were *stored*, not tracked. This tiers all of them.
+
+**Two rules shaped the batching, and both matter more than the ordering:**
+
+1. **One batch = one PR = disjoint files.** Batches are grouped by the code they touch, not by severity,
+   because two PRs editing the same service is how the 2026-09-02 cascade happened. Severity decides the
+   ORDER of batches; file overlap decides their CONTENTS.
+2. **Collapse duplicates before scheduling, not after.** Six findings here are three defects seen twice,
+   and one pair openly contradicts. Scheduling them separately would pay twice and produce conflicting
+   fixes in the same file.
+
+**Discount before treating this as 94 units of work.** The 2026-09-04 sample measured **15% already fixed
+or obsolete** and **30% overstating** what remains. Expect ~14 of these to need *closing*, not doing, and
+~28 to need re-scoping first. Every batch therefore opens with a premise check — six queue items this
+week turned out partly built already.
+
+### Duplicate / contradictory clusters — resolve as ONE unit
+
+| cluster | findings | why together |
+|---|---|---|
+| **Missing central audit row** | `ISSUE-136` · `ISSUE-144` · `ISSUE-149` | One defect in three modules (PIP, goal-progress, recommendations): the write happens, no `audit_logs` row. One pattern, one PR, or you write the same fix three times and they drift. |
+| **PDF export — CONTRADICTORY** | `ISSUE-146` · `ISSUE-138` · `ISSUE-135` **vs** `ISSUE-179` | `ISSUE-179` says PDF export **IS** implemented for reports and *"contradicts the prior payroll-run pdf=400 assumption"*; `ISSUE-146` says `format=pdf` returns 400. **Resolve which is true before scheduling any of them** — one of these is stale, and building from the wrong one wastes the whole batch. |
+| **Redis cache deferred** | `ENH-017` · `ISSUE-368` | Same deferral, two surfaces (statutory rules, component/structure lists). Same seam. |
+| **Attendance DTO parity** | `ENH-003` · `ENH-004` | Clock-in and clock-out omit the *same* fields. `ENH-004` even says "parity with". |
+| **InMemory masks Postgres** | `ISSUE-427` · `ENH-455` | Both are `E3`/`ISSUE-453` in disguise. **Do not schedule separately** — fold into P4. |
+| **Agent infrastructure** | `ISSUE-442` · `ISSUE-443` · `ISSUE-445` · `ISSUE-452` · `ISSUE-458` | All one surface (worktrees, agent memory, turn ceilings, stale rules). Every one costs *every future loop*. |
+
+### Batches, in execution order
+
+| # | batch | contents | why here |
+|---|---|---|---|
+| **B0** | **NUL-byte files** | `BUG-448` (HIGH) | **First, unconditionally.** Three `.cs` files contain literal NUL bytes, so grep, ripgrep and semgrep **skip them silently**. Every static guard in this repo — `ISSUE-486`'s, `ISSUE-454`'s, `RequirePermissionLiteralTests`, the secret scanners — is blind to those files. Until this is fixed, no scan result over the backend can be trusted, including the ones added this week. |
+| **B1** | **Money, live** | `BUG-456` (HIGH) · `ISSUE-438` | Legacy-path overtime hardcoded at 1.5× while `WeekdayOvertimeMultiplier` is tenant-configurable — silently wrong for any tenant that changed it. `ISSUE-438` is the same policy with no UI control. |
+| **B2** | **Agent infrastructure** | the cluster above | Highest *unblocks-others* score in the list. Four agents hit the turn ceiling in one session; worktrees start from a stale base; a memory store points at an empty directory. These tax every subsequent batch. |
+| **B3** | **Performance DTO surface** | `ISSUE-373` (HIGH) + `ISSUE-378` | 17 response-DTO gaps. **Sequence after F3's FE slice** — same files, and F3 is already mid-flight there. |
+| **B4** | **Audit-row cluster** | `ISSUE-136` · `144` · `149` | One pattern, three modules. |
+| **B5** | **PDF export** | resolve `ISSUE-179` vs `146`, then `135` · `138` | **Premise check is the first task, not a formality.** |
+| **B6** | **Payroll precision** | `ISSUE-155` · `169` · `369` · `299` · `BUG-075` · `ENH-018` | All rounding/precision/validation in the same services. One PR, or they conflict. |
+| **B7** | **Attendance** | `ENH-003`+`004` · `ENH-006` · `007` · `008` · `ISSUE-083` · `302` | Same controllers/DTOs. |
+| **B8** | **Performance dashboard** | `ISSUE-127` · `128` · `129` · `ENH-013` · `014` · `015` | Same service. |
+| **B9** | **Recruitment interview lifecycle** | `ISSUE-114` · `115` · `116` · `131` | `115` (no Completed/No-Show API) is the substantive one; the others are the same surface. |
+| **B10** | **Leave** | `ENH-001` · `ISSUE-039` · `045` · `295` | `039` is already PARTIALLY-FIXED per the audit — check first. |
+| **B11** | **Platform / infra** | `ISSUE-276` · `278` · `375` · `376` · `032` · `062` | Mostly deferred-by-design; several may close as WONTFIX rather than needing work. |
+| **B12** | **Caching** | `ENH-017` · `ISSUE-368` | Deferred NFRs. Genuinely optional — schedule only if the perf need is real. |
+| **B13** | **The remaining LOW tail** | ~30 items | Triage as a batch. On the sample rate, ~5 are already fixed and ~9 overstate. **Audit before tiering.** |
+
+### Not in a batch — these need a person, not a slot
+
+| | |
+|---|---|
+| **`/verify-fix` debt** | **20 findings read RESOLVED but are still in the live ledger.** They are done; they need archiving, not doing. Clearing them is the single cheapest way to shrink this list. |
+| **Parked (7)** | `BUG-489`, `DECISION-477`, `DECISION-478`, `ENH-470`, `ISSUE-490` and two more — waiting on a decision, correctly. |
+| **`ISSUE-437` / `ISSUE-439`** | Both are "nothing verifies a documented capability exists". `HRM.ArchitectureTests` (shipped by E2) is now the right home — fold into P4 rather than treating as new work. |
+
+---
+
 ## ▶ RE-PRIORITIZED 2026-09-04 — this supersedes the table below
 
 The original `G`/`E`/`F` queue is **exhausted except for four items**, and 34 findings were filed on
