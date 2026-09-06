@@ -60,13 +60,13 @@ public sealed class UpdateSalaryComponentCommandHandler : IRequestHandler<Update
 }
 
 /// <summary>Soft-deletes a salary component; blocked when in use (US-PAY-001 AC-5).</summary>
-public sealed record DeleteSalaryComponentCommand(Guid ComponentId) : IRequest<Result>;
+public sealed record DeleteSalaryComponentCommand(Guid ComponentId) : IRequest<Result<SalaryComponentInUseDto>>;
 
-public sealed class DeleteSalaryComponentCommandHandler : IRequestHandler<DeleteSalaryComponentCommand, Result>
+public sealed class DeleteSalaryComponentCommandHandler : IRequestHandler<DeleteSalaryComponentCommand, Result<SalaryComponentInUseDto>>
 {
     private readonly ISalaryComponentService _service;
     public DeleteSalaryComponentCommandHandler(ISalaryComponentService service) => _service = service;
 
-    public Task<Result> Handle(DeleteSalaryComponentCommand request, CancellationToken cancellationToken)
+    public Task<Result<SalaryComponentInUseDto>> Handle(DeleteSalaryComponentCommand request, CancellationToken cancellationToken)
         => _service.DeleteAsync(request.ComponentId, cancellationToken);
 }

@@ -40,6 +40,19 @@ public sealed record ApiResponse<T>
         Errors = [error]
     };
 
+    /// <summary>
+    /// A failure that still carries a payload, for errors the client must render structurally rather
+    /// than by parsing the message (ISSUE-367).
+    /// </summary>
+    public static ApiResponse<T> Fail(string error, string? code, T data) => new()
+    {
+        Success = false,
+        Data = data,
+        Message = error,
+        Code = code,
+        Errors = [error]
+    };
+
     public static ApiResponse<T> Fail(IReadOnlyList<string> errors) => new()
     {
         Success = false,

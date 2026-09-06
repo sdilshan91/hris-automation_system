@@ -459,6 +459,25 @@ describe('PayrollService', () => {
   // ─── parseInUseError (AC-5) ──────────────────────────────
 
   describe('parseInUseError', () => {
+    // ISSUE-367: the arm that was missing, and whose absence let the bug ship. Every spec below mocks
+    // a FLAT body — `{code, affectedEmployeeCount}` — but the API wraps everything in ApiResponse, so
+    // the count arrives at `data.affectedEmployeeCount`. The flat specs passed while the real dialog
+    // rendered "in use by 0 active employees" on a delete the server had just refused as in-use.
+    // Mocking a shape the server never sends is how a client-side contract test proves nothing.
+    it('reads the count from the ApiResponse envelope, as the API actually sends it', () => {
+      const err = errorResponse(409, {
+        success: false,
+        code: 'component_in_use',
+        message: 'This component is used by 1 salary structure(s) affecting 4 employee(s)...',
+        data: { affectedStructureCount: 1, affectedEmployeeCount: 4 },
+      });
+
+      const parsed = service.parseInUseError(err);
+
+      expect(parsed?.affectedEmployeeCount).toBe(4);
+      expect(parsed?.code).toBe('component_in_use');
+    });
+
     it('extracts the affected count from a 409', () => {
       const err = errorResponse(409, {
         code: 'component_in_use',

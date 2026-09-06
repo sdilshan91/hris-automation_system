@@ -216,14 +216,14 @@ public sealed class SalaryComponentService : ISalaryComponentService
         });
     }
 
-    public async Task<Result> DeleteAsync(Guid componentId, CancellationToken cancellationToken = default)
+    public async Task<Result<SalaryComponentInUseDto>> DeleteAsync(Guid componentId, CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
-            return Result.Failure("Tenant context is not resolved.", 400);
+            return Result<SalaryComponentInUseDto>.Failure("Tenant context is not resolved.", 400);
 
         var component = await _dbContext.SalaryComponents.FirstOrDefaultAsync(c => c.Id == componentId, cancellationToken);
         if (component is null)
-            return Result.Failure("Salary component not found.", 404);
+            return Result<SalaryComponentInUseDto>.Failure("Salary component not found.", 404);
 
         // AC-5: a component linked to any salary structure cannot be deleted.
         // The BLOCK is on structure links (deliberately stricter than AC-5 — a component in an
@@ -240,7 +240,15 @@ public sealed class SalaryComponentService : ISalaryComponentService
                 .Distinct()
                 .CountAsync(cancellationToken);
 
-            return Result.Failure(
+            // The counts go in the BODY, not only the message. ISSUE-367: the delete dialog renders
+            // `affectedEmployeeCount` structurally, and with nothing to read it fell back to 0 — telling
+            // the user a component was in use by "0 active employees" on a request just refused as in-use.
+            return Result<SalaryComponentInUseDto>.Failure(
+                new SalaryComponentInUseDto
+                {
+                    AffectedStructureCount = inUseCount,
+                    AffectedEmployeeCount = affectedEmployees,
+                },
                 $"This component is used by {inUseCount} salary structure(s) affecting {affectedEmployees} employee(s) and cannot be deleted. Remove the links first.",
                 409, "component_in_use");
         }
@@ -256,7 +264,7 @@ public sealed class SalaryComponentService : ISalaryComponentService
             "Salary component soft-deleted. Id={Id}, Code={Code}, TenantId={TenantId}, By={User}",
             component.Id, component.Code, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result.Success();
+        return Result<SalaryComponentInUseDto>.Success(new SalaryComponentInUseDto());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
