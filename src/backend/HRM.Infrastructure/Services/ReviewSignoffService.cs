@@ -146,14 +146,21 @@ public sealed class ReviewSignoffService : IReviewSignoffService
         var order = 0;
         foreach (var a in input.Actions)
         {
-            if (string.IsNullOrWhiteSpace(a.Description))
+            // ISSUE-121: this was the one free-text field in this method stored with a bare .Trim()
+            // while its four rich-text siblings above went through the sanitizer. It is persisted and
+            // handed back in the notes + export DTOs as-is, so an unsanitized value is stored XSS the
+            // moment any surface renders it as HTML — the same FR-1/§10 rule applies. Sanitize BEFORE
+            // the blank check so a payload that sanitizes down to nothing is skipped rather than
+            // stored as an empty action.
+            var description = _sanitizer.Sanitize(a.Description)?.Trim();
+            if (string.IsNullOrWhiteSpace(description))
                 continue;
             var action = new ReviewMeetingNotesAction
             {
                 Id = BaseEntity.NewUuidV7(),
                 TenantId = _tenantContext.TenantId,
                 ReviewMeetingNotesId = notes.Id,
-                Description = a.Description.Trim(),
+                Description = description,
                 Deadline = a.Deadline,
                 SortOrder = order++,
                 IsDeleted = false,

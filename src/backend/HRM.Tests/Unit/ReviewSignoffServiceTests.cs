@@ -528,6 +528,68 @@ public sealed class ReviewSignoffServiceTests
         notes.Summary.Should().Contain("summary");
     }
 
+    /// <summary>
+    /// ISSUE-121: the agreed-action <c>Description</c> was the ONE field in this method that was stored
+    /// with a bare <c>.Trim()</c> while its four rich-text siblings above went through the sanitizer.
+    /// It is not a harmless omission: the value is persisted verbatim and handed straight back in the
+    /// notes and export-record DTOs, so the payload survives to every future reader. The sign-off screen
+    /// already assigns notes HTML to <c>el.innerHTML</c> directly (review-signoff.component.ts), bypassing
+    /// Angular's own sanitizer — that surface renders the notes BODY today, not this field, but it is the
+    /// established rendering style for this record, so write-time sanitization is the guard that has to hold.
+    /// </summary>
+    [Fact]
+    public async Task SaveNotes_StripsDangerousHtml_FromAgreedActionDescriptions_ISSUE121()
+    {
+        Seed();
+        var input = new SaveMeetingNotesInput(
+            _cycleId, _reportEmpId,
+            Body: "<p>Hi</p>", Strengths: null, DevelopmentAreas: null, Summary: null,
+            Actions:
+            [
+                new MeetingNotesActionInput("Ship v2<script>alert(1)</script>", null),
+                new MeetingNotesActionInput("<img src=x onerror=alert(1)>Book training", null),
+            ]);
+
+        var result = await CreateService(ManagerUser()).SaveNotesAsync(input);
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+
+        using var db = CreateDbContext();
+        var stored = await db.ReviewMeetingNotesActions.AsNoTracking()
+            .OrderBy(a => a.SortOrder).Select(a => a.Description).ToListAsync();
+
+        stored.Should().HaveCount(2);
+        stored[0].Should().NotContain("<script").And.NotContain("alert(",
+            "an unsanitized <script> reaches the browser through the sign-off screen's innerHTML assignment");
+        stored[0].Should().Contain("Ship v2", "the legitimate text the manager typed must survive");
+        stored[1].Should().NotContain("onerror",
+            "an event-handler attribute fires without any <script> tag at all");
+        stored[1].Should().Contain("Book training");
+    }
+
+    /// <summary>
+    /// The other half of ISSUE-121: sanitizing must not mangle ordinary agreed-action text. Managers type
+    /// punctuation, percentages and parentheses; an over-eager strip would silently corrupt the record the
+    /// employee is asked to sign.
+    /// </summary>
+    [Fact]
+    public async Task SaveNotes_PreservesBenignAgreedActionText_ISSUE121()
+    {
+        Seed();
+        const string benign = "Lead the migration - deliver 50% by Q3 (weekly check-in), then hand off.";
+        var input = new SaveMeetingNotesInput(
+            _cycleId, _reportEmpId,
+            Body: "<p>Hi</p>", Strengths: null, DevelopmentAreas: null, Summary: null,
+            Actions: [new MeetingNotesActionInput("  " + benign + "  ", null)]);
+
+        var result = await CreateService(ManagerUser()).SaveNotesAsync(input);
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+
+        using var db = CreateDbContext();
+        var stored = await db.ReviewMeetingNotesActions.AsNoTracking().SingleAsync();
+        stored.Description.Should().Be(benign,
+            "sanitizing is not an excuse to rewrite legitimate text; only the surrounding whitespace is trimmed");
+    }
+
     // ── Export record reflects the signed, locked state (AC-4) ───────────
 
     [Fact]
