@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 165 | 296 | 461 |
+| ISSUE | 166 | 296 | 462 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **237** | **466** | **703** |
+| **TOTAL** | **238** | **466** | **704** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -249,6 +249,19 @@
 - **Why it is filed here:** it was the obvious copy target for ISSUE-036's port. The omission was spotted and deliberately not copied — but the original is still uncapped.
 - **Severity rationale:** LOW — minor DoS-surface / wasted-buffer issue, no correctness impact.
 - **Found:** 2026-09-06, out-of-lane while building ISSUE-036.
+
+### ISSUE-512 — sub-agents working in a worktree write their agent-memory into the MAIN tree, where it sits uncommitted
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** tooling / process
+- **Title:** Three `backend-dev` sub-agents ran with `cd .claude/worktrees/{i036,t3a,t3b}` and correctly confined every `src/` edit to their own worktree — but their `.claude/agent-memory/backend-dev/*.md` writes landed in the **main checkout**, not the worktree they were working in. The files were still uncommitted in the main tree hours later, discovered only by an explicit "what is uncommitted?" sweep.
+- **Why this is not simply correct behaviour:** agent memory is project-scoped, so the main tree is arguably the right destination — the problem is that nothing **commits** it. It accumulates outside any branch, invisible to the PR that produced it, and the realistic failure modes are (a) it is swept into an unrelated PR by a later `git add -A` in the main tree, or (b) it is lost to a `git checkout`/`clean`. Both happened in near-miss form this session: the main tree was on a docs branch at the time.
+- **Second-order risk:** two concurrent sub-agents writing the same memory file have **no isolation at all** — the whole point of `isolation: worktree` per Engineering-Discipline rule #8 — because both resolve to the same main-tree path.
+- **Evidence:** 2026-09-07, `git status` in the main checkout showed 4 modified/untracked files under `.claude/agent-memory/backend-dev/` after three agents had finished and their worktrees were clean. Committed as #657.
+- **Severity rationale:** LOW — nothing was lost, and the content is valuable rather than harmful. Filed because the *near-miss* is structural, not incidental: the orchestrator has no signal that a sub-agent produced memory, so remembering to sweep the main tree is the only control, and it is a human one.
+- **Suggested direction (NOT applied):** either have the orchestrator sweep and commit `.claude/agent-memory/` as part of closing out any run that used sub-agents, or teach agents to write memory into their own worktree so it rides the same PR as the work that produced it. The second is cleaner but interacts with rule #8's one-branch-per-worktree constraint.
+- **Found:** 2026-09-07, out-of-lane while auditing uncommitted changes.
+
 
 ### ISSUE-511 — `AngleSharp 0.17.1` carries a known moderate-severity advisory, warned on every build
 
