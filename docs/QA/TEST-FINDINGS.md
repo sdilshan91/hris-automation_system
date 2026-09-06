@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 155 | 296 | 451 |
+| ISSUE | 156 | 296 | 452 |
 | ENH | 22 | 2 | 24 |
 | DECISION | 3 | 0 | 3 |
-| **TOTAL** | **225** | **466** | **691** |
+| **TOTAL** | **226** | **466** | **692** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
