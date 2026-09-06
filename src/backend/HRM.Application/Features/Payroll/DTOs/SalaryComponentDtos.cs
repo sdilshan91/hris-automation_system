@@ -72,3 +72,25 @@ public sealed record UpdateSalaryComponentRequest
     public int ProcessingOrder { get; init; }
 }
 
+
+/// <summary>
+/// Why a salary component could not be deleted (US-PAY-001 AC-5), returned in the 409 body.
+/// </summary>
+/// <remarks>
+/// ISSUE-367: the delete dialog reads <c>affectedEmployeeCount</c> to tell an HR user how many people a
+/// removal would touch. The API previously sent only a message and an error code, so the client fell
+/// back to <c>0</c> and rendered "in use by 0 active employees" on a request it had just refused —
+/// a number that was both false and self-contradicting.
+///
+/// Both counts are carried because they answer different questions: the BLOCK is on structure links
+/// (deliberately stricter than AC-5 — a component in an employee-less structure is still in use), while
+/// AC-5 asks for the count of affected employees, which is the blast radius.
+/// </remarks>
+public sealed record SalaryComponentInUseDto
+{
+    /// <summary>Salary structures still linking this component — this is what blocks the delete.</summary>
+    public int AffectedStructureCount { get; init; }
+
+    /// <summary>DISTINCT employees assigned the component through those structures (AC-5).</summary>
+    public int AffectedEmployeeCount { get; init; }
+}

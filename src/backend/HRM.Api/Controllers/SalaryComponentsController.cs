@@ -102,12 +102,18 @@ public sealed class SalaryComponentsController : ControllerBase
     [RequirePermission("Payroll.Configure")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
-    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<SalaryComponentInUseDto>), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new DeleteSalaryComponentCommand(id), cancellationToken);
-        return result.IsFailure
-            ? StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode))
-            : Ok(ApiResponse.Ok("Salary component deleted."));
+
+        if (result.IsSuccess)
+            return Ok(ApiResponse.Ok("Salary component deleted."));
+
+        // AC-5 / ISSUE-367: the in-use conflict carries its counts in the body so the client renders a
+        // real number. Other failures (no tenant, not found) have no payload and keep the plain envelope.
+        return result.Value is { } inUse
+            ? StatusCode(result.StatusCode ?? 409, ApiResponse<SalaryComponentInUseDto>.Fail(result.Error!, result.ErrorCode, inUse))
+            : StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
     }
 }

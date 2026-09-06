@@ -7483,6 +7483,37 @@
         },
         "type": "object"
       },
+      "ApiResponseOfPayrollSalaryComponentInUseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PayrollSalaryComponentInUseDto"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseOfPayrollSalaryStructureDto": {
         "additionalProperties": false,
         "properties": {
@@ -23099,6 +23130,20 @@
             "format": "date-time",
             "nullable": true,
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PayrollSalaryComponentInUseDto": {
+        "additionalProperties": false,
+        "properties": {
+          "affectedEmployeeCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "affectedStructureCount": {
+            "format": "int32",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -49987,17 +50032,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponseOfPayrollSalaryComponentInUseDto"
                 }
               },
               "text/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponseOfPayrollSalaryComponentInUseDto"
                 }
               },
               "text/plain": {
                 "schema": {
-                  "$ref": "#/components/schemas/ApiResponse"
+                  "$ref": "#/components/schemas/ApiResponseOfPayrollSalaryComponentInUseDto"
                 }
               }
             },

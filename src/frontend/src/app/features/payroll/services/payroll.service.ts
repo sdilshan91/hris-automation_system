@@ -174,23 +174,31 @@ export class PayrollService {
   /**
    * AC-5: pull the affected-employee count out of a delete 409. Returns null when
    * the error isn't the in-use case, so the caller can fall back to a toast.
+   *
+   * ISSUE-367: the count lives in the envelope's `data`, not at the top level. This read the top
+   * level, found nothing (the API sent only a message and a code), and fell back to 0 — so the
+   * dialog told users a component was in use by "0 active employees" on a delete it had just
+   * refused as in-use. The backend now sends `SalaryComponentInUseDto` in `data`.
+   *
+   * The top-level read is kept as a fallback: it costs one `??` and means an older API build, or any
+   * future handler that flattens the envelope, degrades to the old behaviour rather than throwing.
    */
   parseInUseError(err: unknown): IComponentInUseError | null {
     if (!(err instanceof HttpErrorResponse)) {
       return null;
     }
-    const body = err.error as Partial<IComponentInUseError> | undefined;
+    const body = err.error as
+      | (Partial<IComponentInUseError> & { data?: Partial<IComponentInUseError> })
+      | undefined;
     const isInUse =
       err.status === 409 || body?.code === 'component_in_use';
     if (!isInUse) {
       return null;
     }
+    const count = body?.data?.affectedEmployeeCount ?? body?.affectedEmployeeCount;
     return {
       code: 'component_in_use',
-      affectedEmployeeCount:
-        typeof body?.affectedEmployeeCount === 'number'
-          ? body.affectedEmployeeCount
-          : 0,
+      affectedEmployeeCount: typeof count === 'number' ? count : 0,
       message: body?.message,
     };
   }

@@ -39,5 +39,5 @@ public interface ISalaryComponentService
         CancellationToken cancellationToken = default);
 
     /// <summary>Soft-deletes a component. Blocked (409) when the component is linked to any structure (AC-5).</summary>
-    Task<Result> DeleteAsync(Guid componentId, CancellationToken cancellationToken = default);
+    Task<Result<SalaryComponentInUseDto>> DeleteAsync(Guid componentId, CancellationToken cancellationToken = default);
 }

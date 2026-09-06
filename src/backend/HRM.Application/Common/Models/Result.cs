@@ -62,4 +62,16 @@ public sealed class Result<T>
     public static Result<T> Success(T value) => new(true, value, null, null, null);
     public static Result<T> Failure(string error, int statusCode = 400, string? errorCode = null)
         => new(false, default, error, statusCode, errorCode);
+
+    /// <summary>
+    /// A failure that still carries structured data for the client to render.
+    /// </summary>
+    /// <remarks>
+    /// ISSUE-367: a 409 whose only machine-readable content is an error CODE forces the client either to
+    /// parse numbers out of a human message or to invent them. The salary-component delete dialog did the
+    /// latter — it read an <c>affectedEmployeeCount</c> the API never sent and rendered the fallback,
+    /// telling users a component was in use by "0 active employees" while refusing to delete it.
+    /// </remarks>
+    public static Result<T> Failure(T value, string error, int statusCode = 400, string? errorCode = null)
+        => new(false, value, error, statusCode, errorCode);
 }
