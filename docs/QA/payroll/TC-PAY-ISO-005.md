@@ -20,7 +20,7 @@ Verify AC-5 / FR-8: employee salary assignments (`employee_salary_component`) an
 - Data Requirements: S7 (tenant_id discriminator + RLS policy)
 
 ## 3. Preconditions
-- Tenant "acme" has employee Ravi (Tenant A) with an FT-IN assignment and revision history.
+- Tenant "acme" has employee Ravi (Tenant A) with an FT_IN assignment and revision history.
 - Tenant "globex" has employee Lena (Tenant B) with her own assignment.
 - An HR Officer with `Payroll.*.All` is authenticated in globex (Tenant B).
 

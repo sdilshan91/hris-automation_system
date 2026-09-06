@@ -20,7 +20,7 @@ Verify FR-8: salary-assignment endpoints (assign, preview, override, bulk, revis
 - Data Requirements: S7
 
 ## 3. Preconditions
-- Tenant "acme" Active with FT-IN structure and employee Ravi.
+- Tenant "acme" Active with FT_IN structure and employee Ravi.
 - Valid acme HR JWT available; a globex HR JWT also available.
 
 ## 4. Test Data

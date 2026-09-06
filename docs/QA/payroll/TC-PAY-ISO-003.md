@@ -32,10 +32,10 @@ Verify AC-6 / FR-8: write operations on salary components, structures, and struc
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | As acme, `POST /api/v1/payroll/components` with body containing `tenant_id` = globex_tenant_id | Created row is stamped with acme `tenant_id` (interceptor overrides the body); NOT globex. The injected value is ignored. |
-| 2 | As acme, `PUT .../components/{globex_component_id}` (update a globex component by id) | 404 Not Found — the global query filter prevents acme from resolving/updating a globex row. |
-| 3 | As acme, `POST .../structures/{acme_structure_id}/components` linking a `salary_component_id` = globex_component_id | Rejected (404/422) — cannot link a foreign-tenant component into an acme structure. No junction row created. |
-| 4 | As acme, `DELETE .../structures/{globex_structure_id}` | 404 Not Found; the globex structure is untouched. |
+| 1 | As acme, `POST /api/v1/payroll/salary-components` with body containing `tenant_id` = globex_tenant_id | Created row is stamped with acme `tenant_id` (interceptor overrides the body); NOT globex. The injected value is ignored. |
+| 2 | As acme, `PUT .../salary-components/{globex_component_id}` (update a globex component by id) | 404 Not Found — the global query filter prevents acme from resolving/updating a globex row. |
+| 3 | As acme, `POST .../salary-structures/{acme_structure_id}/components` linking a `salary_component_id` = globex_component_id | Rejected (404/422) — cannot link a foreign-tenant component into an acme structure. No junction row created. |
+| 4 | As acme, `DELETE .../salary-structures/{globex_structure_id}` | 404 Not Found; the globex structure is untouched. |
 | 5 | Verify the DB after all attempts | No globex row was created, modified, or deleted by the acme session; no acme row carries a globex `tenant_id`. |
 
 ## 6. Postconditions

@@ -33,8 +33,8 @@ Verify AC-6 / NFR-1: the Redis cache for salary component and structure lists is
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | As acme, `GET .../components` to populate the cache | acme list cached under an acme-scoped key; inspect Redis to confirm the key includes acme's tenant id. |
-| 2 | As globex, `GET .../components` | globex receives ONLY globex components — never a cache hit on acme's entry. globex cached under its own key. |
+| 1 | As acme, `GET .../salary-components` to populate the cache | acme list cached under an acme-scoped key; inspect Redis to confirm the key includes acme's tenant id. |
+| 2 | As globex, `GET .../salary-components` | globex receives ONLY globex components — never a cache hit on acme's entry. globex cached under its own key. |
 | 3 | Inspect Redis keys | Separate keys per tenant; no shared/global key that could serve one tenant's list to another (NFR-1). |
 | 4 | As acme, create/update a component (write) | Only the acme cache entry is invalidated; globex's cached entry is untouched and still valid. |
 | 5 | Re-read as acme then as globex | acme reflects the change (fresh); globex still returns its own unchanged list from cache. |

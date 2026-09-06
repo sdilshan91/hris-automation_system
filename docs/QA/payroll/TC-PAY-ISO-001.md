@@ -35,8 +35,8 @@ Verify AC-6 / FR-8: salary components and structures are fully tenant-isolated o
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Authenticate in acme; JWT carries acme `tenant_id` | Tenant context resolves to acme. |
-| 2 | `GET /api/v1/payroll/components` and `GET .../structures` | Responses contain only acme records; zero globex components/structures (AC-6). |
-| 3 | `GET .../components/{globex_component_id}` and `.../structures/{globex_structure_id}` using globex UUIDs | 404 Not Found (global query filter excludes them); never 200 with another tenant's data. |
+| 2 | `GET /api/v1/payroll/salary-components` and `GET .../salary-structures` | Responses contain only acme records; zero globex components/structures (AC-6). |
+| 3 | `GET .../salary-components/{globex_component_id}` and `.../salary-structures/{globex_structure_id}` using globex UUIDs | 404 Not Found (global query filter excludes them); never 200 with another tenant's data. |
 | 4 | Verify at the database level | `SELECT * FROM salary_component WHERE tenant_id = acme_id` returns only acme rows; `... = globex_id` returns only globex rows. (If an RLS policy exists, confirm a session set to acme cannot read globex rows even via a direct query.) |
 | 5 | Switch to globex context and repeat list/fetch | globex sees only its own components/structures; zero acme records. |
 

@@ -32,10 +32,10 @@ Verify AC-6 / FR-8: salary component and structure endpoints require a resolved 
 ## 5. Test Steps
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| 1 | `GET /api/v1/payroll/components` with a valid token but no resolvable tenant (no subdomain / no `X-Tenant-Subdomain`) | Rejected (400/401/403 per the platform's tenant-resolution policy); no data returned. Never served against a default tenant. |
+| 1 | `GET /api/v1/payroll/salary-components` with a valid token but no resolvable tenant (no subdomain / no `X-Tenant-Subdomain`) | Rejected (400/401/403 per the platform's tenant-resolution policy); no data returned. Never served against a default tenant. |
 | 2 | Call with subdomain `nosuchtenant.yourhrm.com` | Tenant resolution fails; request rejected; no payroll data leaked. |
 | 3 | Present an acme token while addressing the globex subdomain (`X-Tenant-Subdomain: globex`) | Rejected due to token/tenant mismatch; never serves globex data to an acme token (or vice versa). |
-| 4 | Repeat for a write endpoint (`POST .../components`) with the same three conditions | All rejected before any row is created. |
+| 4 | Repeat for a write endpoint (`POST .../salary-components`) with the same three conditions | All rejected before any row is created. |
 
 ## 6. Postconditions
 - No payroll data is read or written without a valid, matching tenant context.
