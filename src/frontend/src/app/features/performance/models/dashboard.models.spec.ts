@@ -11,6 +11,7 @@ import {
   scorePercent,
   trendPolylinePoints,
   trendSeriesColor,
+  mapDepartmentEmployeeScore,
   TREND_SERIES_COLORS,
 } from './dashboard.models';
 
@@ -128,6 +129,37 @@ describe('dashboard.models helpers (US-PRF-007)', () => {
     it('cycles deterministically through the palette', () => {
       expect(trendSeriesColor(0)).toBe(TREND_SERIES_COLORS[0]);
       expect(trendSeriesColor(TREND_SERIES_COLORS.length)).toBe(TREND_SERIES_COLORS[0]);
+    });
+  });
+  describe('mapDepartmentEmployeeScore (ISSUE-373)', () => {
+    // The wire DTO (PerformanceDepartmentEmployeeScoreDto) has no trend and no grade.
+    // The adapter used to hardcode trend: 'Flat' while the drill-down rendered the glyph
+    // unconditionally, so every employee showed a measured-looking flat arrow that was
+    // pure invention. These arms pin "report nothing" rather than "report Flat".
+    it('maps trend to null — the API sends no trend, so the UI must not assert one', () => {
+      const row = mapDepartmentEmployeeScore({
+        employeeId: 'e1',
+        employeeName: 'Ada Lovelace',
+        jobTitle: 'Lead',
+        score: 92,
+      } as never);
+
+      expect(row.trend).toBeNull();
+      expect(row.grade).toBeNull();
+    });
+
+    it('still carries through the fields the wire DOES send', () => {
+      const row = mapDepartmentEmployeeScore({
+        employeeId: 'e2',
+        employeeName: 'Alan Turing',
+        jobTitle: 'Engineer',
+        score: null,
+      } as never);
+
+      expect(row.employeeId).toBe('e2');
+      expect(row.employeeName).toBe('Alan Turing');
+      expect(row.jobTitle).toBe('Engineer');
+      expect(row.score).toBeNull();
     });
   });
 });

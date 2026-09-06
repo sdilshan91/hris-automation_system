@@ -212,9 +212,13 @@ describe('PerformanceDashboardService (US-PRF-007)', () => {
     expect(result?.departmentName).toBe('Engineering');
     expect(result?.employees[0].employeeName).toBe('Alex Doe');
     expect(result?.employees[0].jobTitle).toBe('Engineer');
-    // NOTE: grade + trend have no wire source — defaulted + reported.
+    // ISSUE-373: neither `grade` nor `trend` has a wire source — PerformanceDepartmentEmployeeScoreDto
+    // carries employeeId, employeeName, employeeNo, jobTitle, score, status and nothing else.
+    // `grade` was already handled honestly (null, hidden by an @if). `trend` was defaulted to 'Flat'
+    // and rendered unconditionally, so this assertion pinned a fabricated signal on a screen used for
+    // performance decisions. Both are null now, and the glyph is hidden when null.
     expect(result?.employees[0].grade).toBeNull();
-    expect(result?.employees[0].trend).toBe('Flat');
+    expect(result?.employees[0].trend).toBeNull();
     // No `ratingScaleMax` on this fixture → the absent-field fallback. The drill-down wire
     // does carry the field; see the G8 arm below.
     expect(result?.scoreScaleMax).toBe(DASHBOARD_SCALE_FALLBACK);

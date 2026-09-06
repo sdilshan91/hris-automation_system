@@ -109,9 +109,11 @@ import {
                         @if (e.grade) { · {{ e.grade }} }
                       </p>
                     </div>
-                    <span class="text-xs" [class]="trendClass(e.trend)" [attr.title]="e.trend">
-                      {{ trendGlyph(e.trend) }}
-                    </span>
+                    @if (e.trend) {
+                      <span class="text-xs" [class]="trendClass(e.trend)" [attr.title]="e.trend">
+                        {{ trendGlyph(e.trend) }}
+                      </span>
+                    }
                     <span class="w-12 text-right text-sm font-semibold text-neutral-900">
                       @if (e.score != null) { {{ e.score | number: '1.0-1' }} } @else { — }
                     </span>
