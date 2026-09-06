@@ -42,3 +42,6 @@
 - [Environment-gated startup guards](feedback-environment-gated-guards.md) — allow-list the safe env, take IHostEnvironment not the raw ASPNETCORE_ENVIRONMENT string; Smtp:Host guard is the counter-example
 - [Reports Postgres port + shared container fixture (E3 slice 1)](reference-reports-postgres-port.md) — per-TEST containers cost ~20s each; IClassFixture fixes it; split cross-tenant arms; the connection-string mutation that actually goes RED
 - [HRM.ArchitectureTests project](reference-architecture-tests-project.md) — why 2 of 4 rules avoid NetArchTest; metadata is blind to unused PackageReference; optional-param inertness needs Roslyn
+- [Leave attachment upload (ISSUE-036)](reference-leave-attachment-upload.md) — upload-before-create, NULLABLE LeaveRequestId claimed on create; 4-part resolve gate; 5MB/PDF-JPG-PNG differ from self-assessment on purpose
+- [Design-time migration env recipe](reference-design-time-migration-env.md) — dotnet-ef boots Program.cs; needs a REAL PEM + a hyphen-free Encryption key id passed via `env`, not `export`
+- [Statutory-rule normalization + rate precision](reference-statutory-rule-normalization-precision.md) — country_code compare asymmetry (write/index/precheck/resolver), numeric(5,2) rate scale; the InMemory statutory "pipeline" runs NO validators
