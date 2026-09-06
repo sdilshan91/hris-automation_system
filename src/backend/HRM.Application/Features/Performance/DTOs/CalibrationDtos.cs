@@ -58,3 +58,21 @@ public sealed record CalibrationCohortRowDto
     public Guid? ReviewerEmployeeId { get; init; }
     public string? ReviewerName { get; init; }
 }
+
+/// <summary>
+/// F3 / GAP-021 AC-3 — the outcome of marking a cycle phase complete.
+///
+/// Named "closure", not "completion", because <c>PhaseCompletionDto</c> already exists in CycleDtos.cs and
+/// means something entirely different: per-phase participant STATS for the dashboard. Two records with the
+/// same name and unrelated meanings is the kind of collision that produces a confident wrong read later.
+/// </summary>
+/// <param name="CompletedOn">
+/// When the phase was marked complete. Never null in this DTO: it is only produced on success, and a null
+/// here would be indistinguishable from "still open", which is the ambiguity CyclePhase.CompletedOn exists
+/// to remove.
+/// </param>
+public sealed record PhaseClosureDto(
+    Guid CycleId,
+    string PhaseType,
+    DateTime CompletedOn,
+    Guid? CompletedByUserId);

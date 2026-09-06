@@ -53,7 +53,10 @@ public sealed class PerformanceCalibrationService : IPerformanceCalibrationServi
         // Defence-in-depth authorization (the controller [RequirePermission] is the primary gate): only a
         // caller who can publish/manage cycles OR review org-wide may calibrate.
         var perms = _currentUser.Permissions;
-        var permitted = perms.Contains(PermissionCatalog.Performance.PublishAll)
+        // F3: Calibrate is OR-ed IN, not swapped for the other three — see the catalog entry. Granting
+        // Calibrate alone is now sufficient, which is what makes delegation to a facilitator possible.
+        var permitted = perms.Contains(PermissionCatalog.Performance.Calibrate)
+            || perms.Contains(PermissionCatalog.Performance.PublishAll)
             || perms.Contains(PermissionCatalog.Performance.Manage)
             || perms.Contains(PermissionCatalog.Performance.ReviewAll);
         if (!permitted)
@@ -140,5 +143,69 @@ public sealed class PerformanceCalibrationService : IPerformanceCalibrationServi
             Reason = calibration.Reason,
             CalibratedAt = calibration.CreatedAt,
         });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<PhaseClosureDto>> CompleteCalibrationPhaseAsync(
+        Guid cycleId, CancellationToken cancellationToken = default)
+    {
+        // Same OR-ed permission set as ApplyAsync — completing the phase is the last act of calibrating, so
+        // anyone who may calibrate may close it. See the PermissionCatalog.Performance.Calibrate remarks.
+        var perms = _currentUser.Permissions;
+        var permitted = perms.Contains(PermissionCatalog.Performance.Calibrate)
+            || perms.Contains(PermissionCatalog.Performance.PublishAll)
+            || perms.Contains(PermissionCatalog.Performance.Manage)
+            || perms.Contains(PermissionCatalog.Performance.ReviewAll);
+        if (!permitted)
+            return Result<PhaseClosureDto>.Failure(
+                "You do not have permission to complete the calibration phase.", 403, "forbidden");
+
+        var cycle = await _dbContext.AppraisalCycles
+            .Include(c => c.Phases)
+            .FirstOrDefaultAsync(c => c.Id == cycleId, cancellationToken);
+        if (cycle is null)
+            return Result<PhaseClosureDto>.Failure("Cycle not found.", 404, "cycle_not_found");
+
+        if (!cycle.IsCalibrationEnabled)
+            return Result<PhaseClosureDto>.Failure(
+                "Calibration is not enabled for this cycle.", 409, "calibration_not_enabled");
+
+        var phase = cycle.Phases.FirstOrDefault(p => p.PhaseType == CyclePhaseType.Calibration);
+        if (phase is null)
+            return Result<PhaseClosureDto>.Failure(
+                "This cycle has no calibration phase.", 404, "calibration_phase_not_found");
+
+        // Rejected, not silently re-stamped: overwriting CompletedOn/CompletedByUserId would quietly rewrite
+        // who closed the phase and when, and that record is the point of storing them.
+        if (phase.IsComplete)
+            return Result<PhaseClosureDto>.Failure(
+                "The calibration phase is already complete.", 409, "phase_already_complete");
+
+        var now = DateTime.UtcNow;
+
+        // The window must have STARTED. Predecessor phases are deliberately NOT required to be complete:
+        // only Calibration has a completion fact today, so requiring predecessors would gate a real phase on
+        // state that does not exist for the others and could never be satisfied. Revisit when the remaining
+        // phases gain their own CompletedOn.
+        if (now < phase.StartDate)
+            return Result<PhaseClosureDto>.Failure(
+                "The calibration phase has not started yet.", 422, "phase_not_started");
+
+        phase.CompletedOn = now;
+        phase.CompletedByUserId = _currentUser.UserId;
+
+        // Same shared audit writer + same context as ApplyAsync, so the phase closure and the row it stamps
+        // commit atomically. "Who closed calibration and when" is the record AC-3 exists to produce.
+        _auditLogger.Log(
+            "CalibrationPhase.Completed",
+            CalibrationResource,
+            cycle.Id.ToString(),
+            before: new { CompletedOn = (DateTime?)null },
+            after: new { CompletedOn = now, CompletedByUserId = _currentUser.UserId });
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<PhaseClosureDto>.Success(new PhaseClosureDto(
+            cycle.Id, phase.PhaseType.ToString(), now, phase.CompletedByUserId));
     }
 }

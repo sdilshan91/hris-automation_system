@@ -124,6 +124,19 @@ public sealed class RecommendationServiceTests
             RatingScaleMax = 5, IsCalibrationEnabled = calibration,
         });
 
+        // F3 / GAP-021: BR-2 now reads a real phase-completion fact, so a calibration-enabled cycle needs a
+        // Calibration PHASE to exist. Seeded OPEN (CompletedOn = null) — the arms below complete it
+        // explicitly, which is the only way to reach the permitted state.
+        if (calibration)
+        {
+            db.CyclePhases.Add(new CyclePhase
+            {
+                Id = Guid.NewGuid(), TenantId = _tenantId, CycleId = _cycleId,
+                PhaseType = CyclePhaseType.Calibration, Sequence = 3,
+                StartDate = new DateTime(2026, 10, 1), EndDate = new DateTime(2026, 11, 30),
+            });
+        }
+
         // Submitted manager reviews with final scores + a Promotion flag on the top performer.
         AddReview(db, _topPerformerId, 4.6m, ReviewFlag.Promotion);
         AddReview(db, _midPerformerId, 3.6m, ReviewFlag.None);
@@ -266,15 +279,61 @@ public sealed class RecommendationServiceTests
         submit.ErrorCode.Should().Be("final_ratings_not_published");
     }
 
+    // ── BR-2 ────────────────────────────────────────────────────────────────────────────────
+    //
+    // REWRITTEN for F3 / GAP-021, and the rewrite is the point. This test used to be named
+    // `Submit_with_calibration_enabled_requires_a_submitted_review` and asserted that a SUBMITTED MANAGER
+    // REVIEW opened the gate — its own comment read "The low performer DOES have a submitted review in
+    // seed, so calibration passes."
+    //
+    // That was the defect, not the specification. BR-2's error code is `calibration_incomplete`, and the
+    // code it guarded never looked at calibration at all: the gate passed with ZERO calibrations applied,
+    // and this green test was the evidence of it. The gap analysis cites this very test as proof.
+    //
+    // So the assertion changed because the BEHAVIOUR it pinned was wrong — not to make a red test green.
+    // It is strictly stronger now: the old version could not distinguish a calibrated cycle from an
+    // uncalibrated one, and these two arms fail if the gate stops reading the phase in either direction.
+    //
+    // Note it reads the PHASE, never "does this employee have a RatingCalibration row". The normal
+    // committee outcome for most employees is NO adjustment, so per-employee evidence is permanently
+    // absent for them — a per-employee gate would never open for the majority.
+
     [Fact]
-    public async Task Submit_with_calibration_enabled_requires_a_submitted_review()
+    public async Task Submit_with_calibration_enabled_is_BLOCKED_until_the_phase_is_complete_BR2()
     {
         await SeedAsync(calibration: true);
-        // The low performer DOES have a submitted review in seed, so calibration passes; create+submit for them.
+        // The low performer has a submitted manager review in seed. Under the OLD proxy that alone opened
+        // the gate; it must not now.
         var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
             _lowPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 1000m), null, null))).Value!;
+
+        var blocked = await Service(HrUser()).SubmitAsync(new SubmitRecommendationInput(rec.Id, [], null));
+
+        blocked.IsFailure.Should().BeTrue(
+            "a submitted manager review is not calibration; the old gate passed with zero calibrations applied");
+        blocked.StatusCode.Should().Be(422);
+        blocked.ErrorCode.Should().Be("calibration_incomplete");
+    }
+
+    [Fact]
+    public async Task Submit_with_calibration_enabled_succeeds_once_the_phase_is_marked_complete_BR2()
+    {
+        await SeedAsync(calibration: true);
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _lowPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 1000m), null, null))).Value!;
+
+        // Complete the Calibration phase — the fact BR-2 actually reads.
+        using (var db = Db())
+        {
+            var phase = db.CyclePhases
+                .Single(p => p.CycleId == _cycleId && p.PhaseType == CyclePhaseType.Calibration);
+            phase.CompletedOn = DateTime.UtcNow;
+            db.SaveChanges();
+        }
+
         var ok = await Service(HrUser()).SubmitAsync(new SubmitRecommendationInput(rec.Id, [], null));
-        ok.IsSuccess.Should().BeTrue();
+
+        ok.IsSuccess.Should().BeTrue(ok.Error);
         ok.Value!.Status.Should().Be(RecommendationStatus.Submitted); // no approvers ⇒ terminal "submitted".
     }
 

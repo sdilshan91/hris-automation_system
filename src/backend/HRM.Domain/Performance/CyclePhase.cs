@@ -29,6 +29,40 @@ public sealed class CyclePhase : BaseEntity
     /// <summary>UTC end of the phase window (inclusive).</summary>
     public DateTime EndDate { get; set; }
 
+    /// <summary>
+    /// F3 / GAP-021 AC-3 — when this phase was marked complete, or null while it is still open.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The FIRST phase-level state in this model: before this, a <c>CyclePhase</c> carried only a type, a
+    /// sequence and a window, so "is this phase finished?" had no answer and every consumer had to proxy for
+    /// one. The proxies are what this replaces — <c>RecommendationService</c>'s BR-2 gate checked whether a
+    /// manager review had been submitted and returned <c>calibration_incomplete</c>, an error code describing
+    /// a check it did not perform.
+    /// </para>
+    /// <para>
+    /// <b>Deliberately general, not a calibration-specific flag on <see cref="AppraisalCycle"/>.</b> The
+    /// general form is what lets <c>CyclePhaseTransitionJob</c> and the cycle dashboard stop special-casing
+    /// Calibration, which is the ISSUE-350 defect. A boolean named for one phase would have solved AC-3 and
+    /// left the other two consumers still guessing.
+    /// </para>
+    /// <para>
+    /// <b>Null is not "incomplete-and-uninteresting".</b> A phase with no <c>CompletedOn</c> is open; a phase
+    /// that never existed is a different statement, which is why completion is read as
+    /// <c>Phases.Any(p =&gt; p.PhaseType == X &amp;&amp; p.CompletedOn != null)</c> rather than from a count.
+    /// </para>
+    /// </remarks>
+    public DateTime? CompletedOn { get; set; }
+
+    /// <summary>
+    /// F3 — who marked the phase complete. Nullable because rows predating this column have no answer, and
+    /// inventing one would be a fabrication of the kind the SLA-uptime and P95 fields already refuse.
+    /// </summary>
+    public Guid? CompletedByUserId { get; set; }
+
+    /// <summary>True once <see cref="CompletedOn"/> is set. The single fact every consumer should read.</summary>
+    public bool IsComplete => CompletedOn is not null;
+
     /// <summary>Navigation back to the owning cycle.</summary>
     public AppraisalCycle? Cycle { get; set; }
 

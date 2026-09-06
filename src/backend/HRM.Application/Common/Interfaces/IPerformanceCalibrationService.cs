@@ -19,4 +19,16 @@ public interface IPerformanceCalibrationService
     /// </summary>
     Task<Result<CalibrationResultDto>> ApplyAsync(
         ApplyCalibrationInput input, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// F3 / GAP-021 AC-3 — marks a cycle's Calibration phase complete, which is the fact
+    /// <c>RecommendationService</c>'s BR-2 gate reads. Idempotent-safe: completing an already-complete
+    /// phase is rejected rather than silently re-stamped, so the "who and when" stays truthful.
+    /// </summary>
+    /// <returns>
+    /// 404 when the cycle or its Calibration phase does not exist; 409 when the phase is already complete;
+    /// 422 when the phase window has not started; 403 when the caller lacks permission.
+    /// </returns>
+    Task<Result<PhaseClosureDto>> CompleteCalibrationPhaseAsync(
+        Guid cycleId, CancellationToken cancellationToken = default);
 }

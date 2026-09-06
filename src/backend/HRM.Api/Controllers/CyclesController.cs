@@ -171,6 +171,11 @@ public sealed class CyclesController : ControllerBase
     private const string ManagePerf = "Performance.Manage";
     private const string ReviewAll = "Performance.Review.All";
 
+    // F3 / GAP-021. Literal rather than a PermissionCatalog reference to match the three above — the
+    // attribute needs a compile-time constant. PermissionCatalogTests pins these strings against the
+    // catalog, so a drift between the two is a test failure rather than a silent 403.
+    private const string Calibrate = "Performance.Calibrate";
+
     /// <summary>
     /// GET /api/v1/tenant/performance/cycles/{id}/calibration?departmentId= — the calibration cohort for the
     /// cycle (US-PRF-011 §2): each in-scope employee's original + calibrated rating, reviewer and department.
@@ -211,6 +216,35 @@ public sealed class CyclesController : ControllerBase
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
         return Ok(ApiResponse<CalibrationResultDto>.Ok(result.Value!));
+    }
+
+    /// <summary>
+    /// POST /api/v1/tenant/performance/cycles/{id}/calibration/complete — F3 / GAP-021 AC-3.
+    /// Marks the cycle's Calibration phase complete.
+    /// </summary>
+    /// <remarks>
+    /// This is the write BR-2 reads. <c>RecommendationService</c> previously gated recommendations on whether
+    /// a manager review had been submitted while returning <c>calibration_incomplete</c> — an error code
+    /// naming a condition it never tested, which passed with zero calibrations applied. It now reads
+    /// <c>CyclePhase.CompletedOn</c>, and this endpoint is what sets it.
+    ///
+    /// <para><c>Performance.Calibrate</c> is accepted ALONGSIDE the existing three, not instead of them, so
+    /// no existing HR user loses access on deploy and calibration can still be delegated by granting the new
+    /// permission alone.</para>
+    /// </remarks>
+    [HttpPost("cycles/{id:guid}/calibration/complete")]
+    [RequirePermission(Calibrate, PublishCycles, ManagePerf, ReviewAll)]
+    [ProducesResponseType(typeof(ApiResponse<PhaseClosureDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> CompleteCalibrationPhase(Guid id, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CompleteCalibrationPhaseCommand(id), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+        return Ok(ApiResponse<PhaseClosureDto>.Ok(result.Value!));
     }
 }
 
