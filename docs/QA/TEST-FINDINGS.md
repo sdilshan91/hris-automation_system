@@ -2941,6 +2941,20 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** replace with `"\0REDACTED\0"`, then add a CI step — `find src/backend -name '*.cs' -not -path '*/obj/*' | xargs file | grep -v text` must return nothing. **The CI step matters more than the fix**: it is what stops a future file going invisible.
 
 ### ISSUE-449 — the G7 queue item's own count was inflated ~33% by counting the codebase's documentation of a problem as instances of it
+- **✅ RESOLVED 2026-09-07 — measured, and the UNIT recorded alongside.** Byte-level walk of `src/backend` (excluding `obj/`, `bin/`, and semgrep's own excludes `*Tests*.cs` / `*Test.cs` / `TenantResolution*.cs`), decoding `utf-8-sig` with `errors='replace'` so no file can be silently skipped. Independently reproduced twice.
+
+  | measure | value |
+  |---|---|
+  | files containing the token | 81 |
+  | **executable call sites** (`IgnoreQueryFilters\s*\(` on non-comment lines) | **276** |
+  | raw text matches | 369 |
+  | comment-only lines | 93 |
+
+  **Root cause of the three numbers: none of them stated a unit.** 354 (queue) counted raw text; 270 (register) was an older raw count; 265 (`.semgrep/tenant-isolation.yml`) was closer to call sites but stale. Corrected all three, each now carrying the unit — that is the actual fix, since a bare number will drift into a fourth.
+
+  **The BUG-448 assumption was verified, not trusted:** an independent byte scan of all 2703 `.cs` files found **0** containing `\x00`, and `file(1)` now reports `AuditAnonymizationService.cs` as UTF-8 text, so grep and the byte count agree. Before #645 they would not have.
+
+  Two ledger sub-claims were also wrong and are noted rather than silently dropped: `HRM.Application` has 5 raw matches but **0** executable (all comments), and `CrossTenantScope.cs` has **1** comment occurrence, not the 2 claimed.
 - **Type / Severity / Status:** ISSUE · MED · OPEN
 - **Layer:** DATA (ledger)
 - **Module / US / TC:** cross-module · `GAP-CLOSURE-QUEUE.md:213-215`, `GAP-REGISTER.md:129`

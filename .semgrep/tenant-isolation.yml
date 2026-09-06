@@ -11,8 +11,8 @@
 #     the NOBYPASSRLS role instead of the BYPASSRLS one. Every tenant-scoped table has an RLS policy
 #     (guarded by EveryTenantScopedEntity_HasRlsPolicy_CoverageGuard), so stripping the EF query filter no
 #     longer reaches another tenant's rows — IgnoreQueryFilters_OnAppRole_IsStillTenantIsolatedByRls
-#     proves it against real Postgres. That is why hrm-ignore-query-filters is WARNING and not ERROR: 265
-#     findings that the database already backstops are not 265 blocking defects, and annotating all of
+#     proves it against real Postgres. That is why hrm-ignore-query-filters is WARNING and not ERROR: 276
+#     findings that the database already backstops are not 276 blocking defects, and annotating all of
 #     them would be the hand-maintained-list pattern the audit itself flagged as systemic finding S-2.
 #
 #   * What the triage DID find was a different bug class the linter never looked at: a cross-tenant WRITE
