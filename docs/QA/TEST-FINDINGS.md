@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 166 | 296 | 462 |
+| ISSUE | 173 | 296 | 469 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **238** | **466** | **704** |
+| **TOTAL** | **245** | **466** | **711** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -249,6 +249,65 @@
 - **Why it is filed here:** it was the obvious copy target for ISSUE-036's port. The omission was spotted and deliberately not copied — but the original is still uncapped.
 - **Severity rationale:** LOW — minor DoS-surface / wasted-buffer issue, no correctness impact.
 - **Found:** 2026-09-06, out-of-lane while building ISSUE-036.
+
+### ISSUE-513 — the threat model claims a Hangfire filter REJECTS tenant-less jobs at runtime; nothing does
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** docs (architecture) — but the content is a **security control claim**
+- **Title:** `hrm_technical_document_v4.0.md:3439`, threat-model row 11: *"Hangfire job runs without tenant context → Mitigation: **Hangfire server filter requires `TenantId` in args; jobs without it rejected**."* **Nothing rejects a tenant-less job at runtime.** The only shipping `IServerFilter` is `JobLogContextFilter`, which pushes Serilog properties and nothing else.
+- **Why this is the most dangerous of the doc-drift family:** `ISSUE-375` describes the same non-existent filter in a *design* section; this states it as a **security mitigation with a runtime rejection behaviour**, in the threat model — the document a reviewer consults to decide whether a risk is already covered. The real control is a **build-time source scan** (`BackgroundJobTenantContextTests`) with a named exemption list: a different guarantee, a different failure mode, and it does not run in production at all.
+- **Root cause (100%, verified):** an `IServerFilter` cannot reach the job body's DI scope — 42 of 62 job classes in `HRM.Api/Jobs/` call `CreateScope()` themselves. The documented control could not be built as described.
+- **Suggested direction (NOT applied):** rewrite row 11 to the build-time guard and **re-rate the residual likelihood**, or implement a real runtime check. Not a wording fix — the rating depends on which.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-375.
+
+### ISSUE-514 — the architecture doc claims every job takes a `tenantId`; 30 of 62 do not
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** docs (architecture)
+- **Title:** `hrm_technical_document_v4.0.md:2604`: *"Every job method takes a `Guid tenantId` parameter."* **30 of the 62** classes in `HRM.Api/Jobs/` have no such parameter. `TenantJobRunner.cs:46-48` says so outright: sweep jobs *"declare no such argument — they enumerate tenants internally."*
+- **Why it matters beyond accuracy:** `ISSUE-513`'s mitigation **depends on this false premise**. "Reject jobs without `TenantId` in args" is only coherent if every job has one.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-375.
+
+### ISSUE-515 — the architecture doc names the RLS GUC `app.current_tenant_id`; the real name is `app.current_tenant`
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** docs (architecture)
+- **Title:** `hrm_technical_document_v4.0.md:565` — *"an EF interceptor … applies it as a PG session setting (`SET LOCAL app.current_tenant_id = '…'`) on every command."* Two errors: the GUC is **`app.current_tenant`** (`TenantJobRunner.cs:91`, ~30 job files) and `app.current_tenant_id` **appears nowhere in `src/`**; and the mechanism is superseded — `Program.cs:145` records it is set **at connection-open** (US-PLT-002 / ISSUE-277), not per command.
+- **Severity rationale:** MED not LOW — **a wrong GUC name is copy-pasteable into an RLS policy**, and a policy referencing a never-set GUC does not error. It silently matches nothing or everything.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-375.
+
+### ISSUE-516 — the entire US-PAY-002 salary-assignment TC surface documents routes that do not exist
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** QA (docs)
+- **Title:** Payroll · US-PAY-002 · TC-PAY-002-01/02/03/04/05/07/08/11 + TC-PAY-ISO-005/006/007 — **19 occurrences**. Every assignment TC targets `POST /api/v1/payroll/employees/{id}/salary[/preview|/bulk|/revisions]`. **That route does not exist.** Real: `POST api/v1/payroll/salary-assignments[/preview|/bulk]` (`EmployeeSalaryController.cs:28,45,62`) and `GET api/v1/payroll/employees/{id}/compensation|/revision-history` (`:81,:94`).
+- **Why HIGH:** every one would **404 on the URL**, and a 404 masks whatever the endpoint actually does. An entire story's coverage is unexecutable and would read as a failing feature rather than a wrong test.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-517 — payslip TCs use a `/slips` segment, the wrong verb on bulk download, and an unexecutable IDOR probe
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** QA (docs)
+- **Title:** Payroll · US-PAY-004 · TC-PAY-004-02:28-29, TC-PAY-004-08:36, TC-PAY-ISO-010:38. Three errors: (1) routes use `/slips`, real segment is `/payslips` (`PayslipsController.cs:92,121,139`); (2) bulk download is documented **POST** but is actually **GET** `runs/{runId}/payslips/download-all` (`:139`); (3) **TC-PAY-ISO-010's per-slip IDOR probe `GET .../slips/{slipId}` has no equivalent** — the only per-employee route is keyed by `employeeId`, not `payslipId`.
+- **Why HIGH, and why (3) is worst:** a **tenant-isolation probe that cannot route is a fake isolation arm.** It "passes" by 404 — the same green as a genuinely enforced boundary.
+- **Suggested direction (NOT applied):** (1) and (2) are renames; **(3) needs a decision** on re-expressing the probe against an employee-keyed route.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-518 — the audit-log immutability TC passes by routing miss, not verb rejection
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** QA (docs)
+- **Title:** Payroll · US-PAY-012 · TC-PAY-012-07:38-39. It issues `PUT/PATCH/DELETE /api/v1/.../audit-log/{A}` — a path existing under **no** spelling — and accepts *"405 or 404"*, so it passes trivially on the 404 and **verifies nothing**. Real resource: `GET api/v1/tenant/audit-logs/{id:guid}` (`AuditLogController.cs:58,143`).
+- **Why it matters:** live test theater asserting immutability of the **audit log** in a CRITICAL module. Accepting 404 beside 405 is what makes it unfalsifiable.
+- **Suggested direction (NOT applied):** repoint so the 405 is **earned**, and drop 404 from the accepted set — a rewrite, not a rename.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-519 — `TC-PAY-011-03` names a `send-payslips` route that does not exist
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** QA (docs)
+- **Title:** `TC-PAY-011-03.md:39` references *"POST send-payslips"*; the real route is `POST api/v1/payroll/runs/{runId}/payslips/send-emails` (`PayslipDistributionController.cs:33`).
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
 
 ### ISSUE-512 — sub-agents working in a worktree write their agent-memory into the MAIN tree, where it sits uncommitted
 
