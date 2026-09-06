@@ -53,6 +53,10 @@ def _ask(reason):
 _SAFE_RM_TARGETS = (
     "node_modules", "dist", "bin", "obj", ".angular", ".next", ".nuxt",
     "coverage", "__pycache__", ".cache", ".turbo", "build", ".playwright-artifacts",
+    # Widened 2026-09-07: these still prompted in practice and are equally regenerable.
+    # The test is "can CI rebuild it from source?" — if yes, a confirmation buys nothing
+    # and spends the user's attention, which is the scarce resource a guard should protect.
+    "TestResults", ".vs", ".idea", "publish", ".sonarqube", "obj", "bin", ".nyc_output",
 )
 
 # (name, regex, reason) — checked in order; first match wins.
@@ -72,10 +76,16 @@ _PATTERNS = [
      "this discards all uncommitted changes in the working tree."),
     # ISSUE-512: the pattern above only caught the bare `.` form. A sub-agent ran
     # `git checkout -- <path>` against a file in the SHARED main checkout while another
-    # session had uncommitted edits there. Same irreversible discard, different spelling,
-    # and it sailed through. Path-form checkout/restore and `git clean` now prompt too.
-    ("git_discard_path", re.compile(r"\bgit\s+(?:checkout|restore)\s+(?:--\s|--\S|[^-\s])"),
-     "git checkout/restore of a path discards that file's uncommitted changes with no "
+    # session had uncommitted edits there. Same irreversible discard, different spelling.
+    #
+    # Scoped to the `--` / restore forms ONLY. An earlier version of this also matched
+    # `git checkout <branch>`, on the argument that branch-switching in a shared tree
+    # caused three rule-#8 incidents. That was wrong and was reverted: git REFUSES a
+    # branch switch that would overwrite local changes, so it is not silently
+    # destructive — and prompting on it interrupts the most common command in the
+    # workflow. A guard that cries wolf on routine work is one people disable.
+    ("git_discard_path", re.compile(r"\bgit\s+checkout\s+--\s|\bgit\s+restore\s+(?!-)\S"),
+     "git checkout -- / git restore discards that file's uncommitted changes with no "
      "reflog entry and no recovery. If you are inside a worktree, confirm the path "
      "belongs to THIS worktree and not the shared checkout (see ISSUE-512)."),
     ("git_clean", re.compile(r"\bgit\s+clean\b[^\n]*-[a-zA-Z]*[fdx]"),

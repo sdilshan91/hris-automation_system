@@ -36,3 +36,27 @@
 - **Write-time, not commit-time.** Agents commit through the GitHub MCP `push_files`, which no
   git pre-commit hook ever sees. Anything that must be caught has to be caught on `Write`/`Edit`.
 - **Fail open, always.** Every guard exits 0 on its own error.
+
+## Why you still see prompts in `bypassPermissions` mode (2026-09-07)
+
+`.claude/settings.json` sets `permissions.defaultMode: bypassPermissions`, so the
+`permissions.ask` list does not run. **Every confirmation prompt you see on a Bash command
+comes from `careful-guard.py`, not from settings** — a PreToolUse hook returning
+`permissionDecision: "ask"` is NOT suppressed by the permission mode. That is by design: it
+is what makes the guard unbypassable, and it is also why tuning the prompt volume means
+tuning the hook, not the settings file.
+
+The 29-entry `permissions.ask` list was removed on 2026-09-07 because it was inert and
+therefore misleading — it implied a control that had not run for as long as
+`bypassPermissions` had been set. `permissions.deny` is kept (it is the hard stop, and the
+`.env` entries there are additionally backed by `secret-guard`).
+
+`permissions.additionalDirectories` held `C:\HRIS\.claude`, a Windows path on a Linux
+host. Unresolvable, granting nothing — setup drift from an earlier environment. Removed.
+
+**Tuning principle for `careful-guard`:** the scarce resource a guard protects is the
+user's attention. Prompt on the irreversible-and-silent (`git checkout -- <path>` discards
+a file with no reflog entry); stay silent on the merely-destructive-looking that the tool
+already protects (`git checkout <branch>` refuses when it would overwrite local changes).
+A guard that cries wolf on routine work is one people disable — which costs more than it
+ever saved.

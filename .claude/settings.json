@@ -31,41 +31,7 @@
       "Edit(./.env)",
       "Edit(./.env.*)"
     ],
-    "ask": [
-      "Bash(rm *)",
-      "Bash(rmdir *)",
-      "Bash(shred *)",
-      "Bash(unlink *)",
-      "Bash(dd *)",
-      "Bash(mkfs *)",
-      "Bash(fdisk *)",
-      "Bash(chmod *)",
-      "Bash(chown *)",
-      "Bash(npm install *)",
-      "Bash(npm i *)",
-      "Bash(npm uninstall *)",
-      "Bash(pip *)",
-      "Bash(pip3 *)",
-      "Bash(yarn *)",
-      "Bash(pnpm *)",
-      "Bash(docker *)",
-      "Bash(kubectl *)",
-      "Bash(firebase *)",
-      "Bash(gcloud *)",
-      "Bash(wget *)",
-      "Bash(kill *)",
-      "Bash(killall *)",
-      "Bash(pkill *)",
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(git reset --hard *)",
-      "PowerShell(Remove-Item *)",
-      "PowerShell(Stop-Process *)"
-    ],
-    "defaultMode": "bypassPermissions",
-    "additionalDirectories": [
-      "C:\\HRIS\\.claude"
-    ]
+    "defaultMode": "bypassPermissions"
   },
   "hooks": {
     "PreToolUse": [
