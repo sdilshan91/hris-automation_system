@@ -563,7 +563,7 @@ public interface ITenantContext
 Propagation rules:
 - **Synchronous code:** injected as a scoped service.
 - **EF Core:** an EF interceptor reads `ITenantContext` and applies it as a PG session setting (`SET LOCAL app.current_tenant_id = '...';`) on every command — RLS uses this.
-- **Background jobs:** `TenantId` is a required parameter on every job; a Hangfire filter restores `ITenantContext` before the job body runs.
+- **Background jobs:** the job BODY declares its own tenant scope (`ITenantJobRunner.RunForTenantAsync` for per-tenant work, `SetSystemContext()` for cross-tenant sweeps) — a Hangfire server filter cannot do this, for the reason set out in §28.2.
 - **SignalR:** clients connect to user-scoped + tenant-scoped groups; messages always include the `tenant_id` claim.
 - **Logging:** Serilog enricher adds `tenant_id` to every log record.
 - **Cache keys:** every key prefixed with `t:{tenantId}:`.
@@ -2602,7 +2602,27 @@ Hangfire with `Hangfire.PostgreSql` storage. Dashboard at `/hangfire` (system-ad
 
 ### 28.2 Tenant Awareness Pattern
 - Every job method takes a `Guid tenantId` parameter (or a typed `JobArgs` containing it).
-- A Hangfire `IServerFilter` runs before the job body, restores `ITenantContext`, and sets the PG session variable so RLS works.
+- **Tenant context is declared by the job BODY, not by a Hangfire filter.** A per-tenant job creates its own DI
+  scope and calls `ITenantJobRunner.RunForTenantAsync(tenantId, subdomain, work)`, which sets `ITenantContext` on
+  that scope's instance, publishes the ambient tenant (so the EF global query filter and cache prefix scope to it),
+  and — gated on `Rls:Enabled` and a relational provider — sets the `app.current_tenant` GUC inside a transaction
+  via `set_config(..., is_local => true)` so RLS policies apply. A cross-tenant sweep declares `SetSystemContext()`
+  instead. The only Hangfire `IServerFilter` that ships, `JobLogContextFilter`
+  (`src/backend/HRM.Api/Jobs/Filters/JobLogContextFilter.cs`), pushes Serilog `LogContext` properties
+  (`job_name`, `job_id`, `tenant_id`) and deliberately touches no `ITenantContext`.
+- ⚠ **Do NOT "fix the code to match" a tenant-restoring server filter — it cannot work, and building it would
+  produce a control that enforces nothing.** An `IServerFilter` can only reach the scope Hangfire activated the job
+  from, but 42 of the 62 job classes call `IServiceScopeFactory.CreateScope()` themselves and resolve
+  `ITenantContext`/`AppDbContext` from that NEW scope. A tenant set by a filter would land on a *different* scoped
+  `TenantContext` instance than the job body reads: the body would still see `IsResolved == false` while the filter
+  looked like a working isolation control. That is strictly more dangerous than the current honest design, because
+  it invites everyone downstream to stop checking. Serilog's `LogContext` is the exception that proves the rule —
+  it is `AsyncLocal`-backed, so it flows DOWN into the body and into every scope the body creates, which is why
+  the logging half genuinely does work from a filter and the tenant half cannot.
+- Coverage is enforced mechanically rather than by convention: `HRM.Tests/Unit/BackgroundJobTenantContextTests.cs`
+  scans every class under `HRM.Api/Jobs` and fails the build if one declares no tenant scope, with a named,
+  justified exemption list for the enqueue-only schedulers (they touch no `DbContext` and run inside the caller's
+  request scope — itself a separately asserted claim).
 - Recurring jobs that must run **for every active tenant** use a fan-out pattern: a master recurring job lists active tenants, then enqueues per-tenant jobs.
 
 ### 28.3 Recurring Jobs (fan-out across tenants)

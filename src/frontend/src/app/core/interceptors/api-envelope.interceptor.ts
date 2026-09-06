@@ -25,8 +25,12 @@ import { ApiResponse } from '../models/api-response.model';
  *   - the body has an OWN boolean `success` property AND an OWN `data` property.
  *
  * Consequently a 204/no-body, a bare array, a blob/file download, a string, a
- * paginated page envelope (`{ data, total, page, pageSize }` — has `data` but no
- * boolean `success`) and any non-enveloped object all pass through untouched.
+ * paginated page (`PagedResult<T>`, whose real shape is
+ * `{ items, page, pageSize, totalCount, totalPages }` — it has NEITHER `data` nor a
+ * boolean `success`) and any non-enveloped object all pass through untouched. Note
+ * that a list endpoint normally returns its `PagedResult` INSIDE the envelope, so
+ * what this interceptor unwraps for those calls is the `ApiResponse` around it; the
+ * page object itself is handed on intact.
  *
  * Error responses (non-2xx, including `success:false` bodies) never reach the
  * map here as `next` values — they surface on the error channel and are left for
