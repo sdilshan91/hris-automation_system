@@ -75,7 +75,11 @@ try
     }
 
     // ===== Infrastructure (DbContext, Auth, JWT, TenantContext) =====
-    builder.Services.AddInfrastructure(builder.Configuration);
+    // ISSUE-447: builder.Environment, not the raw ASPNETCORE_ENVIRONMENT key. The SMTP startup
+    // guard inside needs the RESOLVED environment — same reasoning as JwtSigningKeyStartupGuard
+    // at :154, and for the same reason: an unset variable resolves to Production here and to
+    // null there, so the raw read fails open in the exact deployment the guard protects.
+    builder.Services.AddInfrastructure(builder.Configuration, builder.Environment);
 
     // ===== Observability (P3: OpenTelemetry traces + metrics) =====
     // Inert-by-default (ISSUE-345): registers NOTHING unless enabled. Enabled when OpenTelemetry:OtlpEndpoint (or
