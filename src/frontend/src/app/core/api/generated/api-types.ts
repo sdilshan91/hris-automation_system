@@ -23524,6 +23524,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenant/performance/cycles/{id}/calibration/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfPerformancePhaseClosureDto"];
+                        "text/json": components["schemas"]["ApiResponseOfPerformancePhaseClosureDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfPerformancePhaseClosureDto"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Unprocessable Content */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenant/performance/cycles/{id}/dashboard": {
         parameters: {
             query?: never;
@@ -33632,6 +33715,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfPerformancePhaseClosureDto: {
+            code?: string | null;
+            data?: components["schemas"]["PerformancePhaseClosureDto"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfPerformancePipDraftDto: {
             code?: string | null;
             data?: components["schemas"]["PerformancePipDraftDto"];
@@ -39614,6 +39706,15 @@ export interface components {
             employeeNo?: string | null;
             /** Format: double */
             score?: number;
+        };
+        PerformancePhaseClosureDto: {
+            /** Format: uuid */
+            completedByUserId?: string | null;
+            /** Format: date-time */
+            completedOn?: string;
+            /** Format: uuid */
+            cycleId?: string;
+            phaseType?: string | null;
         };
         PerformancePhaseCompletionDto: {
             /** Format: int32 */
