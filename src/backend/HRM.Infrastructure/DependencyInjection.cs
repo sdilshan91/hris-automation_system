@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure;
@@ -71,7 +72,10 @@ public static class DependencyInjection
         }
     }
 
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IHostEnvironment? environment = null)
     {
         GuardRlsConfiguration(configuration);
         GuardPasswordHashingConfiguration(configuration);
@@ -860,10 +864,30 @@ public static class DependencyInjection
             // failure, not a degraded feature. Fail fast at startup instead of discovering it when a locked-out
             // user cannot get back in.
             //
-            // Read from IConfiguration rather than IHostEnvironment so the guard lives with the registration
-            // it protects — AddInfrastructure has no host environment, and pushing environment awareness down
-            // a layer for one check is worse than reading the variable the host already publishes here.
-            var environmentName = configuration["ASPNETCORE_ENVIRONMENT"]
+            // ISSUE-447: this previously read configuration["ASPNETCORE_ENVIRONMENT"] on the argument that
+            // AddInfrastructure has no host environment. It does now — passed in — and the old read was a
+            // FAIL-OPEN in the one situation the guard exists for.
+            //
+            // IHostEnvironment.EnvironmentName is the single authoritative resolution of three sources: the
+            // environment variable, the --environment switch, and IWebHostBuilder.UseEnvironment. Reading the
+            // raw key sees only the first. Two concrete consequences:
+            //
+            //   1. An UNSET environment. IHostEnvironment defaults to "Production"; the raw read returns null,
+            //      falls through to DOTNET_ENVIRONMENT (also null), and string.Equals(null, "Production") is
+            //      false — so a real production deploy with a blank Smtp:Host BOOTS on LogOnlyEmailSender and
+            //      silently swallows password-reset and lockout mail. Exactly the outage this guard exists to
+            //      prevent, in exactly the deployment most likely to hit it.
+            //   2. `--environment Production` / UseEnvironment("Production"), which set the host setting and
+            //      never touch ASPNETCORE_ENVIRONMENT.
+            //
+            // JwtSigningKeyStartupGuard already documents this reasoning and takes IHostEnvironment; this is
+            // the remaining site that did what that comment warns against. The `environment` parameter is
+            // optional so callers that predate it still compile — but when it is absent the guard falls back
+            // to the old keys. It deliberately does NOT default to Production there: a library consumer or a
+            // test that builds the container directly keeps its existing semantics, and the real deployment
+            // path is Program.cs, which now passes builder.Environment — that is where the fail-open lived.
+            var environmentName = environment?.EnvironmentName
+                                  ?? configuration["ASPNETCORE_ENVIRONMENT"]
                                   ?? configuration["DOTNET_ENVIRONMENT"];
             if (string.Equals(environmentName, "Production", StringComparison.OrdinalIgnoreCase))
             {

@@ -24,7 +24,9 @@ using HRM.Infrastructure;
 using HRM.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NSubstitute;
 
 namespace HRM.Tests.Unit;
 
@@ -154,5 +156,48 @@ public sealed class EmailSenderDiRegistrationTests
         var sender = scope.ServiceProvider.GetRequiredService<IEmailSender>();
 
         sender.Should().BeOfType<SmtpEmailSender>();
+    }
+
+    /// <summary>
+    /// ISSUE-447: the guard used to read <c>configuration["ASPNETCORE_ENVIRONMENT"]</c>. That key is only
+    /// one of THREE ways an environment is expressed — the others being <c>--environment</c> and
+    /// <c>IWebHostBuilder.UseEnvironment</c>, neither of which sets it. Worse, when nothing sets the
+    /// environment at all, <see cref="IHostEnvironment.EnvironmentName"/> resolves to <b>Production</b>
+    /// while the raw key returns null, so <c>string.Equals(null, "Production")</c> was false and the guard
+    /// stayed silent.
+    ///
+    /// <para>That is a fail-open in precisely the deployment it exists to protect: a real production host
+    /// with a blank <c>Smtp:Host</c> and no environment variable published would BOOT on
+    /// <c>LogOnlyEmailSender</c> and silently swallow password-reset and account-lockout mail (BR-1 marks
+    /// both non-suppressible). No existing arm covered it — every one supplies the variable explicitly,
+    /// which is exactly the case that already worked.</para>
+    /// </summary>
+    [Fact] // #6 — resolved environment says Production while the raw variable says nothing
+    public void EmailSender_WhenSmtpHostBlank_AndEnvironmentResolvesToProductionWithNoVariableSet_Throws()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=unused;Username=unused",
+                ["Smtp:Host"] = "",
+                // Deliberately NO ASPNETCORE_ENVIRONMENT / DOTNET_ENVIRONMENT key — this is the shape of a
+                // host that expressed Production through UseEnvironment or by publishing nothing at all.
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddSingleton<IConfiguration>(configuration);
+        services.AddLogging();
+
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+
+        var act = () => services.AddInfrastructure(configuration, environment);
+
+        act.Should().Throw<InvalidOperationException>(
+                "a production host with no SMTP configured must fail fast rather than accept password-reset "
+                + "requests it will silently drop — and the resolved environment is the only reading of "
+                + "'am I in Production' that sees all three ways the host can express it")
+            .Which.Message.Should().Contain("Smtp:Host").And.Contain("password-reset");
     }
 }
