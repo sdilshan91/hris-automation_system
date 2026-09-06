@@ -113,7 +113,8 @@
 - **Suggested direction (needs-decision, NOT applied):** build Education/WorkHistory/Dependent entities + endpoints (→ DF-39), then re-enable the FE editing. Report only.
 
 ### ISSUE-320 — Employee profile-edit: several fields within the (now-working) sections still don't persist or risk invalid enum writes
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** All three profile-edit gaps closed: `UpdateEmployeeProfileRequest.cs:112-118`; `employee-profile.component.ts:629,639,695` now use `<select>`; `employee.models.ts:765-770` `parseCustomFields()`.
 - **Layer:** FE↔BE contract
 - **Module / US / TC:** Core HR / US-CHR-002 / (new TCs)
 - **Title:** After DF-36/#380 rewired the profile save onto `PATCH {id}/profile`, three field-level gaps remain: (a) the Contact form edits **city/state/postalCode/country** but `ContactInfoUpdate` only has phone/personalEmail/address → those 4 silently drop; (b) the Employment form edits **Department/Job Title as free text** + a **dateOfJoining**, but `EmploymentInfoUpdate` keys on DepartmentId/JobTitleId (Guids) and has no joining-date → those don't map/persist, and **employmentType/status are free-text inputs** that can POST invalid enum values (→ 400); (c) the profile GET returns `customFields` as a JSON **string** while the FE model types it as an object + indexes by key → custom-field values render "Not set" on the read view.
@@ -138,7 +139,8 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-032 — NFR-2 promises tenant isolation via "EF Core global query filters AND PostgreSQL RLS policies" for leave types, but RLS is NOT enabled on `leave_types` (relrowsecurity=false) and ZERO RLS policies exist in the entire database — only the EF filter layer is present (the documented BUG-003 header-spoof bypasses that single layer; see BUG-026)
-- **Type / Severity / Status:** ISSUE · LOW · DEFERRED platform tech-debt — US-PLT-002 RLS Phase 4)
+- **Type / Severity / Status:** ISSUE · LOW · ♻️ **RECLASSIFIED 2026-09-06 — not "absent": BUILT / NOT ENABLED / DOCUMENTED AS ENABLED**
+- **Reclassification (T0):** all three original claims are **false**. Policies exist on ~112 tables (`20260710120000_Platform_RlsPolicies_Dormant.cs:37-83`), the GUC is set (`TenantGucConnectionInterceptor.cs:44-49`), and a reconciler runs (`DbInitializer.cs:139-232`). **The real residual is operational, and worse than the finding described:** `appsettings.Development.json` sets `Rls:Enabled=false`, `Rls__Enabled` appears in **no tracked file** (`docker.env` is gitignored), yet `DbInitializer.cs:107-109` asserts *"the Docker dev stack sets `Rls__Enabled=true`"*. **Dev and Docker run on ONE isolation layer while a comment claims three** — a security posture documented as on and shipped off. *(I previously "corrected" [[ISSUE-468]] on this exact point by reading my own untracked `docker.env`; that correction was wrong and is retracted.)*
 - **Layer:** DB / INFRA
 - **Module / US / TC:** Leave Management · US-LV-001 · TC-LV-ISO-003 (RLS blocks direct DB queries across tenants) — BLOCKED `env` (RLS not implemented). NFR-2.
 - **Title:** US-LV-001 NFR-2 + the Data Requirements section ("RLS policy: `tenant_isolation_select` and `tenant_isolation_modify` on `leave_type`") require a database-enforced isolation layer in addition to the EF filter. Live DB inspection: `pg_class` for `leave_types` shows `relrowsecurity=f`, `relforcerowsecurity=f`, no policies on the table, and `SELECT count(*) FROM pg_policy` = **0** for the whole database. So the second, defense-in-depth isolation layer the story specifies does not exist — the EF global query filter is the only thing enforcing tenant scoping, and BUG-026/BUG-003 shows that single layer is bypassable via a spoofed subdomain header.
@@ -178,7 +180,8 @@
 - **Suggested direction (NOT applied):** none — report only. (Batch entitlement resolution for all of an employee's leave types in one engine call/query, and/or land the deferred `tenant:{tenantId}:leave_balance:{employeeId}:{leaveTypeId}` cache.)
 
 ### ISSUE-045 — BR-4 carry-forward-pool restoration is not pool-aware: cancelling an approved leave that consumed carry-forward days writes a single general `Adjusted` reversal, not a split back to the carry-forward vs current-year pools
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** Cancel restores per-pool with carry expiry preserved (`LeaveRequestService.cs:1368-1415`), `LeavePool.cs:13`, guard `LeavePoolAwareCarryForwardTests`. **`DEFERRED-FOLLOWUPS.md:55` already recorded this DONE (#427, 2026-07-22)** — the live ledger simply never caught up.
 - **Layer:** BE
 - **Module / US / TC:** Leave Management · US-LV-010 · TC-LV-202 (BR-4 carry-forward pool restoration; dependency US-LV-008)
 - **Title:** BR-4 requires that if a cancelled leave consumed carry-forward days, the restoration follows the original allocation so carry-forward days return to the carry-forward pool (not merged into current-year entitlement). The implementation writes ONE general `Adjusted` positive entry for the full `total_days` — the total balance is restored correctly, but the carry-forward-vs-current-year split is not separately re-allocated. This is documented in code as a known simplification (TODO), so it is a recorded design gap rather than a silent omission.
@@ -439,7 +442,8 @@
 > Routes: `/api/v1/tenant/performance/cycles*` — list / `cycles/active` / `cycles/{id}` / `cycles/{id}/dashboard` / POST `cycles` / PUT `cycles/{id}` / POST `cycles/clone` / POST `cycles/{id}/status` / DELETE `cycles/{id}`. Every endpoint (read + write) requires `Performance.SetGoal.All` OR `Performance.Publish.All` (BR-1). Validation: phases sequential/non-overlapping/in-window + ≥3 core phases (FR-1/FR-2/BR-3, 400); FR-7 status state machine (`IsValidTransition`, 409 `invalid_status_transition`); BR-4 active-same-type conflict (409); BR-5 rating-scale lock on Active (409 `rating_scale_locked`); BR-2 delete-only-empty-Draft (409 `cycle_has_reviews`/`cycle_not_draft`); BR-6 cancel needs reason (400/422). Personas: `hr@acme.test`+`tenantadmin@acme.test` hold `.All`; `manager@acme.test` (.Team) + `employee@acme.test` blocked. 19 TCs executed: **12 PASS / 4 FAIL / 3 BLOCKED**. NEW finding: BUG-063. Extends: BUG-003 (cross-tenant) to the cycle surface.
 
 ### ISSUE-114 — Video interview accepts a malformed `videoLink` (no URL-format validation) — FR-1 partial
-- **Type / Severity / Status:** ISSUE · — · OPEN
+- **Type / Severity / Status:** ISSUE · — · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** `videoLink` URL-format validation exists: `ScheduleInterviewValidator.cs:70,99`, `UpdateInterviewValidator.cs:54`, arms in `ScheduleInterviewValidatorTests`. **This entry's own metadata table already said `RESOLVED (PR #352, 2026-07-17)` while its summary line said OPEN.**
 
 | Field | Value |
 |---|---|
@@ -458,7 +462,8 @@
 - **RESOLVED (PR #352, 2026-07-17):** added a shared `BeAValidVideoLink` rule to `ScheduleInterviewValidator`/`UpdateInterviewValidator` — a supplied `videoLink` must be a well-formed **absolute http/https URI** (requiredness unchanged; still enforced by the type-conditional `NotEmpty`). Regression: 6 arms in `ScheduleInterviewValidatorTests` (relative/`javascript:`/`ftp:`/garbage rejected; `http(s)` accepted). Binds TC-REC-005-08 step 5 (was failing).
 
 ### ISSUE-115 — No API to mark an interview Completed / No-Show; FR-6 status lifecycle is only Scheduled→Cancelled
-- **Type / Severity / Status:** ISSUE · — · OPEN
+- **Type / Severity / Status:** ISSUE · — · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** `/complete` and `/no-show` ship at `InterviewsController.cs:112,132`, with 409 guard arms at `InterviewSchedulingIntegrationTests.cs:347-390`. **Same self-contradiction as [[ISSUE-114]] — table said RESOLVED, summary line said OPEN.**
 
 | Field | Value |
 |---|---|
@@ -689,7 +694,8 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Severity:** CRIT (inherits BUG-003 — cross-tenant write / Critical-Rule-#1 isolation bypass).
 
 ### ISSUE-135 — FR-7 PIP summary report (PDF) endpoint/seam ABSENT (no `/report`, `/export`, `/pdf` route)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** FR-7 PIP report exists end-to-end: route `PipController.cs:96-109` → `PipQueries.cs:54-61` → `PipService.cs:292-307` (real QuestPDF render), tested `PipIntegrationTests.cs:219-268`.
 - **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-008 / TC-PRF-008-14
 - **Title:** FR-7 requires a PIP summary report (objectives/checkpoints/outcomes/signatures). No export endpoint exists on `PipController` — `GET /pips/{id}/{report|export|pdf|summary}` all 404. The TC's "PDF renderer conditional" caveat presupposes an export *seam* returning the structured model; there is none.
 - **Root cause (confidence 96%):** `PipController` exposes only List/Get/Create/Acknowledge/Checkpoints/Outcome/Escalation — no report action; no `IPipReportService`/export handler in the Performance feature. Consistent with the module's deferred-PDF pattern (US-PRF-005/006/007) but here the entire endpoint is missing, not just the renderer.
@@ -698,7 +704,8 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Severity rationale:** FR-7 is a should/compliance-nice-to-have reporting feature; the full PIP data model is already retrievable via `GET /pips/{id}` (objectives+checkpoints+events), so the compliance data exists — only the packaged report is absent. LOW.
 
 ### ISSUE-136 — PIP write operations write NO central `audit_logs` row (FR-5 satisfied via PIP-internal `pip_event`, but central audit trail is bypassed)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** **Closed by a mechanism, not a fix.** `AuditCaptureInterceptor` is opt-OUT since BUG-082: every tenant `BaseEntity` is captured unless `IAuditExempt`. `Pip`/`PipObjective`/`PipCheckpoint`/`PipEvent` are all `BaseEntity` and none is exempt. ⚠ **Adding an explicit audit writer here would produce TWO rows per write** — see `Exempt_explicit_writer_entity_is_not_double_audited`.
 - **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-008 / TC-PRF-008-10, TC-PRF-ISO-032
 - **Title:** Create / checkpoint / outcome / extend / escalation / acknowledge produce ZERO rows in the central `audit_logs` table; the complete immutable trail lives only in `pip_event` (PIP-internal). FR-5 (complete immutable history) IS met by `pip_event` (append-only, no edit/delete, actor + server-timestamp + tenant_id, tenant-scoped) — this is a consistency/defense-in-depth nit, not an FR-5 failure.
 - **Root cause (confidence 88%):** `PipService` appends `PipEvent` rows and logs via Serilog + the log-only performance-notification seam, but never calls the central audit writer. Recurring cross-module theme (twin of the leave/attendance/core-HR "no central audit on writes" findings).
@@ -765,7 +772,8 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Module/US:** Performance / US-PRF-009 (TC-PRF-009-02, TC-PRF-009-01). **Why it matters:** keeps the AC-3 "progress change" presentation server-authoritative and flags that attachment evidence isn't actually downloadable yet. **Suggested direction:** add a computed delta to GoalProgressUpdateDto; track file-storage integration as a follow-up to the deferred file-management dependency. Not a defect - do not auto-apply.
 
 ### ISSUE-146 — FR-6 mandates PDF export; only csv/xlsx exist — `format=pdf` returns 400 `invalid_format`
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** Recommendation PDF export shipped 2026-07-31 (`cfac04e3`): `RecommendationService.cs:673-674`, `PerformancePdfRenderer.cs:299`, test `RecommendationIntegrationTests.cs:191`. **Directly contradicted [[ISSUE-179]] for five weeks; 179 was right.** PDF now ships on 7 of 9 export surfaces.
 - **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-010 / TC-PRF-010-13 (step 3), FR-6
 - **Title:** FR-6 (and TC-010-13 step 3) require a PDF recommendation-summary report with tenant branding. The export endpoint supports only `csv` and `xlsx`; `format=pdf` is rejected 400 `invalid_format` (the controller doc says "PDF deferred"). The xlsx/csv exports themselves are correct and match the dashboard aggregates.
 - **Root cause (confidence 99%):** `RecommendationService.ExportSummaryAsync` (`RecommendationService.cs:567-570`) whitelists `("csv" or "xlsx")` only and 400s anything else; there is no QuestPDF/PDF rendering path. The xlsx path uses ClosedXML (`RenderXlsx`).
@@ -1004,7 +1012,8 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 **Scope:** Execute TC-PAY-010-01..12 + ISO TC-PAY-ISO-037..040 against the running stack (API-layer, acme tenant). Integration seam = `PayrollIntegrationController` (`POST /api/v1/payroll/leave-encashments`, `GET /api/v1/payroll/reconciliation`, both perm `Payroll.Run`) + the attendance-finalized gate in `POST /api/v1/payroll/runs` (US-PAY-003). June 2026 is the ONLY period with finalized attendance — reuse June's Finalized run; do not mutate it. FE :4200 pinned-to-platform + Docker unavailable → UI/a11y + cross-browser TCs BLOCKED. New finding IDs start at BUG-078 / ISSUE-180 / ENH-019.
 
 ### ENH-020 — Payslip email delivery is a log-only stub (no real SMTP); functional-but-undeliverable seam
-- **Type / Severity / Status:** ENH · — · OPEN
+- **Type / Severity / Status:** ENH · — · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** `DependencyInjection.cs:473` binds `RealPayslipEmailSender`; `LogOnlyPayslipEmailSender.cs:18` is unregistered dead code. The DI line the finding cited no longer exists.
 - **Type:** ENH (seam status, not a defect — matches the platform's other notification seams)
 - **Module / US / TC:** Payroll / US-PAY-011 / TC-PAY-011-01, -02, -05, -08, -09, -11
 - **Title:** `IPayslipEmailSender` is bound to `LogOnlyPayslipEmailSender` — emails are logged, never delivered
@@ -1175,7 +1184,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 - **Suggested (NOT applied):** if a worker/tool host is ever added, register the shared multiplexer there too, OR move `AddSharedRedisMultiplexer` into a shared composition helper that `AddInfrastructure` invokes when Redis is configured. Report only.
 
 ### ISSUE-278 — Hangfire schema bootstrap needs CREATE ON DATABASE on a greenfield RLS-first deploy
-- **Type / Severity / Status:** ISSUE · LOW · OPEN (found by the 2026-07-11 RLS validation)
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger** (found by the 2026-07-11 RLS validation)
+- **T0 close-out evidence:** Runbook updated: `docs/DEV/PRODUCTION-CHECKLIST.md:110`, `docs/vault/local-dev-linux-docker.md:31`. **The entry's own body already said "Runbook updated".**
 - **Layer:** BE / infra (RLS/Hangfire) · **Module:** Platform
 - **Title:** On a FRESH DB with `Rls:Enabled=true`, Hangfire (correctly on `PrivilegedConnection`=`hrm_owner`, `Program.cs:258-261`) can't install its own schema → `42501 permission denied for database` → recurring-job registration crashes startup. `hrm_owner` owns `public` but lacks database-level CREATE. Not a real prod-flip blocker (existing DBs already have the `hangfire` schema), but a greenfield RLS-first deploy must `GRANT CREATE ON DATABASE <db> TO hrm_owner` (or pre-provision the `hangfire` schema owned by `hrm_owner`). Runbook updated.
 - **Suggested:** add the GRANT (or schema pre-provision) to the greenfield path of the runbook. Report only.
@@ -1201,7 +1211,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 ---
 
 ### ISSUE-295 — BUG-079 residual clauses: encashment daily-rate BASIC basis, null carry-forward-limit, and gate-vs-year-end forfeitable parity
-- **Type / Severity / Status:** ISSUE · LOW · DEFERRED (2026-07-19 — user decision: fold into a focused payroll-model pass, DEFERRED-FOLLOWUPS DF-37; a piecemeal component-keying change risks pay math)
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** Adjudicated closed six weeks ago — `DEFERRED-FOLLOWUPS.md:91-92` records DF-62 (#433) and DF-62-parity (#437), with guard `LeaveForfeitureParityTests.cs:19-22`. Closed **by decision**, not by drift.
 - **Layer:** BE · (auto-healed from BUG-079, #284)
 - **Module / US / TC:** Payroll / US-PAY-010 (leave encashment)
 - **Title:** Three LOW residuals surfaced while resolving BUG-079 (the BR-6 gate + double-pay were fixed in #284):
@@ -1224,7 +1235,8 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 > is NOT re-filed.
 
 ### ISSUE-355 — Offboarding + exit-interviews are gated under the Onboarding module (no Offboarding module exists)
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · 🔀 **MERGED into [[DECISION-477]] 2026-09-06 — do not schedule separately**
+- **Merge rationale:** Offboarding/exit-interviews gating under Onboarding is **the same question** [[DECISION-477]] parks: should Offboarding be independently sellable? It needs a **packaging call**, not engineering — the "fix" is one table entry nobody should make until the product question is answered. Merged rather than scheduled.
 - **Layer:** BE
 - **Module / US / TC:** Admin Console / US-ADM-012 (AC-1), US-ONB-005/006 / TC-ADM-012 — surfaced by `@backend-dev` while building the module gate, 2026-07-30
 - **Title:** `PlanModules` has an `Onboarding` key but no `Offboarding` key, while `/api/v1/offboarding` and `/api/v1/exit-interviews` are distinct route families. The gate maps both to **Onboarding**, on the reading that they are the "off" half of one Onboarding/Offboarding lifecycle module (which is how the BA docs group US-ONB-005/006).
@@ -1793,7 +1805,8 @@ Severity stays LOW; status stays PARTIALLY-RESOLVED, because the residual is unc
 and demonstrably functional, but never yet observed firing *in situ*.
 
 ### ISSUE-385
-- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type / Severity / Status:** ISSUE · LOW · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** `ForwardedForClientIpApiTests` exists. **The entry's own body already said `RESOLVED 2026-08-21` while its status line said OPEN.**
 
 - **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** Backend / test coverage
 - **Module:** Platform (cross-cutting) · **US:** BUG-308 · **TC:** ForwardedHeadersTrustTests
@@ -1850,7 +1863,8 @@ and demonstrably functional, but never yet observed firing *in situ*.
 - **FIX (2026-08-21), same branch:** the `Legacy()` fallback, guarded by `StepHasAReachableApproverAsync`. A `Role` step is deliberately **not** treated as unresolved — it assigns no user by design and authorization checks role membership at decision time, so treating its null assignment as a failure would disable role-based approval entirely. Verified by 4 arms including one proving **no instance row is written** (a half-created instance would still mark the request workflow-driven). **Mutation-verified in BOTH directions:** removing the guard turns 3 arms RED; making it over-trigger turns the "a resolvable manager still routes through the engine" arm RED — so it cannot silently degrade into "always fall back". Stays OPEN until `/verify-fix` closes it.
 
 ### ISSUE-388
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** All 10 `PlanLimitLookup` call sites migrated, including `RealNotificationDispatcher.cs:190-213`, and `PlanLimitLookupUsageGuardTests` now guards against an eleventh — widened for the batched shape in #634.
 
 - **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** Backend
 - **Module:** Platform (cross-cutting) · **US:** BUG-307 follow-through · **TC:** PlanLimitLookupPostgresTests
@@ -2711,7 +2725,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** set `worktree.baseRef` to `head`, or have the orchestrator verify the worktree's base matches the working branch before dispatching. **The orchestrator should state the expected base commit in the brief** so a mismatch is detectable by the agent rather than by luck.
 
 ### ISSUE-443 — four agents in one session hit the 60-turn ceiling; the agent contracts report only at the end, so a long run loses everything
-- **Type / Severity / Status:** ISSUE · MED · RESOLVED
+- **Type / Severity / Status:** ISSUE · MED · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** `## Record as you go` is present in all six `.claude/agents/team/*.md`. Already read RESOLVED and was scheduled anyway.
 - **Resolution (2026-09-03):** **RESOLVED 2026-09-03** — a `## Record as you go` section was added to all six `.claude/agents/team/*.md` contracts, covering write-as-you-reach-it, revert-before-reporting, `Edit` over `Write` on existing files, write-up-on-resume, and never reporting an unobserved number. Filed after 4 ceiling hits; applied after 8.
 - **Layer:** TEST (process)
 - **Module / US / TC:** cross-module · `.claude/agents/team/*.md`
@@ -2778,7 +2793,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** add the toggle to the attendance-settings form.
 
 ### ISSUE-439 — a domain calculator can gain trailing-optional parameters that no caller ever supplies, and every unit test stays green
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · ✅ **CLOSED 2026-09-06 — verified against `src/`, not against the ledger**
+- **T0 close-out evidence:** `HRM.ArchitectureTests/InertOptionalParameterTests.cs` (ARCH-004) names this finding, and `PayrollRunProcessor.cs:1001-1003` now passes `fte:`/`fteScaledBase:`. **The rule this finding asked for shipped.**
 - **Layer:** TEST (architecture)
 - **Module / US / TC:** cross-module · generalises GAP-022
 - **Title:** GAP-022's shape: `PayrollOvertimeCalculator.Compute` gained `fte` and `fteScaledBase` as trailing optionals, `PayrollRunProcessor` was never updated to pass them, the parameters were inert on the only production path, and **the entire suite stayed green** — because the calculator's own unit tests supply the arguments directly. `OvertimeFteBaseTests.cs:10-13` even records in its header that it proves "the MATH, not the plumbing", and it stayed broken anyway. A written admission of an untested seam is not a control.
@@ -3232,7 +3248,8 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** apply these corrections before tiering the remaining 80 orphans. **And settle what the 2026-09-01 audit's "29% stale" actually counted** — if it included partial landings, this sample's 30% matches almost exactly; if it meant wholly-fixed, 15% says the prior figure was high. The two numbers differ by 2× and drive different decisions.
 
 ### ISSUE-499 — the AC-12 concurrency test asserts a race outcome as if it were deterministic
-- **Type / Severity / Status:** ISSUE · MED · OPEN
+- **Type / Severity / Status:** ISSUE · MED · 🔀 **MERGED into [[ISSUE-418]] 2026-09-06 — do not schedule separately**
+- **Merge rationale:** **I filed this as a duplicate.** [[ISSUE-418]] (2026-09-01) already covered the same test, the same 409-vs-403, with a deeper root cause: *the instance is loaded BEFORE the `FOR UPDATE` row lock is taken*. My de-dup grep missed it because ISSUE-418's heading line is bare (`### ISSUE-418`) — a **fourth metadata shape** that defeated the very check meant to prevent this. ⚠ **They prescribe OPPOSITE fixes**: 418 says fix the service and explicitly says *do not relax the test*; 499 said accept either code — which would **relax an assertion**, exactly what the test-integrity guard forbids. **418 is right on merits**: telling a user who *was* the approver "you are not the approver" is wrong UX. Superseded.
 - **Layer:** TEST (and a contract question for BE)
 - **Module / US / TC:** Workflow · AC-12 · `WorkflowRuntimeConcurrencyPostgresTests`
 - **Title:** `ConcurrentApprovals_SameStep_ExactlyOneWins_NoDoubleAdvance_AC12` asserts `loser.StatusCode == 409` / `step_already_decided`. **The loser's rejection code is not deterministic.** Both callers are the step-1 approver. `WorkflowRuntimeService` loads the step at `instance.CurrentStepOrder` (`:249`), returns **409** if that step is already decided (`:265`), and **403 `not_step_approver`** if the caller is not its approver (`:280`). When the winner advances `CurrentStepOrder` 1 → 2 **before** the loser evaluates, the loser loads **step 2** — undecided, so no 409 — and `_approver1` is not step 2's approver, so it returns **403**. Observed as `Expected loser.StatusCode to be 409, but found 403`.
