@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 156 | 296 | 452 |
-| ENH | 22 | 2 | 24 |
-| DECISION | 3 | 0 | 3 |
-| **TOTAL** | **226** | **466** | **692** |
+| ISSUE | 165 | 296 | 461 |
+| ENH | 23 | 2 | 25 |
+| DECISION | 4 | 0 | 4 |
+| **TOTAL** | **237** | **466** | **703** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -156,6 +156,109 @@
 - **Title / Module:** Add an authorized on-demand "recalculate entitlements / run accrual" endpoint · Leave Management · US-LV-002 (AC-5, FR-5)
 - **Why it matters:** `LeaveEntitlementsController` exposes rules/overrides/effective but NO endpoint to trigger accrual or a post-rule-change recalculation. `LeaveAccrualJob` is only registered as a Hangfire **recurring** job ("leave-entitlement-accruals", daily midnight UTC, `Program.cs:460`) and `UpdateRuleAsync` does NOT `BackgroundJob.Enqueue` a recalculation. Consequences: (a) AC-5's "a Hangfire background job recalculates affected employees' balances" on rule modify is not wired — editing a rule changes future `/effective` computation but enqueues nothing and writes no adjustment ledger entries; (b) TC-026 steps 8-11, TC-027 (accrual arms), TC-028 steps 7-9/13, TC-029 ledger arms, TC-030 (whole Hangfire+adjustment flow), TC-032 ledger arms, TC-036 (accrual ledger), TC-037 (bulk recalc), and TC-041 (5,000-emp perf) cannot be executed on demand — the *engine math* is verifiable live via `GET /effective`, but the *ledger-writing accrual effect* is only observable after the scheduled job runs. An HR officer also has no way to force a recalculation after a policy change.
 - **Suggested direction (NOT applied):** add an authorized `POST /leave-entitlements/recalculate` (and/or enqueue a recalculation from `UpdateRuleAsync`/bulk) that runs `ProcessAccrualsAsync` for the tenant (optionally scoped to a rule/leave type), writing accrual/adjustment ledger entries and (per BUG-028) audit rows. This both fulfils AC-5 and makes the accrual-effect TCs executable.
+
+### ISSUE-501 — `SocialSecurityInputValidator` rates have the identical ISSUE-169 defect, one field over, on EPF/ETF contribution rates
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Payroll · statutory configuration
+- **Title:** `CreateStatutoryRuleValidator.cs:106-107` — `SocialSecurityInputValidator.EmployeeRate` and `EmployerRate` carry only `InclusiveBetween(0, 100)`. Both columns are `numeric(5,2)` (`SocialSecurityRuleConfiguration.cs:26-27`), so an EPF/ETF contribution rate of `12.345` is **silently rounded to 12.35 and echoed back** — `ISSUE-169` exactly, one field over, on a money path.
+- **Root cause (~100%):** the same missing `PrecisionScale` rule that ISSUE-169 fixed for `TaxSlabInput.RatePercentage`. The fix for ISSUE-169 (#652) deliberately did NOT widen to these fields — different fields, no requested coverage, and tightening them rejects payloads that currently succeed.
+- **Severity rationale:** HIGH — statutory contribution rates feed payroll deductions directly. Same class as ISSUE-169 but on a field an employer is legally obliged to compute correctly.
+- **Suggested direction (NOT applied):** the identical one-line `PrecisionScale(5, 2, ignoreTrailingZeros: true)` plus arms mirroring the ISSUE-169 tests in `StatutoryRuleAmountBoundsTests`.
+- **Found:** 2026-09-06, out-of-lane while fixing ISSUE-169/ISSUE-299.
+
+### ISSUE-502 — `CreatePayrollAdjustmentValidator.Amount` has no scale rule, and an adjustment amount feeds a payslip directly
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Payroll · adjustments
+- **Title:** `CreatePayrollAdjustmentValidator.cs:23-24` validates `Amount` only as `GreaterThan(0m)`; `payroll_adjustment.amount` is `numeric(18,2)` (`PayrollAdjustmentConfiguration.cs:35`). A >2dp adjustment is silently rounded on write.
+- **Severity rationale:** MED, but the **highest blast radius of the three scale gaps** — unlike a component default, an adjustment amount reaches a payslip without further transformation.
+- **Suggested direction (NOT applied):** `PrecisionScale(18, 2, ignoreTrailingZeros: true)`, the ISSUE-152/ISSUE-369 idiom.
+- **Found:** 2026-09-06, out-of-lane while fixing ISSUE-369.
+
+### ISSUE-503 — `SalaryStructureComponentInputDto.OverrideValue` has no scale rule
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Payroll · salary structures
+- **Title:** `CreateSalaryStructureValidator.cs:28-40` (and the Update sibling) validates only `SalaryComponentId`, `ProcessingOrder` and `OverrideFormula` per component. `override_value` is `numeric(18,2)` (`SalaryStructureComponentConfiguration.cs:24`), so a 4-dp override is silently rounded.
+- **Note that bounds it:** the *echo* half of ISSUE-369 does NOT apply here — `SalaryStructureService` already re-fetches via `BuildDtoResultAsync`. This is silent-rounding only, not a wrong response.
+- **Suggested direction (NOT applied):** same `PrecisionScale(18, 2, ignoreTrailingZeros: true)` idiom.
+- **Found:** 2026-09-06, out-of-lane while fixing ISSUE-369.
+
+### DECISION-504 — 32 `numeric(18,2)` columns, 5 validators enforcing the contract: sweep them, or add a structural rule?
+
+- **Type / Severity / Status:** DECISION · **MED** · OPEN — **parked at the decision gate**
+- **Layer:** BE (architecture)
+- **Title:** Only **5** validator files reference `PrecisionScale` against **32** `numeric(18,2)` columns. `ISSUE-152` (CTC preview) and `ISSUE-369` (component default) are the same defect surfacing twice, **found one at a time by testers** — and `ISSUE-501`/`502`/`503`, all filed the same day, are three more. The remaining ~27 columns are where reports six and seven come from.
+- **The decision:** a one-off sweep fixes today's 27 and leaves the 33rd column to ship unguarded next month. A **Roslyn/NetArchTest rule in `HRM.ArchitectureTests`** — asserting every decimal input bound to a `numeric(18,2)` column carries a scale rule — costs more up front and closes the class permanently. This repo already has a home for exactly that kind of structural rule (`InertOptionalParameterTests`, `SharedPostgresFixtureIsolationTests`, `SourceFileIsGreppableTests`).
+- **Recommendation:** the architecture rule, with a one-time sweep to make it pass. Higher effort, and it is the option that stops this recurring. Confidence it is the right call: 85%.
+- **Found:** 2026-09-06, out-of-lane while fixing ISSUE-369.
+
+### ISSUE-505 — the statutory unique index is on the RAW `country_code`, so ISSUE-299's evasion survives under concurrency
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** BE (schema)
+- **Title:** `StatutoryRuleConfiguration.cs:63-65` puts the unique index on the raw `country_code`. #652 closed the **application-level** evasion by comparing normalised-to-normalised, but the database is not a backstop: two **concurrent** creates of `"LK"` and `"lk "` still pass both the pre-check and 23505.
+- **Suggested direction (NOT applied):** a functional unique index on `upper(btrim(country_code))`, plus a data-cleanup pass for rows already dirty. Needs an EF migration, which the merge gate holds for a human regardless.
+- **Blocks:** full closure of `ISSUE-299` under concurrency.
+- **Found:** 2026-09-06, out-of-lane while fixing ISSUE-299.
+
+### ISSUE-506 — `StatutoryRuleIntegrationTests` claims to exercise the validation pipeline; FluentValidation never runs in it
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** QA (test integrity)
+- **Title:** `StatutoryRuleIntegrationTests.cs:69-83`'s header states it exercises *"the full handler → service path through a real DI container (MediatR pipeline)"* and lists *"FR-6: contiguity is enforced through the validation pipeline"*. The container registers **neither `AddValidatorsFromAssembly` nor `ValidationBehavior`**, so FluentValidation never executes there. Every validation-shaped assertion in that file actually lands on the service's defensive re-check.
+- **Why it matters:** any future author trusting that header writes a **green no-op**. This is why #652's ISSUE-169 arms were deliberately placed elsewhere — a validation arm in this file would have passed for the wrong reason.
+- **Suggested direction (NOT applied):** register the behaviour + validators, or correct the header. The first changes what several existing tests exercise, so it is a test-design decision.
+- **Found:** 2026-09-06, out-of-lane while fixing ISSUE-169.
+
+### ISSUE-507 — `FiscalYear` is compared raw in the same duplicate pre-check ISSUE-299 fixed
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** BE
+- **Title:** `StatutoryRuleService` create pre-check compares `r.FiscalYear == fiscalYear` raw, while the write path stores it `Trim()`'d — the same evasion class as the country code, one field over. A stored `"2026-2027 "` would evade the duplicate pre-check.
+- **Why not fixed in #652:** ISSUE-299 names `CountryCode` only; widening the compare was deliberately not done.
+- **Found:** 2026-09-06, out-of-lane while fixing ISSUE-299.
+
+### ISSUE-508 — leave attachments will not be counted toward tenant storage quota
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** BE (platform)
+- **Title:** Storage quota is **caller-invoked, not automatic** — `EmployeeDocumentService.EnforceStorageQuotaAsync` is a private method one service calls, and `TenantStorageUsage.ComputeBytesAsync` sums only **four** tables. The new `leave_request_attachment` table is not among them, so leave uploads consume tenant storage invisibly.
+- **Pre-existing, not new:** `SelfAssessmentAttachment` has the identical hole today. `TenantStorageUsage`'s own comment (ISSUE-340) warns that a fifth size-bearing table must be added to **both** methods — and the warning has already been missed twice.
+- **Suggested direction (NOT applied):** a quota pass driven off a registry, so the next table cannot be forgotten. Point fixes are what produced the current state.
+- **Severity rationale:** MED — unbounded-cost / billing-accuracy risk, no functional break.
+- **Found:** 2026-09-06, out-of-lane while building ISSUE-036.
+
+### ENH-509 — an uploaded-but-never-submitted leave attachment leaks forever
+
+- **Type / Severity / Status:** ENH · **LOW** · OPEN — needs a product decision first
+- **Layer:** BE
+- **Title:** `LeaveAttachmentService` stores an attachment before the leave request exists (`LeaveRequestId = NULL`, linked on create). An employee who uploads and then abandons the form leaves both the blob and the row behind permanently. There is no sweeper.
+- **Needs a decision, not just a job:** how long is an unclaimed upload valid? That is product input, not an implementation detail.
+- **Found:** 2026-09-06, out-of-lane while building ISSUE-036.
+
+### ISSUE-510 — the self-assessment evidence upload endpoint has no `[RequestSizeLimit]`
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** BE
+- **Title:** `SelfAssessmentAttachmentsController` is the **only** upload controller in the repo without `[RequestSizeLimit]` (contrast `EmployeesController.cs:443`, `InterviewsController.cs:227`, and the 10 other sites). Its 10 MB cap is enforced only **after** the whole body is buffered, via the declared `SizeBytes`.
+- **Why it is filed here:** it was the obvious copy target for ISSUE-036's port. The omission was spotted and deliberately not copied — but the original is still uncapped.
+- **Severity rationale:** LOW — minor DoS-surface / wasted-buffer issue, no correctness impact.
+- **Found:** 2026-09-06, out-of-lane while building ISSUE-036.
+
+### ISSUE-511 — `AngleSharp 0.17.1` carries a known moderate-severity advisory, warned on every build
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** BE (dependency)
+- **Title:** NU1902 on every build — `AngleSharp 0.17.1`, GHSA-pgww-w46g-26qg, transitive via `HRM.Infrastructure`/`HRM.Api`.
+- **Why it matters beyond the CVE:** it is **permanent build noise**, and permanent noise is what makes the next NU1902 invisible.
+- **Suggested direction (NOT applied):** bump + a regression pass of its own.
+- **Found:** 2026-09-06, out-of-lane across several builds.
+
 
 ### ISSUE-500 — FE specs cannot catch an FE↔BE contract break, and four separate defects this session were each shipped past a spec that was green the whole time
 

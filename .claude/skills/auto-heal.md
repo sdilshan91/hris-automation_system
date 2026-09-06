@@ -21,6 +21,39 @@ Every gap surfaced by any run is FILED, FOLDED INTO THE PLAN, and RE-PRIORITIZED
 A campaign that only fixes what it set out to fix, while quietly discovering ten new things it ignores, is
 lying to itself. Auto-heal makes discovery → tracking → re-prioritization a reflex, not a favor.
 
+## ⏱ WHEN: immediately — the same turn the discovery surfaces
+
+```
+FILE IT WHEN YOU FIND IT. NEVER BATCH OUT-OF-LANE FINDINGS TO THE END OF A RUN.
+```
+
+The prime directive above says *what*; this says *when*, because the omission was the whole failure mode.
+The moment a sub-agent returns an `OUT-OF-LANE:` block — or you notice one yourself — write it to
+`docs/QA/TEST-FINDINGS.md` and fold it into `docs/QA/plans/GAP-CLOSURE-QUEUE.md` **before starting the next
+queue item**. Not after the PR is opened. Not at the end of the tier.
+
+**Why this is a hard rule and not a preference.** On 2026-09-07, eleven out-of-lane findings from one
+T1/T3 batch sat in transcripts, reported in prose and written to neither ledger. One of them was
+`ISSUE-501` — **HIGH**: EPF/ETF statutory contribution rates silently rounded by a missing scale rule, a
+legal-obligation money path, and a copy of a defect that had *already been fixed one field over in the same
+batch*. It was written down only because the user asked whether the out-of-lane items had been logged.
+The loop did not catch it; a human did. Batching is precisely how a HIGH becomes invisible: each individual
+deferral looks harmless, and the aggregate is a lost severity.
+
+**Practical notes:**
+
+- **The ledger-lock rule constrains WHERE a filing lands, never WHEN.** If a ledger PR is already open,
+  append to that open branch — do not defer the filing until it merges. "I'll file it once the lock frees"
+  is the same batching failure wearing a process justification.
+- **A CRIT/HIGH out-of-lane finding re-sorts the queue on the spot**, even mid-item, and is named in that
+  turn's summary. It may legitimately outrank the story you are halfway through — say so rather than
+  finishing the lower-value item out of momentum.
+- **Recount the summary table when you file.** `LedgerTraceabilityTests.TheSummaryTable_MatchesTheActualCounts`
+  asserts it against both ledger files and will fail CI otherwise. Recount from the files; do not hand-edit
+  the numbers to go green — the guard's own message says so.
+- **A finding filed with only a title is half-filed.** Severity, `file:line` evidence, and the reason it was
+  out of lane are what make it actionable later; without them the next reader re-derives the investigation.
+
 ## Trigger (any of)
 
 - A sub-agent's report contains an **`OUT-OF-LANE:`** block (the structured flag every team/review agent must
