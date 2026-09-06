@@ -272,6 +272,138 @@ instances**, so probes 3–5 could not be observed end-to-end.
 > reconciled against merged PRs. **Still genuinely open:** `E3` (slice 1 only), `F1` (blocked on a BA story),
 > `F3`, `G4` (parked).
 
+## ▶ THE 94 — AUDITED, then planned (2026-09-06)
+
+**All 94 are now verified against `src/`.** Five read-only audits (13 earlier + 81 across payroll,
+performance, ops, infra/process and legacy-product). The first draft of this plan batched them on
+titles alone; **the audits invalidated four of its batch rationales and one batch entirely**, so this
+supersedes it.
+
+### What the audits changed — read this before working any batch
+
+| slice | wasted if executed as filed |
+|---|---|
+| Payroll | **40%** — only **1 of 10** accurate as filed |
+| Attendance / Leave / Recruitment | **50%** |
+| Performance | 20% wasted, **60% mis-scoped** |
+| Infra / process | 21% |
+| Legacy product | 14% |
+
+**Do not generalise the 40–50%.** Two auditors pushed back explicitly, and they are right: legacy-product
+and infra sit near the 15% baseline. Payroll is the outlier. **Each slice needed its own pass, and the
+plan that assumed otherwise was wrong.**
+
+The dominant failure is **not** "already fixed". It is **premise drift**: the platform grew a shared layer
+— Redis, `IFileStorage`, `TenantClock`, an outbox, async export services, `AuditCaptureInterceptor` — that
+the finding's module never adopted. **The ledger describes a build where the truth is an adoption.**
+
+### ⛔ Four things the first draft got wrong
+
+1. **B4 would have INTRODUCED a defect.** `AuditCaptureInterceptor` is **opt-OUT** (BUG-082): every tenant
+   `BaseEntity` is captured unless `IAuditExempt`. `Pip`, `GoalProgressUpdate`, `Recommendation` are none of
+   them exempt — so `ISSUE-136/144/149(a)` are **already fixed**, and adding explicit writers produces
+   **two audit rows per write**. There is a test named for the hazard:
+   `Exempt_explicit_writer_entity_is_not_double_audited`. All three were LOW, so this would have gone to a
+   mechanical batch pass and shipped green.
+2. **B1's premise is false.** `BUG-456`'s *code* claim is true but its *impact* claim is not: the legacy
+   branch is **unreachable** — `AttendancePayrollService` groups by the persisted per-record multiplier, so
+   a tenant configuring 2.0× already gets 2.0×. **HIGH → LOW. Not money. Remove from B1.**
+3. **B6 and B8's "same files, one PR" rationale is false.** B6: `ISSUE-155`→Domain, `ISSUE-169`→Application,
+   `BUG-075`→Infrastructure — zero overlap. B8: three different services. **Batching by assumed file
+   overlap without checking is the same error as scheduling by title.**
+4. **B5 collapses.** See the PDF ruling below.
+
+### ✅ RULING — the PDF contradiction
+
+**`ISSUE-179` is TRUE. `ISSUE-146` is STALE.** PDF ships on **7 of 9** export surfaces (payroll reports,
+recommendation summary, PIP, performance dashboard, attendance dashboard + summary, 360, review meeting).
+**`ISSUE-138` (recruitment dashboard) is the sole genuine holdout**, and its residual is *adoption* of
+`PerformancePdfRenderer`, not a build.
+
+B5 therefore goes from four items to one. `ISSUE-146`, `ISSUE-135`, `ISSUE-179` need **no work**.
+
+---
+
+## THE FIX PLAN
+
+### T0 — Close the books first (no engineering)
+
+Cheapest possible reduction, and it stops the ledger manufacturing phantom work.
+
+| action | items |
+|---|---|
+| **Close — verified already fixed / obsolete** | `ISSUE-045` `ISSUE-114` `ISSUE-115` `ISSUE-135` `ISSUE-136` `ISSUE-146` `ISSUE-278` `ISSUE-295` `ISSUE-320` `ISSUE-385` `ISSUE-388` `ISSUE-439` `ISSUE-443` `ENH-017`(as scoped) `ENH-020` |
+| **Close as informational** | `ISSUE-179` — accurate, no work |
+| **Reclassify** | `ISSUE-032` — RLS is *built, not enabled, and documented as enabled*. Not "absent". |
+| **Merge duplicates** | `ISSUE-355` → `DECISION-477` · `ISSUE-499` → `ISSUE-418` |
+| **Archive** | the 20 findings already reading RESOLVED in the live ledger |
+
+**~37 items leave the backlog without a line of code.**
+
+### T1 — Live user-facing defects, filed too low
+
+| item | re-rate | why |
+|---|---|---|
+| **`ISSUE-036`** | LOW → **HIGH** | The FE sends **filenames only**; no bytes are ever stored. A leave type requiring a medical certificate is satisfied by **any non-blank string** — a compliance control defeated by a string, with the bound test enshrining it. Fix is small: `IFileStorage` has 12+ adopters. |
+| **`ENH-008`** | ENH → **MED** | Employee sees *"N of 5 allowed lates"* while deduction begins at **3**. They read green while pay is docked. One line — and the existing test asserts the wrong value, so correcting it will trip the test-integrity guard. That is a correction, not a weakening. |
+| **`ISSUE-367`** | LOW → **MED** | Renders *"in use by **0** active employees. Reassign them before deleting."* `affectedEmployeeCount` has zero backend occurrences; two specs mock the phantom field and keep it green. |
+| **`ISSUE-373`** | HIGH → **MED**, but split | "17 gaps" is **6 rows / 9 fields**. Keep one out: `trend:'Flat'` is hardcoded *and rendered* — **wrong data beats missing data.** |
+
+### T2 — Static-analysis blindness (do before any further grep-based audit)
+
+`BUG-448` — **exactly 2 files**, byte-verified: `AuditAnonymizationService.cs` (line 126) and
+`AesGcmFieldEncryptorTests.cs`. The finding's third file, `EncryptingFileStorageTests.cs`, has **never**
+contained a NUL byte in any commit; the "5" reported elsewhere was worktree double-counting.
+
+**The CI guard matters more than the fix** — no `file | grep -v text` step exists anywhere. Without it the
+next file lands silently invisible to every scanner, including the three guards added this week.
+
+### T3 — Accurate as filed, schedule by module (disjoint files, verified)
+
+`ENH-002` `ENH-015` `ENH-022` `ISSUE-062` `ISSUE-083` `ISSUE-113`(widen to 8 TC files) `ISSUE-121`
+`ISSUE-128` `ISSUE-138` `ISSUE-139` `ISSUE-147` `ISSUE-169` `ISSUE-171` `ISSUE-271` `ISSUE-276`
+`ISSUE-299` `ISSUE-303` `ISSUE-369` `ISSUE-375` `ISSUE-376` `ISSUE-378` `ISSUE-407` `ISSUE-417`
+`ISSUE-427` `ISSUE-438` `ISSUE-447` `ISSUE-449` `ISSUE-452` `ISSUE-458` `BUG-444` `ENH-455`(minus the
+`List.Contains` half — a non-defect) `ENH-014`
+
+⚠ `ISSUE-147` and `ISSUE-149(b)` touch `RecommendationService.cs`, **which F3 is editing now.** Sequence
+after F3 merges.
+
+### T4 — Re-scope before working (residual is smaller than filed)
+
+`ENH-001`(enqueue shipped; only the on-demand endpoint remains) · `ENH-010`(SMTP already off-thread;
+`TenantClock` exists) · `ENH-011`(~80% stale) · `ENH-012` · `ENH-013`(fixture exists; needs perf-module
+rows) · `ISSUE-100`(FE was never broken — and a naive `/tenant/` prefix still 404s, `goals/team` does not
+exist) · `ISSUE-129`(Redis exists; only the view + job remain) · `ISSUE-144(b)`/`ISSUE-149(b)`(sanitize
+only) · `ISSUE-150`(2 of 3 claims now false) · `ISSUE-373`(6 not 17) · `ENH-018`(splits into a seed
+fixture **and** an unfiled gap: no bank-details capture API exists at all) · `BUG-075`(3 sites, 2 outside
+payroll) · `ISSUE-116`(spans 2 jobs — `OfferExpiryReminderJob` has the identical defect)
+
+### T5 — Needs a decision, not a slot
+
+`ISSUE-368`(deliberate documented exclusion — close as WONTFIX?) · `ISSUE-390`(documented deferral) ·
+`ISSUE-418`/`ISSUE-499`(**opposite prescriptions on one test** — one says fix the service, one says relax
+the assertion; a human must pick) · `DECISION-477` · `ENH-002`(policy: Employee holds no `Reports.*` at
+all, so re-gating alone won't reach self-scope) · `ISSUE-445` · `BUG-489` · `ENH-470` · `ISSUE-490`
+
+---
+
+## TODO — gaps with no finding yet
+
+Discovered during the audits. **None of these is currently tracked anywhere else.**
+
+- [ ] **`RecommendationService.SupportedExportFormats` advertises `csv,xlsx` while the service supports `pdf`** — the working PDF export is **unreachable from the UI**. One-line fix (use `ExportFormatNormalizer.Supported`); the FE mapper already handles `pdf`.
+- [ ] **`ExportFormatNormalizerTests` does not cover the surface it was written for.** Its docstring names BUG-311 "this exact shape on the recommendation surface", yet `RecommendationService.SupportedExportFormats` has **zero** references in any test.
+- [ ] **`npm run lint` runs in NO CI workflow.** ESLint was installed to close a "no lint gate" finding — the tool landed, the gate did not. 187 a11y violations have nothing stopping them growing.
+- [ ] **`DbInitializer.cs:107-109` claims the Docker dev stack sets `Rls__Enabled=true`.** It is absent from **every tracked file**; `docker.env` is gitignored. Dev and Docker run on **one** isolation layer while the comment says three. *(I previously "corrected" `ISSUE-468` on this point by reading my own untracked local `docker.env` — that correction was wrong and is retracted.)*
+- [ ] **No bank-details capture API exists** — surfaced under `ENH-018`; the masking works, but nothing can write the fields.
+- [ ] **`src/backend/HRM.Api/.claude/` is gitignored** — the stray-agent-directory defect `ISSUE-445` describes for the frontend already happened on the backend and was papered over with an ignore rule.
+- [ ] **`review-signoff.component.ts:345` assigns `el.innerHTML` directly**, bypassing Angular's sanitizer — safe only because the server sanitizes on write, making `ISSUE-121`'s gap a single point of failure.
+- [ ] **Three live `IgnoreQueryFilters` counts** — register 270, queue 354, reality 265. Fold into `ISSUE-449`.
+- [ ] **`gotcha-grep-blind-source-files.md` agent memory caches the wrong NUL list** (3 files, names one that never had a NUL).
+
+---
+
 ## ▶ RE-PRIORITIZED 2026-09-04 — this supersedes the table below
 
 The original `G`/`E`/`F` queue is **exhausted except for four items**, and 34 findings were filed on
