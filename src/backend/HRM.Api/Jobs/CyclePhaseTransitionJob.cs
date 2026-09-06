@@ -62,6 +62,14 @@ public sealed class CyclePhaseTransitionJob
 
         foreach (var phase in cycle.Phases)
         {
+            // ISSUE-350 / F3: a phase with an explicit CompletedOn is finished, whatever its type — that is
+            // the point of putting the state on the phase rather than inferring it per type. Only phases with
+            // NO completion fact still need the per-type participant count below, and Calibration has no such
+            // count (a committee that adjusts nobody has still done its job), which is exactly why it used to
+            // be skipped outright and reported a permanent 0%.
+            if (phase.IsComplete)
+                continue;
+
             if (phase.PhaseType is not (CyclePhaseType.GoalSetting or CyclePhaseType.SelfAssessment or CyclePhaseType.ManagerReview))
                 continue;
 

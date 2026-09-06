@@ -466,15 +466,27 @@ public sealed class RecommendationService : IRecommendationService
                 "Recommendations can only be submitted after the cycle's final ratings are published.",
                 422, "final_ratings_not_published");
 
-        // BR-2: when calibration is enabled, the employee's manager review must be submitted (calibration complete).
+        // BR-2: when calibration is enabled, the cycle's Calibration PHASE must be complete.
+        //
+        // This used to check whether the employee's manager review had been submitted — a PROXY, and a poor
+        // one. It passed with zero calibrations applied, so the gate never actually gated, while returning
+        // the error code `calibration_incomplete` for a condition it never tested. F3 gives the phase a real
+        // completion fact (CyclePhase.CompletedOn), so the gate can read what its own error code claims.
+        //
+        // Read from the PHASE, never from "does this employee have a RatingCalibration row". The normal
+        // committee outcome for most employees is NO adjustment, so per-employee calibration evidence is
+        // permanently absent for them — a per-employee gate would never open for the majority and would look
+        // like a product bug rather than a modelling one. This is the whole argument for phase-level state.
         if (cycle.IsCalibrationEnabled)
         {
-            var reviewSubmitted = await _dbContext.ManagerReviews.AsNoTracking().AnyAsync(
-                r => r.CycleId == rec.CycleId && r.EmployeeId == rec.EmployeeId && r.SubmittedAt != null,
+            var calibrationComplete = await _dbContext.CyclePhases.AsNoTracking().AnyAsync(
+                ph => ph.CycleId == rec.CycleId
+                      && ph.PhaseType == CyclePhaseType.Calibration
+                      && ph.CompletedOn != null,
                 cancellationToken);
-            if (!reviewSubmitted)
+            if (!calibrationComplete)
                 return Result<RecommendationDto>.Failure(
-                    "Calibration is enabled for this cycle; recommendations can only proceed after calibration is complete.",
+                    "Calibration is enabled for this cycle; recommendations can only proceed after the calibration phase is marked complete.",
                     422, "calibration_incomplete");
         }
 

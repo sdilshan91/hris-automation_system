@@ -297,6 +297,19 @@ public static class PermissionCatalog
         /// HR Manager / Tenant Admin.
         /// </summary>
         public const string PublishAll = "Performance.Publish.All";
+
+        /// <summary>
+        /// F3 / GAP-021 — apply calibrated ratings and mark the calibration phase complete.
+        /// </summary>
+        /// <remarks>
+        /// ADDED and OR-ed with <see cref="PublishAll"/>/<see cref="Manage"/>/<see cref="ReviewAll"/>, not
+        /// substituted for them (decided 2026-09-04). Replacing them would silently strip calibrate from every
+        /// existing HR user on deploy unless a <c>role_permission</c> data migration backfilled it — a silent
+        /// authorization loss, which is the worst failure shape available here. OR-ing costs true least
+        /// privilege for now and buys the thing the gap was actually about: calibration can be DELEGATED to a
+        /// facilitator by granting this alone, without also handing over org-wide review and publish.
+        /// </remarks>
+        public const string Calibrate = "Performance.Calibrate";
     }
 
     // ── Reports Module ───────────────────────────────────────────────
@@ -558,7 +571,7 @@ public static class PermissionCatalog
         // Performance
         Performance.ViewOwn, Performance.ViewTeam, Performance.ViewAll, Performance.Manage,
         Performance.SetGoalTeam, Performance.SetGoalAll, Performance.ReadSelf,
-        Performance.ReviewTeam, Performance.ReviewAll, Performance.PublishAll,
+        Performance.ReviewTeam, Performance.ReviewAll, Performance.PublishAll, Performance.Calibrate,
 
         // Reports
         Reports.View, Reports.Export, Reports.ViewTeam, Reports.ViewDepartment, Reports.ViewAll,
@@ -682,6 +695,7 @@ public static class PermissionCatalog
             Payroll.View, Payroll.Run, Payroll.Approve, Payroll.Configure, Payroll.Export, Payroll.ViewSensitive, Payroll.ViewCompensation,
             Recruitment.View, Recruitment.Manage, Recruitment.ApproveOffer,
             Performance.ViewAll, Performance.Manage, Performance.SetGoalAll, Performance.ReviewAll, Performance.PublishAll,
+            Performance.Calibrate,
             // DEC-1: holds Employee/Leave/Attendance.View.All → org-wide report scope preserved via Reports.View.All.
             Reports.View, Reports.Export, Reports.ViewAll,
             Roles.View, Roles.Manage, Roles.AssignUsers,

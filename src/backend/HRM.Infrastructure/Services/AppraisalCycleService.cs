@@ -568,21 +568,29 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             .Select(m => m.EmployeeId)
             .ToListAsync(cancellationToken);
 
-        int CompletedFor(CyclePhaseType type) => type switch
-        {
-            CyclePhaseType.GoalSetting => goalDoneIds.Intersect(participantIds).Count(),
-            CyclePhaseType.SelfAssessment => selfDoneIds.Intersect(participantIds).Count(),
-            CyclePhaseType.ManagerReview => mgrDoneIds.Intersect(participantIds).Count(),
-            _ => 0,
-        };
+        // ISSUE-350 / F3: a phase carrying CompletedOn is 100% done, whatever its type. Before this, the
+        // `_ => 0` arm scored Calibration a permanent 0% on the timeline — not because nothing had happened,
+        // but because there is no per-participant completion count for a calibration committee (adjusting
+        // nobody is a legitimate outcome). Counting participants is the fallback for phases that have no
+        // explicit completion fact; it is not the definition of "complete".
+        int CompletedFor(CyclePhaseType type, bool phaseIsComplete) => phaseIsComplete
+            ? participantIds.Count
+            : type switch
+            {
+                CyclePhaseType.GoalSetting => goalDoneIds.Intersect(participantIds).Count(),
+                CyclePhaseType.SelfAssessment => selfDoneIds.Intersect(participantIds).Count(),
+                CyclePhaseType.ManagerReview => mgrDoneIds.Intersect(participantIds).Count(),
+                _ => 0,
+            };
 
         var phaseStats = cycle.Phases.OrderBy(p => p.Sequence).Select(p =>
         {
-            var completed = CompletedFor(p.PhaseType);
+            var completed = CompletedFor(p.PhaseType, p.IsComplete);
             var pct = total == 0 ? 0 : (int)Math.Round(completed * 100.0 / total);
             // Overdue: phase end has passed and the participant hasn't completed it (only meaningful for
-            // the three measurable phases).
-            var overdue = p.EndDate < now && p.PhaseType is CyclePhaseType.GoalSetting
+            // the three measurable phases). A phase explicitly marked complete is never overdue — it was
+            // finished, whether or not its window has since elapsed.
+            var overdue = !p.IsComplete && p.EndDate < now && p.PhaseType is CyclePhaseType.GoalSetting
                 or CyclePhaseType.SelfAssessment or CyclePhaseType.ManagerReview
                 ? Math.Max(0, total - completed)
                 : 0;

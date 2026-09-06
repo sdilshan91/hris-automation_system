@@ -120,6 +120,16 @@ public sealed class PerformanceCalibrationServiceTests
             StartDate = now.AddDays(-90), EndDate = now.AddDays(10), RatingScaleMax = 5, SelfWeightPercent = 30,
             IsCalibrationEnabled = true,
         });
+        // F3 / GAP-021: the Calibration PHASE is what AC-3 completes and what BR-2 reads. Seeded with a
+        // window that has already STARTED, so the "not started yet" guard is exercised by a separate arm
+        // rather than accidentally by every arm.
+        db.CyclePhases.Add(new CyclePhase
+        {
+            Id = Guid.NewGuid(), TenantId = _tenantId, CycleId = _cycleId,
+            PhaseType = CyclePhaseType.Calibration, Sequence = 3,
+            StartDate = now.AddDays(-5), EndDate = now.AddDays(5),
+        });
+
         db.AppraisalCycles.Add(new AppraisalCycle
         {
             Id = _cycleNoCalibId, TenantId = _tenantId, Name = "FY2025", Status = AppraisalCycleStatus.Active,
@@ -279,5 +289,95 @@ public sealed class PerformanceCalibrationServiceTests
         result.IsSuccess.Should().BeTrue(result.Error);
         result.Value!.Rows.Should().ContainSingle()
             .Which.EmployeeId.Should().Be(_empB);
+    }
+
+    // ── F3 / GAP-021 AC-3: completing the calibration phase ──────────────────────────────
+    //
+    // These arms exist because BR-2 used to gate on a PROXY — whether a manager review had been submitted —
+    // while returning the error code `calibration_incomplete`. It therefore passed with zero calibrations
+    // applied: an error code naming a condition the code never tested. CyclePhase.CompletedOn is the real
+    // fact, and these prove the write and its guards.
+
+    [Fact]
+    public async Task CompletePhase_sets_CompletedOn_and_records_who_closed_it_AC3()
+    {
+        var result = await CalibrationService(HrUser()).CompleteCalibrationPhaseAsync(_cycleId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.PhaseType.Should().Be("Calibration");
+        result.Value!.CompletedOn.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromMinutes(1));
+
+        await using var verify = CreateDbContext();
+        // Synchronous Single: on .NET 10 the System.Linq.AsyncEnumerable overloads collide with EF's
+        // ToListAsync/SingleAsync here and neither can be inferred. Against InMemory this is equivalent.
+        var phase = verify.CyclePhases
+            .Single(ph => ph.CycleId == _cycleId && ph.PhaseType == CyclePhaseType.Calibration);
+        phase.CompletedOn.Should().NotBeNull("the phase fact is what BR-2 reads — the DTO alone is not the state");
+        phase.IsComplete.Should().BeTrue();
+        phase.CompletedByUserId.Should().NotBeNull(
+            "who closed calibration is the record AC-3 exists to produce; a null here makes the audit useless");
+    }
+
+    [Fact]
+    public async Task CompletePhase_twice_is_rejected_rather_than_re_stamped()
+    {
+        var svc = CalibrationService(HrUser());
+        (await svc.CompleteCalibrationPhaseAsync(_cycleId)).IsSuccess.Should().BeTrue();
+
+        var second = await CalibrationService(HrUser()).CompleteCalibrationPhaseAsync(_cycleId);
+
+        second.IsFailure.Should().BeTrue();
+        second.StatusCode.Should().Be(409);
+        second.ErrorCode.Should().Be("phase_already_complete");
+        // Re-stamping would silently rewrite who closed the phase and when — the one thing the columns exist
+        // to record. Rejecting is the point, not a convenience.
+    }
+
+    [Fact]
+    public async Task CompletePhase_on_a_cycle_with_calibration_disabled_is_rejected()
+    {
+        var result = await CalibrationService(HrUser()).CompleteCalibrationPhaseAsync(_cycleNoCalibId);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(409);
+        result.ErrorCode.Should().Be("calibration_not_enabled");
+    }
+
+    [Fact]
+    public async Task CompletePhase_on_an_unknown_cycle_is_404()
+    {
+        var result = await CalibrationService(HrUser()).CompleteCalibrationPhaseAsync(Guid.NewGuid());
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(404);
+        result.ErrorCode.Should().Be("cycle_not_found");
+    }
+
+    [Fact]
+    public async Task CompletePhase_without_permission_is_403()
+    {
+        var nobody = Substitute.For<ICurrentUser>();
+        nobody.UserId.Returns(Guid.NewGuid());
+        nobody.Permissions.Returns(Array.Empty<string>());
+
+        var result = await CalibrationService(nobody).CompleteCalibrationPhaseAsync(_cycleId);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task CompletePhase_is_permitted_by_Calibrate_ALONE_which_is_the_point_of_adding_it()
+    {
+        // The delegation case: a facilitator holding ONLY Performance.Calibrate must be able to close the
+        // phase without also holding org-wide review/publish. If this fails, the permission was added but
+        // OR-ed in nowhere useful and the gap it was created for is still open.
+        var facilitator = Substitute.For<ICurrentUser>();
+        facilitator.UserId.Returns(Guid.NewGuid());
+        facilitator.Permissions.Returns(new[] { PermissionCatalog.Performance.Calibrate });
+
+        var result = await CalibrationService(facilitator).CompleteCalibrationPhaseAsync(_cycleId);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
     }
 }
