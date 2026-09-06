@@ -280,7 +280,11 @@ public sealed class LateEarlyServiceTests
         result.Value!.YearMonth.Should().Be("2026-05");
         result.Value.LateCount.Should().Be(1);
         result.Value.EarlyDepartureCount.Should().Be(1);
-        result.Value.AllowedLates.Should().Be(5);
+        // ENH-008: was 5 (ChronicThreshold, the HR-escalation trigger). This assertion pinned the DEFECT —
+        // it is corrected to the deduction threshold, not relaxed. The employee-facing allowance is the
+        // point at which pay is affected.
+        result.Value.AllowedLates.Should().Be(3,
+            "the employee-facing allowance is ThresholdCount (deduction), not ChronicThreshold (HR escalation)");
     }
 
     [Fact]

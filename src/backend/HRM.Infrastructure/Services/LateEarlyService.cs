@@ -257,7 +257,13 @@ public sealed class LateEarlyService : ILateEarlyService
         {
             YearMonth = $"{year:D4}-{month:D2}",
             LateCount = counts.LateCount,
-            AllowedLates = policy?.ChronicThreshold ?? 0,
+            // ENH-008: ThresholdCount, NOT ChronicThreshold. These are two different policies and this
+            // field is employee-facing: ThresholdCount (default 3) is "days of pay deducted once reached"
+            // (BR-4); ChronicThreshold (default 5) is "lates above which HR is escalated" (FR-7). The UI
+            // renders this as "N of X allowed lates used" and only warns on reaching X — so an employee at
+            // 3-4 lates was shown green, with no warning, WHILE THE DEDUCTION HAD ALREADY TRIGGERED.
+            // Wrong data on a pay indicator, not a missing field.
+            AllowedLates = policy?.ThresholdCount ?? 0,
             EarlyDepartureCount = counts.EarlyCount,
         });
     }
