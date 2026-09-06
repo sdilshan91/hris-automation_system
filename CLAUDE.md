@@ -263,6 +263,7 @@ exception is one env var away and a silent bypass is not.
 | `test-integrity-guard` | `PreToolUse` Write\|Edit | **Denies** skip/focus markers or removed test cases. "Never weaken a test to go green." |
 | `config-protection-guard` | `PreToolUse` Write\|Edit | **Denies** edits that weaken a lint/format config to fake a green gate. |
 | `freeze-guard` | `PreToolUse` Write\|Edit | **Denies** edits outside an armed directory fence. Dormant until armed. |
+| `worktree-fence` | `PreToolUse` Write\|Edit | **Denies** a write reaching out of the caller's own worktree into the shared checkout. Fires only when cwd is inside `.claude/worktrees/`. ISSUE-512. |
 | `antipattern-advisor` | `PreToolUse` Write\|Edit | *Advisory.* Flags four .NET smells on `*.cs` writes. Never denies. |
 | `careful-guard` | `PreToolUse` Bash | Forces a prompt on irreversible commands (`rm -r`, `DROP`, `push --force`, `reset --hard`). |
 | `no-verify-guard` | `PreToolUse` Bash | **Denies** `--no-verify` and `core.hooksPath` overrides that skip git hooks. |

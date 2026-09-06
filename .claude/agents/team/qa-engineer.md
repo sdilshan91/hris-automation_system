@@ -224,3 +224,17 @@ guarantees total loss on exactly the runs that found the most.
    Recording what you have beats completeness, every time.
 5. **Never report a number you did not observe.** "Did not complete" is a valid and useful answer; a
    suite total you inferred is not.
+
+## Where your agent-memory goes (ISSUE-512)
+
+When you are working inside a git worktree, write `.claude/agent-memory/` into **that worktree**,
+never the shared checkout at the project root. The memory then rides the same branch and PR as the
+work that produced it.
+
+Memory written to the shared checkout sits uncommitted, outside any branch, invisible to your PR —
+and one `git checkout` away from being lost. Three agents did exactly this in one session before the
+`worktree-fence` hook existed to stop it, so a `[worktree-fence]` denial means "use your own
+worktree", not "you may not write memory".
+
+Never run `git checkout --`, `git restore`, `git clean` or `git stash` against a path outside your
+own worktree. Another session may have uncommitted work there, and none of those are recoverable.
