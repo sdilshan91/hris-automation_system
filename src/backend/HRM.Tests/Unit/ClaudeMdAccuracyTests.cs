@@ -28,6 +28,7 @@
 // that is a human's job, and a test that guesses would get retired the first time it was wrong.
 // ============================================================================
 
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -186,6 +187,71 @@ public sealed class ClaudeMdAccuracyTests
         claudeMd.Should().NotContain("no backend test project",
             "this exact sentence was false for the entire life of HRM.Tests (575 test files) and was "
             + "handed to every agent run as a premise before any work started");
+    }
+
+    /// <summary>
+    /// ISSUE-458: the guard above cannot distinguish the two test projects, and never could.
+    /// <c>"HRM.ArchitectureTests"</c> CONTAINS <c>"HRM.Tests"</c> as a substring, so a naive
+    /// <c>Contain("HRM.Tests")</c> passes even if the instructions only ever mention the architecture
+    /// project — or, as was actually the case, only ever mention <c>HRM.Tests</c> while a second test
+    /// project sits undocumented. A guard that cannot fail on the thing it guards is decoration.
+    ///
+    /// <para>This asserts each test project is named with a real word boundary, so neither name can
+    /// satisfy the other's assertion.</para>
+    /// </summary>
+    [Fact]
+    public void Every_backend_test_project_is_named_in_the_instructions()
+    {
+        var backendRoot = Path.Combine(RepoRoot(), "src", "backend");
+        var testProjects = Directory
+            .EnumerateFiles(backendRoot, "*.csproj", SearchOption.AllDirectories)
+            .Select(Path.GetFileNameWithoutExtension)
+            .Where(name => name!.EndsWith("Tests", StringComparison.Ordinal))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        testProjects.Should().NotBeEmpty("this guard is meaningless if it finds no test projects at all");
+
+        var corpus = InstructionCorpus();
+
+        foreach (var project in testProjects)
+        {
+            // (?<![A-Za-z.]) stops "HRM.ArchitectureTests" from satisfying a search for "HRM.Tests".
+            var named = Regex.IsMatch(corpus, $@"(?<![A-Za-z.]){Regex.Escape(project!)}\b");
+
+            named.Should().BeTrue(
+                "{0} is a backend test project an agent is expected to extend rather than re-invent, so "
+                + "the instruction corpus must name it explicitly. Substring matching is not enough here: "
+                + "'HRM.ArchitectureTests' contains 'HRM.Tests', so the two names can mask each other.",
+                project);
+        }
+    }
+
+    /// <summary>
+    /// ISSUE-458: <c>.claude/rules/backend.md</c> asserted "All 5 projects set Nullable enable" while
+    /// six projects existed. Nothing went red, because no test read the number. Rather than hardcode a
+    /// count here — which would just move the staleness into the test — this parses the claim the
+    /// document makes and checks it against the tree.
+    /// </summary>
+    [Fact]
+    public void The_documented_project_count_matches_the_solution()
+    {
+        var backendRule = Path.Combine(RepoRoot(), ".claude", "rules", "backend.md");
+        File.Exists(backendRule).Should().BeTrue("this guard reads .claude/rules/backend.md");
+
+        var match = Regex.Match(File.ReadAllText(backendRule), @"All (\d+) projects set");
+        match.Success.Should().BeTrue(
+            "backend.md states a project count in the Nullability section; if that sentence was "
+            + "reworded, update this guard deliberately rather than letting it silently stop checking");
+
+        var claimed = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+        var actual = Directory
+            .EnumerateFiles(Path.Combine(RepoRoot(), "src", "backend"), "*.csproj", SearchOption.AllDirectories)
+            .Count();
+
+        claimed.Should().Be(actual,
+            "backend.md is loaded into every session that touches src/backend, so a wrong project count "
+            + "is handed to an agent as a premise before any work starts. It said 5 while 6 existed.");
     }
 
     /// <summary>

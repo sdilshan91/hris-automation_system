@@ -25,8 +25,13 @@ also seeds a default admin tenant, roles, and admin user. **Never hand-write a m
 
 ## Tests
 
-`src/backend/HRM.Tests` (xUnit + FluentAssertions + NSubstitute) — ~365 unit and ~215 integration test
-files. Integration tests run against a **real PostgreSQL via Testcontainers**;
+**Two** test projects, not one:
+
+- `src/backend/HRM.Tests` (xUnit + FluentAssertions + NSubstitute) — 368 unit and 225 integration
+  test files. This is the one you extend for behaviour.
+- `src/backend/HRM.ArchitectureTests` — Roslyn/NetArchTest rules about the codebase itself (layer
+  dependencies, domain purity, inert optional parameters, shared-fixture isolation, NUL-free sources).
+  Add a rule here when the thing you want to prevent is structural and no behavioural test can catch it. Integration tests run against a **real PostgreSQL via Testcontainers**;
 `Microsoft.EntityFrameworkCore.InMemory` is also referenced but is a known root-cause class for false
 greens (InMemory masks Postgres behaviour — see `/fault-diagnosis`), so prefer the Testcontainers path
 for anything touching SQL, query filters, or migrations.
@@ -40,7 +45,7 @@ for anything touching SQL, query filters, or migrations.
 
 ## Nullability
 
-All 5 projects set `<Nullable>enable</Nullable>`, so the build really does emit
+All 6 projects set `<Nullable>enable</Nullable>`, so the build really does emit
 **CS8602 / CS8604 / CS8714** — they are live warnings in this codebase, not theory.
 Write null-aware C#: guard or annotate rather than reaching for `!`. The
 `csharp-nullable-reference-types` skill has the full attribute catalog

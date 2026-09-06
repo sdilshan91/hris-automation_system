@@ -17,6 +17,31 @@ npm run e2e          # playwright test
 ng test --include='**/auth.service.spec.ts'   # run a single spec
 ```
 
+## Working in a git worktree — read this before `ng test` fails at you
+
+`node_modules/` is gitignored, so a **fresh worktree has no `src/frontend/node_modules`**. Every
+frontend command then fails with `npm error could not determine executable to run` — there is no
+global Angular CLI on this machine, so `ng` resolves *only* through `src/frontend/node_modules/.bin`.
+The message names npx, not Angular, so it reads like a broken install rather than a missing tree.
+
+**Do this:**
+
+```bash
+cd .claude/worktrees/<name>/src/frontend
+npm ci                                   # ~1 min, 1145 packages
+CHROME_BIN=/usr/bin/google-chrome npx ng test --watch=false --browsers=ChromeHeadlessNoSandbox
+```
+
+**Do NOT symlink the main checkout's `node_modules`.** It appears to work and is faster, and it is the
+remedy one agent-memory note still recommends — but `docs/DEV/INSTRUCTIONS.md` forbids reusing a
+`node_modules` populated by a Windows `npm install` on this shared NTFS drive, and `ISSUE-326` is the
+incident: a win32 esbuild binary broke a host-Linux `ng test`. A symlink works only while the main
+tree happens to be Linux-populated, which is not a property you can check at a glance.
+
+It also **dirties the worktree**: `.gitignore`'s `node_modules/` has a trailing slash, which matches
+directories only, and git does not treat a symlink as a directory. So the symlink shows up as
+`?? src/frontend/node_modules` in `git status` and can end up in a commit.
+
 ## Architecture — standalone Angular 20
 
 - `core/` holds singletons: `auth/` (service, guard, interceptor, models), `interceptors/`
