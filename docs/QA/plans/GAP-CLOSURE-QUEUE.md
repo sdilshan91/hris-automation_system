@@ -349,6 +349,21 @@ Cheapest possible reduction, and it stops the ledger manufacturing phantom work.
 | **`ISSUE-367`** | LOW → **MED** | Renders *"in use by **0** active employees. Reassign them before deleting."* `affectedEmployeeCount` has zero backend occurrences; two specs mock the phantom field and keep it green. |
 | **`ISSUE-373`** | HIGH → **MED**, but split | "17 gaps" is **6 rows / 9 fields**. Keep one out: `trend:'Flat'` is hardcoded *and rendered* — **wrong data beats missing data.** |
 
+## 🔺 AUTO-HEAL 2026-09-06 — a HIGH that outranks the rest of T3
+
+`ISSUE-500` — **FE specs structurally cannot catch an FE↔BE contract break.** Filed after FOUR defects
+fixed in one session (`BUG-444`, `ISSUE-367`, `ISSUE-373`, `ISSUE-364`) each turned out to have been
+covered by a **passing** spec the whole time. `HttpTestingController` echoes whatever the service sends
+and returns whatever the author typed, so an FE spec asserts the FE agrees with itself.
+
+**Ranked above the remaining T3 items** on blast radius: it is the seam where `GAP-S1` records 9 of 13
+modules already drifting, and every T3 FE item is verified by the very mechanism that is blind.
+
+**Parked at the decision gate, not scheduled:** the fix is a choice between typing spec request literals
+against the generated `components['schemas']` (cheap, compile-time, partial) and a replay-against-OpenAPI
+contract layer (thorough, much larger). That is a real effort-vs-coverage decision and it is the user's,
+not the loop's. `ISSUE-367`'s new envelope arm is the pattern the cheap option would generalise.
+
 ### T2 — Static-analysis blindness (do before any further grep-based audit)
 
 `BUG-448` — **exactly 2 files**, byte-verified: `AuditAnonymizationService.cs` (line 126) and
