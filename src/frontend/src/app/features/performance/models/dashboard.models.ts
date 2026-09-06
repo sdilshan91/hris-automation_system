@@ -188,7 +188,12 @@ export interface IDepartmentEmployeeScore {
   jobTitle: string | null;
   grade: string | null;
   score: number | null;
-  trend: PerformerTrend;
+  /**
+   * Null when the API does not report a trend — which today is always, because
+   * `PerformanceDepartmentDrilldownDto` carries no trend field at all. Nullable rather
+   * than defaulted so the UI can omit the glyph instead of asserting "flat".
+   */
+  trend: PerformerTrend | null;
 }
 
 /** Department drill-down payload (FR-5) — feeds the breadcrumb + employee list. */
@@ -437,10 +442,18 @@ export function mapTrendResponse(w: TrendWire): ITrendResponse {
 }
 
 /**
- * Maps one wire drill-down employee onto `IDepartmentEmployeeScore`. NOTE (finding):
- * the wire has no `grade` and no `trend` (it carries a review `status` string instead),
- * yet both are rendered — `grade` conditionally (`@if` hides null) and the trend glyph
- * always. `grade` → null, `trend` → 'Flat'. Reported — not invented.
+ * Maps one wire drill-down employee onto `IDepartmentEmployeeScore`.
+ *
+ * ISSUE-373: the wire has neither `grade` nor `trend` — `PerformanceDepartmentEmployeeScoreDto`
+ * carries `employeeId`, `employeeName`, `employeeNo`, `jobTitle`, `score`, `status` and nothing
+ * else. `grade` was already mapped to null and hidden by an `@if`, which is the honest handling.
+ * `trend` was hardcoded to `'Flat'` while the glyph rendered UNCONDITIONALLY, so every employee
+ * in every department displayed a flat-trend arrow — a fabricated signal indistinguishable from
+ * a measured one, on a screen used for performance decisions.
+ *
+ * Both now map to null and both are hidden when null. Computing a real trend needs a
+ * previous-cycle comparison the API does not expose; that is feature work, tracked separately.
+ * Showing nothing is correct until it exists — showing "flat" is not.
  */
 export function mapDepartmentEmployeeScore(
   w: DepartmentEmployeeScoreWire,
@@ -451,7 +464,7 @@ export function mapDepartmentEmployeeScore(
     jobTitle: w.jobTitle ?? null,
     grade: null,
     score: w.score ?? null,
-    trend: 'Flat',
+    trend: null,
   };
 }
 
