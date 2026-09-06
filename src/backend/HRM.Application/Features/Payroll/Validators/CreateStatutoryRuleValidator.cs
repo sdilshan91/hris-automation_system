@@ -87,7 +87,14 @@ public sealed class TaxSlabInputValidator : AbstractValidator<TaxSlabInput>
     {
         RuleFor(s => s.SlabFrom).GreaterThanOrEqualTo(0).WithMessage("Slab lower bound cannot be negative.")
             .LessThanOrEqualTo(StatutoryLimits.MaxMonetary).WithMessage(StatutoryLimits.MaxMonetaryMessage);
-        RuleFor(s => s.RatePercentage).InclusiveBetween(0, 100).WithMessage("Slab rate must be between 0 and 100.");
+        RuleFor(s => s.RatePercentage)
+            .InclusiveBetween(0, 100).WithMessage("Slab rate must be between 0 and 100.")
+            // ISSUE-169: the column is Postgres numeric(5,2) — an over-precise rate (e.g. 12.345) was silently
+            // ROUNDED to 12.35 on insert and echoed back as a different number with no error. Reject it instead
+            // (same money/precision contract as ISSUE-152 on AnnualCtc). ignoreTrailingZeros so 12.50 is fine.
+            .PrecisionScale(5, 2, ignoreTrailingZeros: true)
+                .WithMessage("Slab rate cannot have more than 2 decimal places.")
+                .WithErrorCode("invalid_rate_scale");
         RuleFor(s => s.OrderIndex).GreaterThanOrEqualTo(0).WithMessage("Slab order index cannot be negative.");
         RuleFor(s => s.SlabTo!.Value)
             .LessThanOrEqualTo(StatutoryLimits.MaxMonetary).WithMessage(StatutoryLimits.MaxMonetaryMessage)

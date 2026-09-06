@@ -75,8 +75,17 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         // The tenant-scoped UNIQUE index (tenant, type, country, fiscal_year) is the hard DB backstop.
         var newFrom = input.EffectiveFrom;
         var newTo = input.EffectiveTo ?? DateOnly.MaxValue;
+        // ISSUE-299: normalize the STORED CountryCode in the comparison, not just the incoming side. A raw
+        // seed/import/psql write can persist "lk " bypassing the normalize-on-save above; the unique index is
+        // on the RAW column too, so neither this pre-check nor 23505 would have fired — yet the resolver matches
+        // on upper(btrim(country_code)) (StatutoryDeductionResolver), so BOTH rows would match at resolve time
+        // and SelectEffectiveByType would pick an arbitrary winner: a WRONG TAX RATE on real payroll. Mirror the
+        // resolver's normalization EXACTLY (Trim()+ToUpper() → upper(btrim(...))) so this pre-check sees what the
+        // resolver sees. Non-sargable, but the per-tenant statutory rule set is tiny.
         var sameKey = await _dbContext.StatutoryRules.AsNoTracking()
-            .Where(r => r.RuleType == input.RuleType && r.CountryCode == countryCode && r.FiscalYear == fiscalYear)
+            .Where(r => r.RuleType == input.RuleType
+                && r.CountryCode.Trim().ToUpper() == countryCode
+                && r.FiscalYear == fiscalYear)
             .Select(r => new { r.EffectiveFrom, r.EffectiveTo })
             .ToListAsync(cancellationToken);
         if (sameKey.Any(r => r.EffectiveFrom <= newTo && (r.EffectiveTo ?? DateOnly.MaxValue) >= newFrom))
@@ -348,9 +357,14 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
         // Multi-country tax foundation: the target-FY guard is PER COUNTRY. Cloning country A's rules into a new
         // fiscal year must succeed even when country B already has rules in that target FY — only a collision on
         // one of the SOURCE's own countries (which would breach the unique (tenant,type,country,FY) index) blocks.
-        var sourceCountries = sourceRules.Select(r => r.CountryCode).Distinct().ToList();
+        // ISSUE-299: compare NORMALIZED-to-normalized on both sides (same reason as the create pre-check above) —
+        // a dirty stored "lk " must still collide with a target-FY "LK" row, and vice versa.
+        var sourceCountries = sourceRules
+            .Select(r => r.CountryCode.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToList();
         if (await _dbContext.StatutoryRules
-                .AnyAsync(r => r.FiscalYear == target && sourceCountries.Contains(r.CountryCode), cancellationToken))
+                .AnyAsync(r => r.FiscalYear == target && sourceCountries.Contains(r.CountryCode.Trim().ToUpper()), cancellationToken))
             return Result<IReadOnlyList<StatutoryRuleDto>>.Failure(
                 $"Statutory rules already exist for fiscal year '{target}' in one of the source countries "
                 + $"({string.Join(", ", sourceCountries)}). Delete them before cloning.", 409, "target_fiscal_year_exists");
@@ -365,7 +379,8 @@ public sealed class StatutoryRuleService : IStatutoryRuleService
                 TenantId = _tenantContext.TenantId,
                 RuleType = src.RuleType,
                 RuleName = src.RuleName,
-                CountryCode = src.CountryCode,
+                // ISSUE-299: normalize on clone so a dirty source row cannot propagate its "lk " into the new FY.
+                CountryCode = src.CountryCode.Trim().ToUpperInvariant(),
                 FiscalYear = target,
                 EffectiveFrom = effectiveFrom,
                 EffectiveTo = effectiveTo,
