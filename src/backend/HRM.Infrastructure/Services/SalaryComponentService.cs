@@ -98,7 +98,7 @@ public sealed class SalaryComponentService : ISalaryComponentService
             "Salary component created. Id={Id}, Code={Code}, TenantId={TenantId}, By={User}",
             component.Id, component.Code, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result<SalaryComponentDto>.Success(ToDto(component));
+        return await BuildDtoResultAsync(component.Id, cancellationToken);
     }
 
     public async Task<Result<SalaryComponentDto>> UpdateAsync(Guid componentId, SalaryComponentInput input, CancellationToken cancellationToken = default)
@@ -146,7 +146,7 @@ public sealed class SalaryComponentService : ISalaryComponentService
             "Salary component updated. Id={Id}, Code={Code}, TenantId={TenantId}, By={User}",
             component.Id, component.Code, _tenantContext.TenantId, _currentUser.Email);
 
-        return Result<SalaryComponentDto>.Success(ToDto(component));
+        return await BuildDtoResultAsync(component.Id, cancellationToken);
     }
 
     public async Task<Result<SalaryComponentDto>> GetByIdAsync(Guid componentId, CancellationToken cancellationToken = default)
@@ -296,6 +296,24 @@ public sealed class SalaryComponentService : ISalaryComponentService
     }
 
     private static string NormalizeCode(string code) => code.Trim().ToUpperInvariant();
+
+    /// <summary>
+    /// ISSUE-369: projects the row as the DATABASE now holds it, never the in-memory entity that was just
+    /// saved. <c>DefaultValue</c> is <c>numeric(18,2)</c>, so a value supplied at a higher scale is rounded
+    /// by Postgres on write; returning the tracked instance echoed the request back and told the client it
+    /// had stored a value it had not (a create/update response is the client's own record of what exists).
+    /// <c>AsNoTracking</c> is load-bearing — it materialises a fresh instance from the query result instead
+    /// of resolving the tracked one. Mirrors the <c>BuildDtoResultAsync</c> idiom already used by
+    /// <c>SalaryStructureService</c> and <c>StatutoryRuleService</c>.
+    /// </summary>
+    private async Task<Result<SalaryComponentDto>> BuildDtoResultAsync(Guid componentId, CancellationToken cancellationToken)
+    {
+        var persisted = await _dbContext.SalaryComponents
+            .AsNoTracking()
+            .FirstAsync(c => c.Id == componentId, cancellationToken);
+
+        return Result<SalaryComponentDto>.Success(ToDto(persisted));
+    }
 
     private static SalaryComponentDto ToDto(SalaryComponent c) => new()
     {
