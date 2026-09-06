@@ -5273,6 +5273,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/leaves/attachments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfLeaveRequestsLeaveAttachmentDto"];
+                        "text/json": components["schemas"]["ApiResponseOfLeaveRequestsLeaveAttachmentDto"];
+                        "text/plain": components["schemas"]["ApiResponseOfLeaveRequestsLeaveAttachmentDto"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/leaves/balance-preview": {
         parameters: {
             query?: never;
@@ -32887,6 +32953,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfLeaveRequestsLeaveAttachmentDto: {
+            code?: string | null;
+            data?: components["schemas"]["LeaveRequestsLeaveAttachmentDto"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfLeaveRequestsLeaveBalancePreviewDto: {
             code?: string | null;
             data?: components["schemas"]["LeaveRequestsLeaveBalancePreviewDto"];
@@ -36592,7 +36667,7 @@ export interface components {
             lopCount?: number;
         };
         LeaveRequestsCreateLeaveRequestRequest: {
-            attachments?: string[] | null;
+            attachmentIds?: string[] | null;
             confirmLop?: boolean;
             /** Format: date */
             endDate?: string;
@@ -36617,6 +36692,16 @@ export interface components {
             /** Format: uuid */
             requestId?: string;
             status?: string | null;
+        };
+        LeaveRequestsLeaveAttachmentDto: {
+            contentType?: string | null;
+            fileName?: string | null;
+            /** Format: uuid */
+            id?: string;
+            /** Format: int64 */
+            sizeBytes?: number;
+            /** Format: date-time */
+            uploadedAt?: string;
         };
         LeaveRequestsLeaveBalanceDto: {
             /** Format: double */

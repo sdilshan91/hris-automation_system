@@ -5282,6 +5282,37 @@
         },
         "type": "object"
       },
+      "ApiResponseOfLeaveRequestsLeaveAttachmentDto": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LeaveRequestsLeaveAttachmentDto"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseOfLeaveRequestsLeaveBalancePreviewDto": {
         "additionalProperties": false,
         "properties": {
@@ -16967,8 +16998,9 @@
       "LeaveRequestsCreateLeaveRequestRequest": {
         "additionalProperties": false,
         "properties": {
-          "attachments": {
+          "attachmentIds": {
             "items": {
+              "format": "uuid",
               "type": "string"
             },
             "nullable": true,
@@ -17034,6 +17066,32 @@
           },
           "status": {
             "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LeaveRequestsLeaveAttachmentDto": {
+        "additionalProperties": false,
+        "properties": {
+          "contentType": {
+            "nullable": true,
+            "type": "string"
+          },
+          "fileName": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "uploadedAt": {
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -40378,6 +40436,95 @@
         },
         "tags": [
           "LeaveLop"
+        ]
+      }
+    },
+    "/api/v1/leaves/attachments": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "encoding": {
+                "file": {
+                  "style": "form"
+                }
+              },
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfLeaveRequestsLeaveAttachmentDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfLeaveRequestsLeaveAttachmentDto"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfLeaveRequestsLeaveAttachmentDto"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "tags": [
+          "LeaveRequests"
         ]
       }
     },
