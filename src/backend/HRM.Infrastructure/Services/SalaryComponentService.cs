@@ -225,13 +225,25 @@ public sealed class SalaryComponentService : ISalaryComponentService
         if (component is null)
             return Result.Failure("Salary component not found.", 404);
 
-        // AC-5: a component linked to any salary structure cannot be deleted; report the count.
+        // AC-5: a component linked to any salary structure cannot be deleted.
+        // The BLOCK is on structure links (deliberately stricter than AC-5 — a component in an
+        // employee-less structure is still in use). The MESSAGE additionally reports the count of
+        // affected employees, which is the metric AC-5 actually specifies; reporting only the
+        // structure count left an HR user unable to see the blast radius of the removal.
         var inUseCount = await _dbContext.SalaryStructureComponents
             .CountAsync(x => x.SalaryComponentId == componentId, cancellationToken);
         if (inUseCount > 0)
+        {
+            var affectedEmployees = await _dbContext.EmployeeSalaryComponents
+                .Where(esc => esc.SalaryComponentId == componentId)
+                .Select(esc => esc.EmployeeId)
+                .Distinct()
+                .CountAsync(cancellationToken);
+
             return Result.Failure(
-                $"This component is used by {inUseCount} salary structure(s) and cannot be deleted. Remove the links first.",
+                $"This component is used by {inUseCount} salary structure(s) affecting {affectedEmployees} employee(s) and cannot be deleted. Remove the links first.",
                 409, "component_in_use");
+        }
 
         // US-PAY-012 (FR-2): audit the soft-delete — before=snapshot, after=null (deleted).
         _audit.Log(PA.SalaryComponentDeleted, PA.ResourceType.SalaryComponent,

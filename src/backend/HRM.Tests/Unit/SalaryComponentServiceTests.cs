@@ -159,6 +159,64 @@ public sealed class SalaryComponentServiceTests
         del.Error.Should().Contain("1");
     }
 
+    /// <summary>
+    /// ISSUE-367 / AC-5: the 409 must report the count of affected EMPLOYEES, not just the number of
+    /// salary structures. Counting structures told an HR user nothing about the blast radius — one
+    /// structure can carry a thousand employees or none. The block itself still keys off structure
+    /// links (deliberately stricter than AC-5); only the reported metric is corrected here.
+    ///
+    /// A duplicate row for one employee is included on purpose: the count must be DISTINCT employees,
+    /// not assignment rows, or a component appearing twice in a structure double-counts the workforce.
+    /// </summary>
+    [Fact]
+    public async Task Delete_ComponentInUse_ReportsTheAffectedEmployeeCount_AC5()
+    {
+        var svc = Service(_tenantId);
+        var created = await svc.CreateAsync(Earning());
+        var componentId = created.Value!.Id;
+
+        var employeeA = BaseEntity.NewUuidV7();
+        var employeeB = BaseEntity.NewUuidV7();
+
+        var ctx = Tenant(_tenantId);
+        using (var db = TestDbContextFactory.Create(ctx, _dbName))
+        {
+            var structureId = BaseEntity.NewUuidV7();
+            db.SalaryStructures.Add(new SalaryStructure
+            {
+                Id = structureId, TenantId = _tenantId, Name = "S", Code = "S",
+                EffectiveFrom = new DateOnly(2026, 1, 1), IsActive = true,
+            });
+            db.SalaryStructureComponents.Add(new SalaryStructureComponent
+            {
+                Id = BaseEntity.NewUuidV7(), TenantId = _tenantId,
+                SalaryStructureId = structureId, SalaryComponentId = componentId, ProcessingOrder = 1,
+            });
+
+            foreach (var employeeId in new[] { employeeA, employeeB, employeeA })
+            {
+                db.EmployeeSalaryComponents.Add(new EmployeeSalaryComponent
+                {
+                    Id = BaseEntity.NewUuidV7(), TenantId = _tenantId,
+                    EmployeeId = employeeId, SalaryStructureId = structureId,
+                    SalaryComponentId = componentId,
+                    AnnualAmount = 1200m, MonthlyAmount = 100m,
+                    EffectiveFrom = new DateOnly(2026, 1, 1),
+                });
+            }
+
+            await db.SaveChangesAsync();
+        }
+
+        var del = await svc.DeleteAsync(componentId);
+
+        del.IsFailure.Should().BeTrue();
+        del.StatusCode.Should().Be(409);
+        del.ErrorCode.Should().Be("component_in_use");
+        del.Error.Should().Contain("affecting 2 employee(s)",
+            because: "AC-5 specifies the count of affected EMPLOYEES, and the two rows for one employee must collapse to one");
+    }
+
     [Fact]
     public async Task Delete_UnusedComponent_SoftDeletes()
     {
