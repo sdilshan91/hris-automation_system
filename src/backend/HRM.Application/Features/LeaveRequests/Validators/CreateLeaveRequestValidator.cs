@@ -13,8 +13,6 @@ public sealed class CreateLeaveRequestValidator : AbstractValidator<CreateLeaveR
     /// <summary>Max attachments per request (§10).</summary>
     public const int MaxAttachments = 3;
 
-    private static readonly string[] s_allowedExtensions = [".pdf", ".jpg", ".jpeg", ".png"];
-
     public CreateLeaveRequestValidator()
     {
         RuleFor(x => x.LeaveTypeId)
@@ -51,28 +49,20 @@ public sealed class CreateLeaveRequestValidator : AbstractValidator<CreateLeaveR
         RuleFor(x => x.Reason)
             .MaximumLength(2000).WithMessage("Reason must not exceed 2000 characters.");
 
-        RuleFor(x => x.Attachments)
+        // ISSUE-036: attachments are now ids of REAL uploaded files. The count cap stays here; type/size are
+        // validated at UPLOAD time against the actual bytes (MIME allow-list + magic-byte sniff in
+        // LeaveAttachmentService), which is strictly stronger than the extension check this used to do on an
+        // unverified client string. Existence/ownership/tenant are resolved in LeaveRequestService.CreateAsync.
+        RuleFor(x => x.AttachmentIds)
             .Must(a => a is null || a.Count <= MaxAttachments)
             .WithMessage($"A maximum of {MaxAttachments} attachments is allowed.");
 
-        RuleForEach(x => x.Attachments)
-            .Must(HaveAllowedExtension)
-            .WithMessage("Attachments must be PDF, JPG, or PNG files.")
-            .When(x => x.Attachments is not null);
+        RuleForEach(x => x.AttachmentIds)
+            .NotEmpty().WithMessage("Attachment id must not be empty.")
+            .When(x => x.AttachmentIds is not null);
     }
 
     private static bool BeValidSession(string value)
         => string.Equals(value, "AM", StringComparison.OrdinalIgnoreCase)
         || string.Equals(value, "PM", StringComparison.OrdinalIgnoreCase);
-
-    private static bool HaveAllowedExtension(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-            return false;
-
-        // Strip any query string before checking the extension.
-        var path = url.Split('?', '#')[0];
-        var ext = Path.GetExtension(path);
-        return s_allowedExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase);
-    }
 }

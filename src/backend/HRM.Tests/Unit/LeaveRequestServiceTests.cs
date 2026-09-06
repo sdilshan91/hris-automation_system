@@ -163,7 +163,7 @@ public sealed class LeaveRequestServiceTests
     private static CreateLeaveRequestRequest Req(
         Guid leaveTypeId, DateOnly start, DateOnly end,
         bool isHalfDay = false, string? session = null,
-        IReadOnlyList<string>? attachments = null) => new()
+        IReadOnlyList<Guid>? attachmentIds = null) => new()
         {
             LeaveTypeId = leaveTypeId,
             StartDate = start,
@@ -171,8 +171,33 @@ public sealed class LeaveRequestServiceTests
             IsHalfDay = isHalfDay,
             HalfDaySession = session,
             Reason = "Test",
-            Attachments = attachments,
+            // ISSUE-036: ids of REAL uploaded rows, not file-name strings.
+            AttachmentIds = attachmentIds,
         };
+
+    /// <summary>
+    /// ISSUE-036: persists a real, already-uploaded (scanned) leave attachment owned by the test employee
+    /// and returns its id — the only thing that can now satisfy the AC-3 document requirement.
+    /// </summary>
+    private Guid SeedAttachment(Guid? ownerEmployeeId = null, Guid? tenantId = null)
+    {
+        using var db = CreateDbContext();
+        var id = BaseEntity.NewUuidV7();
+        db.LeaveRequestAttachments.Add(new LeaveRequestAttachment
+        {
+            Id = id,
+            TenantId = tenantId ?? _tenantId,
+            LeaveRequestId = null,
+            FileName = "cert.pdf",
+            ContentType = "application/pdf",
+            SizeBytes = 1024,
+            StorageKey = $"leaves/{ownerEmployeeId ?? _employeeId}/{id:N}.pdf",
+            IsScanned = true,
+            UploadedByEmployeeId = ownerEmployeeId ?? _employeeId,
+        });
+        db.SaveChanges();
+        return id;
+    }
 
     // ── Happy path + total days ────────────────────────────────────
 
@@ -290,17 +315,79 @@ public sealed class LeaveRequestServiceTests
         result.Error.Should().Contain("Medical certificate is required");
     }
 
+    // ISSUE-036: this arm used to pass `attachments: ["cert.pdf"]` — a bare string that had never been
+    // uploaded. It now seeds a REAL attachment row and passes its id, and additionally asserts the row is
+    // linked to the created request and its storage key lands in AttachmentUrls (the read path).
     [Fact]
     public async Task Create_SickLeaveAboveThreshold_WithAttachment_Succeeds()
+    {
+        var monday = NextMonday();
+        SeedBalance(_sickLeaveTypeId, monday.Year, 7m);
+        var attachmentId = SeedAttachment();
+
+        var svc = CreateService();
+        var result = await svc.CreateAsync(
+            Req(_sickLeaveTypeId, monday, monday.AddDays(3), attachmentIds: [attachmentId]));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+
+        using var verify = CreateDbContext();
+        var row = verify.LeaveRequestAttachments.Single(a => a.Id == attachmentId);
+        row.LeaveRequestId.Should().Be(result.Value!.Id, "the upload must be claimed by the new request");
+        result.Value.Attachments.Should().ContainSingle().Which.Should().Be(row.StorageKey);
+    }
+
+    // ISSUE-036 (the defect itself): a well-formed but UNREAL attachment id must not satisfy the
+    // medical-certificate gate. Before the fix any non-blank ".pdf" string counted.
+    [Fact]
+    public async Task Create_SickLeaveAboveThreshold_UnknownAttachmentId_Fails_ISSUE036()
     {
         var monday = NextMonday();
         SeedBalance(_sickLeaveTypeId, monday.Year, 7m);
 
         var svc = CreateService();
         var result = await svc.CreateAsync(
-            Req(_sickLeaveTypeId, monday, monday.AddDays(3), attachments: ["cert.pdf"]));
+            Req(_sickLeaveTypeId, monday, monday.AddDays(3), attachmentIds: [Guid.NewGuid()]));
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("attachment_not_found");
+    }
+
+    // ISSUE-036: an attachment uploaded by ANOTHER employee cannot be borrowed to satisfy the gate.
+    [Fact]
+    public async Task Create_AttachmentOwnedByAnotherEmployee_Fails_ISSUE036()
+    {
+        var monday = NextMonday();
+        SeedBalance(_sickLeaveTypeId, monday.Year, 7m);
+        var foreignAttachmentId = SeedAttachment(ownerEmployeeId: Guid.NewGuid());
+
+        var svc = CreateService();
+        var result = await svc.CreateAsync(
+            Req(_sickLeaveTypeId, monday, monday.AddDays(3), attachmentIds: [foreignAttachmentId]));
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("attachment_not_found");
+    }
+
+    // ISSUE-036: one certificate cannot be re-used for a second leave request.
+    [Fact]
+    public async Task Create_AttachmentAlreadyLinked_Fails_ISSUE036()
+    {
+        var monday = NextMonday();
+        SeedBalance(_sickLeaveTypeId, monday.Year, 7m);
+        var attachmentId = SeedAttachment();
+
+        var svc = CreateService();
+        var first = await svc.CreateAsync(
+            Req(_sickLeaveTypeId, monday, monday.AddDays(3), attachmentIds: [attachmentId]));
+        first.IsSuccess.Should().BeTrue(first.Error);
+
+        var second = await CreateService().CreateAsync(
+            Req(_sickLeaveTypeId, monday.AddDays(14), monday.AddDays(17), attachmentIds: [attachmentId]));
+
+        second.IsFailure.Should().BeTrue();
+        second.ErrorCode.Should().Be("attachment_not_found");
     }
 
     [Fact]

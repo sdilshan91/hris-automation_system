@@ -84,6 +84,7 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
     public DbSet<LeaveEntitlementOverride> LeaveEntitlementOverrides => Set<LeaveEntitlementOverride>();
     public DbSet<LeaveLedger> LeaveLedgerEntries => Set<LeaveLedger>();
     public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<LeaveRequestAttachment> LeaveRequestAttachments => Set<LeaveRequestAttachment>();
     public DbSet<LeaveApprovalHistory> LeaveApprovalHistories => Set<LeaveApprovalHistory>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<LeaveCarryForwardTracking> LeaveCarryForwardTrackings => Set<LeaveCarryForwardTracking>();
@@ -367,6 +368,12 @@ public sealed class AppDbContext : DbContext, IUnitOfWork, IDataProtectionKeyCon
         // US-LV-003: LeaveRequest tenant isolation + soft-delete filter
         modelBuilder.Entity<LeaveRequest>()
             .HasQueryFilter(lr => !lr.IsDeleted && (!_tenantContext.IsResolved || lr.TenantId == _tenantContext.TenantId));
+
+        // ISSUE-036: LeaveRequestAttachment tenant isolation + soft-delete filter. Critical — the create
+        // path resolves caller-supplied attachment ids through this DbSet, so the filter is what stops an
+        // id from another tenant ever resolving.
+        modelBuilder.Entity<LeaveRequestAttachment>()
+            .HasQueryFilter(a => !a.IsDeleted && (!_tenantContext.IsResolved || a.TenantId == _tenantContext.TenantId));
 
         // US-LV-005: LeaveApprovalHistory tenant isolation + soft-delete filter
         modelBuilder.Entity<LeaveApprovalHistory>()

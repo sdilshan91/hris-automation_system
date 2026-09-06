@@ -27,6 +27,7 @@ import { LeaveTypeService } from '../../services/leave-type.service';
 import { ILeaveType, getContrastTextColor } from '../../models/leave-type.models';
 import {
   ICreateLeaveRequest,
+  ILeaveAttachment,
   ILeaveBalance,
   ILeaveRequest,
   HALF_DAY_SESSION_OPTIONS,
@@ -302,11 +303,11 @@ function halfDayValidator(group: AbstractControl): ValidationErrors | null {
 
             @if (attachments().length > 0) {
               <ul class="mt-3 space-y-2">
-                @for (att of attachments(); track att; let i = $index) {
+                @for (att of attachments(); track att.id; let i = $index) {
                   <li class="flex items-center justify-between bg-neutral-50 rounded-lg px-3 py-2">
-                    <span class="text-sm text-neutral-700 truncate">{{ att }}</span>
+                    <span class="text-sm text-neutral-700 truncate">{{ att.fileName }}</span>
                     <button type="button" class="text-neutral-400 hover:text-red-600"
-                      (click)="removeAttachment(i)" [attr.aria-label]="'Remove ' + att">
+                      (click)="removeAttachment(i)" [attr.aria-label]="'Remove ' + att.fileName">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
                         class="w-4 h-4" aria-hidden="true">
                         <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/>
@@ -474,9 +475,19 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
   readonly isLoading = signal(true);
   readonly isSubmitting = signal(false);
 
-  // Drag-and-drop UI state. Attachments hold file names (URL upload DEFERRED).
+  // Drag-and-drop UI state.
   readonly dragActive = signal(false);
-  readonly attachments = signal<string[]>([]);
+
+  /**
+   * ISSUE-036: attachments that are actually UPLOADED and stored, not file names.
+   *
+   * This held `string[]` of `file.name` and nothing was ever sent — the panel above has always
+   * promised "PDF, JPG, PNG — up to 5MB each", and none of it was enforced anywhere. The server now
+   * checks the size, the MIME type AND the magic bytes against the real content, so the promise the
+   * UI already makes is finally true.
+   */
+  readonly attachments = signal<ILeaveAttachment[]>([]);
+  readonly isUploading = signal(false);
 
   /**
    * US-LV-011 (AC-1): the pending Loss-of-Pay confirmation. When non-null the LOP
@@ -636,11 +647,40 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
     input.value = '';
   }
 
+  /**
+   * Upload each picked file and keep the STORED attachment, not its name.
+   *
+   * Uploads happen here rather than on submit so the employee learns a file is too large or the wrong
+   * type while they are still looking at the picker — and so a rejected file never silently becomes a
+   * leave request that fails the document gate for a reason the user cannot see.
+   */
   private addFiles(files: FileList): void {
-    const names = Array.from(files).map((f) => f.name);
-    // Cap at 3 files total per constraints (§10).
-    const merged = [...this.attachments(), ...names].slice(0, 3);
-    this.attachments.set(merged);
+    // Cap at 3 files total per constraints (§10) — enforced before uploading, so an over-limit pick
+    // does not consume storage the server would then have to reject.
+    const room = 3 - this.attachments().length;
+    if (room <= 0) {
+      this.toastr.warning('A maximum of 3 attachments is allowed.');
+      return;
+    }
+
+    const picked = Array.from(files).slice(0, room);
+    this.isUploading.set(true);
+    let pending = picked.length;
+
+    for (const file of picked) {
+      this.leaveRequestService.uploadAttachment(file).subscribe({
+        next: (uploaded) => {
+          this.attachments.set([...this.attachments(), uploaded]);
+          if (--pending === 0) this.isUploading.set(false);
+        },
+        error: (err: HttpErrorResponse) => {
+          // Surface the SERVER's reason verbatim — "File exceeds the 5 MB limit." and the file-type
+          // rejections are the whole point of uploading, and a generic message would hide them.
+          this.toastr.error(err.error?.message ?? `Could not upload ${file.name}.`);
+          if (--pending === 0) this.isUploading.set(false);
+        },
+      });
+    }
   }
 
   removeAttachment(index: number): void {
@@ -715,7 +755,7 @@ export class LeaveApplicationComponent implements OnInit, OnDestroy {
       isHalfDay: raw.isHalfDay,
       halfDaySession: raw.isHalfDay ? (raw.halfDaySession || null) : null,
       reason: raw.reason,
-      attachments: this.attachments(),
+      attachmentIds: this.attachments().map((a) => a.id),
     };
   }
 

@@ -87,6 +87,7 @@ describe('LeaveApplicationComponent', () => {
     leaveRequestServiceSpy = jasmine.createSpyObj('LeaveRequestService', [
       'getMyBalances',
       'createLeaveRequest',
+      'uploadAttachment',
     ]);
     leaveRequestServiceSpy.getMyBalances.and.returnValue(of(balances));
     leaveRequestServiceSpy.createLeaveRequest.and.returnValue(of(createdRequest));
@@ -359,16 +360,58 @@ describe('LeaveApplicationComponent', () => {
     expect(toastrSpy.warning).toHaveBeenCalled();
   });
 
-  it('should manage attachments (add + remove)', () => {
+  // ISSUE-036: this asserted `attachments()` held the string 'cert.pdf' — the file NAME, never uploaded.
+  // That assertion pinned the defect: the backend's DocumentsRequired gate counted non-blank strings, so
+  // the literal "x.pdf" satisfied a medical-certificate requirement. Picking a file now UPLOADS it and
+  // keeps the stored attachment, so the arm asserts the id came back from the server.
+  it('uploads a picked file and keeps the STORED attachment, not its name', () => {
     fixture.detectChanges();
+
+    const uploaded = {
+      id: 'att-1',
+      fileName: 'cert.pdf',
+      contentType: 'application/pdf',
+      sizeBytes: 1024,
+      uploadedAt: '2026-09-06T00:00:00Z',
+    };
+    leaveRequestServiceSpy.uploadAttachment.and.returnValue(of(uploaded));
+
     const fileList = {
       0: new File(['a'], 'cert.pdf'),
       length: 1,
       item: () => null,
     } as unknown as FileList;
+
     component['addFiles'](fileList);
-    expect(component.attachments()).toEqual(['cert.pdf']);
+
+    expect(leaveRequestServiceSpy.uploadAttachment).toHaveBeenCalled();
+    expect(component.attachments()).toEqual([uploaded]);
+
     component.removeAttachment(0);
+    expect(component.attachments().length).toBe(0);
+  });
+
+  // ISSUE-036: a rejected upload must not silently become an attachment. Before, nothing could fail —
+  // a name was pushed into the array unconditionally — so the 5 MB cap and the type allow-list the UI
+  // has always advertised had no path to reach the user.
+  it('surfaces the server rejection and adds nothing when an upload fails', () => {
+    fixture.detectChanges();
+
+    leaveRequestServiceSpy.uploadAttachment.and.returnValue(
+      throwError(() => new HttpErrorResponse({
+        status: 400,
+        error: { message: 'File exceeds the 5 MB limit.' },
+      })),
+    );
+
+    const fileList = {
+      0: new File(['a'], 'huge.pdf'),
+      length: 1,
+      item: () => null,
+    } as unknown as FileList;
+
+    component['addFiles'](fileList);
+
     expect(component.attachments().length).toBe(0);
   });
 

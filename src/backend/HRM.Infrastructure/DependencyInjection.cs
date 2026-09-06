@@ -264,6 +264,12 @@ public static class DependencyInjection
         // Leave request service (US-LV-003)
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
 
+        // ISSUE-036 (US-LV-003 FR-5 / NFR-3): REAL leave supporting-document uploads. Kept SEPARATE from
+        // ILeaveRequestService so that service's constructor is untouched. Reuses the existing IFileStorage +
+        // IVirusScanner seams; the persisted attachment id is what CreateLeaveRequestRequest.AttachmentIds
+        // references, replacing the unverified file-name strings that used to satisfy DocumentsRequired.
+        services.AddScoped<ILeaveAttachmentService, LeaveAttachmentService>();
+
         // Leave balance dashboard read/aggregation service (US-LV-006)
         // ISSUE-305: the single reader of Tenant.FiscalYearStartMonth — injected by every service that
         // touches a LeaveLedger.LeaveYear label, so reads and writes cannot drift onto different bases.

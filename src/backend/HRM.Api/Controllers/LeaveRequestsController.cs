@@ -46,7 +46,7 @@ public sealed class LeaveRequestsController : ControllerBase
             request.IsHalfDay,
             request.HalfDaySession,
             request.Reason,
-            request.Attachments,
+            request.AttachmentIds,
             request.ConfirmLop);
 
         var result = await _mediator.Send(command, cancellationToken);
@@ -56,6 +56,36 @@ public sealed class LeaveRequestsController : ControllerBase
 
         return StatusCode(StatusCodes.Status201Created,
             ApiResponse<LeaveRequestDto>.Ok(result.Value!, "Leave request submitted."));
+    }
+
+    /// <summary>
+    /// POST /api/v1/leaves/attachments
+    /// Uploads ONE real supporting document (multipart) for the calling employee's leave application
+    /// (US-LV-003 FR-5 / NFR-3 / ISSUE-036). Returns the persisted attachment id, which the employee then
+    /// submits in <c>CreateLeaveRequestRequest.AttachmentIds</c>. PDF/JPG/PNG only, 5 MB max; the file is
+    /// magic-byte sniffed and virus-scanned before it is stored.
+    /// </summary>
+    [HttpPost("attachments")]
+    [RequirePermission("Leave.Apply")]
+    [ProducesResponseType(typeof(ApiResponse<LeaveAttachmentDto>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [RequestSizeLimit(6 * 1024 * 1024)] // Slightly above the 5MB cap for multipart overhead.
+    public async Task<IActionResult> UploadAttachment(IFormFile file, CancellationToken cancellationToken)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(ApiResponse.Fail("No file uploaded."));
+
+        await using var stream = file.OpenReadStream();
+        var result = await _mediator.Send(
+            new UploadLeaveAttachmentCommand(stream, file.FileName, file.ContentType, file.Length),
+            cancellationToken);
+
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!));
+
+        return StatusCode(StatusCodes.Status201Created,
+            ApiResponse<LeaveAttachmentDto>.Ok(result.Value!, "Attachment uploaded."));
     }
 
     /// <summary>
