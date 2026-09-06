@@ -160,9 +160,50 @@ export interface IAssignChecklistRequest {
   additionalTasks?: IChecklistTaskRequest[];
 }
 
-/** Modify request for an existing checklist instance (AC-4 / FR-5 / FR-6). */
+/**
+ * One task ADDED to an already-assigned checklist (BE `AdHocTaskRequest`).
+ *
+ * BUG-444: note `dueOffsetDays`, an integer offset from the assignment date — NOT the ISO `dueDate`
+ * that `IChecklistTaskRequest` carries. The assign and modify endpoints genuinely differ here, so
+ * reusing the assign-side task type for modify is not a shortcut, it is a wire mismatch.
+ */
+export interface IAdHocTaskRequest {
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  /** Required: the BE property is a non-nullable enum, so an explicit null is a 400, not a default. */
+  responsibleRole: ResponsibleRole;
+  responsibleUserId?: string | null;
+  dueOffsetDays: number;
+  isMandatory: boolean;
+  sortOrder: number;
+}
+
+/** One modification to an EXISTING task on an assigned checklist (BE `ModifyTaskRequest`). */
+export interface IModifyTaskChange {
+  taskInstanceId: string;
+  /** ISO date (yyyy-MM-dd); omit to leave the due date unchanged. */
+  newDueDate?: string | null;
+  /** True removes the task instance. */
+  remove: boolean;
+}
+
+/**
+ * Modify request for an existing checklist instance (AC-4 / FR-5 / FR-6).
+ *
+ * BUG-444: this previously declared a single `tasks` property, which the API does not bind at all.
+ * `ModifyChecklistRequest` binds `addTasks` and `taskChanges`, and the validator requires at least one
+ * of them to be non-empty — so `{tasks: [...]}` did not silently no-op, it produced a 400 reading
+ * "At least one task to add or change is required" on a request visibly full of tasks.
+ *
+ * The mismatch was total: no shared property name, and incompatible element shapes
+ * (`dueDate` ISO string vs `dueOffsetDays` int; no `taskInstanceId`/`remove` on the old type). No
+ * renaming would have rescued it. The backend shape is the tested, shipped truth — validator,
+ * command and integration tests all speak it — so the frontend type is corrected to match.
+ */
 export interface IModifyChecklistRequest {
-  tasks: IChecklistTaskRequest[];
+  addTasks: IAdHocTaskRequest[];
+  taskChanges: IModifyTaskChange[];
 }
 
 /** Status -> badge palette key for the chip (display-only). */

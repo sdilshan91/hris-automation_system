@@ -217,24 +217,41 @@ describe('OnboardingChecklistService', () => {
 
   // ─── modify (AC-4 / FR-5 / FR-6) ───────────────────────────
 
-  it('modify PUTs the instance endpoint with the task set', () => {
+  // BUG-444: this spec previously sent `{tasks: [...]}` — a shape the API does not bind — and
+  // asserted only the verb and credentials. It therefore passed against a stubbed server while the
+  // real endpoint answered 400 ("At least one task to add or change is required"), because
+  // ModifyChecklistRequest binds `addTasks`/`taskChanges` and the validator demands one be non-empty.
+  //
+  // HttpTestingController cannot catch a contract break on its own — it echoes whatever is sent. The
+  // only defence at this seam is asserting the BODY against the wire contract, which is what the
+  // added expectations below do. Verb-and-credentials assertions are what let this ship.
+  it('modify PUTs the instance endpoint with the wire-contract body', () => {
     let result: IAssignedChecklist | undefined;
     service
       .modify('ci-1', {
-        tasks: [
+        addTasks: [
           {
             title: 'Ad-hoc task',
-            dueDate: '2026-07-05',
+            responsibleRole: 'HR',
+            dueOffsetDays: 3,
             isMandatory: false,
             sortOrder: 0,
           },
         ],
+        taskChanges: [{ taskInstanceId: 'ti-9', newDueDate: '2026-07-05', remove: false }],
       })
       .subscribe((r) => (result = r));
 
     const req = httpMock.expectOne(`${base}/ci-1`);
     expect(req.request.method).toBe('PUT');
     expect(req.request.withCredentials).toBeTrue();
+
+    // The property names the backend actually binds — not a shape of our own invention.
+    expect(Object.keys(req.request.body).sort()).toEqual(['addTasks', 'taskChanges']);
+    expect(req.request.body.addTasks[0].dueOffsetDays).toBe(3);
+    expect(req.request.body.addTasks[0].dueDate).toBeUndefined();
+    expect(req.request.body.taskChanges[0].taskInstanceId).toBe('ti-9');
+
     req.flush(assigned());
 
     expect(result!.checklistInstanceId).toBe('ci-1');
