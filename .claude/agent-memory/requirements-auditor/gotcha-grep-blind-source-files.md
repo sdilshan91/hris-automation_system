@@ -1,12 +1,21 @@
 ---
 name: gotcha-grep-blind-source-files
-description: Three .cs files contain raw NUL bytes so grep/rg treat them as binary and skip them silently — any grep-based audit or semgrep scan of this repo has a blind spot
+description: RESOLVED 2026-09-06 — the two NUL-carrying .cs files are fixed and an architecture test now guards against regression; keep this note for the measurement method, which is still needed
 metadata:
   type: project
 ---
 
-Three C# source files in `src/backend` contain **literal NUL bytes**, which makes `file(1)` report
-them as `data`. `grep -r` / `rg` skip them **silently** (no "Binary file matches" line, just no
+✅ **FIXED 2026-09-06 (BUG-448).** Both files now use the `\0` escape, `file(1)` reports them as UTF-8
+text, and `SourceFileIsGreppableTests` fails the build if a literal NUL byte ever returns. The history
+below is kept because the *measurement method* is still needed, and because two of the heuristics this
+note previously recommended turned out to be wrong.
+
+**Confirmed impact at fix time:** `AuditAnonymizationService.cs` holds **2 executable
+`IgnoreQueryFilters()` call sites** (lines 40 and 48 — a third grep hit is a doc comment), and both were
+invisible to grep *and* to semgrep. The repo-wide executable total is therefore **267, not 265**.
+
+Historically, two C# source files in `src/backend` contained **literal NUL bytes**, which made `file(1)`
+report them as `data`. `grep -r` / `rg` skip them **silently** (no "Binary file matches" line, just no
 output and exit 1):
 
 - `src/backend/HRM.Infrastructure/Services/AuditAnonymizationService.cs` — **production code**.
@@ -27,8 +36,22 @@ trust `grep -r` alone. Cross-check with a Python/`find`-based walk that opens fi
 `errors='replace'`, or first run
 `find src/backend -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*' | xargs file | grep -v text`
 to list the blind spots. Detected 2026-09-02 while auditing the `IgnoreQueryFilters()` surface;
-verify the list before relying on it — and verify it BYTE-EXACTLY (`tr -d '\000' | cmp`), not with grep,
-which is the very tool that is blind here.
+verify the list before relying on it — and verify it BYTE-EXACTLY, not with grep, which is the very tool
+that is blind here.
+
+⚠ **The `file | grep -v text` heuristic above is WRONG in both directions — measured 2026-09-06.** It is
+the guard `BUG-448` itself recommended, and it produces three false positives on this repo:
+`EncryptingFileStorageTests.cs` (carries `0x03`/`0x04` in test data) and two EF migrations that merely
+have a UTF-8 BOM. **grep and ripgrep read all three perfectly well** — verified, not assumed:
+`grep -c Assert` on that test file returns 2, matching a byte-level count. Tool blindness tracks the
+**NUL byte specifically**, nothing else. Use a byte-level walk counting `b'\x00'`:
+
+```python
+n = open(path, 'rb').read().count(b'\x00')   # never decode to str — a decoding reader is as blind as grep
+```
+
+A guard that cries wolf three times is a guard someone switches off, which is why the shipped
+architecture test checks for NUL alone.
 
 ⚠ **Exclude `.claude/worktrees/*` when counting.** Those are full repo copies, so an unfiltered walk
 returns 6 paths for 2 unique files; partial de-duplication is how a "5" was reported on 2026-09-06. The
