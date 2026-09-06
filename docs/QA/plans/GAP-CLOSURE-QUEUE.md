@@ -344,7 +344,7 @@ Cheapest possible reduction, and it stops the ledger manufacturing phantom work.
 
 | item | re-rate | why |
 |---|---|---|
-| **`ISSUE-036`** | LOW → **HIGH** | The FE sends **filenames only**; no bytes are ever stored. A leave type requiring a medical certificate is satisfied by **any non-blank string** — a compliance control defeated by a string, with the bound test enshrining it. Fix is small: `IFileStorage` has 12+ adopters. |
+| **`ISSUE-036`** | LOW → **HIGH** | The FE sends **filenames only**; no bytes are ever stored. A leave type requiring a medical certificate is satisfied by **any non-blank string** — a compliance control defeated by a string, with the bound test enshrining it. **Sizing corrected 2026-09-06: M, not small.** The storage half ports cleanly from `SelfAssessmentAttachmentService`, but a BE-only fix breaks the leave-apply flow while the FE still sends filenames — three legs (upload endpoint · reference validation replacing the string check at `LeaveRequestService.cs:187` · FE file input) must land together. |
 | **`ENH-008`** | ENH → **MED** | Employee sees *"N of 5 allowed lates"* while deduction begins at **3**. They read green while pay is docked. One line — and the existing test asserts the wrong value, so correcting it will trip the test-integrity guard. That is a correction, not a weakening. |
 | **`ISSUE-367`** | LOW → **MED** | Renders *"in use by **0** active employees. Reassign them before deleting."* `affectedEmployeeCount` has zero backend occurrences; two specs mock the phantom field and keep it green. |
 | **`ISSUE-373`** | HIGH → **MED**, but split | "17 gaps" is **6 rows / 9 fields**. Keep one out: `trend:'Flat'` is hardcoded *and rendered* — **wrong data beats missing data.** |
