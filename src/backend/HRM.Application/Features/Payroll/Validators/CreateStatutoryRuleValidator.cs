@@ -110,8 +110,18 @@ public sealed class SocialSecurityInputValidator : AbstractValidator<SocialSecur
 {
     public SocialSecurityInputValidator()
     {
-        RuleFor(s => s.EmployeeRate).InclusiveBetween(0, 100).WithMessage("Employee rate must be between 0 and 100.");
-        RuleFor(s => s.EmployerRate).InclusiveBetween(0, 100).WithMessage("Employer rate must be between 0 and 100.");
+        // ISSUE-501: the rate columns are Postgres numeric(5,2) — a rate carrying more than 2 decimal
+        // places (e.g. 12.345) was silently rounded on insert, so the API returned success with a
+        // DIFFERENT contribution rate than the caller sent. Reject it instead (same idiom as the
+        // ISSUE-152 numeric(18,2) money contract). ignoreTrailingZeros so 12.30 and 12 stay valid.
+        RuleFor(s => s.EmployeeRate).InclusiveBetween(0, 100).WithMessage("Employee rate must be between 0 and 100.")
+            .PrecisionScale(5, 2, ignoreTrailingZeros: true)
+                .WithMessage("Employee rate cannot have more than 2 decimal places.")
+                .WithErrorCode("invalid_rate_scale");
+        RuleFor(s => s.EmployerRate).InclusiveBetween(0, 100).WithMessage("Employer rate must be between 0 and 100.")
+            .PrecisionScale(5, 2, ignoreTrailingZeros: true)
+                .WithMessage("Employer rate cannot have more than 2 decimal places.")
+                .WithErrorCode("invalid_rate_scale");
         RuleFor(s => s.WageCeilingAnnual)
             .GreaterThan(0).When(s => s.WageCeilingAnnual.HasValue)
             .WithMessage("Wage ceiling must be greater than 0 when supplied.");
