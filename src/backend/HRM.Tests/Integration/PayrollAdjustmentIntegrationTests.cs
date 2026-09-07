@@ -778,4 +778,76 @@ public sealed class PayrollAdjustmentIntegrationTests
         second.StatusCode.Should().Be(409);
         second.ErrorCode.Should().Be("adjustment_already_cancelled");
     }
+
+    // ── BUG-075: the supporting-document upload is content-sniffed (site 3 of 8) ─────────────────
+    // Before the fix this path trusted the client-declared content type entirely: any bytes whatsoever
+    // declared "application/pdf" with a .pdf name were stored. Note "image/jpg" — the non-standard string
+    // in AllowedContentTypes that blocked adoption until FileSignatureValidator gained the alias.
+
+    public static IEnumerable<object[]> DocumentTypes() => new[]
+    {
+        new object[] { "image/jpg", "scan.jpg" },     // the alias arm — proves the alias is wired
+        new object[] { "image/jpeg", "scan.jpeg" },
+        new object[] { "application/pdf", "receipt.pdf" },
+        new object[] { "image/png", "shot.png" },
+    };
+
+    [Theory]
+    [MemberData(nameof(DocumentTypes))]
+    public async Task SupportingDocument_DeclaredType_MatchingBytes_Uploads_BUG075(
+        string contentType, string fileName)
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var create = await mediator.Send(Bonus(emp, 1_000m, 6, 2026));
+        var adjId = create.Value!.Adjustment.Id;
+
+        // Real signature bytes for the declared type, plus a distinctive tail so a truncated upload is
+        // detectable: the sniffer reads the leading 16 bytes, so a missing rewind would lose them.
+        var bytes = HRM.Tests.Unit.Helpers.UploadTestBytes.Prefixed(
+            contentType, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D);
+
+        var upload = await mediator.Send(new UploadAdjustmentDocumentCommand(
+            adjId, new MemoryStream(bytes), fileName, contentType, bytes.Length));
+
+        upload.IsSuccess.Should().BeTrue(
+            "{0} bytes declared as {1} are genuine and must still be accepted", fileName, contentType);
+
+        // The sniff must leave the stream fully readable for IFileStorage: the stored blob is byte-identical
+        // to what was submitted, header included.
+        var download = await mediator.Send(new DownloadAdjustmentDocumentQuery(adjId));
+        download.IsSuccess.Should().BeTrue();
+        download.Value!.Content.Should().Equal(bytes,
+            "the content sniffer rewinds the stream, so the whole file — not a 16-byte-truncated tail — is stored");
+    }
+
+    [Theory]
+    [MemberData(nameof(DocumentTypes))]
+    public async Task SupportingDocument_DeclaredType_SpoofedBytes_Rejected_BUG075(
+        string contentType, string fileName)
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        var provider = Provider(_tenantA);
+        var mediator = provider.GetRequiredService<IMediator>();
+
+        var create = await mediator.Send(Bonus(emp, 1_000m, 6, 2026));
+        var adjId = create.Value!.Adjustment.Id;
+
+        // "MZ" — a Windows PE executable renamed to an allowed extension and declared as an allowed type.
+        var bytes = new byte[] { 0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00, 0x04, 0x00 };
+
+        var upload = await mediator.Send(new UploadAdjustmentDocumentCommand(
+            adjId, new MemoryStream(bytes), fileName, contentType, bytes.Length));
+
+        upload.IsFailure.Should().BeTrue("an MZ executable declared as {0} must not be stored", contentType);
+        upload.ErrorCode.Should().Be("invalid_file_type");
+        upload.StatusCode.Should().Be(400);
+
+        // Nothing was persisted against the adjustment.
+        var download = await mediator.Send(new DownloadAdjustmentDocumentQuery(adjId));
+        download.IsFailure.Should().BeTrue();
+        download.ErrorCode.Should().Be("document_not_found");
+    }
 }
