@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using HRM.Application.Common.Helpers;
@@ -8,8 +10,10 @@ using HRM.Application.Common.Models;
 using HRM.Application.Features.Performance.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Enums;
+using HRM.Infrastructure.Caching;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -32,31 +36,64 @@ namespace HRM.Infrastructure.Services;
 /// gets a team ranking instead of org-wide top/bottom performers (BR-3), and cannot pull another team's or
 /// the org's data through any method here.
 ///
-/// EXTENSION POINT (NFR-3/BR-4 — materialized views / Redis): these aggregates are computed LIVE on each
-/// request with tenant-scoped EF queries. A future story can introduce a performance_summary materialized
-/// view refreshed every 4 hours by Hangfire + a Redis read-through cache keyed by (tenantId, cycleId,
-/// filter-hash, scope) WITHOUT changing this service's public contract — the DTOs are the stable seam.
+/// CACHING (NFR-3/BR-4, ISSUE-129 — Redis read-through): the aggregates below cost ~9-12 sequential DB
+/// round trips for the overview and ~7 PER CYCLE for the trend (an N+1 over cycles), so
+/// <see cref="GetOverviewAsync"/> and <see cref="GetTrendAsync"/> now serve from an
+/// <see cref="IDistributedCache"/> (Redis in prod, the in-memory fallback otherwise) keyed by
+/// (tenantId, scope, cycle-id(s), filter-hash) — see <see cref="BuildCacheKey"/>. The cache is
+/// FAIL-OPEN (BUG-115): any read/write fault is logged and the aggregate is computed live.
+///
+/// <para>The <b>materialized view</b> half of NFR-3 is deliberately NOT built: a
+/// <c>performance_summary</c> matview is a physical cross-tenant artifact, which would move tenant
+/// isolation off the EF global query filter and onto a hand-written <c>WHERE tenant_id =</c> on every
+/// read — the exact class BUG-003 exploits — while Postgres RLS is still dormant.</para>
+///
+/// <para><b>Authorization is never cached.</b> <see cref="ResolveScopeAsync"/> runs on every call, before
+/// any cache lookup, and its resolved scope is folded into the key — so a Team-scoped manager and an
+/// Organization-scoped HR user can never read each other's entry, and neither can two managers with
+/// different direct reports (the key carries the restricted employee-id set, not just the scope kind).</para>
+///
+/// <para><b>Invalidation is TTL-only</b> (<see cref="CacheTtl"/> = 3 minutes, matching the
+/// <c>DashboardService</c> sibling). A review that lands is therefore visible on the dashboard within
+/// 3 minutes, not instantly. Explicit eviction is not implementable over
+/// <see cref="IDistributedCache"/> here: an entry's key hashes the READER's scope set, which a writer
+/// (review submit / goal update / cycle phase advance) does not know, so evicting the entries affected by
+/// one write would need prefix scanning or tag support that this abstraction does not expose — and
+/// reaching past it to <c>IConnectionMultiplexer</c> would break the no-Redis fallback.</para>
 /// </summary>
 public sealed class PerformanceDashboardService : IPerformanceDashboardService
 {
+    /// <summary>
+    /// ISSUE-129 read-through TTL. Matches the <c>DashboardService</c> sibling (3 min) rather than
+    /// <c>HrReportService</c>'s 10 min: this is a screen an HR lead actively watches during a calibration
+    /// session, so the observable staleness cost of a longer window is real.
+    /// </summary>
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(3);
+
+    private static readonly JsonSerializerOptions JsonOptions =
+        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
     private readonly IFileStorage _fileStorage;
     private readonly ILogger<PerformanceDashboardService> _logger;
+    private readonly IDistributedCache? _cache;
 
     public PerformanceDashboardService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IFileStorage fileStorage,
-        ILogger<PerformanceDashboardService> logger)
+        ILogger<PerformanceDashboardService> logger,
+        IDistributedCache? cache = null)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
         _fileStorage = fileStorage;
         _logger = logger;
+        _cache = cache;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -79,6 +116,15 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         if (cycle is null)
             return Result<PerformanceDashboardDto>.Failure(
                 "No appraisal cycle is available for this tenant.", 404, "no_cycle");
+
+        // ISSUE-129 read-through. The key is built from the RESOLVED cycle id, not filter.CycleId: when the
+        // caller passes no cycle the service reports on "the most recently started cycle", so keying on the
+        // null would pin the dashboard to whatever cycle was current when the entry was written. Resolving
+        // first costs 1 indexed query and makes a new cycle visible immediately instead of after the TTL.
+        var cacheKey = BuildCacheKey("overview", scope, [cycle.Id], filter);
+        var cachedOverview = await TryGetCachedAsync<PerformanceDashboardDto>(cacheKey, cancellationToken);
+        if (cachedOverview is not null)
+            return Result<PerformanceDashboardDto>.Success(cachedOverview);
 
         var population = await LoadPopulationAsync(cycle.Id, filter, scope, cancellationToken);
 
@@ -123,6 +169,7 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
             BottomPerformers = bottom,
         };
 
+        await SetCachedAsync(cacheKey, dto, cancellationToken);
         return Result<PerformanceDashboardDto>.Success(dto);
     }
 
@@ -219,6 +266,20 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
             .Select(c => new { c.Id, c.Name, c.StartDate, c.RatingScaleMax }) // ISSUE-379: +1 column, same query
             .ToListAsync(cancellationToken);
 
+        // ISSUE-129 read-through — this is the expensive path: the loop below runs LoadPopulationAsync (6-7
+        // queries) ONCE PER CYCLE. Keyed on the RESOLVED cycle ids rather than the requested `cycleIds`,
+        // because an empty request means "every cycle this tenant has" — so a newly created cycle changes the
+        // resolved set and therefore the key, instead of being invisible until the TTL lapses.
+        // `includeDepartmentSeries` is part of the key: it changes the payload shape, not just its size.
+        var cacheKey = BuildCacheKey(
+            includeDepartmentSeries ? "trend+dept" : "trend",
+            scope,
+            cycles.Select(c => c.Id).ToList(),
+            filter);
+        var cachedTrend = await TryGetCachedAsync<PerformanceTrendDto>(cacheKey, cancellationToken);
+        if (cachedTrend is not null)
+            return Result<PerformanceTrendDto>.Success(cachedTrend);
+
         var points = new List<CycleTrendPointDto>(cycles.Count);
         var deptSeriesAccum = new Dictionary<Guid, (string Name, List<CycleTrendPointDto> Points)>();
 
@@ -266,7 +327,7 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
             .OrderBy(s => s.DepartmentName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return Result<PerformanceTrendDto>.Success(new PerformanceTrendDto
+        var trendDto = new PerformanceTrendDto
         {
             // ISSUE-379: the chart needs one y-axis denominator, but a trend spans MULTIPLE cycles and each
             // carries its own RatingScaleMax. There is no single right answer, so this takes the MAXIMUM
@@ -277,7 +338,10 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
             Scope = scope.Kind.ToString(),
             Points = points,
             DepartmentSeries = deptSeries,
-        });
+        };
+
+        await SetCachedAsync(cacheKey, trendDto, cancellationToken);
+        return Result<PerformanceTrendDto>.Success(trendDto);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -446,6 +510,87 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
 
         return Result<DashboardScope>.Success(
             new DashboardScope(PerformanceDashboardScope.Team, reportIds.ToHashSet()));
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Read-through cache (ISSUE-129 / NFR-3)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Builds the tenant- AND scope-isolated cache key for one aggregate.
+    ///
+    /// <para>Shape: <c>{tenantPrefix}perfdash:{variant}:{sha256[..16]}</c>. The tenant segment comes from
+    /// <see cref="CacheTenantPrefix"/> — the repo's load-bearing tenant-isolation primitive — so it remains
+    /// correct once RLS moves the tenant id out of the SQL, and so the system / unresolved contexts land in
+    /// their own never-shared buckets instead of a real tenant's.</para>
+    ///
+    /// <para>The hash folds in the CALLER'S SCOPE, and does so as the resolved employee-id set rather than
+    /// merely the scope kind. That matters twice over: two managers both hold <c>Team</c> scope but see
+    /// different populations, so keying on the kind alone would let one manager read the other's team
+    /// aggregate — a cross-user leak INSIDE a tenant; and when a manager's direct reports change the key
+    /// changes with them, so a roster edit can never be served from a pre-edit entry.</para>
+    /// </summary>
+    private string BuildCacheKey(
+        string variant, DashboardScope scope, IReadOnlyList<Guid> cycleIds, PerformanceDashboardFilter filter)
+    {
+        var raw = string.Join('|',
+            ScopeKeyOf(scope),
+            string.Join(',', cycleIds.OrderBy(id => id)),
+            filter.DepartmentId?.ToString() ?? string.Empty,
+            filter.GradeId?.ToString() ?? string.Empty,
+            filter.EmploymentType?.ToLowerInvariant() ?? string.Empty,
+            filter.LocationId?.ToString() ?? string.Empty,
+            filter.TopBottomCount.ToString(CultureInfo.InvariantCulture),
+            filter.IncludeProbation ? "1" : "0");
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(raw)))[..16].ToLowerInvariant();
+        return $"{CacheTenantPrefix.For(_tenantContext)}perfdash:{variant}:{hash}";
+    }
+
+    /// <summary>
+    /// A stable key segment for a resolved scope. Organization scope carries no employee restriction and every
+    /// org-wide viewer sees the same population, so they legitimately share one bucket (<c>*</c>); Team scope
+    /// is pinned to the exact restricted id list, sorted because the source is an unordered set and an
+    /// enumeration-order-dependent key would randomly miss.
+    /// </summary>
+    private static string ScopeKeyOf(DashboardScope scope) =>
+        scope.RestrictEmployeeIds is null
+            ? $"{scope.Kind}:*"
+            : $"{scope.Kind}:{string.Join(',', scope.RestrictEmployeeIds.OrderBy(id => id))}";
+
+    private async Task<T?> TryGetCachedAsync<T>(string key, CancellationToken ct) where T : class
+    {
+        if (_cache is null)
+            return null;
+
+        try
+        {
+            var json = await _cache.GetStringAsync(key, ct);
+            return string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch (Exception ex)
+        {
+            // Fail-open (BUG-115): a cache outage degrades latency, never availability.
+            _logger.LogWarning(ex, "Performance dashboard cache read failed for {Key}; computing fresh.", key);
+            return null;
+        }
+    }
+
+    private async Task SetCachedAsync<T>(string key, T value, CancellationToken ct)
+    {
+        if (_cache is null)
+            return;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(value, JsonOptions);
+            await _cache.SetStringAsync(key, json,
+                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = CacheTtl }, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Performance dashboard cache write failed for {Key}.", key);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════
