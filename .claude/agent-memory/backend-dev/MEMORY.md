@@ -48,3 +48,4 @@
 - [Statutory-rule normalization + rate precision](reference-statutory-rule-normalization-precision.md) — country_code compare asymmetry (write/index/precheck/resolver), numeric(5,2) rate scale; the InMemory statutory "pipeline" runs NO validators
 - [Review-signoff agreed actions are API-only](reference-review-signoff-agreed-actions.md) — FE keeps actions inside the notes BODY; the innerHTML sink renders Body, not the action rows (ISSUE-121 premise fix)
 - [Recommendation/performance write audits (ISSUE-149a)](reference-recommendation-write-audit.md) — PayrollAuditAction is the shared catalog; staged Log() for writes, LogAndSaveAsync for reads; comp figures never enter audit_log
+- [Entitlement recalc enqueue seam (ENH-001)](reference-entitlement-recalc-enqueue.md) — 5 sites via one helper; after-SaveChanges; one job per BATCH; overrides carry their own LeaveYear; bulk is non-atomic

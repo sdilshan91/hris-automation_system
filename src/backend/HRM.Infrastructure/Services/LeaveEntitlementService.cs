@@ -152,14 +152,7 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         // BUG-118 (AC-5): a rule edit must recalculate affected employees' balances. Enqueue a tenant-scoped
         // recalc for the current leave year + this rule's leave type, so already-accrued employees get an
         // Adjusted ledger delta to the new entitlement (the recalc is idempotent, so a no-op edit writes none).
-        var leaveYear = await _leaveYearResolver.LabelForAsync(
-            DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
-        var jobId = _recalcScheduler?.Enqueue(
-            _tenantContext.TenantId, _tenantContext.Subdomain, leaveYear, rule.LeaveTypeId);
-        if (jobId is not null)
-            _logger.LogInformation(
-                "Enqueued entitlement recalc job {JobId} for rule {RuleId}, leaveType {LeaveTypeId}, year {LeaveYear}.",
-                jobId, rule.Id, rule.LeaveTypeId, leaveYear);
+        await EnqueueRecalcAsync(rule.LeaveTypeId, leaveYear: null, $"updated rule {rule.Id}", cancellationToken);
 
         return Result<LeaveEntitlementRuleDto>.Success(await ToRuleDtoAsync(rule, cancellationToken));
     }
@@ -188,6 +181,11 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         _logger.LogInformation(
             "Soft-deleted leave entitlement rule {RuleId} in tenant {TenantId}",
             ruleId, _tenantContext.TenantId);
+
+        // BUG-118 (AC-5) / ENH-001: a rule DELETE changes effective entitlement exactly as an edit does —
+        // employees already accrued against it must fall back to the next-priority rule (or the leave type
+        // default) now, not at the next 02:30 LeaveEntitlementReconcileJob sweep.
+        await EnqueueRecalcAsync(rule.LeaveTypeId, leaveYear: null, $"deleted rule {rule.Id}", cancellationToken);
 
         return Result.Success();
     }
@@ -253,7 +251,56 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
             results.Add(result.Value!);
         }
 
+        // BUG-118 (AC-5) / ENH-001: ONE enqueue for the whole batch, never one per rule. The recalc is
+        // idempotent and scoped by (leave year, leave type) — not by rule id — so N jobs would each redo the
+        // same work; a 200-row bulk import would flood Hangfire with 200 duplicate sweeps for no extra
+        // correctness. Scope it to the single leave type when the batch is homogeneous, else null = every
+        // leave type in the tenant. An empty batch mutated nothing, so it enqueues nothing.
+        if (results.Count > 0)
+        {
+            var batchLeaveTypes = results.Select(r => r.LeaveTypeId).Distinct().ToList();
+            await EnqueueRecalcAsync(
+                batchLeaveTypes.Count == 1 ? batchLeaveTypes[0] : null,
+                leaveYear: null,
+                $"bulk create of {results.Count} rule(s)",
+                cancellationToken);
+        }
+
         return Result<IReadOnlyList<LeaveEntitlementRuleDto>>.Success(results);
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Recalc scheduling (BUG-118 AC-5 / ENH-001)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// BUG-118 (AC-5) / ENH-001: enqueues a tenant-scoped entitlement recalculation after a mutation that
+    /// changes effective entitlement, so already-accrued employees get their Adjusted ledger delta
+    /// immediately instead of waiting up to 24h for the nightly <c>LeaveEntitlementReconcileJob</c> sweep.
+    /// <para>ALWAYS call this AFTER <c>SaveChangesAsync</c> — the Hangfire worker restores its own tenant
+    /// scope and re-reads from the database, so enqueuing before the commit would race a job against
+    /// uncommitted state. None of the callers run inside an ambient transaction, so there is no rollback
+    /// that could leave a job scheduled for a change that never happened.</para>
+    /// <para><paramref name="leaveYear"/> is null for rule mutations (rules are not year-scoped → resolve
+    /// the tenant's current leave year) and explicit for override mutations, which carry their own year.
+    /// A null <paramref name="leaveTypeId"/> means "every leave type in the tenant".</para>
+    /// <para>The scheduler is optional (unit tests / non-Hangfire hosts), so a null one is a silent no-op —
+    /// the nightly reconcile job remains the safety net.</para>
+    /// </summary>
+    private async Task EnqueueRecalcAsync(
+        Guid? leaveTypeId,
+        int? leaveYear,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var year = leaveYear ?? await _leaveYearResolver.LabelForAsync(
+            DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+        var jobId = _recalcScheduler?.Enqueue(
+            _tenantContext.TenantId, _tenantContext.Subdomain, year, leaveTypeId);
+        if (jobId is not null)
+            _logger.LogInformation(
+                "Enqueued entitlement recalc job {JobId} for {RecalcReason}, leaveType {LeaveTypeId}, year {LeaveYear}.",
+                jobId, reason, leaveTypeId, year);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -320,6 +367,12 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
             "Upserted leave entitlement override for employee {EmployeeId}, leave type {LeaveTypeId}, year {Year} in tenant {TenantId}",
             request.EmployeeId, request.LeaveTypeId, request.LeaveYear, _tenantContext.TenantId);
 
+        // BUG-118 (AC-5) / ENH-001: an override outranks every rule, so writing one changes this employee's
+        // effective entitlement immediately. Scoped to the override's OWN leave year (overrides are
+        // year-specific — back-dating one to a closed year must recalculate that year, not the current one).
+        await EnqueueRecalcAsync(existing.LeaveTypeId, existing.LeaveYear,
+            $"upserted override {existing.Id}", cancellationToken);
+
         return Result<LeaveEntitlementOverrideDto>.Success(new LeaveEntitlementOverrideDto
         {
             Id = existing.Id,
@@ -358,6 +411,12 @@ public sealed class LeaveEntitlementService : ILeaveEntitlementService
         _logger.LogInformation(
             "Soft-deleted leave entitlement override {OverrideId} in tenant {TenantId}",
             overrideId, _tenantContext.TenantId);
+
+        // BUG-118 (AC-5) / ENH-001: removing an override drops the employee back to the rule/default
+        // entitlement — the same effective-entitlement change as writing one, so it needs the same recalc,
+        // scoped to the deleted override's own leave year.
+        await EnqueueRecalcAsync(entity.LeaveTypeId, entity.LeaveYear,
+            $"deleted override {entity.Id}", cancellationToken);
 
         return Result.Success();
     }
