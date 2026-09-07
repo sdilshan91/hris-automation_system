@@ -454,6 +454,25 @@ the bulk of T4's value.
 **Still needing a decision before any code:** `ENH-010`(2), `ENH-012`(b), `ENH-013`(a), `ENH-018`,
 `ISSUE-116`, `ISSUE-129`, `ISSUE-144(b)`/`ISSUE-149(b)`, `BUG-075` site 3, and `ISSUE-150` (rewrite).
 
+### ▶ RE-SORT 2026-09-07 — `BUG-533` enters at the top of the fix queue
+
+`BUG-533` (**HIGH**) is a **server-side authorization bypass** found while re-verifying `ISSUE-150`
+for a ledger rewrite. The recommendation workspace returns unmasked bonus/increment figures to
+**HR Officer** (whole org) and to **any line manager** (their direct reports) — two personas the
+permission model **deliberately** denies `Payroll.ViewCompensation`. Reachable by a normal
+authenticated GET on a documented endpoint, no crafted input. Not a tenant-isolation break; a
+separation-of-duties break inside the tenant.
+
+Per Engineering-Discipline #6, a HIGH out-of-lane finding re-orders the queue on the spot. **It
+outranks every remaining T4 residual and the P3 traceability tier**, and should be worked before
+`ISSUE-527`/`ISSUE-528` and before the `ENH-018` capture story.
+
+**Why it sat unseen:** `ISSUE-150` asserted *"no security exposure today because there is no real
+compensation data flowing through recommendations… LOW (traceability, not a live defect)."* The
+premise was false. This is the third instance this session of the P1.4 pattern — **a record that
+reports safety it does not provide is worse than no record, because it stops anyone looking.**
+`ISSUE-486`, `ISSUE-492`, and now a finding's own severity rationale.
+
 ### T4 residual — the four decided-parked items, sized 2026-09-07
 
 Asked whether the four remaining decided-parked items could still be delivered inside T4. Each was sized
