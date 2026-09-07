@@ -1,5 +1,5 @@
 -- Per-module VOLUME seed for the `perf` throwaway tenant (on top of seed-perf-tenant.sql 5k employees).
--- Unblocks the leave/attendance/recruitment/audit perf TCs. THROWAWAY ONLY — teardown drops with the tenant.
+-- Unblocks the leave/attendance/recruitment/audit/performance perf TCs. THROWAWAY ONLY — teardown drops with the tenant.
 -- Safety: every INSERT is scoped to :perf_tid. Never touches acme/techoneglobal.
 -- Run: psql ... -v perf_tid="'11111111-2222-3333-4444-555555555555'" -f perf-volume-seed.sql
 \set ON_ERROR_STOP on
@@ -15,6 +15,11 @@ DELETE FROM applicant_stage_history WHERE tenant_id = :perf_tid;
 DELETE FROM applicant      WHERE tenant_id = :perf_tid;
 DELETE FROM vacancy        WHERE tenant_id = :perf_tid;
 DELETE FROM audit_logs     WHERE tenant_id = :perf_tid;
+DELETE FROM goal              WHERE tenant_id = :perf_tid;
+DELETE FROM manager_review    WHERE tenant_id = :perf_tid;
+DELETE FROM self_assessment   WHERE tenant_id = :perf_tid;
+DELETE FROM cycle_participant WHERE tenant_id = :perf_tid;
+DELETE FROM appraisal_cycle   WHERE tenant_id = :perf_tid;
 
 -- ============ WS-A: LEAVE ============
 -- copy acme's leave_types into perf (new ids)
@@ -120,6 +125,141 @@ SELECT gen_random_uuid(), :perf_tid,
   false
 FROM generate_series(1,50000) g;
 
+-- ============ WS-D: PERFORMANCE (appraisal cycles / reviews / self-assessments / goals) ============
+-- ENH-013(b). Unblocks the performance-dashboard NFR-1 perf TCs, which previously had ZERO rows at volume.
+--
+-- VOLUME SHAPE — why 5 cycles and not 1:
+--   The dashboard has two structurally different read paths and one cycle only exercises one of them.
+--     * overview / department drill-down / export resolve exactly ONE cycle
+--       (ResolveCycleAsync = the cycle with the greatest start_date, ignoring status and type), so they
+--       are sized by employees-per-cycle.
+--     * trend takes `cycleIds` and, when that is OMITTED (the default the dashboard actually issues),
+--       trends ALL non-probation cycles by running the whole LoadPopulationAsync pipeline once PER CYCLE
+--       in a foreach. Its cost is therefore ~(population work) x (cycle count) — an N+1 over cycles.
+--   With a single cycle that loop runs once and trend measures nothing that overview did not already
+--   measure. So: 4 non-probation cycles, each carrying reviews for ALL 5000 employees, which makes the
+--   default trend request do four full 5k population passes. Seeding historical cycles with a token
+--   sample instead would make trend look cheap for the wrong reason — the endpoint would be fast because
+--   the fixture was small, not because the query is good.
+--
+-- TRAP — the probation cycle is deliberately dated BEFORE the current one:
+--   ResolveCycleAsync picks max(start_date) with no regard for type or status. A probation cycle dated
+--   after FY2026 would become the DEFAULT cycle for overview/export, and because `includeProbation`
+--   defaults to false the population resolves to EMPTY — a fast, green, completely meaningless 200.
+--   PRF-CYC-05 therefore starts 2025-07-01, behind PRF-CYC-04 (2026-01-01). Do not re-date it forward.
+--
+-- Other deliberate choices:
+--   * cycle_participant IS populated. AppraisalCycleService materializes participant rows when a cycle is
+--     created, so an empty table would silently send the dashboard down the "no participants => every
+--     active employee" fallback branch that a real cycle never takes.
+--   * only Submitted manager_reviews contribute a score, so the current cycle is 70% Submitted / 30% Draft:
+--     the completion counters and the Submitted-only score filter both have to do real work. Closed
+--     historical cycles are 100% Submitted.
+--   * scores fan out across the whole 1..5 rating scale (histogram buckets are all non-empty) and drift
+--     +0.1 per cycle, so the trend line moves — a flat line cannot distinguish "computed" from "constant".
+--   * is_calibration_enabled = false on every cycle: the overview only touches rating_calibration when it
+--     is on, and that table is out of scope here. Turn it on only alongside a rating_calibration seed.
+--   * fixed literal cycle ids (not gen_random_uuid()) so k6 scripts and TCs can pin `cycleId`/`cycleIds`
+--     across re-runs.
+
+-- cycle definition table drives every insert below: k = ordinal, pop = employees enrolled.
+CREATE TEMP TABLE _prf_cycle ON COMMIT DROP AS
+SELECT * FROM (VALUES
+  ('5f000000-0000-4000-8000-0000000000d1'::uuid, 1, 'FY2023 Annual Review',  'Completed', 'Annual',    date '2023-01-01', date '2023-12-31', 5000, 100),
+  ('5f000000-0000-4000-8000-0000000000d2'::uuid, 2, 'FY2024 Annual Review',  'Completed', 'Annual',    date '2024-01-01', date '2024-12-31', 5000, 100),
+  ('5f000000-0000-4000-8000-0000000000d3'::uuid, 3, 'FY2025 Annual Review',  'Closed',    'Annual',    date '2025-01-01', date '2025-12-31', 5000, 100),
+  ('5f000000-0000-4000-8000-0000000000d5'::uuid, 4, 'H2-2025 Probation',     'Closed',    'Probation', date '2025-07-01', date '2025-09-30',  300, 100),
+  ('5f000000-0000-4000-8000-0000000000d4'::uuid, 5, 'FY2026 Annual Review',  'Active',    'Annual',    date '2026-01-01', date '2026-12-31', 5000,  70)
+) v(cycle_id, k, cname, cstatus, ctype, sdate, edate, pop, submitted_pct);
+
+INSERT INTO appraisal_cycle (id, name, status, type, participant_scope, start_date, end_date,
+  goal_setting_start, goal_setting_end, self_assessment_start, self_assessment_end,
+  manager_review_start, manager_review_end, rating_scale_max, self_weight_percent,
+  is360enabled, is_anonymous_feedback, is_calibration_enabled, min360peer_reviewers,
+  signoff_auto_close_days, scope_department_ids, ratings_published_on,
+  tenant_id, created_at, is_deleted)
+SELECT c.cycle_id, c.cname, c.cstatus, c.ctype, 'AllEmployees',
+  c.sdate::timestamptz, c.edate::timestamptz,
+  c.sdate::timestamptz,                          (c.sdate + 30)::timestamptz,
+  (c.edate - 60)::timestamptz,                   (c.edate - 30)::timestamptz,
+  (c.edate - 30)::timestamptz,                   c.edate::timestamptz,
+  5, 30, false, false, false, 2, 7, '[]'::jsonb,
+  CASE WHEN c.cstatus IN ('Closed','Completed') THEN c.edate::timestamptz END,
+  :perf_tid, now(), false
+FROM _prf_cycle c;
+
+-- employees enrolled per cycle: the first `pop` by employee_no. g is reused by every insert below so a
+-- given employee gets the same deterministic score/status across re-runs.
+CREATE TEMP TABLE _prf_pop ON COMMIT DROP AS
+SELECT c.cycle_id, c.k, c.sdate, c.edate, c.submitted_pct, e.id AS employee_id, e.g
+FROM _prf_cycle c
+JOIN (SELECT id, row_number() OVER (ORDER BY employee_no) g FROM employees WHERE tenant_id = :perf_tid) e
+  ON e.g <= c.pop;
+
+-- cycle_participant: 1 row per (cycle, employee). Satisfies ix_cycle_participant_tenant_id_cycle_id_employee_id.
+INSERT INTO cycle_participant (id, cycle_id, employee_id, tenant_id, created_at, is_deleted)
+SELECT gen_random_uuid(), p.cycle_id, p.employee_id, :perf_tid, now(), false FROM _prf_pop p;
+
+-- self_assessment: 1 row per (cycle, employee). weighted_self_score spans the 1..5 scale.
+INSERT INTO self_assessment (id, cycle_id, employee_id, status, weighted_self_score, submitted_at,
+  tenant_id, created_at, is_deleted)
+SELECT gen_random_uuid(), p.cycle_id, p.employee_id,
+  CASE WHEN (p.g % 100) < p.submitted_pct THEN 'Submitted' ELSE 'Draft' END,
+  CASE WHEN (p.g % 100) < p.submitted_pct
+       THEN round((1.0 + ((p.g * 11 + p.k * 5) % 41) / 10.0)::numeric, 2) END,
+  CASE WHEN (p.g % 100) < p.submitted_pct THEN (p.edate - 45)::timestamptz END,
+  :perf_tid, now(), false
+FROM _prf_pop p;
+
+-- manager_review: 1 row per (cycle, employee) — satisfies the partial UNIQUE
+-- ix_manager_review_tenant_id_cycle_id_employee_id (tenant_id, cycle_id, employee_id) WHERE is_deleted=false.
+-- Only Submitted rows carry scores; Draft rows leave every score column NULL, which is what the
+-- dashboard's completion counters are supposed to notice.
+-- reviewer_employee_id has no FK but is pointed at a real employee anyway (first employee of the same
+-- department) so team-scope queries resolve against live rows.
+INSERT INTO manager_review (id, cycle_id, employee_id, reviewer_employee_id, status,
+  weighted_manager_score, final_score, self_score_at_submit, summary_comment, flag, submitted_at,
+  is_locked, signoff_status, tenant_id, created_at, is_deleted)
+SELECT gen_random_uuid(), p.cycle_id, p.employee_id, r.reviewer_id,
+  CASE WHEN sub.is_sub THEN 'Submitted' ELSE 'Draft' END,
+  CASE WHEN sub.is_sub THEN sc.mgr END,
+  CASE WHEN sub.is_sub THEN round(sc.mgr * 0.70 + sc.slf * 0.30, 2) END,
+  CASE WHEN sub.is_sub THEN sc.slf END,
+  CASE WHEN sub.is_sub THEN 'seed manager review' END,
+  (ARRAY['None','None','None','None','None','None','None','Recognition','Promotion','Pip'])[1 + (p.g % 10)],
+  CASE WHEN sub.is_sub THEN (p.edate - 15)::timestamptz END,
+  sub.is_sub AND p.k <= 4,
+  CASE WHEN NOT sub.is_sub THEN 'NotStarted'
+       WHEN p.k <= 4 THEN 'SignedOff'
+       ELSE (ARRAY['NotStarted','NotesAdded','PendingEmployeeSignOff','SignedOff'])[1 + (p.g % 4)] END,
+  :perf_tid, now(), false
+FROM _prf_pop p
+CROSS JOIN LATERAL (SELECT ((p.g % 100) < p.submitted_pct) AS is_sub) sub
+CROSS JOIN LATERAL (SELECT
+    least(5.0, round((1.0 + ((p.g * 13 + p.k * 7) % 41) / 10.0 + p.k * 0.1)::numeric, 2)) AS mgr,
+    round((1.0 + ((p.g * 11 + p.k * 5) % 41) / 10.0)::numeric, 2) AS slf) sc
+LEFT JOIN LATERAL (
+  SELECT m.id AS reviewer_id FROM employees m
+  WHERE m.tenant_id = :perf_tid
+    AND m.department_id = (SELECT department_id FROM employees WHERE id = p.employee_id)
+  ORDER BY m.employee_no LIMIT 1
+) r ON true;
+
+-- goal: 3 per (cycle, employee), weights 40/30/30 = 100. No unique index on goal, so no collision risk.
+INSERT INTO goal (id, cycle_id, employee_id, title, description, category, weight, target_value,
+  measurement_unit, due_date, parent_goal_id, status, tenant_id, created_at, is_deleted)
+SELECT gen_random_uuid(), p.cycle_id, p.employee_id,
+  'Perf goal ' || n || ' / C' || p.k, 'seed goal',
+  (ARRAY['Kpi','Competency','Project'])[n],
+  (ARRAY[40,30,30])[n],
+  (10 * n + (p.g % 90))::text, (ARRAY['Percent','Count','Score'])[n],
+  p.edate - 30, NULL,
+  CASE WHEN p.k <= 4 THEN 'Finalized'
+       ELSE (ARRAY['Draft','Submitted','Acknowledged','Finalized'])[1 + (p.g % 4)] END,
+  :perf_tid, now(), false
+FROM _prf_pop p CROSS JOIN generate_series(1,3) n;
+
+
 COMMIT;
 
 SELECT 'leave_types', count(*) FROM leave_types WHERE tenant_id=:perf_tid
@@ -129,4 +269,9 @@ UNION ALL SELECT 'attendance_log', count(*) FROM attendance_log WHERE tenant_id=
 UNION ALL SELECT 'shift', count(*) FROM shift WHERE tenant_id=:perf_tid
 UNION ALL SELECT 'vacancy', count(*) FROM vacancy WHERE tenant_id=:perf_tid
 UNION ALL SELECT 'applicant', count(*) FROM applicant WHERE tenant_id=:perf_tid
-UNION ALL SELECT 'audit_logs', count(*) FROM audit_logs WHERE tenant_id=:perf_tid;
+UNION ALL SELECT 'audit_logs', count(*) FROM audit_logs WHERE tenant_id=:perf_tid
+UNION ALL SELECT 'appraisal_cycle', count(*) FROM appraisal_cycle WHERE tenant_id=:perf_tid
+UNION ALL SELECT 'cycle_participant', count(*) FROM cycle_participant WHERE tenant_id=:perf_tid
+UNION ALL SELECT 'self_assessment', count(*) FROM self_assessment WHERE tenant_id=:perf_tid
+UNION ALL SELECT 'manager_review', count(*) FROM manager_review WHERE tenant_id=:perf_tid
+UNION ALL SELECT 'goal', count(*) FROM goal WHERE tenant_id=:perf_tid;

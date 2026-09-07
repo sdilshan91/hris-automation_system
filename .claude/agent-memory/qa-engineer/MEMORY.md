@@ -21,3 +21,6 @@
 - [Isolation arm must be falsified](project_isolation-arm-must-be-falsified.md) — policy-existence != separation; 2 layers (EF filter + real RLS class), 4 vacuity guards, mutate-then-sha256sum-revert
 - [Route drift is not a prefix fix](feedback_route-drift-is-not-a-prefix-fix.md) — map stale TC paths by step INTENT; a naive prefix insert still 404s, and in an ISO TC that 404 is a fake pass
 - [exec_note 404s may be mis-triaged](project_exec-note-404-may-be-mis-triaged.md) — 4 blocked PRF TCs blame seed data for a 404 on a route that does not exist; verify the path first
+- [Perf harness rate-limit ceiling](project_perf-harness-rate-limit-ceiling.md) — global 300 req/min per (tenant,user); >5 req/s measures 429s and fakes a GREEN p95
+- [Perf volume seed conventions](project_perf-volume-seed-conventions.md) — WS-A..WS-D layout, the undeclared `acme` dependency, and the probation-cycle date trap
+- [Check stale container before blaming code](feedback_stale-container-before-blaming-code.md) — image 98 commits old explained a "defect" in code merged an hour earlier
