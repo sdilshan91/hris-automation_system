@@ -45,12 +45,17 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    *(As of 2026-08-22 `backend-dev`, `frontend-dev`, `qa-engineer`, `business-analyst` and
    `requirements-auditor` hold the `Agent` tool and can actually do this. The remaining agents
    deliberately cannot — narrow single-pass audits where fan-out adds cost, not coverage.)*
-   *Parallelism — default to it.* Where a task splits into independent lanes, run them
-   **concurrently** (multiple `Agent` calls in one message) rather than serially; serial
-   execution of independent work is a choice you should have to justify. The two hard
-   limits stand: **never parallelize dependent steps** (where one's output feeds the next)
-   **or concurrent writes to the same file** (use `isolation: worktree` if parallel edits
-   are unavoidable).
+   *Parallelism — default to it for READS.* Where **read-only** work splits into independent
+   lanes — searches, audits, requirement tracing, sizing, "how does X work" — run them
+   **concurrently** (multiple `Agent` calls in one message); serial execution of independent
+   reads is a choice you should have to justify. This is where the leverage is: on 2026-09-07
+   parallel read-only audits produced nearly every HIGH finding of the day.
+   *Writes are SERIAL* (rule #9, decided 2026-09-07): one checkout, one branch, merge before
+   the next item. Two agents writing one checkout corrupt each other, and `isolation: worktree`
+   — the old escape hatch — is now a **narrow carve-out**, not a default: allowed only when two
+   agents must genuinely write **disjoint, nameable** paths at once, and removed the same session.
+   The two hard limits stand regardless: **never parallelize dependent steps** (where one's
+   output feeds the next) **or concurrent writes to the same file**.
 6. **Auto-heal: never silently drop an out-of-lane discovery.** Work constantly surfaces
    things outside the current task's lane — a new bug, an adjacent-module dependency, a
    broken sibling test, a missing endpoint the FE already calls, a licensing/infra snag.
@@ -113,13 +118,30 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    as a `DECISION` finding, park that item at the decision-gate, and **continue with the
    next unblocked item**. Never halt the whole queue over one ambiguity, and never resolve
    it by quietly guessing — report every parked question in the turn summary.
-9. **One session, one worktree, one branch.** Concurrent Claude sessions on this repo must
-   not share a working tree. Each takes its **own git worktree on its own branch**
-   (`isolation: worktree` for sub-agents) and rebases on fresh `origin/main` before opening
-   a PR. For the shared ledgers — `STATUS.md`, `TEST-STATUS.md`, `TEST-FINDINGS.md`,
-   `GAP-CLOSURE-QUEUE.md`, `COMPLETION-PLAN.md` — **re-read immediately before every write**: another session may
-   have appended since you last looked, and writing back a copy you cached earlier in the
-   turn silently deletes their work.
+9. **One checkout, one branch at a time — branches, not worktrees (decided 2026-09-07).**
+   Work sequentially in the **single main checkout**: `git switch -c fix/{ID}` → build → PR →
+   **merge** → next. Do **not** create `.claude/worktrees/*` for ordinary work.
+   *Why the change:* worktrees were never the cause of the merge conflicts — of 15 `DIRTY`
+   events in one day, only **2** were real textual conflicts (two PRs editing the same test
+   file); the other 13 were staleness that rebased clean. But 61 worktrees reached **22 GB**
+   and drove the disk to 88%, and **48 of them were dead** — merged branches never cleaned up.
+   The real driver of the conflict cascade is **open-PR count**: rebases scale as
+   *(open PRs × merges)*, so nine open PRs turn one merge into nine rebases and nine CI re-runs.
+   Branch-only is chosen because it **forces serialisation**, and serialisation is what collapses
+   that product — not because worktrees were at fault.
+   **Merge before starting the next item.** One or two PRs in flight, never nine.
+   *The cost, stated plainly:* **no parallel WRITING sub-agents** — two agents writing one
+   checkout corrupt each other. This narrows rule #5, it does not delete it: **read-only fan-out
+   stays parallel and stays encouraged** (`Explore`, audits, research, `@test-authenticator`,
+   `@integration-enforcer`, `@requirements-auditor` — none of them write). On 2026-09-07 the
+   read-only audits produced almost every HIGH; that value is preserved.
+   *Narrow carve-out:* a worktree is still allowed when two agents genuinely must **write**
+   disjoint paths at once. It is then **removed the same session** — `git worktree remove` on
+   merge, not "later". If you cannot say which files each agent owns, you do not need a worktree.
+   Concurrent Claude sessions still take their own branch; re-read the shared ledgers
+   (`STATUS.md`, `TEST-STATUS.md`, `TEST-FINDINGS.md`, `GAP-CLOSURE-QUEUE.md`) immediately
+   before every write — another session may have appended since you last looked.
+
 10. **Keep open PRs mergeable — the merge queue is the mechanism.** Six concurrent PRs
    produced six cascading conflicts in one session (2026-09-02/03); **every one was in a
    ledger/queue/memory file, none in `src/`**. The standing fix is a **GitHub merge queue** on
