@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 48 | 168 | 216 |
-| ISSUE | 185 | 296 | 481 |
+| ISSUE | 187 | 296 | 483 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **260** | **466** | **726** |
+| **TOTAL** | **262** | **466** | **728** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -335,6 +335,30 @@
 - **Why MED:** the payload is real email (`DependencyInjection.cs:378`), the failure is silent, and it reaches candidates directly. Initially filed LOW on the false premise that recruitment notifications were a log-only seam — see `ISSUE-531`.
 - **Suggested direction (NOT applied):** move **both** offer job schedules to after `SaveChangesAsync`.
 - **Found:** 2026-09-07, out-of-lane while fixing `ISSUE-116`.
+
+
+### ISSUE-535 — `TC-PRF-ISO-028`'s per-tenant refresh-job arm can now never pass, because the job it tests was deliberately refused
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** TEST / docs
+- **Module / US / TC:** Performance · US-PRF-007 NFR-3/BR-4 · TC-PRF-ISO-028
+- **Title:** `ENH-013`(c) recorded ISO-028's cache-key-namespacing and **per-tenant refresh-job** arms as BLOCKED "purely because the mechanism is absent", with the expectation that `ISSUE-129` would unblock both. Only **one** of them was unblocked. `ISSUE-129` shipped the Redis read-through cache (so the namespacing arm is now directly executable against tenant- and scope-scoped keys) but **deliberately refused** the `performance_summary` materialized view on tenant-isolation grounds — and the 4-hourly Hangfire refresh job existed only to refresh that view. **No such job will be built**, so an arm waiting on it waits forever.
+- **Why MED and not LOW:** a test case parked as BLOCKED-pending-a-mechanism is invisible to every gap sweep — it reads as "will be covered later" rather than "will never be covered". Left as-is it silently misrepresents NFR-3/BR-4 coverage, and the next person to read ISO-028 will go looking for a refresh job that was consciously not built.
+- **Suggested direction (NOT applied):** re-scope the arm from "the per-tenant refresh job re-materializes within its interval" to "a cached entry expires and re-reads after the TTL", which is the invalidation that actually shipped. Keep the namespacing arm and run it.
+- **Found:** 2026-09-07, while recording `ENH-013`'s disposition.
+
+
+### ISSUE-534 — the perf scripts that would validate NFR-1 drive above a rate limiter, so a green p95 can be measuring the limiter
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** TEST / perf
+- **Module / US / TC:** Performance, cross-module · NFR-1 · TC-PRF-007-11, TC-PRF-007-05 step 5
+- **Title:** `Program.cs` installs a fixed-window limiter of **300 req/min partitioned by `(tenantId, userId)`**, and the perf tenant authenticates as a **single user** — so every virtual user in a run shares **one** partition. `perf/scripts/03-scale-reads.js` (30 VU) and `05-module-lists.js` (50 VU) both drive well above that ceiling. The 429s return in ~2 ms, and **fast 429s pull p95 down**, so a script can report a green `p(95)<2500` that is the p95 of *being rate-limited* rather than of the endpoint under test.
+- **Observed, not theoretical:** a 20-VU run during the `ENH-013`(b) work issued **26,182 requests and got exactly 901 successes** — 300×3, the limiter's arithmetic, not the application's. The run was very nearly reported as a pass.
+- **Why HIGH:** **every prior NFR-1 verdict sourced from these two scripts is suspect**, including any that were used to mark a story or TC as meeting its performance target. This is not a defect in the application at all — it is a measurement instrument reporting success while measuring the wrong thing, which is the `ISSUE-486`/`ISSUE-492` class (a check that reports safety it does not provide) applied to performance. It also means `ENH-013`(b)'s new 5,000-employee fixture does **not** by itself make NFR-1 measurable.
+- **Suggested direction (NOT applied):** (1) add a **failing threshold on `http_req_failed`** to every k6 scenario so a limiter-dominated run goes red instead of green — this is the cheap fix and it should land before any further perf verdict is recorded; (2) for genuine load, spread across multiple seeded users so the partition key varies, or raise/bypass the limit for the perf tenant only; (3) re-run and re-record any NFR-1 verdict previously taken from scripts 03 or 05.
+- **Related:** local perf observation is separately unreliable right now — the running Docker container was built 2026-09-02 and is **98 commits stale**, so it does not contain code merged since. Rebuild before treating any local measurement as current.
+- **Found:** 2026-09-07, out-of-lane while implementing `ENH-013`(b) (#686). Recorded in that PR's description but **never filed as a finding until now** — it existed only in a transcript, which is precisely the failure Engineering-Discipline #6 exists to prevent.
 
 
 ### BUG-533 — the recommendation workspace returns unmasked compensation to every caller who lacks the permission that exists to stop it
@@ -998,7 +1022,16 @@ Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offe
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ENH-013 · ENH · Performance/US-PRF-007 — Test-enablement + minor scope-rejection polish for the dashboard
-- **Type / Severity / Status:** ENH · — · OPEN
+- **Type / Severity / Status:** ENH · — · **PARTIALLY RESOLVED 2026-09-07** — (a) closed by human decision, (b) shipped (#686), (c) unblocked by #688 but not yet exercised. See the disposition block below.
+
+**▶ DISPOSITION 2026-09-07 — all three parts settled**
+
+- **(a) Manager drill into an unmanaged department returns 200-empty rather than 403 — CLOSED, WONTFIX by human decision.** The user decided to **keep the 200-empty down-scope**. It is the correct call and worth recording the reason rather than just the verdict: the down-scope leaks nothing (the manager's `RestrictEmployeeIds` intersected with a foreign department is genuinely 0 rows), and a 403 would be **strictly more informative to an attacker** — it distinguishes "this department exists but is not yours" from "no such department", which the empty list does not. The finding framed 403 as the clearer signal; for a caller enumerating department ids it is clearer to the wrong audience. The two bound TCs (TC-007-06 step 5, TC-007-08 step 4) expect "403 / empty" and are satisfied by the empty arm as written.
+- **(b) No 5,000-employee perf fixture — RESOLVED (#686).** `perf/seed/perf-volume-seed.sql` gained a WS-D Performance section: 5 cycles / 20,300 participants / 20,300 self-assessments / 20,300 manager reviews / 60,900 goals, idempotent across runs. Deliberately **4 non-probation cycles plus 1 probation**, because `GetTrendAsync` re-runs the population pipeline once per cycle and a single cycle would leave the N+1 path untested. The probation cycle is dated **behind** FY2026 on purpose — `ResolveCycleAsync` takes `max(start_date)` ignoring type, so a later-dated probation cycle would silently become the default overview cycle and return a fast green meaningless 200.
+- **(c) ISO-028's cache-key-namespacing and per-tenant refresh arms — MECHANISM NOW EXISTS (#688), arms still to run.** `ISSUE-129`'s read-through cache shipped with tenant- and scope-scoped keys, so the cache-key-namespacing arm is directly executable. **The per-tenant refresh-job arm is NOT unblocked and should be re-scoped:** no Hangfire refresh job was built, because the materialized view it would refresh was deliberately refused on tenant-isolation grounds (see `ISSUE-129`). An arm testing a refresh job that will not exist should be rewritten against TTL expiry instead.
+
+⚠ **Do not read (b) as making the NFR-1 timings trustworthy.** The k6 scripts that would consume this fixture (`perf/scripts/03`, `05`) drive above a 300 req/min per-`(tenant,user)` rate limiter, and fast 429s pull p95 **down** — so a green threshold can be measuring the limiter. Gate on `http_req_failed` before reading any p95 from them.
+
 - **Module / US / TC:** Performance / US-PRF-007 / TC-PRF-007-06/-08/-11, TC-PRF-ISO-028
 - **Why it matters:** (a) **Manager drill into an unmanaged department returns HTTP 200 with an empty list, not 403.** TC-007-06 step 5 / TC-007-08 step 4 expect "403 / empty"; the live behaviour is a clean down-scope to empty (the manager's RestrictEmployeeIds set intersected with the foreign dept = 0 rows), which leaks nothing and is acceptable, but a 403 would be a clearer signal that the department is out of the caller's reporting line. (b) **No 5,000-employee perf fixture** exists, so NFR-1/NFR-5 P95 timing (TC-007-11) and large-export timing (TC-007-05 step 5) cannot be validated at scale through the seedable path; a scale-seed harness or a synthetic large tenant would unblock these. (c) Once the NFR-3/BR-4 cache + Hangfire refresh (ISSUE-129) are implemented, ISO-028's cache-key-namespacing and per-tenant refresh-job arms become testable — they are currently BLOCKED purely because the mechanism is absent.
 - **Suggested direction:** consider returning 403 (or a documented down-scope marker) for out-of-scope drill-downs; add a scale-seed fixture for NFR perf TCs; revisit ISO-028 cache/refresh arms when ISSUE-129 lands. Not defects — test-enablement + clarity polish.
