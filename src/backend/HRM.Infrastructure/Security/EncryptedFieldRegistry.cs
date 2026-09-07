@@ -65,6 +65,17 @@ public static class EncryptedFieldRegistry
         // any residue that ever bypassed the converter is HEALED at boot instead of only surfaced in the report.
         // It is also in the rotation sweep — without it, retiring an old key would break every national_id.
         new("employees", "national_id", nameof(Employee), nameof(Employee.NationalId), IncludeInStartupBackfill: true),
+
+        // ISSUE-523: Employee.BankAccountNumber PII — the last plaintext column of its sensitivity class on this
+        // entity. Encrypted while the column is structurally NULL in every tenant (there is no write path yet), so
+        // the varchar(50)->text retype + back-fill is a NO-OP rather than a migration over live PII; that window
+        // closes on the first successful write. Same back-fill decision as national_id: INCLUDED, because the scan
+        // is `col IS NOT NULL AND col NOT LIKE 'enc:v1:%'` and is therefore free on an all-NULL column, while
+        // giving idempotent defence-in-depth the day a capture path ships and any residue bypasses the converter.
+        // Also in the rotation sweep (all entries are) — without it, retiring an old key would destroy the column.
+        // Deliberately NOT registered: employees.bank_name / bank_branch_code — public-directory branch data, not
+        // person-identifying; see EmployeeConfiguration.ApplyEncryption for the full rationale.
+        new("employees", "bank_account_number", nameof(Employee), nameof(Employee.BankAccountNumber), IncludeInStartupBackfill: true),
     ];
 
     /// <summary>The subset the startup plaintext back-fill processes (the original, pinned P3-4 column set).</summary>

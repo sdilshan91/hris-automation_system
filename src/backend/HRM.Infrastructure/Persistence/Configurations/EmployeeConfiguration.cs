@@ -111,8 +111,11 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.Property(e => e.BankBranchCode)
             .HasMaxLength(50);
 
-        builder.Property(e => e.BankAccountNumber)
-            .HasMaxLength(50);
+        // ISSUE-523: bank account number. Like NationalId, the plain (non-encrypted-build) config only declares
+        // the property; the AES-at-rest converter + `text` column type are applied by ApplyEncryption below.
+        // HasMaxLength is intentionally NOT set (was 50): the AES-GCM ciphertext is far longer than the 50-char
+        // plaintext, so the column is unbounded `text`.
+        builder.Property(e => e.BankAccountNumber);
 
         // ISSUE-293: national identity number. Plain (non-encrypted-build) config only declares the property;
         // the AES-at-rest converter + `text` column type are applied by ApplyEncryption (invoked from
@@ -235,16 +238,32 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
     }
 
     /// <summary>
-    /// ISSUE-293: applies the field-at-rest encryption value converter to <see cref="Employee.NationalId"/>
-    /// (PII, mirrors the Pip/Recommendation pattern). Invoked from <c>AppDbContext.OnModelCreating</c> with the
+    /// ISSUE-293 / ISSUE-523: applies the field-at-rest encryption value converters to the two PII columns on
+    /// <see cref="Employee"/> — <see cref="Employee.NationalId"/> and <see cref="Employee.BankAccountNumber"/>
+    /// (mirrors the Pip/Recommendation pattern). Invoked from <c>AppDbContext.OnModelCreating</c> with the
     /// context's injected <see cref="IFieldEncryptor"/> (this config is parameterless so the assembly-scan is
-    /// unaffected). The column is <c>text</c> — the AES-GCM ciphertext is longer than the 50-char plaintext, so
-    /// no length cap is applied. ⚠ The converter MUST be wired here + invoked from AppDbContext: a converter in
+    /// unaffected). Both columns are <c>text</c> — the AES-GCM ciphertext is longer than the 50-char plaintext,
+    /// so no length cap is applied. ⚠ A converter MUST be wired here + invoked from AppDbContext: a converter in
     /// the parameterless Configure alone would silently store PLAINTEXT.
+    ///
+    /// <para>Deliberately NOT encrypted: <see cref="Employee.BankName"/> and
+    /// <see cref="Employee.BankBranchCode"/>. A branch code (IFSC/SWIFT-BIC) and a bank name are values from a
+    /// PUBLIC directory — they identify a BRANCH, not a person, and neither is in the audit-log
+    /// <c>SensitiveFieldMasker</c> deny-list that <c>bank_account_number</c> is in. Encrypting them would buy no
+    /// confidentiality while permanently forfeiting SQL grouping/filtering by bank, which is exactly how a real
+    /// bank-advice file is split per sponsor bank. The account number is the value that enables fraud, so it —
+    /// and only it — is encrypted.</para>
     /// </summary>
     public static void ApplyEncryption(EntityTypeBuilder<Employee> builder, IFieldEncryptor encryptor)
     {
         builder.Property(e => e.NationalId)
+            .HasConversion(EncryptedFieldConverters.NullableString(encryptor))
+            .HasColumnType("text");
+
+        // ISSUE-523: bank account number is PII of the same class as national_id and was the ONLY plaintext
+        // column left on this entity. Encrypted NOW, while no write path exists and every production row is
+        // structurally NULL, so the startup back-fill is a provable no-op rather than a live-PII migration.
+        builder.Property(e => e.BankAccountNumber)
             .HasConversion(EncryptedFieldConverters.NullableString(encryptor))
             .HasColumnType("text");
     }

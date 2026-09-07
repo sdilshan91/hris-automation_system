@@ -191,8 +191,16 @@ public sealed class Employee : BaseEntity, IAuditExempt
     public string? BankBranchCode { get; set; }
 
     /// <summary>
-    /// Bank account number for salary disbursement (US-RPT-003 AC-4). PII — MASKED (last-4) by default on
-    /// reports; full value served only via the audited Payroll.ViewSensitive reveal path. Nullable until captured.
+    /// Bank account number for salary disbursement (US-RPT-003 AC-4). PII — ENCRYPTED AT REST via the
+    /// AES-256-GCM field encryptor (see <c>EmployeeConfiguration.ApplyEncryption</c>, ISSUE-523); MASKED
+    /// (last-4) by default on reports; full plaintext served only via the audited Payroll.ViewSensitive
+    /// reveal path. Nullable until captured.
+    ///
+    /// <para>Encryption is transparent to every consumer: <c>AccountMasking.MaskLast4</c>, the audit
+    /// redaction (<c>SensitiveFieldMasker</c>) and the export carve-out (<c>ExportSensitiveFields</c>, FR-8)
+    /// all operate on the DECRYPTED CLR value. The cost is at the DB layer — the ciphertext is opaque, so
+    /// this column can never be SQL-filtered, sorted, grouped or uniquely indexed on. <b>Do not</b> add a
+    /// <c>Where</c>/<c>OrderBy</c> over it; load and compare in memory, as the Bank Advice report does.</para>
     /// </summary>
     public string? BankAccountNumber { get; set; }
 
