@@ -15,6 +15,7 @@ using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using HRM.Tests.Unit.Helpers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 
@@ -386,6 +387,76 @@ public sealed class AuditLogServiceTests
         using var verify = Db(_tenantA);
         verify.AuditLogs.Where(a => a.TenantId == _tenantA).Select(a => a.Action).Should().Contain("A.Old");
         verify.AuditLogs.Where(a => a.TenantId == _tenantB).Select(a => a.Action).Should().NotContain("B.Old");
+    }
+
+    // ── ISSUE-062: system-scoped (TenantId == null) rows are retained too ────────────────────────
+
+    private async Task AddSystemAuditAsync(DateTime createdAt, string action)
+    {
+        using var db = Db(_tenantA);
+        db.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = null,          // platform/system-scoped
+            EventType = action,
+            Action = action,
+            CreatedAt = createdAt,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// ISSUE-062: the per-tenant loop scopes by an explicit tenant id, so it can never reach system-scoped
+    /// rows — before the fix they were retained forever and the table grew without bound (the FR-7 platform
+    /// copies of lockout/unlock made that growth continuous). They must expire on their own window.
+    /// </summary>
+    [Fact]
+    public async Task Purge_DeletesExpiredSystemScopedRows_Issue062()
+    {
+        await SeedTenantsAndUsersAsync();   // both tenants at 90d → system window = 90d
+        var now = Base;
+        await AddSystemAuditAsync(now.AddDays(-91), "System.Old");
+        await AddSystemAuditAsync(now.AddDays(-89), "System.Recent");
+
+        var purge = new AuditLogPurgeService(Db(_tenantA), _purgeLogger);
+        var deleted = await purge.PurgeExpiredAsync(now);
+
+        deleted.Should().Be(1, "only the row outside the system retention window is removed");
+
+        using var db = Db(_tenantA);
+        var systemActions = db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.TenantId == null).Select(a => a.Action).ToList();
+        systemActions.Should().NotContain("System.Old");
+        systemActions.Should().Contain("System.Recent");
+        // The system purge is itself audited, as a system-scoped row.
+        systemActions.Should().Contain("AuditLog.PurgeSystem");
+    }
+
+    /// <summary>
+    /// ISSUE-062: a platform row is a cross-tenant view of an event, so it must outlive EVERY tenant's own
+    /// copy — the system window is the LONGEST configured tenant retention, not the shortest or the default.
+    /// With a 365-day tenant present, a 200-day-old system row survives.
+    /// </summary>
+    [Fact]
+    public async Task Purge_SystemRetentionFollowsTheLongestTenantWindow_Issue062()
+    {
+        await SeedTenantsAndUsersAsync();
+        using (var db = Db(_tenantB))
+        {
+            var b = await db.Tenants.FindAsync(_tenantB);
+            b!.AuditLogRetentionDays = 365;
+            await db.SaveChangesAsync();
+        }
+
+        var now = Base;
+        await AddSystemAuditAsync(now.AddDays(-200), "System.WithinLongestWindow");
+
+        var purge = new AuditLogPurgeService(Db(_tenantA), _purgeLogger);
+        await purge.PurgeExpiredAsync(now);
+
+        using var verify = Db(_tenantA);
+        verify.AuditLogs.IgnoreQueryFilters().Where(a => a.TenantId == null).Select(a => a.Action)
+            .Should().Contain("System.WithinLongestWindow");
     }
 
     [Fact]

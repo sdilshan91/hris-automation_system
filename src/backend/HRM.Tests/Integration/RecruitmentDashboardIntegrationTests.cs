@@ -100,6 +100,20 @@ public sealed class RecruitmentDashboardIntegrationTests
         public bool ImpersonationReadOnly => false;
     }
 
+    // ISSUE-138: the dashboard PDF export reads tenant logo bytes via IFileStorage. These tests never set a
+    // tenant LogoUrl (it is null), so the resolver short-circuits before touching storage — this no-op just
+    // satisfies the constructor dependency.
+    private sealed class NoopFileStorage : IFileStorage
+    {
+        public Task<string> UploadAsync(Guid tenantId, string relativePath, Stream content, string contentType,
+            CancellationToken cancellationToken = default) => Task.FromResult(relativePath);
+        public Task<Stream?> OpenReadAsync(Guid tenantId, string relativePath,
+            CancellationToken cancellationToken = default) => Task.FromResult<Stream?>(null);
+        public string GetSignedUrl(Guid tenantId, string relativePath, TimeSpan? expiresIn = null) => string.Empty;
+        public Task DeleteAsync(Guid tenantId, string relativePath, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+    }
+
     private IMediator BuildPipeline(
         Guid tenantId, IReadOnlyList<string>? permissions = null, Guid? userId = null)
     {
@@ -114,6 +128,7 @@ public sealed class RecruitmentDashboardIntegrationTests
             TenantId = tenantId,
             Permissions = permissions ?? new[] { PermissionCatalog.Recruitment.View },
         });
+        services.AddSingleton<IFileStorage, NoopFileStorage>();
         services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_dbName));
         services.AddScoped<IRecruitmentDashboardService, RecruitmentDashboardService>();
         services.AddMediatR(cfg =>
@@ -468,6 +483,7 @@ public sealed class RecruitmentDashboardIntegrationTests
     [Theory]
     [InlineData("csv")]
     [InlineData("xlsx")]
+    [InlineData("pdf")]
     public async Task Export_produces_a_non_empty_file(string format)
     {
         var mediator = BuildPipeline(_tenantA);
@@ -478,6 +494,45 @@ public sealed class RecruitmentDashboardIntegrationTests
         result.Value!.FileName.Should().Contain("recruitment-dashboard");
     }
 
+    /// <summary>
+    /// ISSUE-138 (FR-8): <c>format=pdf</c> must produce a REAL PDF, not a 200 carrying the CSV fallback.
+    /// Pre-fix the format normalizer rejected "pdf" outright, so this failed at the invalid_format gate.
+    /// The magic-byte assertion is what stops a regression that silently routes pdf back to RenderCsv.
+    /// </summary>
+    [Fact]
+    public async Task Export_pdf_returns_a_pdf_document_Issue138()
+    {
+        var mediator = BuildPipeline(_tenantA);
+        var result = await mediator.Send(new ExportRecruitmentDashboardQuery(PeriodFilter(), "pdf"));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var export = result.Value!;
+        export.ContentType.Should().Be("application/pdf");
+        export.FileName.Should().EndWith(".pdf");
+        // A real PDF starts with the "%PDF-" magic bytes — a CSV or XLSX body would not.
+        System.Text.Encoding.ASCII.GetString(export.FileContent, 0, 5).Should().Be("%PDF-");
+    }
+
+    /// <summary>
+    /// ISSUE-138: adding the PDF arm must not change what csv/xlsx return. Locks the content types and the
+    /// non-PDF bodies so a normalizer regression that routes everything to RenderPdf is caught.
+    /// </summary>
+    [Theory]
+    [InlineData("csv", "text/csv", ".csv")]
+    [InlineData("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx")]
+    public async Task Export_csv_and_xlsx_are_unchanged_by_the_pdf_arm_Issue138(
+        string format, string expectedContentType, string expectedExtension)
+    {
+        var mediator = BuildPipeline(_tenantA);
+        var result = await mediator.Send(new ExportRecruitmentDashboardQuery(PeriodFilter(), format));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        var export = result.Value!;
+        export.ContentType.Should().Be(expectedContentType);
+        export.FileName.Should().EndWith(expectedExtension);
+        System.Text.Encoding.ASCII.GetString(export.FileContent, 0, 5).Should().NotBe("%PDF-");
+    }
+
     [Fact]
     public async Task Export_rejects_unknown_format()
     {
@@ -485,6 +540,24 @@ public sealed class RecruitmentDashboardIntegrationTests
         var result = await mediator.Send(new ExportRecruitmentDashboardQuery(PeriodFilter(), "png"));
 
         result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("invalid_format");
+    }
+
+    /// <summary>
+    /// ISSUE-138: the accepted set widened to csv/xlsx/pdf, and no further. A format the platform has no
+    /// renderer for (docx) must still be refused rather than silently degrading to CSV.
+    /// </summary>
+    [Theory]
+    [InlineData("docx")]
+    [InlineData("html")]
+    [InlineData("")]
+    public async Task Export_still_rejects_formats_outside_csv_xlsx_pdf_Issue138(string format)
+    {
+        var mediator = BuildPipeline(_tenantA);
+        var result = await mediator.Send(new ExportRecruitmentDashboardQuery(PeriodFilter(), format));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
         result.ErrorCode.Should().Be("invalid_format");
     }
 

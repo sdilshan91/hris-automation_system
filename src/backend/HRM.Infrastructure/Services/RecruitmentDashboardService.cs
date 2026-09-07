@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using ClosedXML.Excel;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
 using HRM.Application.Features.Recruitment.DTOs;
@@ -10,6 +11,9 @@ using HRM.Domain.Enums;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 
 namespace HRM.Infrastructure.Services;
 
@@ -25,6 +29,7 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IFileStorage _fileStorage;
     private readonly ILogger<RecruitmentDashboardService> _logger;
 
     /// <summary>The pipeline funnel order (FR-2/AC-3). Rejected is NOT a funnel stage.</summary>
@@ -43,11 +48,13 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IFileStorage fileStorage,
         ILogger<RecruitmentDashboardService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _fileStorage = fileStorage;
         _logger = logger;
     }
 
@@ -438,7 +445,18 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  Export (FR-8): CSV + XLSX (ClosedXML). PDF deferred.
+    //  Export (FR-8): CSV + XLSX (ClosedXML) + PDF (QuestPDF — see RenderPdf below).
+    //
+    //  ISSUE-138: the PDF is a PORT of the PerformanceDashboardService renderer (ISSUE-126), not a new
+    //  design — same branded header band, same tenant-logo handling, same table styling.
+    //
+    //  NO CHARTS, DELIBERATELY. The funnel/trend charts the FE draws are client-side; there is no
+    //  server-side chart renderer anywhere in this platform, and rendering charts as PNG is a documented
+    //  platform-wide deferral (see the header of HrReportExportService). So this PDF is branding + title +
+    //  filters + the same tabular data csv/xlsx already carry. That is the agreed scope, not an oversight.
+    //
+    //  The ASYNC (Hangfire) large-dataset export half of ISSUE-138 — export entity, status/download
+    //  endpoints — is a separate, parked piece of work and is deliberately NOT here.
     // ══════════════════════════════════════════════════════════════
 
     public async Task<Result<RecruitmentDashboardExportResult>> ExportDashboardAsync(
@@ -447,17 +465,32 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
         if (!_tenantContext.IsResolved)
             return Result<RecruitmentDashboardExportResult>.Failure("Tenant context is not resolved.", 400);
 
-        var normalized = NormalizeFormat(format);
+        // Shared normalizer (csv/xlsx/excel/pdf) — this surface previously kept a private narrower copy
+        // only because it had no PDF arm.
+        var normalized = ExportFormatNormalizer.Normalize(format);
         if (normalized is null)
             return Result<RecruitmentDashboardExportResult>.Failure(
-                "Export format must be one of csv, xlsx.", 400, "invalid_format");
+                "Export format must be one of csv, xlsx, pdf.", 400, "invalid_format");
 
         var dashboard = await GetDashboardAsync(filter, cancellationToken);
         if (dashboard.IsFailure)
             return Result<RecruitmentDashboardExportResult>.Failure(
                 dashboard.Error!, dashboard.StatusCode ?? 400, dashboard.ErrorCode);
 
-        var (content, fileName, contentType) = RenderExport(normalized, dashboard.Value!);
+        // Only the PDF branch consumes branding, so skip the storage read + the filter-label lookups for
+        // csv/xlsx. A missing/blank/absolute/undecodable logo degrades to no-logo (ISSUE-158).
+        byte[]? logoBytes = null;
+        RecruitmentExportFilterLabels labels = new();
+        if (normalized == "pdf")
+        {
+            logoBytes = await TenantLogoResolver.ResolveAsync(
+                _fileStorage, _tenantContext.TenantId, _tenantContext.LogoUrl, _logger,
+                "Recruitment dashboard", cancellationToken);
+            labels = await ResolveFilterLabelsAsync(filter, cancellationToken);
+        }
+
+        var (content, fileName, contentType) = RenderExport(
+            normalized, dashboard.Value!, _tenantContext.PrimaryColor, logoBytes, labels);
         return Result<RecruitmentDashboardExportResult>.Success(new RecruitmentDashboardExportResult
         {
             FileContent = content,
@@ -466,16 +499,165 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
         });
     }
 
+    /// <summary>Human-readable labels for the drill-down filters, echoed into the PDF header (FR-7).</summary>
+    private sealed record RecruitmentExportFilterLabels
+    {
+        public string? Department { get; init; }
+        public string? Vacancy { get; init; }
+    }
+
+    /// <summary>
+    /// Resolves display names for the optional department/vacancy drill-downs so the PDF states what it is a
+    /// report OF rather than printing raw GUIDs. Both lookups are tenant-scoped by the global query filter and
+    /// only run for the PDF branch. An unresolvable id degrades to no label.
+    /// </summary>
+    private async Task<RecruitmentExportFilterLabels> ResolveFilterLabelsAsync(
+        RecruitmentDashboardFilter filter, CancellationToken ct)
+    {
+        string? department = null;
+        if (filter.DepartmentId is { } departmentId)
+            department = await _dbContext.Departments.AsNoTracking()
+                .Where(x => x.Id == departmentId).Select(x => x.Name).FirstOrDefaultAsync(ct);
+
+        string? vacancy = null;
+        if (filter.VacancyId is { } vacancyId)
+            vacancy = await _dbContext.Vacancies.AsNoTracking()
+                .Where(x => x.Id == vacancyId).Select(x => x.Title).FirstOrDefaultAsync(ct);
+
+        return new RecruitmentExportFilterLabels { Department = department, Vacancy = vacancy };
+    }
+
     private static (byte[] Content, string FileName, string ContentType) RenderExport(
-        string format, RecruitmentDashboardDto d)
+        string format, RecruitmentDashboardDto d, string? brandColor, byte[]? logoBytes,
+        RecruitmentExportFilterLabels labels)
     {
         var baseName = $"recruitment-dashboard-{d.From.Replace("-", string.Empty)}-{d.To.Replace("-", string.Empty)}";
         return format switch
         {
             "xlsx" => (RenderXlsx(d), $"{baseName}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            "pdf" => (RenderPdf(d, brandColor, logoBytes, labels), $"{baseName}.pdf", "application/pdf"),
             _ => (RenderCsv(d), $"{baseName}.csv", "text/csv"),
         };
+    }
+
+    /// <summary>
+    /// ISSUE-138 (US-REC-009 FR-8): the recruitment dashboard as a branded PDF. Ported from
+    /// <c>PerformanceDashboardService.RenderPdf</c> (ISSUE-126): the tenant's primary colour bands the header
+    /// (falling back to <see cref="BrandColor.Default"/>), the tenant logo is embedded top-left when set, and
+    /// the KPI / funnel / source-effectiveness data render as tables — the SAME data csv and xlsx carry.
+    ///
+    /// <para><b>No charts, by design.</b> Server-side chart rendering does not exist anywhere in this platform
+    /// and charts-as-PNG is a documented platform-wide deferral (<c>HrReportExportService</c>). This PDF is
+    /// intentionally branding + title + filters + data tables; the absence of the funnel/trend charts the FE
+    /// draws is a scope decision, not a forgotten feature.</para>
+    /// </summary>
+    private static byte[] RenderPdf(
+        RecruitmentDashboardDto d, string? brandColor, byte[]? logoBytes, RecruitmentExportFilterLabels labels)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+        var brand = BrandColor.Resolve(brandColor);
+
+        var filterLine = new List<string> { $"Period: {d.From} to {d.To}" };
+        if (!string.IsNullOrWhiteSpace(labels.Department))
+            filterLine.Add($"Department: {labels.Department}");
+        if (!string.IsNullOrWhiteSpace(labels.Vacancy))
+            filterLine.Add($"Vacancy: {labels.Vacancy}");
+
+        var document = Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.A4);
+                page.Margin(24);
+                page.DefaultTextStyle(t => t.FontSize(9));
+
+                // Branded header band (tenant primary colour) with the tenant logo top-left when set.
+                // A null/undecodable logo falls through to the colour band + title only.
+                page.Header().Background(brand).Padding(12).Row(row =>
+                {
+                    if (logoBytes is { Length: > 0 })
+                    {
+                        // Mirror PayslipPdfRenderer: bounded to a 110x48 box, aspect preserved.
+                        row.ConstantItem(110).AlignMiddle().Height(48).Image(logoBytes).FitArea();
+                        row.ConstantItem(12);
+                    }
+                    row.RelativeItem().Column(col =>
+                    {
+                        col.Item().Text("Recruitment Dashboard").FontColor(Colors.White).FontSize(16).Bold();
+                        col.Item().Text(string.Join("  \u00b7  ", filterLine)).FontColor(Colors.White).FontSize(9);
+                    });
+                });
+
+                page.Content().PaddingTop(12).Column(col =>
+                {
+                    col.Spacing(10);
+
+                    // KPIs (FR-1).
+                    col.Item().Text("KPIs").Bold();
+                    col.Item().Table(t =>
+                    {
+                        t.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(1); });
+                        void Row(string k, string v)
+                        {
+                            t.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(2).Text(k);
+                            t.Cell().BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten2).Padding(2).AlignRight().Text(v);
+                        }
+                        Row("Open Vacancies", d.Kpis.OpenVacancies.ToString(CultureInfo.InvariantCulture));
+                        Row("Total Applicants", d.Kpis.TotalApplicants.ToString(CultureInfo.InvariantCulture));
+                        Row("Hires", d.Kpis.Hires.ToString(CultureInfo.InvariantCulture));
+                        Row("Average Time-to-Hire (days)", Num(d.Kpis.AverageTimeToHireDays));
+                        Row("Offer Acceptance Rate (%)", Num(d.Kpis.OfferAcceptanceRate));
+                        Row("Offers Pending", d.Kpis.OffersPending.ToString(CultureInfo.InvariantCulture));
+                    });
+
+                    // Funnel (FR-2/BR-3).
+                    if (d.Funnel.Count > 0)
+                    {
+                        col.Item().Text("Funnel").Bold();
+                        col.Item().Table(t =>
+                        {
+                            t.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(1); c.RelativeColumn(1); });
+                            foreach (var h in new[] { "Stage", "Count", "Conversion %" })
+                                t.Cell().Background(brand).Padding(3).Text(h).FontColor(Colors.White).Bold();
+                            foreach (var f in d.Funnel)
+                            {
+                                t.Cell().Padding(2).Text(f.Stage);
+                                t.Cell().Padding(2).AlignRight().Text(f.Count.ToString(CultureInfo.InvariantCulture));
+                                t.Cell().Padding(2).AlignRight().Text(f.ConversionRate is { } c ? Num(c) : string.Empty);
+                            }
+                        });
+                    }
+
+                    // Source effectiveness (FR-3/BR-6).
+                    if (d.Sources.Count > 0)
+                    {
+                        col.Item().Text("Source Effectiveness").Bold();
+                        col.Item().Table(t =>
+                        {
+                            t.ColumnsDefinition(c => { c.RelativeColumn(3); c.RelativeColumn(1); c.RelativeColumn(1); c.RelativeColumn(1); });
+                            foreach (var h in new[] { "Source", "Applicants", "Hires", "Conversion %" })
+                                t.Cell().Background(brand).Padding(3).Text(h).FontColor(Colors.White).Bold();
+                            foreach (var srow in d.Sources)
+                            {
+                                t.Cell().Padding(2).Text(srow.Source);
+                                t.Cell().Padding(2).AlignRight().Text(srow.ApplicantCount.ToString(CultureInfo.InvariantCulture));
+                                t.Cell().Padding(2).AlignRight().Text(srow.HireCount.ToString(CultureInfo.InvariantCulture));
+                                t.Cell().Padding(2).AlignRight().Text(Num(srow.ConversionRate));
+                            }
+                        });
+                    }
+                });
+
+                page.Footer().AlignRight().Text(t =>
+                {
+                    t.Span("Generated ");
+                    t.Span(DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture));
+                });
+            });
+        });
+
+        return document.GeneratePdf();
     }
 
     private static byte[] RenderCsv(RecruitmentDashboardDto d)
@@ -678,17 +860,6 @@ public sealed class RecruitmentDashboardService : IRecruitmentDashboardService
     }
 
     private static string FullName(string first, string last) => $"{first} {last}".Trim();
-
-    private static string? NormalizeFormat(string? format)
-    {
-        var f = format?.Trim().ToLowerInvariant();
-        return f switch
-        {
-            "csv" => "csv",
-            "xlsx" or "excel" => "xlsx",
-            _ => null,
-        };
-    }
 
     private static string Num(decimal value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 

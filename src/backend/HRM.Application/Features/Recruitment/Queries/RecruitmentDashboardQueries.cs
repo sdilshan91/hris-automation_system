@@ -25,7 +25,7 @@ public sealed class RecruitmentDashboardQueryHandler
         => _service.GetDashboardAsync(request.Filter, cancellationToken);
 }
 
-/// <summary>FR-8: recruitment dashboard export (csv|xlsx).</summary>
+/// <summary>FR-8: recruitment dashboard export (csv|xlsx|pdf).</summary>
 public sealed record ExportRecruitmentDashboardQuery(RecruitmentDashboardFilter Filter, string Format)
     : IRequest<Result<RecruitmentDashboardExportResult>>;
 

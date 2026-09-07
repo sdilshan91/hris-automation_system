@@ -190,6 +190,7 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
         await using var read = Db();
         var service = new RecruitmentDashboardService(read,
             new MutableTenantContext { TenantId = _tenantId }, Substitute.For<ICurrentUser>(),
+            Substitute.For<IFileStorage>(),
             NullLogger<RecruitmentDashboardService>.Instance);
 
         var result = await service.GetDashboardAsync(new RecruitmentDashboardFilter());

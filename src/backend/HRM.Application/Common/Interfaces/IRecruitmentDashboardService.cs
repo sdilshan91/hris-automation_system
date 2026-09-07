@@ -15,8 +15,11 @@ namespace HRM.Application.Common.Interfaces;
 /// month (FR-4), the vacancy-status summary (FR-5), and a capped recent-activity feed (FR-9). The date
 /// range narrows the period metrics (FR-6); optional department / vacancy filters drill in (FR-7).
 ///
-/// DEFERRALS (documented, do NOT block): PDF export (FR-8 — CSV + XLSX only here, mirroring the existing
-/// ClosedXML seam; QuestPDF is available but the story's "full dashboard view" PDF is deferred), async
+/// EXPORT (FR-8): CSV + XLSX (ClosedXML) + PDF (QuestPDF), shipped in ISSUE-138 as a port of the
+/// performance-dashboard renderer. The PDF is branding + title + filters + data tables and carries NO
+/// charts — server-side chart rendering is a documented platform-wide deferral (HrReportExportService).
+///
+/// DEFERRALS (documented, do NOT block): async
 /// Hangfire export for large datasets (NFR-5), Redis pre-aggregation (NFR-3), and the materialized view
 /// mv_recruitment_analytics (NFR-3). The dashboard is computed live from the DB on each request.
 /// </summary>

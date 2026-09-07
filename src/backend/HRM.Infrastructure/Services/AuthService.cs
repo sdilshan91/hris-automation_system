@@ -3250,16 +3250,7 @@ public sealed class AuthService : IAuthService
     {
         var tenantId = explicitTenantId ?? (_tenantContext.IsResolved ? _tenantContext.TenantId : null);
 
-        _dbContext.AuditLogs.Add(new AuditLog
-        {
-            Id = BaseEntity.NewUuidV7(),
-            TenantId = tenantId,
-            UserId = userId,
-            EventType = eventType,
-            IpAddress = ipAddress,
-            UserAgent = userAgent,
-            CreatedAt = DateTime.UtcNow,
-        });
+        StageAuditRows(tenantId, userId, eventType, detailJson: null, ipAddress, userAgent);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -3278,19 +3269,69 @@ public sealed class AuthService : IAuthService
     {
         var tenantId = explicitTenantId ?? (_tenantContext.IsResolved ? _tenantContext.TenantId : null);
 
+        StageAuditRows(tenantId, userId, eventType, JsonSerializer.Serialize(detail), ipAddress, userAgent);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Stages the <c>audit_logs</c> row(s) for ONE auth event — the tenant-scoped row always, plus a
+    /// platform-visible <c>TenantId = null</c> copy when the event is in
+    /// <see cref="PlatformVisibleAuditEvents"/>.
+    ///
+    /// <para>ISSUE-062 (US-AUTH-010 FR-7): the tenant's own lockout trail is unchanged (its row is written
+    /// exactly as before), but lockout/unlock also has to be visible to the PLATFORM operator across
+    /// tenants. There is intentionally no second audit table (<see cref="AuditLog"/>), and
+    /// <c>audit_logs</c> is the one entity whose global query filter keeps a <c>TenantId == null</c> arm
+    /// for system-scoped rows — so the platform view is a second row on the same table, exactly as
+    /// <c>PlatformMonitoringService.WriteAuditAsync</c> already does. FR-7 wants BOTH views, so the
+    /// duplication is intended, not accidental.</para>
+    ///
+    /// <para>The originating tenant is NOT lost: it is carried on the system row as
+    /// <c>ResourceType="Tenant" / ResourceId={tenantId}</c> — the same convention platform monitoring uses
+    /// for the tenant a system-scoped row refers to. When the tenant is unresolved the single row already
+    /// carries <c>TenantId = null</c>, so no copy is made (that would be two identical rows).</para>
+    /// </summary>
+    private void StageAuditRows(
+        Guid? tenantId,
+        Guid? userId,
+        string eventType,
+        string? detailJson,
+        string? ipAddress,
+        string? userAgent)
+    {
+        // One timestamp for both rows so the pair is correlatable.
+        var now = DateTime.UtcNow;
+
         _dbContext.AuditLogs.Add(new AuditLog
         {
             Id = BaseEntity.NewUuidV7(),
             TenantId = tenantId,
             UserId = userId,
             EventType = eventType,
-            Detail = JsonSerializer.Serialize(detail),
+            Detail = detailJson,
             IpAddress = ipAddress,
             UserAgent = userAgent,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = now,
         });
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        if (tenantId is null || !PlatformVisibleAuditEvents.Requires(eventType))
+            return;
+
+        _dbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = BaseEntity.NewUuidV7(),
+            TenantId = null,                       // platform/system-scoped copy (ISSUE-062 FR-7)
+            UserId = userId,
+            EventType = eventType,
+            Action = eventType,                    // structured column so the platform read can filter on it
+            ResourceType = "Tenant",
+            ResourceId = tenantId.Value.ToString(),
+            Detail = detailJson,
+            IpAddress = ipAddress,
+            UserAgent = userAgent,
+            CreatedAt = now,
+        });
     }
 
     /// <summary>Deferred lockout-notification email params (BUG-045): captured inside the transactional unit
