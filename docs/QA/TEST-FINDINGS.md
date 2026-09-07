@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 173 | 296 | 469 |
+| ISSUE | 174 | 296 | 470 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **245** | **466** | **711** |
+| **TOTAL** | **246** | **466** | **712** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -301,6 +301,18 @@
 - **Why it matters:** live test theater asserting immutability of the **audit log** in a CRITICAL module. Accepting 404 beside 405 is what makes it unfalsifiable.
 - **Suggested direction (NOT applied):** repoint so the 405 is **earned**, and drop 404 from the accepted set — a rewrite, not a rename.
 - **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-520 — terminated employees never get a monthly attendance summary row, so filtering to them returns silence
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance · monthly summary
+- **Title:** `AttendanceSummaryService.GenerateAsync` (`:257`) computes only for `e.Status != EmployeeStatus.Terminated`, but the read path (`FilteredEmployeesAsync`, `:760-771`) lets a caller filter **to** `status=Terminated`. A leaver therefore never gets a materialized row generated **or** refreshed, and the read loop `continue`s when no row exists — so the filter returns an **empty or permanently stale** list rather than an error.
+- **Why it is not cosmetic:** the failure is **silent and indistinguishable from "this person had no attendance"**. The flow it breaks is reviewing a leaver's final month — which is exactly when attendance data matters most, because it feeds final settlement.
+- **Not fixed by ISSUE-083:** the current-month recompute added in #665 does not reach terminated employees either, since it delegates to the same `GenerateAsync` scope.
+- **Why it needs a decision, not just a fix:** correcting it changes **which employees the materialized table covers**, and final-settlement and payroll read the same rows. Two shapes: include terminated employees whose termination date falls in or after the requested month, or make the read path reject/flag a `Terminated` filter instead of silently returning nothing.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-083.
+
 
 ### ISSUE-519 — `TC-PAY-011-03` names a `send-payslips` route that does not exist
 
