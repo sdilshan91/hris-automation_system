@@ -24,6 +24,32 @@ public sealed record GoalProgressUpdateDto
     public string StatusName { get; init; } = string.Empty;
     public string? Notes { get; init; }
     public DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// ENH-014: the progress % recorded by the CHRONOLOGICALLY PRECEDING update on this goal, or <c>null</c> on the
+    /// first entry in the timeline.
+    ///
+    /// <para><b>Why null and not 0 on the first update.</b> "No prior measurement" and "measured at zero" are
+    /// different facts and the server does not know which one happened. A goal's first update at 40% may mean the
+    /// employee moved 40% during the tracking window, or that they only got round to reporting an already-partial
+    /// goal. Reporting <c>Previous = 0, Delta = 40</c> would assert a baseline measurement that was never taken.
+    /// (<see cref="MyGoalProgressDto.CurrentProgressPct"/> does default to 0 with no updates, but that is a
+    /// display default for a progress bar, not a recorded observation.) The timeline UI renders the first entry as
+    /// an opening reading, not as a jump.</para>
+    /// </summary>
+    public int? PreviousProgressPct { get; init; }
+
+    /// <summary>
+    /// ENH-014: the movement this update represents — <c>ProgressPct - PreviousProgressPct</c>. Negative when
+    /// progress was revised down. <c>null</c> on the first entry, for the reason on
+    /// <see cref="PreviousProgressPct"/>.
+    ///
+    /// <para>Invariant, relied on by the UI: <c>DeltaPct</c> is non-null exactly when
+    /// <c>PreviousProgressPct</c> is non-null, and when non-null it always equals
+    /// <c>ProgressPct - PreviousProgressPct</c>. Never derive a delta against an absent baseline.</para>
+    /// </summary>
+    public int? DeltaPct { get; init; }
+
     public IReadOnlyList<GoalProgressAttachmentDto> Attachments { get; init; } = [];
 }
 

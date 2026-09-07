@@ -25934,7 +25934,9 @@ export interface paths {
         put?: never;
         post: {
             parameters: {
-                query?: never;
+                query?: {
+                    dryRun?: boolean;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -39213,6 +39215,7 @@ export interface components {
         PerformanceAutoGenerateResultDto: {
             /** Format: uuid */
             cycleId?: string;
+            dryRun?: boolean;
             /** Format: int32 */
             employeesEvaluated?: number;
             suggestions?: components["schemas"]["PerformanceRecommendationDto"][] | null;
@@ -39720,6 +39723,8 @@ export interface components {
             attachments?: components["schemas"]["PerformanceGoalProgressAttachmentDto"][] | null;
             /** Format: date-time */
             createdAt?: string;
+            /** Format: int32 */
+            deltaPct?: number | null;
             /** Format: uuid */
             employeeId?: string;
             /** Format: uuid */
@@ -39727,6 +39732,8 @@ export interface components {
             /** Format: uuid */
             id?: string;
             notes?: string | null;
+            /** Format: int32 */
+            previousProgressPct?: number | null;
             /** Format: int32 */
             progressPct?: number;
             status?: components["schemas"]["GoalProgressStatus"];

@@ -41,7 +41,17 @@ public interface IRecommendationService
     /// highest-threshold match seeds a Draft suggestion (skipping employees who already have a recommendation).
     /// HR-only (Publish.All). Suggestions only — HR reviews + submits (BR-3).
     /// </summary>
-    Task<Result<AutoGenerateResultDto>> AutoGenerateAsync(Guid cycleId, CancellationToken cancellationToken = default);
+    /// <param name="dryRun">
+    /// ENH-015. <c>true</c> runs the whole decision pipeline — rules, thresholds, already-recommended skips — and
+    /// returns exactly the suggestions a real run would create, but writes NOTHING and leaves the DbContext
+    /// untracked, so a later unrelated <c>SaveChanges</c> in the same scope cannot commit a preview. Defaults to
+    /// <c>false</c>: auto-generation is a normal create, so persisting stays the unsurprising default (unlike
+    /// <see cref="ILeaveEntitlementService.CorrectAccrualOverCreditAsync"/>, where the write is a detriment and so
+    /// dry run is the default). <c>Suggestions[].Events</c> is empty on a preview — the Created audit event is
+    /// produced by the act of persisting, and a preview persists nothing.
+    /// </param>
+    Task<Result<AutoGenerateResultDto>> AutoGenerateAsync(
+        Guid cycleId, bool dryRun = false, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Manually creates OR overrides a recommendation for an employee in a cycle (FR-1/FR-3/BR-5). HR-only. A

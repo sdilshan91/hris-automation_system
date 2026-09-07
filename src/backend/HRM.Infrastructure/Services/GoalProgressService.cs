@@ -477,7 +477,11 @@ public sealed class GoalProgressService : IGoalProgressService
             CurrentProgressPct = latest?.ProgressPct ?? 0,
             CurrentStatus = currentStatus,
             CurrentStatusName = currentStatus.ToString(),
-            Updates = updates.Select(u => new GoalProgressUpdateDto
+            // ENH-014: `updates` is already materialised in CreatedAtUtc order, so the preceding measurement is
+            // literally the adjacent element — an index-aware projection, not a second query. The first entry
+            // carries null/null: there is no prior measurement to subtract from, and inventing a 0 baseline would
+            // report a movement that was never observed (see GoalProgressUpdateDto.PreviousProgressPct).
+            Updates = updates.Select((u, i) => new GoalProgressUpdateDto
             {
                 Id = u.Id,
                 GoalId = u.GoalId,
@@ -487,6 +491,8 @@ public sealed class GoalProgressService : IGoalProgressService
                 StatusName = u.Status.ToString(),
                 Notes = u.Notes,
                 CreatedAt = u.CreatedAtUtc,
+                PreviousProgressPct = i == 0 ? null : updates[i - 1].ProgressPct,
+                DeltaPct = i == 0 ? null : u.ProgressPct - updates[i - 1].ProgressPct,
                 Attachments = u.Attachments.Where(a => !a.IsDeleted).Select(a => new GoalProgressAttachmentDto
                 {
                     Id = a.Id,

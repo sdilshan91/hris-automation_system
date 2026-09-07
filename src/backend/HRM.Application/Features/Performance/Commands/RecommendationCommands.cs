@@ -7,8 +7,12 @@ namespace HRM.Application.Features.Performance.Commands;
 
 // ── Auto-generate suggestions (AC-2/FR-2/BR-3) ──────────────────────────
 
-/// <summary>Auto-generates recommendation suggestions across a cycle (US-PRF-010 AC-2). HR-only.</summary>
-public sealed record AutoGenerateRecommendationsCommand(Guid CycleId) : IRequest<Result<AutoGenerateResultDto>>;
+/// <summary>
+/// Auto-generates recommendation suggestions across a cycle (US-PRF-010 AC-2). HR-only.
+/// <para><paramref name="DryRun"/> (ENH-015) previews the run without writing anything.</para>
+/// </summary>
+public sealed record AutoGenerateRecommendationsCommand(Guid CycleId, bool DryRun = false)
+    : IRequest<Result<AutoGenerateResultDto>>;
 
 public sealed class AutoGenerateRecommendationsCommandHandler
     : IRequestHandler<AutoGenerateRecommendationsCommand, Result<AutoGenerateResultDto>>
@@ -17,7 +21,7 @@ public sealed class AutoGenerateRecommendationsCommandHandler
     public AutoGenerateRecommendationsCommandHandler(IRecommendationService service) => _service = service;
 
     public Task<Result<AutoGenerateResultDto>> Handle(AutoGenerateRecommendationsCommand request, CancellationToken cancellationToken)
-        => _service.AutoGenerateAsync(request.CycleId, cancellationToken);
+        => _service.AutoGenerateAsync(request.CycleId, request.DryRun, cancellationToken);
 }
 
 // ── Manual create / override (FR-1/FR-3/BR-5) ───────────────────────────

@@ -24196,6 +24196,9 @@
             "format": "uuid",
             "type": "string"
           },
+          "dryRun": {
+            "type": "boolean"
+          },
           "employeesEvaluated": {
             "format": "int32",
             "type": "integer"
@@ -25610,6 +25613,11 @@
             "format": "date-time",
             "type": "string"
           },
+          "deltaPct": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "employeeId": {
             "format": "uuid",
             "type": "string"
@@ -25625,6 +25633,11 @@
           "notes": {
             "nullable": true,
             "type": "string"
+          },
+          "previousProgressPct": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
           },
           "progressPct": {
             "format": "int32",
@@ -69980,6 +69993,15 @@
     },
     "/api/v1/tenant/performance/recommendations/auto-generate": {
       "post": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dryRun",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/*+json": {
