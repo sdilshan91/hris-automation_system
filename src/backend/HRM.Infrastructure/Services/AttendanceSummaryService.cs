@@ -90,7 +90,22 @@ public sealed class AttendanceSummaryService : IAttendanceSummaryService
             .Where(s => s.YearMonth == yearMonth && employeeIds.Contains(s.EmployeeId))
             .ToListAsync(cancellationToken);
 
-        if (existing.Count == 0 && employeeIds.Count > 0)
+        // ISSUE-083: a materialized row is only ever as fresh as the last job sweep, but the day-by-day
+        // drill-down (GetEmployeeBreakdownAsync) computes LIVE on every read. So for the current,
+        // incomplete month the summary row and its OWN drill-down could disagree until the next sweep,
+        // breaking the invariant that the day rows sum to the summary totals (TC-ATT-085 step 7).
+        //
+        // Fix: recompute the CURRENT month on read; keep serving the materialized row for CLOSED months.
+        // The drill-down already computes live, so this makes the two agree without touching the job
+        // cadence, and it confines the extra work to the one month that can still change. A closed month
+        // cannot drift, so serving its materialized row stays correct and cheap.
+        //
+        // "Current" is judged on the TENANT's clock, not UtcNow (ISSUE-065) — the same seam MonthBounds
+        // uses. A month boundary evaluated in the wrong time zone is its own defect.
+        var today = TenantClock.TodayIn(tenantZone);
+        bool isCurrentMonth = year == today.Year && month == today.Month;
+
+        if (employeeIds.Count > 0 && (existing.Count == 0 || isCurrentMonth))
         {
             var gen = await GenerateAsync(year, month, cancellationToken);
             if (gen.IsFailure)

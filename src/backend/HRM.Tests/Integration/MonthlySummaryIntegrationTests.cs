@@ -710,6 +710,154 @@ public sealed class MonthlySummaryIntegrationTests
             1m, "the tenant default disables half-day → 240 min is a full PRESENT day");
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  ISSUE-083: the summary and its own drill-down must not disagree
+    //
+    //  The materialized row is only as fresh as the last job sweep, while the day-by-day drill-down
+    //  computes LIVE on every read. For the CURRENT (incomplete) month that gap is visible to the user:
+    //  the summary totals and the day rows they expand into could tell different stories until the next
+    //  sweep. The fix recomputes the current month on read and keeps serving the cheap materialized row
+    //  for CLOSED months.
+    //
+    //  These tests derive their months from the clock (the seeded tenant has no TimeZone row, so
+    //  TenantClock resolves to UTC and DateTime.UtcNow is the tenant-local basis) rather than the
+    //  hardcoded Year/Month constants — "current" is only meaningful relative to now.
+    // ════════════════════════════════════════════════════════════════
+
+    private static (int Year, int Month) CurrentMonth
+    {
+        get { var today = DateOnly.FromDateTime(DateTime.UtcNow); return (today.Year, today.Month); }
+    }
+
+    /// <summary>Two months back — unambiguously closed regardless of where in the month the suite runs.</summary>
+    private static (int Year, int Month) ClosedMonth
+    {
+        get
+        {
+            var first = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1).AddMonths(-2);
+            return (first.Year, first.Month);
+        }
+    }
+
+    /// <summary>
+    /// ISSUE-083: a STALE materialized row for the current month is recomputed on read, and the totals it
+    /// returns agree with what the drill-down computes live for the same employee/month. The assertions are
+    /// summary-vs-drill-down rather than summary-vs-literal, because "the two agree" IS the invariant
+    /// (TC-ATT-085 step 7); the literal check that follows only proves the agreement is not two equal zeros.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-085")]
+    public async Task GetMonthly_StaleCurrentMonthRow_RecomputedAndAgreesWithDrillDown_ISSUE083()
+    {
+        SeedSettings(_tenantA);
+        var (cy, cm) = CurrentMonth;
+        var yearMonth = $"{cy:D4}-{cm:D2}";
+        var (mediator, _) = BuildPipeline(_tenantA);
+
+        // 1. Sweep the current month with NO attendance yet -> a materialized row of zeros exists.
+        (await mediator.Send(new GenerateMonthlySummaryCommand(cy, cm))).IsSuccess.Should().BeTrue();
+        using (var db = Db(_tenantA))
+        {
+            db.AttendanceMonthlySummaries.Count(s => s.EmployeeId == _empA1 && s.YearMonth == yearMonth)
+                .Should().Be(1, "the row must already exist, or the zero-rows path would mask the defect");
+        }
+
+        // 2. Attendance lands AFTER the sweep -> the materialized row is now stale.
+        SeedLog(_tenantA, _empA1, new DateOnly(cy, cm, 1), 9, 0, 480);
+
+        // 3. Read both surfaces for the same employee/month.
+        var summary = await mediator.Send(new GetMonthlySummaryQuery(cy, cm, NoFilter));
+        var breakdown = await mediator.Send(new GetEmployeeMonthlyBreakdownQuery(_empA1, cy, cm));
+
+        summary.IsSuccess.Should().BeTrue();
+        breakdown.IsSuccess.Should().BeTrue();
+
+        var row = summary.Value!.Rows.Single(r => r.EmployeeId == _empA1);
+        var days = breakdown.Value!.Days;
+
+        decimal presentFromDays = days.Sum(d => d.Status switch
+        {
+            "PRESENT" => 1m,
+            "HALF_DAY" => 0.5m,
+            _ => 0m,
+        });
+        decimal absentFromDays = days.Count(d => d.Status == "ABSENT");
+        int workMinutesFromDays = days.Sum(d => d.WorkMinutes ?? 0);
+        int lateFromDays = days.Count(d => d.IsLate);
+
+        row.PresentDays.Should().Be(presentFromDays,
+            "the summary totals must equal what the day-by-day drill-down sums to");
+        row.AbsentDays.Should().Be(absentFromDays,
+            "the summary totals must equal what the day-by-day drill-down sums to");
+        row.WorkMinutes.Should().Be(workMinutesFromDays,
+            "the summary totals must equal what the day-by-day drill-down sums to");
+        row.LateCount.Should().Be(lateFromDays,
+            "the summary totals must equal what the day-by-day drill-down sums to");
+
+        // Guard against a vacuous agreement: the post-sweep day really is reflected on both surfaces.
+        days.Should().Contain(d => d.Date == $"{yearMonth}-01" && d.Status == "PRESENT");
+        row.PresentDays.Should().Be(1m);
+        row.WorkMinutes.Should().Be(480);
+    }
+
+    /// <summary>
+    /// ISSUE-083 (the other half): a CLOSED month is served from its materialized row and is NOT
+    /// recomputed. A closed month cannot drift, so this is the performance property worth keeping — the
+    /// fix must not degenerate into "recompute everything on every read".
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-085")]
+    public async Task GetMonthly_ClosedMonth_ServedFromMaterializedRow_NotRecomputed_ISSUE083()
+    {
+        SeedSettings(_tenantA);
+        var (py, pm) = ClosedMonth;
+        var (mediator, _) = BuildPipeline(_tenantA);
+
+        (await mediator.Send(new GenerateMonthlySummaryCommand(py, pm))).IsSuccess.Should().BeTrue();
+
+        var before = (await mediator.Send(new GetMonthlySummaryQuery(py, pm, NoFilter)))
+            .Value!.Rows.Single(r => r.EmployeeId == _empA1);
+        before.PresentDays.Should().Be(0m, "nothing was seeded before the sweep");
+
+        // Data that lands after the sweep must NOT trigger a re-aggregation for a closed month.
+        SeedLog(_tenantA, _empA1, new DateOnly(py, pm, 1), 9, 0, 480);
+
+        var after = (await mediator.Send(new GetMonthlySummaryQuery(py, pm, NoFilter)))
+            .Value!.Rows.Single(r => r.EmployeeId == _empA1);
+
+        after.PresentDays.Should().Be(before.PresentDays);
+        after.WorkMinutes.Should().Be(before.WorkMinutes);
+        after.GeneratedAt.Should().Be(before.GeneratedAt,
+            "a closed month is served verbatim from the materialized row — no recompute, no new timestamp");
+    }
+
+    /// <summary>
+    /// ISSUE-083 regression guard: the pre-existing zero-rows path (AC-3 — read a month that was never
+    /// swept and it materializes on demand) still works. Uses a CLOSED month so it exercises the
+    /// zero-rows arm specifically, not the new current-month arm.
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-ATT-085")]
+    public async Task GetMonthly_NoMaterializedRows_StillComputesOnDemand_ISSUE083()
+    {
+        SeedSettings(_tenantA);
+        var (py, pm) = ClosedMonth;
+        SeedLog(_tenantA, _empA1, new DateOnly(py, pm, 1), 9, 0, 480);
+
+        var (mediator, provider) = BuildPipeline(_tenantA);
+
+        // No GenerateMonthlySummaryCommand — the read itself must materialize the month.
+        var result = await mediator.Send(new GetMonthlySummaryQuery(py, pm, NoFilter));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Rows.Single(r => r.EmployeeId == _empA1).WorkMinutes.Should().Be(480);
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.AttendanceMonthlySummaries.Count(s => s.EmployeeId == _empA1 && s.YearMonth == $"{py:D4}-{pm:D2}")
+            .Should().Be(1);
+    }
+
     [Fact]
     public async Task Banner_ComputesAggregates()
     {
