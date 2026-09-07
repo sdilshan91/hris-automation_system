@@ -208,4 +208,106 @@ public sealed class FinalSettlementPostgresTests : IAsyncLifetime
         policied.Should().BeEquivalentTo(new[] { "tenant_fnf_policy", "final_settlement", "final_settlement_line" },
             "every new tenant_id table ships its dormant tenant_isolation RLS policy (NEW-TENANT-TABLE rule)");
     }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ISSUE-303 (gap 2) — a REAL two-tenant separation arm.
+    //
+    // WHY THIS EXISTS. The test directly above asserts only that a `tenant_isolation` row EXISTS in
+    // pg_policies. "A policy row exists" and "tenant B cannot read tenant A's settlement" are different
+    // claims, and only the second is the control anyone cares about — a policy with a broken USING clause,
+    // or an entity that never got its EF global query filter, satisfies the first and fails the second.
+    //
+    // WHAT THIS ARM PROVES, AND WHAT IT DOES NOT. The shipped policies are DORMANT (the FnF migration
+    // creates them without ENABLE ROW LEVEL SECURITY; only the Rls:Enabled-gated reconciler in
+    // DbInitializer turns them on). So the control actually LIVE on a default deployment is the EF global
+    // query filter + TenantInterceptor, and that is what this arm exercises: separation is proved by
+    // SWITCHING TENANT CONTEXT, never by IgnoreQueryFilters — bypassing the filter under test would test
+    // nothing. IgnoreQueryFilters appears once, only to confirm both tenants' rows PHYSICALLY exist, so
+    // "empty for B" cannot be a silently failed seed. The DB-engine half (policies ENABLED + FORCED,
+    // read as the NOBYPASSRLS hrm_app role) is proved separately in FinalSettlementRlsPostgresTests.
+    // ════════════════════════════════════════════════════════════════════════
+    [Fact]
+    [Trait("TC", "TC-PAY-013-07")]
+    public async Task Settlements_AndTheirLines_AreTenantIsolated_AcrossContexts_OnPostgres()
+    {
+        var tenantA = Guid.NewGuid();
+        var tenantB = Guid.NewGuid();
+
+        await using (var mig = CreateContext(new MutableTenantContext { TenantId = tenantA }, Cu()))
+            await mig.Database.MigrateAsync();
+
+        var settlementA = await SeedSettlementWithLineAsync(tenantA, 11_111.11m);
+        var settlementB = await SeedSettlementWithLineAsync(tenantB, 22_222.22m);
+
+        // ── Read AS TENANT B: only B's settlement + line are visible. ──
+        await using (var b = CreateContext(new MutableTenantContext { TenantId = tenantB }, Cu()))
+        {
+            var visible = await b.FinalSettlements.AsNoTracking().ToListAsync();
+            visible.Select(s => s.Id).Should().BeEquivalentTo(new[] { settlementB },
+                "tenant B's context must see its own settlement and NOT tenant A's");
+
+            (await b.FinalSettlements.AsNoTracking().AnyAsync(s => s.Id == settlementA))
+                .Should().BeFalse("A's settlement is invisible to B even when B knows the exact primary key");
+
+            var lines = await b.FinalSettlementLines.AsNoTracking().ToListAsync();
+            lines.Should().ContainSingle().Which.Amount.Should().Be(22_222.22m,
+                "the line table is independently tenant-scoped — a leak here would expose A's money figures "
+                + "even if the parent settlement were hidden");
+            lines.Should().NotContain(l => l.FinalSettlementId == settlementA);
+
+            // The Include() path must be filtered too: a settlement navigation must never drag in a
+            // cross-tenant child row.
+            var withLines = await b.FinalSettlements.AsNoTracking().Include(s => s.Lines).ToListAsync();
+            withLines.SelectMany(s => s.Lines).Select(l => l.Amount).Should().Equal(22_222.22m);
+        }
+
+        // ── Read AS TENANT A: the mirror image (isolation is symmetric, not "B happens to be empty"). ──
+        await using (var a = CreateContext(new MutableTenantContext { TenantId = tenantA }, Cu()))
+        {
+            (await a.FinalSettlements.AsNoTracking().Select(s => s.Id).ToListAsync())
+                .Should().Equal(settlementA);
+            (await a.FinalSettlements.AsNoTracking().AnyAsync(s => s.Id == settlementB)).Should().BeFalse();
+            (await a.FinalSettlementLines.AsNoTracking().Select(l => l.Amount).ToListAsync())
+                .Should().Equal(11_111.11m);
+
+            // Vacuity guard: both tenants' rows really are on disk, so "invisible" above means FILTERED,
+            // not "never inserted". This is the ONLY filter bypass in this arm and it asserts nothing
+            // about isolation.
+            (await a.FinalSettlements.IgnoreQueryFilters().AsNoTracking().CountAsync(
+                s => s.Id == settlementA || s.Id == settlementB)).Should().Be(2);
+            (await a.FinalSettlementLines.IgnoreQueryFilters().AsNoTracking().CountAsync(
+                l => l.FinalSettlementId == settlementA || l.FinalSettlementId == settlementB)).Should().Be(2);
+        }
+    }
+
+    /// <summary>
+    /// Seeds one settlement plus one line for <paramref name="tenantId"/>, writing through a context whose
+    /// tenant is that tenant — so TenantInterceptor stamps TenantId exactly as production does (the test
+    /// never sets TenantId by hand, which would prove the stamping works when it does not).
+    /// </summary>
+    private async Task<Guid> SeedSettlementWithLineAsync(Guid tenantId, decimal lineAmount)
+    {
+        await using var db = CreateContext(new MutableTenantContext { TenantId = tenantId }, Cu());
+
+        var settlement = NewSettlement(Guid.NewGuid());
+        settlement.Lines.Add(new FinalSettlementLine
+        {
+            Id = BaseEntity.NewUuidV7(),
+            Label = "Basic Salary",
+            Amount = lineAmount,
+            Type = FinalSettlementLineType.Earning,
+        });
+
+        db.FinalSettlements.Add(settlement);
+        await db.SaveChangesAsync();
+        return settlement.Id;
+    }
+
+    private static ICurrentUser Cu()
+    {
+        var cu = Substitute.For<ICurrentUser>();
+        cu.IsAuthenticated.Returns(true);
+        cu.UserId.Returns(Guid.NewGuid());
+        return cu;
+    }
 }
