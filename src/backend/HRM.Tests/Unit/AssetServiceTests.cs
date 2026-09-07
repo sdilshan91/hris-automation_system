@@ -12,7 +12,8 @@
 //   - BR-3: duplicate asset_tag (and serial) is rejected.
 //   - §7: a future issue date is rejected.
 //   - BR-2: an unconfigured asset type is rejected.
-//   - FR-6/NFR-4: the acknowledgment doc is scanned + stored at the tenant-isolated path.
+//   - FR-6/NFR-4: the acknowledgment doc is scanned + stored at the tenant-isolated path, and
+//     (BUG-075) is content-sniffed so a spoofed Content-Type cannot smuggle other bytes past it.
 //   - AC-5/NFR-2: tenant isolation on reads.
 // ============================================================================
 
@@ -357,6 +358,79 @@ public sealed class AssetServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.ErrorCode.Should().Be("file_too_large");
+    }
+
+    // ── BUG-075: content sniffing (the declared MIME is not evidence) ────
+
+    /// <summary>
+    /// BUG-075: the AllowedMimeTypes gate only reads the client-supplied Content-Type. An executable
+    /// wearing an allowed MIME string must be rejected on its BYTES — before the malware scan, before
+    /// storage, and before the issuance is persisted.
+    /// </summary>
+    [Theory]
+    [Trait("Bug", "BUG-075")]
+    [InlineData("application/pdf", "ack.pdf")]
+    [InlineData("image/jpeg", "ack.jpg")]
+    [InlineData("image/png", "ack.png")]
+    public async Task Issue_rejects_acknowledgment_whose_bytes_do_not_match_its_declared_mime(
+        string contentType, string fileName)
+    {
+        SeedEmployees();
+
+        // "MZ" — a Windows executable.
+        using var file = new MemoryStream([0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
+        var input = new IssueAssetsInput(
+            _employeeId, null, new[] { Line("LAP-SPOOF") },
+            file, fileName, contentType, file.Length);
+
+        var result = await Service().IssueAsync(input);
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("invalid_file_type");
+
+        // Fail-closed means fail EARLY: nothing spoofed reaches the scanner or storage.
+        await _scanner.DidNotReceive().ScanAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _fileStorage.DidNotReceive().UploadAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // NFR-5: issuance is one transaction — a rejected acknowledgment persists no asset.
+        using var db = Db();
+        db.Assets.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// BUG-075 counter-arm: every type in AllowedMimeTypes (PDF/JPEG/PNG) is mapped in
+    /// FileSignatureValidator, so a genuine file of each still uploads and links to the issued asset.
+    /// This is the arm that proves fail-closed did not over-tighten the allow-list.
+    /// </summary>
+    [Theory]
+    [Trait("Bug", "BUG-075")]
+    [InlineData("application/pdf", "ack.pdf")]
+    [InlineData("image/jpeg", "ack.jpg")]
+    [InlineData("image/png", "ack.png")]
+    public async Task Issue_accepts_a_genuine_acknowledgment_of_every_allowed_type(
+        string contentType, string fileName)
+    {
+        SeedEmployees();
+
+        using var file = UploadTestBytes.Stream(contentType);
+        var input = new IssueAssetsInput(
+            _employeeId, null, new[] { Line("LAP-GENUINE") },
+            file, fileName, contentType, file.Length);
+
+        var result = await Service().IssueAsync(input);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        await _fileStorage.Received(1).UploadAsync(
+            _tenantId, $"onboarding/assets/{_employeeId}/{fileName}",
+            Arg.Any<Stream>(), contentType, Arg.Any<CancellationToken>());
+
+        using var db = Db();
+        var asset = db.Assets.Single(a => a.AssetTag == "LAP-GENUINE");
+        asset.Status.Should().Be(AssetStatus.Assigned);
+        asset.AcknowledgmentDocKey.Should().Be($"onboarding/assets/{_employeeId}/{fileName}");
+        asset.AcknowledgmentDocFileName.Should().Be(fileName);
     }
 
     // ── AC-4 / BR-6 read paths ──────────────────────────────────────────
