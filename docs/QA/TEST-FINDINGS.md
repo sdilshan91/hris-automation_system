@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 174 | 296 | 470 |
+| ISSUE | 175 | 296 | 471 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **246** | **466** | **712** |
+| **TOTAL** | **247** | **466** | **713** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -301,6 +301,20 @@
 - **Why it matters:** live test theater asserting immutability of the **audit log** in a CRITICAL module. Accepting 404 beside 405 is what makes it unfalsifiable.
 - **Suggested direction (NOT applied):** repoint so the 405 is **earned**, and drop 404 from the accepted set — a rewrite, not a rename.
 - **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-521 — concurrent sub-agents collide on generic scratchpad filenames, which silently degrades every mutation proof
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** tooling / process
+- **Title:** The mutation-proof convention every agent brief mandates ("mutate → confirm RED → revert → verify with `sha256sum -c`") stores its checksum and backup in the session scratchpad under **generic names** — `svc.sha`, `svc.bak`, `pre.sha`, `c.orig`, `u.orig`. Sub-agents running **in parallel share one scratchpad**, so two agents mutating two different services both write `svc.sha`.
+- **Observed, not theoretical:** during the 2026-09-07 T3 batch an agent's `sha256sum -c` reported `PayrollAdjustmentService.cs: FAILED` while repairing `PerformanceDashboardService.cs`. Another agent had overwritten its checksum mid-run. The agent correctly distrusted the result and verified the real state with `git diff` instead.
+- **Why MED and not LOW — two distinct failure modes:**
+  1. **A false FAILED is indistinguishable from unreverted mutation residue.** The check that exists to prove a mutation was undone becomes unreliable in exactly the situation it guards.
+  2. **Worse: `cp svc.bak <file>` could restore ANOTHER agent's file over the one under repair.** That is silent corruption of a source file, written by a command whose whole purpose is to undo a change safely.
+- **Diagnosis corrected:** the agent that found this attributed it to concurrent *user sessions*. That is wrong — scratchpad paths are per-session (12 distinct ones exist on this machine) and `svc.sha`/`svc.bak` exist in **only one**. The collision is between **concurrent SUB-AGENTS of a single session**, which all share the orchestrator's scratchpad. That makes it entirely fixable from the orchestrator side, which the cross-session framing would not have.
+- **Suggested direction (NOT applied):** require issue-id-prefixed scratchpad artifacts (`i128-svc.sha`, not `svc.sha`) in the mutation-proof instruction that every agent brief carries, and in the agent definitions. A convention that is only safe when run serially is not a convention — parallel sub-agents are the documented default (Engineering-Discipline rule #5).
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-128.
+
 
 ### ISSUE-520 — terminated employees never get a monthly attendance summary row, so filtering to them returns silence
 
