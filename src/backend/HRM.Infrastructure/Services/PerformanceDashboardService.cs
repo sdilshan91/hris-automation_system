@@ -210,6 +210,10 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
         var cyclesQuery = _dbContext.AppraisalCycles.AsNoTracking();
         if (cycleIds.Count > 0)
             cyclesQuery = cyclesQuery.Where(c => cycleIds.Contains(c.Id));
+        // BR-2: a probation-type cycle contributes no population (see LoadPopulationAsync), so drop it from
+        // the series entirely rather than plotting a zero-average point that would distort the trend line.
+        if (!filter.IncludeProbation)
+            cyclesQuery = cyclesQuery.Where(c => c.Type != CycleType.Probation);
         var cycles = await cyclesQuery
             .OrderBy(c => c.StartDate)
             .Select(c => new { c.Id, c.Name, c.StartDate, c.RatingScaleMax }) // ISSUE-379: +1 column, same query
@@ -467,6 +471,27 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
     private async Task<List<EmployeeScoreRow>> LoadPopulationAsync(
         Guid cycleId, PerformanceDashboardFilter filter, DashboardScope scope, CancellationToken ct)
     {
+        // BR-2 (ISSUE-128): the exclusion is on the CYCLE, not on the employee. A cycle whose
+        // AppraisalCycle.Type is CycleType.Probation is a probation-confirmation review — a different rating
+        // basis from an annual/quarterly appraisal — so none of its reviews may dilute the distribution,
+        // averages, department bars, trend or calibration cohort unless the caller opts them back in.
+        //
+        // POPULATION NOW EXCLUDED: every review conducted under a probation-type cycle, whatever the
+        // employee's lifecycle status (so a CONFIRMED/Active employee sitting a probation review is now out).
+        // POPULATION NOW INCLUDED: an employee whose Employee.Status is Probation who participates in a
+        // regular annual/quarterly cycle (previously dropped). Until ISSUE-128 this filtered on
+        // Employee.Status == EmployeeStatus.Probation, which is a different population in BOTH directions —
+        // reported averages and headcounts change accordingly.
+        if (!filter.IncludeProbation)
+        {
+            var cycleType = await _dbContext.AppraisalCycles.AsNoTracking()
+                .Where(c => c.Id == cycleId)
+                .Select(c => (CycleType?)c.Type)
+                .FirstOrDefaultAsync(ct);
+            if (cycleType == CycleType.Probation)
+                return new List<EmployeeScoreRow>();
+        }
+
         // Employees in scope for THIS cycle: enrolled participants if any exist, else all tenant employees
         // (legacy cycles created before participant snapshotting). Then apply HR/manager scope + filters.
         var participantIds = await _dbContext.CycleParticipants.AsNoTracking()
@@ -516,9 +541,6 @@ public sealed class PerformanceDashboardService : IPerformanceDashboardService
 
         if (filter.LocationId is { } locId)
             employeesQuery = employeesQuery.Where(e => e.LocationId == locId);
-
-        if (!filter.IncludeProbation)
-            employeesQuery = employeesQuery.Where(e => e.Status != EmployeeStatus.Probation);
 
         var employeeRows = await employeesQuery
             .Select(e => new

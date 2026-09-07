@@ -8,7 +8,8 @@
 //     signed-off counts + completion rate).
 //   - FR-2: department-wise averages.
 //   - FR-3/BR-3: top-N / bottom-N performers (HR) and the configurable count.
-//   - FR-4/BR-2: filters combine (department, employment type) + probation exclusion.
+//   - FR-4/BR-2: filters combine (department, employment type) + the probation exclusion, which is
+//     keyed on the CYCLE's type (CycleType.Probation), NOT on the employee's status (ISSUE-128).
 //   - AC-5/BR-1/BR-3: a manager is hard-scoped to direct reports — team ranking, no bottom list,
 //     and a non-report's data never appears; a permission-less caller is forbidden.
 //   - FR-5: department drill-down lists the department's employees + scores.
@@ -309,10 +310,69 @@ public sealed class PerformanceDashboardServiceTests
         d.AverageScore.Should().Be(2.0m);
     }
 
-    [Fact]
-    public async Task Probation_employee_is_excluded_by_default_and_included_on_request()
+    // ── BR-2 (ISSUE-128): the exclusion axis is the CYCLE's type, not the EMPLOYEE's lifecycle status.
+    // These four arms pin both directions of that axis. The first version of this suite asserted
+    // "an employee whose Status is Probation is excluded", which pinned the defect: it made the wrong
+    // implementation permanently green. Corrected below — the employee-status arm now asserts INCLUSION.
+
+    /// <summary>
+    /// Seeds a second cycle with <see cref="CycleType.Probation"/> containing ONE participant whose
+    /// employee status is <see cref="EmployeeStatus.Active"/>, with a submitted review scoring 3.0.
+    /// Active status is the point: only the CYCLE type may exclude this row.
+    /// </summary>
+    private Guid SeedProbationCycleWithActiveEmployee()
     {
-        // Flip Sales employee C to Probation.
+        var probationCycleId = Guid.NewGuid();
+        var empD = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        using var db = CreateDbContext();
+        db.AppraisalCycles.Add(new AppraisalCycle
+        {
+            Id = probationCycleId, TenantId = _tenantId, Name = "Probation Q3",
+            Type = CycleType.Probation, Status = AppraisalCycleStatus.Active,
+            StartDate = now.AddDays(-30), EndDate = now.AddDays(30), RatingScaleMax = 5,
+            SelfWeightPercent = 30,
+        });
+        db.Employees.Add(new Employee
+        {
+            Id = empD, TenantId = _tenantId, EmployeeNo = "EMP-D", FirstName = "Mary", LastName = "Jackson",
+            Email = "d@acme.com", DepartmentId = _deptEng, ReportsToEmployeeId = _managerEmployeeId,
+            Status = EmployeeStatus.Active, IsActive = true, EmploymentType = EmploymentType.FullTime,
+        });
+        db.CycleParticipants.Add(new CycleParticipant
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, CycleId = probationCycleId, EmployeeId = empD,
+        });
+        db.ManagerReviews.Add(new ManagerReview
+        {
+            Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, CycleId = probationCycleId, EmployeeId = empD,
+            Status = ManagerReviewStatus.Submitted, FinalScore = 3.0m, SubmittedAt = now,
+            SignoffStatus = ReviewSignoffStatus.NotStarted,
+        });
+        db.SaveChanges();
+        return probationCycleId;
+    }
+
+    [Fact]
+    public async Task Probation_cycle_reviews_are_excluded_by_default_even_when_the_employee_is_active()
+    {
+        var probationCycleId = SeedProbationCycleWithActiveEmployee();
+
+        var d = (await CreateService(HrUser()).GetOverviewAsync(Filter(probationCycleId))).Value!;
+
+        // The participant is ACTIVE — only the cycle's Type may exclude her (BR-2).
+        d.ScoredEmployeeCount.Should().Be(0);
+        d.AverageScore.Should().Be(0m);
+        d.ScoreDistribution.Sum(b => b.Count).Should().Be(0);
+        d.Progress.TotalParticipants.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Probation_status_employee_in_a_regular_cycle_is_included()
+    {
+        // Flip Sales employee C (score 5.0) to Probation STATUS. The FY2026 cycle is Annual, so BR-2
+        // must NOT touch her — this is the arm that proves the axis moved off Employee.Status.
         using (var db = CreateDbContext())
         {
             var c = db.Employees.Single(e => e.Id == _empC);
@@ -320,12 +380,57 @@ public sealed class PerformanceDashboardServiceTests
             db.SaveChanges();
         }
 
-        var excluded = (await CreateService(HrUser()).GetOverviewAsync(Filter(_cycleId))).Value!;
-        excluded.ScoredEmployeeCount.Should().Be(2);  // A + B only
+        var d = (await CreateService(HrUser()).GetOverviewAsync(Filter(_cycleId))).Value!;
 
-        var included = (await CreateService(HrUser())
+        d.ScoredEmployeeCount.Should().Be(3);          // A + B + C
+        d.AverageScore.Should().Be(3.67m);             // (4 + 2 + 5) / 3 — the corrected population
+        d.TopPerformers.Should().Contain(p => p.EmployeeId == _empC);
+    }
+
+    [Fact]
+    public async Task Include_probation_true_admits_the_probation_cycle_population()
+    {
+        var probationCycleId = SeedProbationCycleWithActiveEmployee();
+
+        var d = (await CreateService(HrUser())
+            .GetOverviewAsync(Filter(probationCycleId, includeProbation: true))).Value!;
+
+        d.ScoredEmployeeCount.Should().Be(1);
+        d.AverageScore.Should().Be(3.0m);
+    }
+
+    [Fact]
+    public async Task Include_probation_true_keeps_the_regular_cycle_population_intact()
+    {
+        // The opt-in must not change a regular cycle's numbers, whatever the employees' statuses.
+        using (var db = CreateDbContext())
+        {
+            var c = db.Employees.Single(e => e.Id == _empC);
+            c.Status = EmployeeStatus.Probation;
+            db.SaveChanges();
+        }
+
+        var d = (await CreateService(HrUser())
             .GetOverviewAsync(Filter(_cycleId, includeProbation: true))).Value!;
-        included.ScoredEmployeeCount.Should().Be(3);  // A + B + C
+
+        d.ScoredEmployeeCount.Should().Be(3);
+        d.AverageScore.Should().Be(3.67m);
+    }
+
+    [Fact]
+    public async Task Trend_omits_probation_cycles_unless_included()
+    {
+        var probationCycleId = SeedProbationCycleWithActiveEmployee();
+        var cycles = new[] { _cycleId, probationCycleId };
+
+        var without = (await CreateService(HrUser())
+            .GetTrendAsync(cycles, Filter(), includeDepartmentSeries: false)).Value!;
+        without.Points.Should().ContainSingle().Which.CycleId.Should().Be(_cycleId);
+
+        var with = (await CreateService(HrUser())
+            .GetTrendAsync(cycles, Filter(includeProbation: true), includeDepartmentSeries: false)).Value!;
+        with.Points.Should().HaveCount(2);
+        with.Points.Should().Contain(p => p.CycleId == probationCycleId && p.AverageScore == 3.0m);
     }
 
     // ══════════════════════════════════════════════════════════════
