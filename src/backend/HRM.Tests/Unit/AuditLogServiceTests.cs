@@ -407,8 +407,8 @@ public sealed class AuditLogServiceTests
 
     /// <summary>
     /// ISSUE-062: the per-tenant loop scopes by an explicit tenant id, so it can never reach system-scoped
-    /// rows — before the fix they were retained forever and the table grew without bound (the FR-7 platform
-    /// copies of lockout/unlock made that growth continuous). They must expire on their own window.
+    /// rows — before the fix they were retained forever and the table grew without bound. PlatformMonitoring
+    /// writes one on every platform view, so the growth is continuous. They must expire on their own window.
     /// </summary>
     [Fact]
     public async Task Purge_DeletesExpiredSystemScopedRows_Issue062()

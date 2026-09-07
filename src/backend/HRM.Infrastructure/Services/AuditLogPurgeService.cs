@@ -17,8 +17,8 @@ namespace HRM.Infrastructure.Services;
 /// <c>ExecuteDelete</c> optimization is a deferred follow-up for very large tables.</para>
 ///
 /// <para>ISSUE-062: the per-tenant loop scopes by an explicit tenant id, so it can never reach the
-/// SYSTEM-scoped rows (<c>TenantId == null</c>) written by platform monitoring, pre-tenant-resolution auth
-/// failures, and the FR-7 platform copies of lockout/unlock. Those rows were retained forever. They are now
+/// SYSTEM-scoped rows (<c>TenantId == null</c>) written by <c>PlatformMonitoringService</c> and by auth
+/// events recorded before a tenant resolves. Those rows were retained forever. They are now
 /// purged too, on their own window: <see cref="SystemRetentionDays"/>, defined as the LONGEST tenant
 /// retention currently configured (floor <see cref="DefaultRetentionDays"/> days). A platform-wide row must
 /// outlive every tenant's own copy, so taking the max — not the min or an average — is the safe direction;
