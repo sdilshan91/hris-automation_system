@@ -364,6 +364,83 @@ public sealed class GoalProgressServiceTests
         peer.StatusCode.Should().Be(403);
     }
 
+    // ── ENH-014: server-computed progress delta ─────────────────────────
+
+    /// <summary>
+    /// ENH-014: every timeline entry carries the PRECEDING measurement and the movement it represents, so the UI
+    /// never has to re-derive "+25%" client-side (and cannot get it wrong when the list is paged or re-sorted).
+    /// The first entry carries null/null on purpose: "no prior measurement" is not "measured at zero", and the
+    /// server has no basis to claim a 0 baseline was ever observed.
+    /// </summary>
+    [Fact]
+    public async Task Timeline_reports_previous_and_delta_per_update_with_null_on_the_first_ENH014()
+    {
+        await SeedAsync();
+
+        // Seeded directly with explicit, well-separated timestamps: previous/delta are defined by chronological
+        // ADJACENCY, so the ordering must be pinned rather than left to three DateTime.UtcNow calls that can tie.
+        var t0 = DateTime.UtcNow.AddHours(-3);
+        using (var db = Db())
+        {
+            db.GoalProgressUpdates.Add(Seeded(_goalAId, 20, t0));
+            db.GoalProgressUpdates.Add(Seeded(_goalAId, 55, t0.AddHours(1)));
+            db.GoalProgressUpdates.Add(Seeded(_goalAId, 45, t0.AddHours(2))); // revised DOWN ⇒ negative delta
+            await db.SaveChangesAsync();
+        }
+
+        var result = await Service(EmployeeUser()).GetGoalTimelineAsync(_goalAId);
+
+        result.IsSuccess.Should().BeTrue();
+        var updates = result.Value!.Updates;
+        updates.Should().HaveCount(3);
+        updates.Select(u => u.ProgressPct).Should().ContainInOrder(20, 55, 45);
+
+        // Update 1 — no prior measurement, so BOTH are null. Not Previous=0/Delta=20.
+        updates[0].PreviousProgressPct.Should().BeNull();
+        updates[0].DeltaPct.Should().BeNull();
+
+        // Update 2 — moved 20 → 55.
+        updates[1].PreviousProgressPct.Should().Be(20);
+        updates[1].DeltaPct.Should().Be(35);
+
+        // Update 3 — revised DOWN 55 → 45; the delta is signed, not an absolute magnitude.
+        updates[2].PreviousProgressPct.Should().Be(55);
+        updates[2].DeltaPct.Should().Be(-10);
+
+        // The invariant the UI relies on: Delta is non-null exactly when Previous is, and always equals the
+        // difference. Asserted over the whole list so a projection that hard-codes one arm still fails.
+        updates.Should().OnlyContain(u =>
+            (u.PreviousProgressPct == null) == (u.DeltaPct == null)
+            && (u.PreviousProgressPct == null || u.DeltaPct == u.ProgressPct - u.PreviousProgressPct));
+    }
+
+    /// <summary>ENH-014: a single-update timeline has no baseline anywhere — the lone entry is null/null.</summary>
+    [Fact]
+    public async Task Timeline_with_one_update_reports_no_previous_and_no_delta_ENH014()
+    {
+        await SeedAsync();
+        await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 40));
+
+        var only = (await Service(EmployeeUser()).GetGoalTimelineAsync(_goalAId)).Value!.Updates.Single();
+
+        only.ProgressPct.Should().Be(40);
+        only.PreviousProgressPct.Should().BeNull();
+        only.DeltaPct.Should().BeNull();
+    }
+
+    private GoalProgressUpdate Seeded(Guid goalId, int pct, DateTime createdAtUtc) => new()
+    {
+        Id = Guid.NewGuid(),
+        TenantId = _tenantId,
+        GoalId = goalId,
+        EmployeeId = _employeeEmpId,
+        ProgressPct = pct,
+        Status = GoalProgressStatus.InProgress,
+        Notes = "seeded",
+        CreatedAtUtc = createdAtUtc,
+        IsDeleted = false,
+    };
+
     // ── FR-8: comment thread ────────────────────────────────────────────
 
     [Fact]

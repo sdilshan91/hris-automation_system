@@ -93,8 +93,14 @@ public sealed class RecommendationController : ControllerBase
     // ── Auto-generate (AC-2/FR-2/BR-3) ──────────────────────────────────
 
     /// <summary>
-    /// POST /api/v1/tenant/performance/recommendations/auto-generate — applies the tenant's active rating-threshold
-    /// rules across the cycle and creates Draft SUGGESTIONS for HR review (AC-2/FR-2/BR-3). HR-only.
+    /// POST /api/v1/tenant/performance/recommendations/auto-generate?dryRun=false — applies the tenant's active
+    /// rating-threshold rules across the cycle and creates Draft SUGGESTIONS for HR review (AC-2/FR-2/BR-3). HR-only.
+    ///
+    /// <para>ENH-015: <c>?dryRun=true</c> returns exactly what the run WOULD create and writes nothing — the
+    /// "review before you commit" screen. Unlike the leave accrual correction (which defaults to a dry run because
+    /// its write is an employee-detriment change), this defaults to <c>false</c>: creating Draft suggestions is the
+    /// endpoint's normal, reversible purpose, and flipping the default would silently break every existing caller.
+    /// The response echoes <c>dryRun</c> back so a mis-bound parameter is visible rather than silent.</para>
     /// </summary>
     [HttpPost("auto-generate")]
     [RequirePermission("Performance.Publish.All")]
@@ -102,9 +108,12 @@ public sealed class RecommendationController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> AutoGenerate(
-        [FromBody] AutoGenerateRecommendationsRequest request, CancellationToken cancellationToken)
+        [FromBody] AutoGenerateRecommendationsRequest request,
+        [FromQuery] bool dryRun,
+        CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new AutoGenerateRecommendationsCommand(request.CycleId), cancellationToken);
+        var result = await _mediator.Send(
+            new AutoGenerateRecommendationsCommand(request.CycleId, dryRun), cancellationToken);
         if (result.IsFailure)
             return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
         return Ok(ApiResponse<AutoGenerateResultDto>.Ok(result.Value!));

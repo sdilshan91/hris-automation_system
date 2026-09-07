@@ -55,3 +55,4 @@
 - [Regenerating the OpenAPI contract from a worktree](reference-contract-regen-in-worktree.md) — gen-openapi.sh works anywhere; `npm run api:types` needs the main checkout's node_modules binary
 - [InMemory enforces required scalars](feedback-inmemory-enforces-required-scalars.md) — a null required string throws at SaveChanges; deleting a `?? string.Empty` trades a blank row for a loud 500, and reddens the whole workflow
 - [HrReport SQL pushdown (ENH-455)](reference-hrreport-sql-pushdown.md) — what translates to Postgres GROUP BY, why the BR-3/BR-4 text rules stay in C#, and the enum-vs-SQL empty-group trap
+- [Dry-run guards need a caller with pending work](feedback-inert-guard-needs-a-caller-with-pending-work.md) — a SaveChanges guard is a surviving mutant unless the arm stages unrelated unsaved work

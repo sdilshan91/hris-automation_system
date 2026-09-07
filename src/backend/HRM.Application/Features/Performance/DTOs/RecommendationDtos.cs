@@ -245,6 +245,16 @@ public sealed record AutoGenerateResultDto
     public int EmployeesEvaluated { get; init; }
     public int SuggestionsCreated { get; init; }
     public int SuggestionsSkipped { get; init; }
+
+    /// <summary>
+    /// ENH-015: true when this was a PREVIEW — the suggestions below were computed but nothing was written.
+    /// Echoed back because a mis-spelled query parameter binds silently to false, and without this the caller
+    /// cannot tell a preview it asked for from a real run it accidentally performed.
+    /// On a preview <c>SuggestionsCreated</c> means "would be created" and each suggestion's
+    /// <c>Id</c>/<c>Events</c> are provisional — the Id is not in the database and Events is empty.
+    /// </summary>
+    public bool DryRun { get; init; }
+
     public IReadOnlyList<RecommendationDto> Suggestions { get; init; } = [];
 }
 
