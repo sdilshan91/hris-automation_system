@@ -73,7 +73,8 @@ public sealed class RecommendationIntegrationTests
         user.Permissions.Returns(permissions);
 
         var auditLogger = new PayrollAuditLogger(db, ctx, user, NullLogger<PayrollAuditLogger>.Instance);
-        return new RecommendationService(db, ctx, user, integration, auditLogger, NullLogger<RecommendationService>.Instance);
+        return new RecommendationService(db, ctx, user, new GanssHtmlSanitizer(), // ISSUE-149(b): the REAL sanitizer
+            integration, auditLogger, NullLogger<RecommendationService>.Instance);
     }
 
     private sealed record Seeded(Guid HrUserId, Guid EmployeeEmpId, Guid ApproverUserId, Guid ApproverEmpId, Guid CycleId);
