@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 165 | 296 | 461 |
+| ISSUE | 175 | 296 | 471 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **237** | **466** | **703** |
+| **TOTAL** | **247** | **466** | **713** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -249,6 +249,104 @@
 - **Why it is filed here:** it was the obvious copy target for ISSUE-036's port. The omission was spotted and deliberately not copied — but the original is still uncapped.
 - **Severity rationale:** LOW — minor DoS-surface / wasted-buffer issue, no correctness impact.
 - **Found:** 2026-09-06, out-of-lane while building ISSUE-036.
+
+### ISSUE-513 — the threat model claims a Hangfire filter REJECTS tenant-less jobs at runtime; nothing does
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** docs (architecture) — but the content is a **security control claim**
+- **Title:** `hrm_technical_document_v4.0.md:3439`, threat-model row 11: *"Hangfire job runs without tenant context → Mitigation: **Hangfire server filter requires `TenantId` in args; jobs without it rejected**."* **Nothing rejects a tenant-less job at runtime.** The only shipping `IServerFilter` is `JobLogContextFilter`, which pushes Serilog properties and nothing else.
+- **Why this is the most dangerous of the doc-drift family:** `ISSUE-375` describes the same non-existent filter in a *design* section; this states it as a **security mitigation with a runtime rejection behaviour**, in the threat model — the document a reviewer consults to decide whether a risk is already covered. The real control is a **build-time source scan** (`BackgroundJobTenantContextTests`) with a named exemption list: a different guarantee, a different failure mode, and it does not run in production at all.
+- **Root cause (100%, verified):** an `IServerFilter` cannot reach the job body's DI scope — 42 of 62 job classes in `HRM.Api/Jobs/` call `CreateScope()` themselves. The documented control could not be built as described.
+- **Suggested direction (NOT applied):** rewrite row 11 to the build-time guard and **re-rate the residual likelihood**, or implement a real runtime check. Not a wording fix — the rating depends on which.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-375.
+
+### ISSUE-514 — the architecture doc claims every job takes a `tenantId`; 30 of 62 do not
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** docs (architecture)
+- **Title:** `hrm_technical_document_v4.0.md:2604`: *"Every job method takes a `Guid tenantId` parameter."* **30 of the 62** classes in `HRM.Api/Jobs/` have no such parameter. `TenantJobRunner.cs:46-48` says so outright: sweep jobs *"declare no such argument — they enumerate tenants internally."*
+- **Why it matters beyond accuracy:** `ISSUE-513`'s mitigation **depends on this false premise**. "Reject jobs without `TenantId` in args" is only coherent if every job has one.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-375.
+
+### ISSUE-515 — the architecture doc names the RLS GUC `app.current_tenant_id`; the real name is `app.current_tenant`
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** docs (architecture)
+- **Title:** `hrm_technical_document_v4.0.md:565` — *"an EF interceptor … applies it as a PG session setting (`SET LOCAL app.current_tenant_id = '…'`) on every command."* Two errors: the GUC is **`app.current_tenant`** (`TenantJobRunner.cs:91`, ~30 job files) and `app.current_tenant_id` **appears nowhere in `src/`**; and the mechanism is superseded — `Program.cs:145` records it is set **at connection-open** (US-PLT-002 / ISSUE-277), not per command.
+- **Severity rationale:** MED not LOW — **a wrong GUC name is copy-pasteable into an RLS policy**, and a policy referencing a never-set GUC does not error. It silently matches nothing or everything.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-375.
+
+### ISSUE-516 — the entire US-PAY-002 salary-assignment TC surface documents routes that do not exist
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** QA (docs)
+- **Title:** Payroll · US-PAY-002 · TC-PAY-002-01/02/03/04/05/07/08/11 + TC-PAY-ISO-005/006/007 — **19 occurrences**. Every assignment TC targets `POST /api/v1/payroll/employees/{id}/salary[/preview|/bulk|/revisions]`. **That route does not exist.** Real: `POST api/v1/payroll/salary-assignments[/preview|/bulk]` (`EmployeeSalaryController.cs:28,45,62`) and `GET api/v1/payroll/employees/{id}/compensation|/revision-history` (`:81,:94`).
+- **Why HIGH:** every one would **404 on the URL**, and a 404 masks whatever the endpoint actually does. An entire story's coverage is unexecutable and would read as a failing feature rather than a wrong test.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-517 — payslip TCs use a `/slips` segment, the wrong verb on bulk download, and an unexecutable IDOR probe
+
+- **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
+- **Layer:** QA (docs)
+- **Title:** Payroll · US-PAY-004 · TC-PAY-004-02:28-29, TC-PAY-004-08:36, TC-PAY-ISO-010:38. Three errors: (1) routes use `/slips`, real segment is `/payslips` (`PayslipsController.cs:92,121,139`); (2) bulk download is documented **POST** but is actually **GET** `runs/{runId}/payslips/download-all` (`:139`); (3) **TC-PAY-ISO-010's per-slip IDOR probe `GET .../slips/{slipId}` has no equivalent** — the only per-employee route is keyed by `employeeId`, not `payslipId`.
+- **Why HIGH, and why (3) is worst:** a **tenant-isolation probe that cannot route is a fake isolation arm.** It "passes" by 404 — the same green as a genuinely enforced boundary.
+- **Suggested direction (NOT applied):** (1) and (2) are renames; **(3) needs a decision** on re-expressing the probe against an employee-keyed route.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-518 — the audit-log immutability TC passes by routing miss, not verb rejection
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** QA (docs)
+- **Title:** Payroll · US-PAY-012 · TC-PAY-012-07:38-39. It issues `PUT/PATCH/DELETE /api/v1/.../audit-log/{A}` — a path existing under **no** spelling — and accepts *"405 or 404"*, so it passes trivially on the 404 and **verifies nothing**. Real resource: `GET api/v1/tenant/audit-logs/{id:guid}` (`AuditLogController.cs:58,143`).
+- **Why it matters:** live test theater asserting immutability of the **audit log** in a CRITICAL module. Accepting 404 beside 405 is what makes it unfalsifiable.
+- **Suggested direction (NOT applied):** repoint so the 405 is **earned**, and drop 404 from the accepted set — a rewrite, not a rename.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-521 — concurrent sub-agents collide on generic scratchpad filenames, which silently degrades every mutation proof
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** tooling / process
+- **Title:** The mutation-proof convention every agent brief mandates ("mutate → confirm RED → revert → verify with `sha256sum -c`") stores its checksum and backup in the session scratchpad under **generic names** — `svc.sha`, `svc.bak`, `pre.sha`, `c.orig`, `u.orig`. Sub-agents running **in parallel share one scratchpad**, so two agents mutating two different services both write `svc.sha`.
+- **Observed, not theoretical:** during the 2026-09-07 T3 batch an agent's `sha256sum -c` reported `PayrollAdjustmentService.cs: FAILED` while repairing `PerformanceDashboardService.cs`. Another agent had overwritten its checksum mid-run. The agent correctly distrusted the result and verified the real state with `git diff` instead.
+- **Why MED and not LOW — two distinct failure modes:**
+  1. **A false FAILED is indistinguishable from unreverted mutation residue.** The check that exists to prove a mutation was undone becomes unreliable in exactly the situation it guards.
+  2. **Worse: `cp svc.bak <file>` could restore ANOTHER agent's file over the one under repair.** That is silent corruption of a source file, written by a command whose whole purpose is to undo a change safely.
+- **Diagnosis corrected:** the agent that found this attributed it to concurrent *user sessions*. That is wrong — scratchpad paths are per-session (12 distinct ones exist on this machine) and `svc.sha`/`svc.bak` exist in **only one**. The collision is between **concurrent SUB-AGENTS of a single session**, which all share the orchestrator's scratchpad. That makes it entirely fixable from the orchestrator side, which the cross-session framing would not have.
+- **Suggested direction (NOT applied):** require issue-id-prefixed scratchpad artifacts (`i128-svc.sha`, not `svc.sha`) in the mutation-proof instruction that every agent brief carries, and in the agent definitions. A convention that is only safe when run serially is not a convention — parallel sub-agents are the documented default (Engineering-Discipline rule #5).
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-128.
+
+
+### ISSUE-520 — terminated employees never get a monthly attendance summary row, so filtering to them returns silence
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Attendance · monthly summary
+- **Title:** `AttendanceSummaryService.GenerateAsync` (`:257`) computes only for `e.Status != EmployeeStatus.Terminated`, but the read path (`FilteredEmployeesAsync`, `:760-771`) lets a caller filter **to** `status=Terminated`. A leaver therefore never gets a materialized row generated **or** refreshed, and the read loop `continue`s when no row exists — so the filter returns an **empty or permanently stale** list rather than an error.
+- **Why it is not cosmetic:** the failure is **silent and indistinguishable from "this person had no attendance"**. The flow it breaks is reviewing a leaver's final month — which is exactly when attendance data matters most, because it feeds final settlement.
+- **Not fixed by ISSUE-083:** the current-month recompute added in #665 does not reach terminated employees either, since it delegates to the same `GenerateAsync` scope.
+- **Why it needs a decision, not just a fix:** correcting it changes **which employees the materialized table covers**, and final-settlement and payroll read the same rows. Two shapes: include terminated employees whose termination date falls in or after the requested month, or make the read path reject/flag a `Terminated` filter instead of silently returning nothing.
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-083.
+
+
+### ISSUE-519 — `TC-PAY-011-03` names a `send-payslips` route that does not exist
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** QA (docs)
+- **Title:** `TC-PAY-011-03.md:39` references *"POST send-payslips"*; the real route is `POST api/v1/payroll/runs/{runId}/payslips/send-emails` (`PayslipDistributionController.cs:33`).
+- **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-512 — sub-agents working in a worktree write their agent-memory into the MAIN tree, where it sits uncommitted
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** tooling / process
+- **Title:** Three `backend-dev` sub-agents ran with `cd .claude/worktrees/{i036,t3a,t3b}` and correctly confined every `src/` edit to their own worktree — but their `.claude/agent-memory/backend-dev/*.md` writes landed in the **main checkout**, not the worktree they were working in. The files were still uncommitted in the main tree hours later, discovered only by an explicit "what is uncommitted?" sweep.
+- **Why this is not simply correct behaviour:** agent memory is project-scoped, so the main tree is arguably the right destination — the problem is that nothing **commits** it. It accumulates outside any branch, invisible to the PR that produced it, and the realistic failure modes are (a) it is swept into an unrelated PR by a later `git add -A` in the main tree, or (b) it is lost to a `git checkout`/`clean`. Both happened in near-miss form this session: the main tree was on a docs branch at the time.
+- **Second-order risk:** two concurrent sub-agents writing the same memory file have **no isolation at all** — the whole point of `isolation: worktree` per Engineering-Discipline rule #8 — because both resolve to the same main-tree path.
+- **Evidence:** 2026-09-07, `git status` in the main checkout showed 4 modified/untracked files under `.claude/agent-memory/backend-dev/` after three agents had finished and their worktrees were clean. Committed as #657.
+- **Severity rationale:** LOW — nothing was lost, and the content is valuable rather than harmful. Filed because the *near-miss* is structural, not incidental: the orchestrator has no signal that a sub-agent produced memory, so remembering to sweep the main tree is the only control, and it is a human one.
+- **Suggested direction (NOT applied):** either have the orchestrator sweep and commit `.claude/agent-memory/` as part of closing out any run that used sub-agents, or teach agents to write memory into their own worktree so it rides the same PR as the work that produced it. The second is cleaner but interacts with rule #8's one-branch-per-worktree constraint.
+- **Found:** 2026-09-07, out-of-lane while auditing uncommitted changes.
+
 
 ### ISSUE-511 — `AngleSharp 0.17.1` carries a known moderate-severity advisory, warned on every build
 
@@ -2941,6 +3039,20 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** replace with `"\0REDACTED\0"`, then add a CI step — `find src/backend -name '*.cs' -not -path '*/obj/*' | xargs file | grep -v text` must return nothing. **The CI step matters more than the fix**: it is what stops a future file going invisible.
 
 ### ISSUE-449 — the G7 queue item's own count was inflated ~33% by counting the codebase's documentation of a problem as instances of it
+- **✅ RESOLVED 2026-09-07 — measured, and the UNIT recorded alongside.** Byte-level walk of `src/backend` (excluding `obj/`, `bin/`, and semgrep's own excludes `*Tests*.cs` / `*Test.cs` / `TenantResolution*.cs`), decoding `utf-8-sig` with `errors='replace'` so no file can be silently skipped. Independently reproduced twice.
+
+  | measure | value |
+  |---|---|
+  | files containing the token | 81 |
+  | **executable call sites** (`IgnoreQueryFilters\s*\(` on non-comment lines) | **276** |
+  | raw text matches | 369 |
+  | comment-only lines | 93 |
+
+  **Root cause of the three numbers: none of them stated a unit.** 354 (queue) counted raw text; 270 (register) was an older raw count; 265 (`.semgrep/tenant-isolation.yml`) was closer to call sites but stale. Corrected all three, each now carrying the unit — that is the actual fix, since a bare number will drift into a fourth.
+
+  **The BUG-448 assumption was verified, not trusted:** an independent byte scan of all 2703 `.cs` files found **0** containing `\x00`, and `file(1)` now reports `AuditAnonymizationService.cs` as UTF-8 text, so grep and the byte count agree. Before #645 they would not have.
+
+  Two ledger sub-claims were also wrong and are noted rather than silently dropped: `HRM.Application` has 5 raw matches but **0** executable (all comments), and `CrossTenantScope.cs` has **1** comment occurrence, not the 2 claimed.
 - **Type / Severity / Status:** ISSUE · MED · OPEN
 - **Layer:** DATA (ledger)
 - **Module / US / TC:** cross-module · `GAP-CLOSURE-QUEUE.md:213-215`, `GAP-REGISTER.md:129`

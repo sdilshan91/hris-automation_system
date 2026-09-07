@@ -210,7 +210,8 @@ instances**, so probes 3–5 could not be observed end-to-end.
       `ops/`, `scripts/` or CI), and `RlsIsolationPostgresTests.cs:431` hand-mirrors the revoke in its fixture.
       Either wire the file into a documented apply step, or correct `AuditLogController.cs:21-23`, which
       states append-only is "ENFORCED rather than merely conventional". (GAP-005)
-- [x] **G7 · Triage the 354 `IgnoreQueryFilters()` sites** — measured 354 in non-test `src/backend` (the
+- [x] **G7 · Triage the `IgnoreQueryFilters()` sites** — ⚠ the "354" below is RAW TEXT MATCHES, not call
+  sites; corrected 2026-09-07 to **276 executable call sites** in non-test `src/backend` (semgrep's own scope: excludes `*Tests*.cs`, `*Test.cs`, `TenantResolution*.cs`) · **369** raw text matches · **93** of those are comment-only lines. Re-measured byte-level (see `ISSUE-449`). Original note: (the
       register said 270); **zero** carry `// nosemgrep`. Campaign-shaped. Note the "RLS backstops them"
       rationale does not hold in dev/CI, where `Rls:Enabled=false`. (GAP-007)
 
@@ -458,7 +459,9 @@ Discovered during the audits. **None of these is currently tracked anywhere else
 - [ ] **No bank-details capture API exists** — surfaced under `ENH-018`; the masking works, but nothing can write the fields.
 - [ ] **`src/backend/HRM.Api/.claude/` is gitignored** — the stray-agent-directory defect `ISSUE-445` describes for the frontend already happened on the backend and was papered over with an ignore rule.
 - [ ] **`review-signoff.component.ts:345` assigns `el.innerHTML` directly**, bypassing Angular's sanitizer — safe only because the server sanitizes on write, making `ISSUE-121`'s gap a single point of failure.
-- [ ] **Three live `IgnoreQueryFilters` counts** — register 270, queue 354, reality 265. Fold into `ISSUE-449`.
+- [x] **Three live `IgnoreQueryFilters` counts** — RESOLVED 2026-09-07. All three were counting different
+  things and none said which: **276 executable call sites** in non-test `src/backend` (semgrep's own scope: excludes `*Tests*.cs`, `*Test.cs`, `TenantResolution*.cs`) · **369** raw text matches · **93** of those are comment-only lines. The missing UNIT is what produced three numbers, so every
+  corrected site now states it. Register, queue and `.semgrep/tenant-isolation.yml` all updated.
 - [ ] **`gotcha-grep-blind-source-files.md` agent memory caches the wrong NUL list** (3 files, names one that never had a NUL).
 
 ---
