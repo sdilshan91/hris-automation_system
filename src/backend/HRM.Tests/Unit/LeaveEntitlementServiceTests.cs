@@ -720,6 +720,231 @@ public sealed class LeaveEntitlementServiceTests : IDisposable
             _tenantId, Arg.Any<string>(), Arg.Is<int>(y => y == DateTime.UtcNow.Year), _leaveTypeId);
     }
 
+    // ── ENH-001: the four entitlement mutations that changed effective entitlement but enqueued nothing.
+    //    Before the fix, only UpdateRuleAsync enqueued; deleting a rule / bulk-creating rules / writing or
+    //    deleting an override left already-accrued employees on stale numbers until the 02:30 sweep.
+
+    [Fact]
+    public async Task DeleteRule_enqueues_entitlement_recalc_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+        var created = await svc.CreateRuleAsync(MakeRuleRequest());
+        created.IsSuccess.Should().BeTrue();
+        scheduler.ClearReceivedCalls();   // CreateRule must not enqueue; isolate the delete.
+
+        var deleted = await svc.DeleteRuleAsync(created.Value!.Id);
+        deleted.IsSuccess.Should().BeTrue();
+
+        // Deleting the rule drops affected employees back to the next-priority rule / leave-type default,
+        // so it needs the same tenant + current-leave-year + leave-type scoped recalc an edit gets.
+        scheduler.Received(1).Enqueue(
+            _tenantId, Arg.Any<string>(), Arg.Is<int>(y => y == DateTime.UtcNow.Year), _leaveTypeId);
+        scheduler.ReceivedCalls().Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DeleteRule_unknown_id_does_not_enqueue_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        var deleted = await svc.DeleteRuleAsync(Guid.NewGuid());
+
+        deleted.IsFailure.Should().BeTrue();
+        deleted.StatusCode.Should().Be(404);
+        scheduler.ReceivedCalls().Should().BeEmpty("a failed mutation changed no entitlement");
+    }
+
+    [Fact]
+    public async Task BulkCreateRules_enqueues_exactly_one_recalc_for_the_whole_batch_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        // Three rules, same leave type, three distinct dimension combos (so the ISSUE-033 duplicate guard
+        // does not reject them).
+        var result = await svc.BulkCreateRulesAsync(new[]
+        {
+            MakeRuleRequest(entitlementDays: 20, priority: 1),
+            MakeRuleRequest(entitlementDays: 21, priority: 2) with { DepartmentId = null },
+            MakeRuleRequest(entitlementDays: 22, priority: 3) with { JobTitleId = _jobTitleId },
+        });
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Count.Should().Be(3);
+
+        // THE point of this test: ONE job for the batch, not one per rule. The recalc is scoped by
+        // (leave year, leave type) and is idempotent, so N jobs would be N duplicate sweeps — a 200-row
+        // import would flood Hangfire. Batch is homogeneous, so it stays scoped to the single leave type.
+        scheduler.ReceivedCalls().Count().Should().Be(1, "a per-rule enqueue would flood Hangfire");
+        scheduler.Received(1).Enqueue(
+            _tenantId, Arg.Any<string>(), Arg.Is<int>(y => y == DateTime.UtcNow.Year), _leaveTypeId);
+    }
+
+    [Fact]
+    public async Task BulkCreateRules_mixed_leave_types_enqueues_one_tenant_wide_recalc_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        var result = await svc.BulkCreateRulesAsync(new[]
+        {
+            MakeRuleRequest(entitlementDays: 20),
+            MakeRuleRequest(entitlementDays: 7) with { LeaveTypeId = _leaveTypeSickId },
+        });
+
+        result.IsSuccess.Should().BeTrue();
+
+        // A heterogeneous batch cannot be scoped to one leave type → null = every leave type in the tenant.
+        scheduler.ReceivedCalls().Count().Should().Be(1);
+        scheduler.Received(1).Enqueue(
+            _tenantId, Arg.Any<string>(), Arg.Is<int>(y => y == DateTime.UtcNow.Year), null);
+    }
+
+    [Fact]
+    public async Task BulkCreateRules_empty_batch_does_not_enqueue_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        var result = await svc.BulkCreateRulesAsync(Array.Empty<UpsertLeaveEntitlementRuleRequest>());
+
+        result.IsSuccess.Should().BeTrue();
+        scheduler.ReceivedCalls().Should().BeEmpty("an empty batch mutated no entitlement");
+    }
+
+    [Fact]
+    public async Task BulkCreateRules_failed_batch_does_not_enqueue_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        // Second request duplicates the first's dimension combo → ISSUE-033 guard fails the batch.
+        var result = await svc.BulkCreateRulesAsync(new[]
+        {
+            MakeRuleRequest(entitlementDays: 20),
+            MakeRuleRequest(entitlementDays: 25),
+        });
+
+        result.IsFailure.Should().BeTrue();
+        scheduler.ReceivedCalls().Should().BeEmpty("a failed batch returns a failure Result — schedule nothing");
+    }
+
+    [Fact]
+    public async Task UpsertOverride_enqueues_entitlement_recalc_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+        var futureYear = DateTime.UtcNow.Year + 1;
+
+        var result = await svc.UpsertOverrideAsync(new UpsertLeaveEntitlementOverrideRequest
+        {
+            EmployeeId = _employeeId,
+            LeaveTypeId = _leaveTypeId,
+            LeaveYear = futureYear,
+            EntitlementDays = 30,
+            Reason = "Exceptional contribution",
+        });
+
+        result.IsSuccess.Should().BeTrue();
+
+        // An override outranks every rule, so it changes effective entitlement immediately. It must be
+        // scoped to the override's OWN leave year — deliberately not the current year here, so a
+        // copy-paste of the rule path's "current year" resolution would fail this assertion.
+        scheduler.Received(1).Enqueue(_tenantId, Arg.Any<string>(), futureYear, _leaveTypeId);
+        scheduler.ReceivedCalls().Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpsertOverride_invalid_request_does_not_enqueue_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        var result = await svc.UpsertOverrideAsync(new UpsertLeaveEntitlementOverrideRequest
+        {
+            EmployeeId = _employeeId,
+            LeaveTypeId = _leaveTypeId,
+            LeaveYear = 2026,
+            EntitlementDays = -5,
+            Reason = "Test",
+        });
+
+        result.IsFailure.Should().BeTrue();
+        scheduler.ReceivedCalls().Should().BeEmpty("a rejected override persisted nothing to recalculate");
+    }
+
+    [Fact]
+    public async Task DeleteOverride_enqueues_entitlement_recalc_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+        var futureYear = DateTime.UtcNow.Year + 1;
+
+        var created = await svc.UpsertOverrideAsync(new UpsertLeaveEntitlementOverrideRequest
+        {
+            EmployeeId = _employeeId,
+            LeaveTypeId = _leaveTypeId,
+            LeaveYear = futureYear,
+            EntitlementDays = 30,
+            Reason = "Initial",
+        });
+        created.IsSuccess.Should().BeTrue();
+        scheduler.ClearReceivedCalls();   // isolate the delete from the upsert's own enqueue.
+
+        var deleted = await svc.DeleteOverrideAsync(created.Value!.Id);
+        deleted.IsSuccess.Should().BeTrue();
+
+        // Removing the override drops the employee back to the rule/default entitlement — same recalc,
+        // still scoped to the deleted override's own leave year.
+        scheduler.Received(1).Enqueue(_tenantId, Arg.Any<string>(), futureYear, _leaveTypeId);
+        scheduler.ReceivedCalls().Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task DeleteOverride_unknown_id_does_not_enqueue_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        var deleted = await svc.DeleteOverrideAsync(Guid.NewGuid());
+
+        deleted.IsFailure.Should().BeTrue();
+        deleted.StatusCode.Should().Be(404);
+        scheduler.ReceivedCalls().Should().BeEmpty("a failed mutation changed no entitlement");
+    }
+
+    [Fact]
+    public async Task UpdateRule_still_enqueues_exactly_once_enh001()
+    {
+        // Regression guard for the one call site that already worked (BUG-118): folding the five sites onto
+        // a shared helper must not double-enqueue or drop it. CreateRule contributes zero.
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+        var created = await svc.CreateRuleAsync(MakeRuleRequest());
+        created.IsSuccess.Should().BeTrue();
+        scheduler.ReceivedCalls().Should().BeEmpty("CreateRuleAsync deliberately does not enqueue");
+
+        (await svc.UpdateRuleAsync(created.Value!.Id, MakeRuleRequest(entitlementDays: 25)))
+            .IsSuccess.Should().BeTrue();
+
+        scheduler.ReceivedCalls().Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task UpdateRule_unknown_id_does_not_enqueue_enh001()
+    {
+        var scheduler = Substitute.For<ILeaveEntitlementRecalcJobScheduler>();
+        var svc = CreateService(scheduler);
+
+        var result = await svc.UpdateRuleAsync(Guid.NewGuid(), MakeRuleRequest());
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(404);
+        scheduler.ReceivedCalls().Should().BeEmpty("a failed mutation changed no entitlement");
+    }
+
     [Fact]
     public async Task Recalculate_writes_positive_delta_when_rule_increased_bug118()
     {
