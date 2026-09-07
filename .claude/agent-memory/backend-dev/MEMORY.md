@@ -59,3 +59,4 @@
 - [RLS WITH CHECK blocks null-tenant writes](reference-rls-withcheck-blocks-null-tenant-writes.md) — the read convention is NOT permission to write one; ISSUE-062 500s login under RLS
 - [worktree-fence rejects complex Bash](project-worktree-fence-blocks-complex-bash.md) — python heredocs and git-in-a-&&-chain are refused; write the script to the scratchpad and run it by absolute path
 - [Masking a field means masking its derivations](reference-mask-derived-fields.md) — BUG-533: BudgetCharge is `BonusAmount ?? IncrementAmount`, so nulling the five comp fields alone left the figure exposed
+- [Upload content sniffer (FileSignatureValidator)](reference-upload-content-sniffer.md) — fail-closed on unmapped types (why adoption stalls); adding a key is additive; image/jpg alias; payroll adjustment is the only path with no virus scan

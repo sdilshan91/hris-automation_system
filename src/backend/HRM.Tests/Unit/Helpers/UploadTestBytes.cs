@@ -23,7 +23,8 @@ public static class UploadTestBytes
     public static byte[] For(string? contentType) => contentType switch
     {
         "image/png" => Png,
-        "image/jpeg" => Jpeg,
+        // BUG-075: "image/jpg" is the legacy alias of "image/jpeg" — same JPEG SOI bytes.
+        "image/jpeg" or "image/jpg" => Jpeg,
         Docx or Xlsx => Zip,
         "application/msword" or "application/vnd.ms-excel" => Ole,
         _ => Pdf,

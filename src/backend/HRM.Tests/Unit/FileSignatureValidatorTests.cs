@@ -170,4 +170,90 @@ public sealed class FileSignatureValidatorTests
         result.ErrorCode.Should().Be("invalid_file_type");
         stream.Position.Should().Be(0);
     }
+
+    // ── BUG-075: "image/jpg" is an ALIAS of "image/jpeg" (same FF D8 FF segment) ───────────────────
+    // Purely additive: before the alias this key matched nothing and was fail-closed, so the payroll
+    // adjustment path (the only allow-list that accepts the legacy string) could not be sniffed at all.
+
+    [Fact]
+    public void FileSignature_LegacyJpgAlias_RealJpegBytes_Ok_BUG075()
+    {
+        FileSignatureValidator.Validate("image/jpg", Jpeg).IsSuccess.Should().BeTrue(
+            "image/jpg is a widely-emitted alias for image/jpeg and maps to the same SOI marker");
+    }
+
+    [Theory]
+    [InlineData("image/jpg")]
+    [InlineData("image/JPG")]
+    [InlineData("IMAGE/Jpg")]
+    public void FileSignature_LegacyJpgAlias_IsCaseInsensitive_BUG075(string contentType)
+    {
+        FileSignatureValidator.Validate(contentType, Jpeg).IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [MemberData(nameof(NonJpegPayloads))]
+    public void FileSignature_LegacyJpgAlias_NonJpegBytes_Rejected_BUG075(byte[] header)
+    {
+        var result = FileSignatureValidator.Validate("image/jpg", header);
+
+        result.IsFailure.Should().BeTrue(
+            "{0} is not a JPEG, so declaring it image/jpg must not get it past the sniffer",
+            BitConverter.ToString(header));
+        result.ErrorCode.Should().Be("invalid_file_type");
+    }
+
+    public static IEnumerable<object[]> NonJpegPayloads() => new[]
+    {
+        new object[] { MzExe },
+        new object[] { Pdf },
+        new object[] { Png },
+        new object[] { Zip },
+        new object[] { Ole },
+        new object[] { Webp },
+        new object[] { new byte[] { 0x00, 0x00, 0x00 } },
+    };
+
+    /// <summary>
+    /// The alias must be indistinguishable from the canonical type for EVERY payload, in both directions —
+    /// this is what makes it an alias rather than a second, looser rule that could drift.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(AllPayloads))]
+    public void FileSignature_LegacyJpgAlias_AgreesWithImageJpeg_BUG075(byte[] header)
+    {
+        FileSignatureValidator.Validate("image/jpg", header).IsSuccess
+            .Should().Be(FileSignatureValidator.Validate("image/jpeg", header).IsSuccess);
+    }
+
+    public static IEnumerable<object[]> AllPayloads() =>
+        NonJpegPayloads().Concat(new[] { new object[] { Jpeg } });
+
+    /// <summary>
+    /// Guards the "purely additive" claim: adding the alias key must not have taught any OTHER declared
+    /// type to accept JPEG bytes, and must not have introduced further unknown-type keys.
+    /// </summary>
+    [Theory]
+    [InlineData("application/pdf")]
+    [InlineData("image/png")]
+    [InlineData("image/webp")]
+    [InlineData("application/msword")]
+    [InlineData("application/vnd.ms-excel")]
+    [InlineData(Docx)]
+    [InlineData(Xlsx)]
+    public void FileSignature_JpegBytes_StillRejectedForEveryOtherType_BUG075(string contentType)
+    {
+        FileSignatureValidator.Validate(contentType, Jpeg).IsFailure.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("image/jpg2")]
+    [InlineData("image/jp")]
+    [InlineData("jpg")]
+    [InlineData("application/octet-stream")]
+    public void FileSignature_StillFailsClosedForUnmappedTypes_BUG075(string contentType)
+    {
+        FileSignatureValidator.Validate(contentType, Jpeg).IsFailure.Should().BeTrue();
+        FileSignatureValidator.Validate(contentType, Pdf).IsFailure.Should().BeTrue();
+    }
 }

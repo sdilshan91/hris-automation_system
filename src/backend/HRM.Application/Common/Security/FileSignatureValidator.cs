@@ -46,6 +46,13 @@ public static class FileSignatureValidator
         new[] { Seg(0, 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1) },
     };
 
+    // JPEG's Start-Of-Image marker. Held in one field so the "image/jpeg" and "image/jpg" keys below are
+    // provably the SAME signature set rather than two copies that could drift apart.
+    private static readonly Segment[][] Jpeg =
+    {
+        new[] { Seg(0, 0xFF, 0xD8, 0xFF) },
+    };
+
     /// <summary>
     /// content type -> alternative signatures (OR). Each signature is a set of segments that must ALL match
     /// (AND). Detection is by bytes only — never by file name or the caller's declared string beyond using
@@ -56,7 +63,13 @@ public static class FileSignatureValidator
         {
             ["application/pdf"] = new[] { new[] { Seg(0, 0x25, 0x50, 0x44, 0x46) } }, // %PDF
             ["image/png"] = new[] { new[] { Seg(0, 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) } },
-            ["image/jpeg"] = new[] { new[] { Seg(0, 0xFF, 0xD8, 0xFF) } },
+            ["image/jpeg"] = Jpeg,
+            // BUG-075: "image/jpg" is non-standard but widely emitted by browsers/clients, and the payroll
+            // adjustment allow-list accepts it. Mapping it here is PURELY ADDITIVE: it adds a key that
+            // previously matched nothing and so was already fail-closed (Validate rejects unknown types).
+            // It cannot loosen any existing type — it only lets a real JPEG declared with the legacy string
+            // be sniffed instead of being trusted on its declared string alone.
+            ["image/jpg"] = Jpeg,
             // WebP: "RIFF" then (4-byte size) then "WEBP" at offset 8.
             ["image/webp"] = new[] { new[] { Seg(0, 0x52, 0x49, 0x46, 0x46), Seg(8, 0x57, 0x45, 0x42, 0x50) } },
             ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] = Zip, // .docx
