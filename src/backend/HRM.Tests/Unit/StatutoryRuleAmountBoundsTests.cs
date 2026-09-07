@@ -142,4 +142,57 @@ public sealed class StatutoryRuleAmountBoundsTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.ErrorMessage.Contains("maximum allowed"));
     }
+
+    // ------------------------------------------------------------------
+    // ISSUE-501 regression: EmployeeRate/EmployerRate map to numeric(5,2).
+    // A rate with >2 decimal places used to validate, then Postgres rounded
+    // it on insert and the API answered 200 with a DIFFERENT statutory
+    // contribution rate than the caller sent. It must be rejected instead.
+    // Decimal literals (…m) are deliberate — a double literal would lose the
+    // exact scale under test and the arm would prove nothing.
+    // ------------------------------------------------------------------
+
+    private static SocialSecurityInputDto Rates(decimal employee, decimal employer) =>
+        new(employee, employer, null, StatutoryApplicableOn.Gross, null);
+
+    [Fact]
+    public void SocialSecurity_EmployeeRate_MoreThanTwoDecimals_IsInvalid()
+    {
+        var result = new SocialSecurityInputValidator().Validate(Rates(12.345m, 12m));
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e =>
+            e.PropertyName == nameof(SocialSecurityInputDto.EmployeeRate)
+            && e.ErrorCode == "invalid_rate_scale"
+            && e.ErrorMessage.Contains("2 decimal places"));
+    }
+
+    [Fact]
+    public void SocialSecurity_EmployerRate_MoreThanTwoDecimals_IsInvalid()
+    {
+        var result = new SocialSecurityInputValidator().Validate(Rates(12m, 12.345m));
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e =>
+            e.PropertyName == nameof(SocialSecurityInputDto.EmployerRate)
+            && e.ErrorCode == "invalid_rate_scale"
+            && e.ErrorMessage.Contains("2 decimal places"));
+    }
+
+    [Fact]
+    public void SocialSecurity_ExactlyTwoDecimals_IsValid()
+    {
+        var result = new SocialSecurityInputValidator().Validate(Rates(12.34m, 8.65m));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SocialSecurity_TrailingZeroAndWholeNumberRates_AreValid()
+    {
+        // ignoreTrailingZeros: 12.30 has scale 2 but only 1 significant decimal; 12 has none.
+        var result = new SocialSecurityInputValidator().Validate(Rates(12.30m, 12m));
+
+        result.IsValid.Should().BeTrue();
+    }
 }
