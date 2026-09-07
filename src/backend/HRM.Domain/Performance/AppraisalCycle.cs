@@ -70,11 +70,37 @@ public sealed class AppraisalCycle : BaseEntity
 
     // ── Sign-off config (US-PRF-006) ───────────────────────────────────
 
+    /// <summary>Default sign-off auto-close window in days (US-PRF-006 BR-3, §10) — the column default too.</summary>
+    public const int DefaultSignoffAutoCloseDays = 7;
+
+    /// <summary>
+    /// Smallest sign-off auto-close window a TENANT may configure (ENH-012).
+    /// <para>
+    /// Deliberately 1, not 0. Internally a window of 0 is perfectly well-defined — "no grace period, close on
+    /// the next sweep" — but it is NOT offered on the cycle API, because an HR admin who types 0 into a field
+    /// labelled "days to sign off" overwhelmingly means "turn this off", not "auto-close every pending review
+    /// the moment sign-off is requested". Accepting 0 would make the most destructive reading the one the
+    /// system performs, silently. So the tenant-facing surface rejects it (<c>invalid_signoff_autoclose_days</c>)
+    /// and 0 stays reachable only through the ops/test config override, where the intent is explicit.
+    /// There is currently no "disabled" value at all — see the ENH note on the override in
+    /// <c>ReviewSignoffAutoCloseService</c>.
+    /// </para>
+    /// </summary>
+    public const int MinSignoffAutoCloseDays = 1;
+
+    /// <summary>
+    /// Largest sign-off auto-close window a tenant may configure (ENH-012). A year bounds the setting to
+    /// something an appraisal cycle can plausibly outlive, and keeps the <c>AddDays</c> cutoff arithmetic
+    /// nowhere near <see cref="DateTime"/> overflow.
+    /// </summary>
+    public const int MaxSignoffAutoCloseDays = 365;
+
     /// <summary>
     /// Tenant-configurable number of days an employee has to sign off a review before it auto-closes with
-    /// <c>NoResponse</c> status (US-PRF-006 BR-3, §10). Default 7.
+    /// <c>NoResponse</c> status (US-PRF-006 BR-3, §10). Default 7; settable per cycle over the API in
+    /// [<see cref="MinSignoffAutoCloseDays"/>, <see cref="MaxSignoffAutoCloseDays"/>] (ENH-012).
     /// </summary>
-    public int SignoffAutoCloseDays { get; set; } = 7;
+    public int SignoffAutoCloseDays { get; set; } = DefaultSignoffAutoCloseDays;
 
     /// <summary>
     /// Tenant-configurable default meeting-notes template (US-PRF-006 FR-1, §10 — HR-configured at the tenant

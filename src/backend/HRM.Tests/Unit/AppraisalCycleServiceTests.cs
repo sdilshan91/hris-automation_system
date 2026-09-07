@@ -109,11 +109,80 @@ public sealed class AppraisalCycleServiceTests
         CycleType type = CycleType.Annual,
         string name = "FY2026 Annual",
         int ratingScaleMax = 5,
-        int selfWeightPercent = 30)
+        int selfWeightPercent = 30,
+        int? signoffAutoCloseDays = null)
         => new(name, type, start, end, phases, scope, ratingScaleMax, selfWeightPercent,
-            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false);
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            SignoffAutoCloseDays: signoffAutoCloseDays);
 
     private static ParticipantScopeInput AllScope() => new(ParticipantScopeType.AllEmployees);
+
+    // ── ENH-012 (US-PRF-006 BR-3): the sign-off auto-close window is API-configurable ──
+
+    [Fact]
+    public async Task Create_WithExplicitSignoffAutoCloseWindow_PersistsItAndReturnsIt()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        var input = CreateInput(start, start.AddDays(40), DefaultPhases(start), AllScope(),
+            signoffAutoCloseDays: 21);
+
+        var result = await CreateService().CreateAsync(input);
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.SignoffAutoCloseDays.Should().Be(21, "the DTO must round-trip the setting");
+
+        using var db = CreateDbContext();
+        (await db.AppraisalCycles.AsNoTracking().SingleAsync()).SignoffAutoCloseDays.Should().Be(21);
+    }
+
+    [Fact]
+    public async Task Create_WithoutASignoffAutoCloseWindow_FallsBackToTheDefault()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+
+        var result = await CreateService()
+            .CreateAsync(CreateInput(start, start.AddDays(40), DefaultPhases(start), AllScope()));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.SignoffAutoCloseDays.Should().Be(AppraisalCycle.DefaultSignoffAutoCloseDays);
+
+        using var db = CreateDbContext();
+        (await db.AppraisalCycles.AsNoTracking().SingleAsync()).SignoffAutoCloseDays
+            .Should().Be(AppraisalCycle.DefaultSignoffAutoCloseDays);
+    }
+
+    [Fact]
+    public async Task Update_ChangesTheSignoffAutoCloseWindow_AndOmittingItLeavesItAlone()
+    {
+        SeedEmployees();
+        var start = DateTime.UtcNow.Date.AddDays(1);
+        var created = await CreateService().CreateAsync(
+            CreateInput(start, start.AddDays(40), DefaultPhases(start), AllScope(), signoffAutoCloseDays: 21));
+        created.IsSuccess.Should().BeTrue(created.Error);
+        var cycleId = created.Value!.Id;
+
+        var changed = await CreateService().UpdateAsync(cycleId, new UpdateCycleInput(
+            "FY2026 Annual", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null, Scope: null, SignoffAutoCloseDays: 3));
+
+        changed.IsSuccess.Should().BeTrue(changed.Error);
+        changed.Value!.SignoffAutoCloseDays.Should().Be(3);
+
+        // Omitting the field on a later update must NOT reset it to the default.
+        var untouched = await CreateService().UpdateAsync(cycleId, new UpdateCycleInput(
+            "FY2026 Annual renamed", start, start.AddDays(40), DefaultPhases(start),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null));
+
+        untouched.IsSuccess.Should().BeTrue(untouched.Error);
+        untouched.Value!.SignoffAutoCloseDays.Should().Be(3);
+
+        using var db = CreateDbContext();
+        (await db.AppraisalCycles.AsNoTracking().SingleAsync()).SignoffAutoCloseDays.Should().Be(3);
+    }
 
     // ── AC-1/AC-2: create persists cycle, phases, participants ───────────
 
