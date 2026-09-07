@@ -40,30 +40,37 @@ survives the fix).
 
 ## Scope and priority
 
-⚠ **The working file is NOT all live.** `docs/QA/TEST-FINDINGS.md` holds **~210 entries but only ~181 are
+⚠ **The working file is NOT all live.** `docs/QA/TEST-FINDINGS.md` holds **267 entries but only **219** of them are
 live** (`OPEN`/`DEFERRED`). The rest must be **excluded from the backfill** — backfilling a resolved
 finding is wasted work:
 
-- **29 terminal-status entries** (`RESOLVED` / `CLOSED`) that belong in `TEST-FINDINGS-RESOLVED.md`.
+- **31 terminal-status entries** (`RESOLVED` / `CLOSED` / `OBSOLETE`) that belong in `TEST-FINDINGS-RESOLVED.md`.
 - **7 with statuses outside the documented vocabulary** — `RECLASSIFIED`, `MERGED INTO`, `PARKED AT THE
   DECISION GATE`, `NEEDS-DECISION` (`ISSUE-032`, `ISSUE-355`, `ISSUE-499`, `BUG-489`, `DECISION-477/478/480`).
   Judge each: a `MERGED INTO` entry is a pointer and needs no survey; a `PARKED` decision does.
+- **10 family sub-entries** (`### BUG-003 NOTE …`, `### BUG-003 EXTENSION …`). These belong to their
+  parent finding under the family rule and are **not** separate findings — the script excludes them.
+
+⚠ **41 findings carry a BARE header** (`### BUG-308` with the title on a later `- **Title:**` line
+rather than after the id). An earlier version of the script below silently dropped all of them —
+including `ISSUE-418`. If you write your own matcher, handle both header shapes or you will under-count
+by ~19%.
 
 **Filter to `OPEN`/`DEFERRED` before you start.** The true target:
 
 | severity | live | missing survey+audit |
 |---|---|---|
-| **CRIT** | 1 | **1** |
-| **HIGH** | 21 | **17** |
-| MED | 68 | 64 |
-| LOW | 72 | 72 |
-| unrated | 19 | 18 |
-| **total** | **181** | **172** |
+| **CRIT** | 3 | **3** |
+| **HIGH** | 29 | **25** |
+| MED | 88 | 83 |
+| LOW | 79 | 78 |
+| unrated | 20 | 19 |
+| **total** | **219** | **208** |
 
 Work **strictly in this order**, stopping to report at each boundary:
 
-1. **CRIT + HIGH — 18 entries.** This is the tractable, high-value slice.
-2. Stop. Report. Do not continue into MED/LOW (154 more) without being asked — it is not a batch job.
+1. **CRIT + HIGH — 28 entries.** This is the tractable, high-value slice.
+2. Stop. Report. Do not continue into MED/LOW (180 more) without being asked — it is not a batch job.
 
 Reproduce the numbers yourself before starting (do not trust the ones above — measure the current commit):
 
@@ -73,29 +80,37 @@ import re,subprocess
 s=subprocess.run(['git','show','origin/test/local-subdomains:docs/QA/TEST-FINDINGS.md'],
                  capture_output=True,text=True).stdout
 TERM=('RESOLVED','WONTFIX','RETRACTED','DUPLICATE','CLOSED','OBSOLETE')
-counts={}; miss={}; names={}; skipped=0; odd=[]
+counts={}; miss={}; names={}; skipped=0; odd=[]; family=0
 for b in re.split(r'\n(?=### (?:BUG|ISSUE|ENH|DECISION)-\d+)', s):
-    m=re.match(r'### ((?:BUG|ISSUE|ENH|DECISION)-\d+) . (.{0,70})', b)
+    head=b.split('\n')[0]
+    m=re.match(r'### ((?:BUG|ISSUE|ENH|DECISION)-\d+)', head)
     if not m: continue
+    # family sub-entries (BUG-003 NOTE / EXTENSION ...) belong to their parent, not the worklist
+    if re.search(r'\b(NOTE|note|EXTENSION|EXTENDED)\b', head): family+=1; continue
+    fid=m.group(1)
+    # title may follow the id on the header line, OR live on a later "- **Title:**" line
+    t=re.sub(r'^### \S+\s*[-.:·—]?\s*','',head).strip()
+    if not t:
+        tl=re.search(r'^- \*\*(?:Title|Summary)[^:]*:\*\*\s*(.+)$', b, re.M) \
+           or re.search(r'^\| \*\*Title\*\* \| (.+?) \|', b, re.M)
+        t=(tl.group(1) if tl else '(title in body - read the entry)')
     st=re.search(r'^- \*\*Type / Severity / Status:\*\*(.+)$', b, re.M)
     txt=(st.group(1) if st else '').upper()
-    if any(t in txt for t in TERM): skipped+=1; continue        # terminal -> NOT a target
-    if 'OPEN' not in txt and 'DEFERRED' not in txt:
-        odd.append(m.group(1)); continue                        # judge these by hand
-    sv=re.search(r'\b(CRIT|HIGH|MED|LOW)\b', txt)
-    sv=sv.group(1) if sv else 'unrated'
+    if any(x in txt for x in TERM): skipped+=1; continue
+    if 'OPEN' not in txt and 'DEFERRED' not in txt: odd.append(fid); continue
+    sv=re.search(r'\b(CRIT|HIGH|MED|LOW)\b', txt); sv=sv.group(1) if sv else 'unrated'
     a_=bool(re.search(r'\.(cs|ts|js|sql|yml|md)[`\'"]?:\d+', b))
     v_=bool(re.search(r'\b\d+\s+(sites?|files?|call sites?|instances?|places?|services?)\b',b,re.I)) \
        or bool(re.search(r'\b\d+\s+of\s+\d+\b', b))
     counts[sv]=counts.get(sv,0)+1
     if not (a_ and v_):
         miss[sv]=miss.get(sv,0)+1
-        names.setdefault(sv,[]).append(m.group(1)+" - "+m.group(2).strip())
-print("LIVE (OPEN/DEFERRED): %d   skipped terminal: %d   odd status: %d %s"
-      % (sum(counts.values()), skipped, len(odd), odd))
+        names.setdefault(sv,[]).append(fid+" - "+t[:70])
+print("LIVE: %d | terminal skipped: %d | family sub-entries: %d | odd status: %d %s"
+      % (sum(counts.values()), skipped, family, len(odd), odd))
 for k in ['CRIT','HIGH','MED','LOW','unrated']:
     if k in counts: print("  %-8s %4d live, %4d missing" % (k, counts[k], miss.get(k,0)))
-print("\n>>> YOUR WORKLIST - CRIT then HIGH:")
+print("\n>>> WORKLIST - CRIT then HIGH:")
 for k in ['CRIT','HIGH']:
     for x in names.get(k,[]): print("  %-5s %s" % (k,x))
 PYEOF
