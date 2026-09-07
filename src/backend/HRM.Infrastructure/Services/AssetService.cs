@@ -1,6 +1,7 @@
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.Features.Onboarding.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -351,6 +352,16 @@ public sealed class AssetService : IAssetService
         var size = input.AcknowledgmentSize > 0 ? input.AcknowledgmentSize : (stream.CanSeek ? stream.Length : 0);
         if (size > MaxFileSizeBytes)
             return Result<string>.Failure("File exceeds the 10 MB limit.", 400, "file_too_large");
+
+        // BUG-075: sniff the real magic bytes BEFORE the malware scan — the AllowedMimeTypes check above only
+        // trusts the client-supplied Content-Type, so a renamed .exe with an allowed MIME string would
+        // otherwise be accepted. Reject (400 invalid_file_type) when the bytes don't match. Resets the stream.
+        var signature = await FileSignatureValidator.ValidateStreamAsync(
+            input.AcknowledgmentContentType, stream, cancellationToken);
+        if (signature.IsFailure)
+            return Result<string>.Failure(
+                "File content does not match its type. Supported: PDF, JPEG, PNG.",
+                400, FileSignatureValidator.ErrorCode);
 
         // NFR-4: malware scan before persistence (the IVirusScanner seam — allow-all stub until ClamAV).
         var scan = await _malwareScanner.ScanAsync(

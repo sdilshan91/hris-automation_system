@@ -50,3 +50,4 @@
 - [Recommendation/performance write audits (ISSUE-149a)](reference-recommendation-write-audit.md) — PayrollAuditAction is the shared catalog; staged Log() for writes, LogAndSaveAsync for reads; comp figures never enter audit_log
 - [Entitlement recalc enqueue seam (ENH-001)](reference-entitlement-recalc-enqueue.md) — 5 sites via one helper; after-SaveChanges; one job per BATCH; overrides carry their own LeaveYear; bulk is non-atomic
 - [Scratchpad filename collisions](feedback-scratchpad-filename-collisions.md) — the scratchpad is SHARED across concurrent sessions; name backups/checksums after the finding id or `sha256sum -c` lies
+- [Target-typed `new(...)` hides test harnesses](feedback-target-typed-new-hides-test-harnesses.md) — grep the bare type name before declaring a service untested; cost a duplicate test class on BUG-075

@@ -41,6 +41,10 @@ public sealed class OnboardingMyChecklistServiceTests
     private readonly Guid _managerId = Guid.NewGuid();
     private readonly Guid _managerUserId = Guid.NewGuid();
 
+    /// <summary>BUG-075: the two OOXML MIME strings, as consts so they can appear in [InlineData].</summary>
+    private const string Docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    private const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
     private readonly IFileStorage _fileStorage = Substitute.For<IFileStorage>();
     private readonly IVirusScanner _scanner = Substitute.For<IVirusScanner>();
 
@@ -269,6 +273,78 @@ public sealed class OnboardingMyChecklistServiceTests
 
         result.IsFailure.Should().BeTrue();
         result.ErrorCode.Should().Be("file_too_large");
+    }
+
+    // ── BUG-075: content sniffing (the declared MIME is not evidence) ────
+
+    /// <summary>
+    /// BUG-075: the AllowedMimeTypes gate only reads the client-supplied Content-Type. A renamed executable
+    /// declared as one of the allowed types must be rejected on its BYTES, before the malware scan and
+    /// before anything is handed to storage.
+    /// </summary>
+    [Theory]
+    [Trait("Bug", "BUG-075")]
+    [InlineData("application/pdf", "id-proof.pdf")]
+    [InlineData("image/jpeg", "id-proof.jpg")]
+    [InlineData("image/png", "id-proof.png")]
+    [InlineData(Docx, "id-proof.docx")]
+    [InlineData(Xlsx, "id-proof.xlsx")]
+    public async Task CompleteTask_rejects_file_whose_bytes_do_not_match_its_declared_mime(
+        string contentType, string fileName)
+    {
+        SeedEmployees();
+        var (_, ids) = SeedChecklist(
+            ("Submit ID", OnboardingResponsibleRole.Employee, true, true, OnboardingTaskStatus.Pending, 1, "Docs"));
+
+        // "MZ" — a Windows executable, wearing an allowed MIME string.
+        using var file = new MemoryStream([0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00]);
+        var result = await Service().CompleteTaskAsync(
+            Complete(ids["Submit ID"], file: file, fileName: fileName, contentType: contentType, size: file.Length));
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("invalid_file_type");
+
+        // Fail-closed means fail EARLY: nothing spoofed reaches the scanner or storage.
+        await _scanner.DidNotReceive().ScanAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _fileStorage.DidNotReceive().UploadAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+
+        // The task must remain incomplete.
+        using var db = Db();
+        db.OnboardingTaskInstances.Single(t => t.Id == ids["Submit ID"]).Status
+            .Should().Be(OnboardingTaskStatus.Pending);
+    }
+
+    /// <summary>
+    /// BUG-075 counter-arm: every type in AllowedMimeTypes is mapped in FileSignatureValidator, so a
+    /// genuine file of each allowed type still uploads. This is the arm that proves fail-closed did not
+    /// over-tighten the allow-list.
+    /// </summary>
+    [Theory]
+    [Trait("Bug", "BUG-075")]
+    [InlineData("application/pdf", "id-proof.pdf")]
+    [InlineData("image/jpeg", "id-proof.jpg")]
+    [InlineData("image/png", "id-proof.png")]
+    [InlineData(Docx, "id-proof.docx")]
+    [InlineData(Xlsx, "id-proof.xlsx")]
+    public async Task CompleteTask_accepts_a_genuine_file_of_every_allowed_type(
+        string contentType, string fileName)
+    {
+        SeedEmployees();
+        var (_, ids) = SeedChecklist(
+            ("Submit ID", OnboardingResponsibleRole.Employee, true, true, OnboardingTaskStatus.Pending, 1, "Docs"));
+
+        using var file = UploadTestBytes.Stream(contentType);
+        var result = await Service().CompleteTaskAsync(
+            Complete(ids["Submit ID"], file: file, fileName: fileName, contentType: contentType, size: file.Length));
+
+        result.IsSuccess.Should().BeTrue(result.Error);
+        result.Value!.Task.Status.Should().Be("completed");
+
+        await _fileStorage.Received(1).UploadAsync(
+            _tenantId, $"onboarding/{_employeeId}/{ids["Submit ID"]}/{fileName}",
+            Arg.Any<Stream>(), contentType, Arg.Any<CancellationToken>());
     }
 
     // ── FR-7/BR-1 role restriction ──────────────────────────────────────

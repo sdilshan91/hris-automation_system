@@ -2,6 +2,7 @@ using System.Text.Json;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.Features.Onboarding.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -1153,6 +1154,16 @@ public sealed class OnboardingChecklistService : IOnboardingChecklistService
         var size = input.AttachmentSize > 0 ? input.AttachmentSize : (stream.CanSeek ? stream.Length : 0);
         if (size > MaxFileSizeBytes)
             return Result<string>.Failure("File exceeds the 10 MB limit.", 400, "file_too_large");
+
+        // BUG-075: sniff the real magic bytes BEFORE the malware scan — the AllowedMimeTypes check above only
+        // trusts the client-supplied Content-Type, so a renamed .exe with an allowed MIME string would
+        // otherwise be accepted. Reject (400 invalid_file_type) when the bytes don't match. Resets the stream.
+        var signature = await FileSignatureValidator.ValidateStreamAsync(
+            input.AttachmentContentType, stream, cancellationToken);
+        if (signature.IsFailure)
+            return Result<string>.Failure(
+                "File content does not match its type. Supported: PDF, JPEG, PNG, DOCX, XLSX.",
+                400, FileSignatureValidator.ErrorCode);
 
         // NFR-3: malware scan before persistence (seam — allow-all stub until ClamAV is wired).
         var scan = await _malwareScanner.ScanAsync(stream, input.AttachmentFileName ?? "attachment", cancellationToken);
