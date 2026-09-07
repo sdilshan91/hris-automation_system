@@ -341,6 +341,19 @@ export const NAV_ITEMS: INavItem[] = [
     icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.84 1.804A1 1 0 0 1 8.82 1h2.36a1 1 0 0 1 .98.804l.331 1.652a6.993 6.993 0 0 1 1.929 1.115l1.598-.54a1 1 0 0 1 1.186.447l1.18 2.044a1 1 0 0 1-.205 1.251l-1.267 1.113a7.047 7.047 0 0 1 0 2.228l1.267 1.113a1 1 0 0 1 .206 1.25l-1.18 2.045a1 1 0 0 1-1.187.447l-1.598-.54a6.993 6.993 0 0 1-1.929 1.115l-.33 1.652a1 1 0 0 1-.98.804H8.82a1 1 0 0 1-.98-.804l-.331-1.652a6.993 6.993 0 0 1-1.929-1.115l-1.598.54a1 1 0 0 1-1.186-.447l-1.18-2.044a1 1 0 0 1 .205-1.251l1.267-1.114a7.05 7.05 0 0 1 0-2.227L1.821 7.773a1 1 0 0 1-.206-1.25l1.18-2.045a1 1 0 0 1 1.187-.447l1.598.54A6.993 6.993 0 0 1 7.51 3.456l.33-1.652ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" clip-rule="evenodd"/></svg>`,
   },
   {
+    // US-ATT-011 AC-3/AC-5 (ISSUE-438): the tenant attendance policy form. Its route is the
+    // one attendance child gated by permissionGuard rather than roleGuard, because the
+    // backend gates it on Attendance.ConfigurePolicy. The nav therefore declares BOTH gates
+    // the router enforces — the parent '/attendance' roleGuard's effective role set AND the
+    // permission — which visibleNavItems ANDs, exactly as the guard chain does.
+    label: 'Attendance Policy',
+    route: '/attendance/settings',
+    module: 'Attendance',
+    tenantRoles: ['Employee', 'Manager', 'HR Officer', 'Tenant Admin', 'Tenant Owner'],
+    permission: 'Attendance.ConfigurePolicy',
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3.75a2 2 0 1 0-1.732 1.983A.75.75 0 0 0 8.25 6h3.5a.75.75 0 0 0 0-1.5h-1.982A2 2 0 0 0 10 3.75Z"/><path d="M3 4.5a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5A.75.75 0 0 1 3 4.5Zm11.5 0a.75.75 0 0 1 .75-.75h1a.75.75 0 0 1 0 1.5h-1a.75.75 0 0 1-.75-.75ZM3 10a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 3 10Zm12.75-.75a.75.75 0 0 0 0 1.5h.5a.75.75 0 0 0 0-1.5h-.5ZM3 15.5a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5a.75.75 0 0 1-.75-.75Zm8.75-.75a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-4.5Z"/><path d="M13.5 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM7.5 13.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z"/></svg>`,
+  },
+  {
     // US-ATT-009: attendance period lock + reconciliation before a payroll run.
     label: 'Payroll Integration',
     route: '/attendance/payroll-integration',

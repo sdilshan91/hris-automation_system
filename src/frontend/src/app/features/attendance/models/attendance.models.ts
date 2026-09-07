@@ -3194,3 +3194,270 @@ export function toScheduledReportConfigWire(
     isActive: vm.isActive,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  US-ATT-011 AC-3/AC-5 (ISSUE-438) — attendance POLICY SETTINGS.
+//
+//  Backend contract (pinned — see AttendanceSettingsDtos.cs and AttendanceController):
+//    GET /api/v1/attendance/settings            -> ApiResponse<AttendanceSettingsDto>
+//    PUT /api/v1/attendance/settings  body Dto  -> ApiResponse<AttendanceSettingsDto>
+//  Both gated by the `Attendance.ConfigurePolicy` permission.
+//
+//  ⚠ PUT IS A FULL REPLACE of the addressed scope (BUG-117 class). Every field is applied
+//  as sent, and a field OMITTED from the body takes the DTO's own default — it is NOT left
+//  at its stored value. So omitting `weekendOvertimeMultiplier` RESETS it to 2.0 and
+//  omitting `ipAllowlist` CLEARS the list. The client contract is therefore GET-then-PUT:
+//  read the whole policy, mutate what you mean to change, send the whole object back.
+//  `AttendanceSettingsRequestWire` below makes that a COMPILE-TIME guarantee.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type AttendanceSettingsWire = Schema<'AttendanceAttendanceSettingsDto'>;
+export type GeofenceLocationWire = Schema<'AttendanceGeofenceLocationDto'>;
+
+/**
+ * The FULL-REPLACE PUT body: every policy field is REQUIRED (`-?`), derived mechanically
+ * from the generated wire type so a regenerated contract cannot silently drop a field from
+ * this obligation.
+ *
+ * `locationId`/`locationName` are excluded because they are READ-ONLY on the response — the
+ * scope comes from the ROUTE, and a `locationId` in the body is ignored by the backend.
+ *
+ * Why a required-field type rather than just reusing `AttendanceSettingsWire`: every property
+ * on the generated schema is optional, so a plain object literal that FORGOT a field would
+ * still type-check — and, under full-replace semantics, silently reset that setting on the
+ * next save. This type turns that class of bug into a build error.
+ */
+type AttendanceSettingsFullReplaceKey = Exclude<
+  keyof AttendanceSettingsWire,
+  'locationId' | 'locationName'
+>;
+export type AttendanceSettingsRequestWire = {
+  [K in AttendanceSettingsFullReplaceKey]-?: AttendanceSettingsWire[K];
+};
+
+/** DF-23 / ISSUE-068: one ALLOWED clock-in location in the multi-location geofence. */
+export interface IGeofenceLocation {
+  /** Human label, e.g. "HQ". Required, max 100 chars. */
+  name: string;
+  /** Latitude, [-90, 90]. */
+  latitude: number;
+  /** Longitude, [-180, 180]. */
+  longitude: number;
+  /** Permitted radius in metres around this location. Must be > 0. */
+  radiusMeters: number;
+}
+
+/**
+ * US-ATT-011 AC-3: the complete attendance policy for ONE scope. Field-for-field mirror of
+ * `AttendanceSettingsDto`, with every field REQUIRED so the full-replace round-trip is total.
+ */
+export interface IAttendanceSettings {
+  /** READ-ONLY. null = the tenant-default policy; set = that Location's override. */
+  locationId: string | null;
+  /** READ-ONLY. Populated on the overrides list; null on the tenant default. */
+  locationName: string | null;
+
+  // ── Clock-in enforcement (US-ATT-001 BR-2/BR-3/BR-6) ──
+  /** BR-2/AC-3: latitude+longitude are mandatory on clock-in. */
+  requireGeolocation: boolean;
+  /** FR-3: validate supplied coordinates against the allowed location. */
+  geoFenceEnabled: boolean;
+  /** FR-3: allowed-location latitude, [-90, 90]. null when not configured. */
+  geoFenceLatitude: number | null;
+  /** FR-3: allowed-location longitude, [-180, 180]. null when not configured. */
+  geoFenceLongitude: number | null;
+  /** FR-3: permitted radius in metres around the single allowed location. */
+  geoFenceRadiusMeters: number;
+  /** DF-23: allowed clock-in locations. Non-empty => a punch passes inside ANY of them. */
+  geoFenceLocations: IGeofenceLocation[];
+  /** BR-3/AC-5: the request source IP must be in `ipAllowlist`. */
+  ipAllowlistEnabled: boolean;
+  /** FR-4: allowed source IPs — each an exact IP or a CIDR range (ISSUE-066). */
+  ipAllowlist: string[];
+  /** BR-6: a selfie photo must be supplied before the clock-in is accepted. */
+  requirePhoto: boolean;
+  /** BR-4: minutes after shift start within which a clock-in is not marked late. */
+  gracePeriodMinutes: number;
+
+  // ── Work-hours calculation (US-ATT-002) ──
+  /** FR-4/BR-3: standard scheduled work minutes for a full day. */
+  standardWorkMinutes: number;
+  /** FR-4/BR-4: minimum net worked minutes before SHORT_DAY is flagged. */
+  minimumWorkMinutes: number;
+  /** FR-3/BR-2: break minutes auto-deducted from gross worked time. */
+  autoBreakMinutes: number;
+  /** FR-3: gross minutes above which `autoBreakMinutes` is deducted. */
+  autoBreakThresholdMinutes: number;
+  /** BR-3: minutes beyond standard tolerated before the excess is overtime. */
+  overtimeThresholdMinutes: number;
+
+  // ── Regularization (US-ATT-003) ──
+  /** FR-6/BR-2/AC-3: lookback window (calendar days) for a regularization request. */
+  regularizationLookbackDays: number;
+
+  // ── Overtime rules (US-ATT-006 FR-3) ──
+  /** BR-2: default overtime threshold (minutes) for overtime-record detection. */
+  overtimeMinimumThresholdMinutes: number;
+  /** BR-3: weekday overtime PAY multiplier. Money. */
+  weekdayOvertimeMultiplier: number;
+  /** BR-3/BR-7: weekend (rest-day) overtime pay multiplier. Money. */
+  weekendOvertimeMultiplier: number;
+  /** BR-3/BR-7: public-holiday overtime pay multiplier. Money. */
+  holidayOvertimeMultiplier: number;
+  /** BR-4: maximum daily overtime (minutes). */
+  maxDailyOvertimeMinutes: number;
+  /** BR-5: maximum weekly overtime (minutes). */
+  maxWeeklyOvertimeMinutes: number;
+  /** FR-4/AC-2/BR-6: overtime requires a pre-approval request. */
+  requireOvertimePreApproval: boolean;
+  /** US-ATT-011 AC-5 / US-CHR-013: scale the overtime hourly BASE by the employee's FTE. Money. */
+  fteScaledOvertimeBase: boolean;
+
+  // ── Monthly summary (US-ATT-007) ──
+  /** BR-5: count a qualifying short day as 0.5 of a present day. */
+  halfDayEnabled: boolean;
+
+  // ── Absenteeism reporting (US-LV-011 BR-4) ──
+  /** BR-4: average LOP days per month above which an employee is flagged. */
+  absenteeismThresholdDays: number;
+}
+
+// ─── Defaults ────────────────────────────────────────────────────────────────
+//
+// DIRECTION OF EVERY DEFAULT BELOW: mirror the DTO's OWN record default, exactly.
+//
+// This is deliberately NOT the usual "least-claiming value" rule, and the reason is the
+// full-replace contract. Whatever this mapper substitutes for an absent field is what the
+// next save WRITES BACK. Defaulting `weekdayOvertimeMultiplier` to a "safer-looking" 1.0
+// would not be conservative — it would silently DOWNGRADE a tenant's overtime premium from
+// 1.5x to 1.0x on the first GET-then-PUT, i.e. the FE would destroy a money setting nobody
+// touched. Mirroring the DTO default makes an untouched round-trip a provable no-op, because
+// omitting the field server-side yields the same value.
+//
+// In practice `MapToDto` populates every field, so these fire only on a truncated payload.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The DTO's own defaults (AttendanceSettingsDtos.cs), used only when a field is absent. */
+export const ATTENDANCE_SETTINGS_DEFAULTS = {
+  geoFenceRadiusMeters: 100,
+  standardWorkMinutes: 480,
+  minimumWorkMinutes: 240,
+  autoBreakMinutes: 60,
+  autoBreakThresholdMinutes: 360,
+  overtimeThresholdMinutes: 0,
+  regularizationLookbackDays: 7,
+  overtimeMinimumThresholdMinutes: 30,
+  weekdayOvertimeMultiplier: 1.5,
+  weekendOvertimeMultiplier: 2.0,
+  holidayOvertimeMultiplier: 2.5,
+  maxDailyOvertimeMinutes: 240,
+  maxWeeklyOvertimeMinutes: 1200,
+  gracePeriodMinutes: 0,
+  absenteeismThresholdDays: 3,
+} as const;
+
+export function mapGeofenceLocation(w: GeofenceLocationWire): IGeofenceLocation {
+  return {
+    name: w.name ?? '',
+    // 0/0 is a real coordinate (Null Island), but an absent coordinate has no safer
+    // numeric stand-in; the form's range validators still accept it, and the row is
+    // visible for the admin to correct. Never silently drop the row.
+    latitude: w.latitude ?? 0,
+    longitude: w.longitude ?? 0,
+    // 0 is OUT OF RANGE for the backend's `GreaterThan(0)` rule, so an absent radius
+    // surfaces as a visible validation error rather than persisting a fabricated fence.
+    radiusMeters: w.radiusMeters ?? 0,
+  };
+}
+
+export function mapAttendanceSettings(w: AttendanceSettingsWire): IAttendanceSettings {
+  const d = ATTENDANCE_SETTINGS_DEFAULTS;
+  return {
+    locationId: w.locationId ?? null,
+    locationName: w.locationName ?? null,
+
+    // Booleans default false — matching the DTO, where every bool defaults false.
+    requireGeolocation: w.requireGeolocation ?? false,
+    geoFenceEnabled: w.geoFenceEnabled ?? false,
+    // Genuinely nullable on the wire: "not configured" is a real state, not a missing one.
+    geoFenceLatitude: w.geoFenceLatitude ?? null,
+    geoFenceLongitude: w.geoFenceLongitude ?? null,
+    geoFenceRadiusMeters: w.geoFenceRadiusMeters ?? d.geoFenceRadiusMeters,
+    geoFenceLocations: (w.geoFenceLocations ?? []).map(mapGeofenceLocation),
+    ipAllowlistEnabled: w.ipAllowlistEnabled ?? false,
+    ipAllowlist: [...(w.ipAllowlist ?? [])],
+    requirePhoto: w.requirePhoto ?? false,
+    gracePeriodMinutes: w.gracePeriodMinutes ?? d.gracePeriodMinutes,
+
+    standardWorkMinutes: w.standardWorkMinutes ?? d.standardWorkMinutes,
+    minimumWorkMinutes: w.minimumWorkMinutes ?? d.minimumWorkMinutes,
+    autoBreakMinutes: w.autoBreakMinutes ?? d.autoBreakMinutes,
+    autoBreakThresholdMinutes: w.autoBreakThresholdMinutes ?? d.autoBreakThresholdMinutes,
+    overtimeThresholdMinutes: w.overtimeThresholdMinutes ?? d.overtimeThresholdMinutes,
+
+    regularizationLookbackDays: w.regularizationLookbackDays ?? d.regularizationLookbackDays,
+
+    overtimeMinimumThresholdMinutes:
+      w.overtimeMinimumThresholdMinutes ?? d.overtimeMinimumThresholdMinutes,
+    // MONEY. See the defaults block above: the DTO default is the only value that makes an
+    // untouched GET-then-PUT a no-op. A "safer" 1.0 would cut the tenant's premium.
+    weekdayOvertimeMultiplier: w.weekdayOvertimeMultiplier ?? d.weekdayOvertimeMultiplier,
+    weekendOvertimeMultiplier: w.weekendOvertimeMultiplier ?? d.weekendOvertimeMultiplier,
+    holidayOvertimeMultiplier: w.holidayOvertimeMultiplier ?? d.holidayOvertimeMultiplier,
+    maxDailyOvertimeMinutes: w.maxDailyOvertimeMinutes ?? d.maxDailyOvertimeMinutes,
+    maxWeeklyOvertimeMinutes: w.maxWeeklyOvertimeMinutes ?? d.maxWeeklyOvertimeMinutes,
+    requireOvertimePreApproval: w.requireOvertimePreApproval ?? false,
+    // MONEY. The DTO default is false ("the OT base ignores FTE"), which is also the
+    // pre-US-CHR-013 behaviour. An absent flag must never switch FTE scaling ON.
+    fteScaledOvertimeBase: w.fteScaledOvertimeBase ?? false,
+
+    halfDayEnabled: w.halfDayEnabled ?? false,
+
+    absenteeismThresholdDays: w.absenteeismThresholdDays ?? d.absenteeismThresholdDays,
+  };
+}
+
+/**
+ * Build the FULL-REPLACE PUT body. Returns the required-field type, so omitting any policy
+ * field is a COMPILE error rather than a silent reset of that setting on the server.
+ *
+ * `locationId`/`locationName` are deliberately not sent: the backend takes the scope from the
+ * route and ignores a body `locationId`.
+ */
+export function toAttendanceSettingsWire(
+  vm: IAttendanceSettings,
+): AttendanceSettingsRequestWire {
+  return {
+    requireGeolocation: vm.requireGeolocation,
+    geoFenceEnabled: vm.geoFenceEnabled,
+    geoFenceLatitude: vm.geoFenceLatitude,
+    geoFenceLongitude: vm.geoFenceLongitude,
+    geoFenceRadiusMeters: vm.geoFenceRadiusMeters,
+    geoFenceLocations: vm.geoFenceLocations.map((l) => ({
+      name: l.name,
+      latitude: l.latitude,
+      longitude: l.longitude,
+      radiusMeters: l.radiusMeters,
+    })),
+    ipAllowlistEnabled: vm.ipAllowlistEnabled,
+    ipAllowlist: [...vm.ipAllowlist],
+    requirePhoto: vm.requirePhoto,
+    gracePeriodMinutes: vm.gracePeriodMinutes,
+    standardWorkMinutes: vm.standardWorkMinutes,
+    minimumWorkMinutes: vm.minimumWorkMinutes,
+    autoBreakMinutes: vm.autoBreakMinutes,
+    autoBreakThresholdMinutes: vm.autoBreakThresholdMinutes,
+    overtimeThresholdMinutes: vm.overtimeThresholdMinutes,
+    regularizationLookbackDays: vm.regularizationLookbackDays,
+    overtimeMinimumThresholdMinutes: vm.overtimeMinimumThresholdMinutes,
+    weekdayOvertimeMultiplier: vm.weekdayOvertimeMultiplier,
+    weekendOvertimeMultiplier: vm.weekendOvertimeMultiplier,
+    holidayOvertimeMultiplier: vm.holidayOvertimeMultiplier,
+    maxDailyOvertimeMinutes: vm.maxDailyOvertimeMinutes,
+    maxWeeklyOvertimeMinutes: vm.maxWeeklyOvertimeMinutes,
+    requireOvertimePreApproval: vm.requireOvertimePreApproval,
+    fteScaledOvertimeBase: vm.fteScaledOvertimeBase,
+    halfDayEnabled: vm.halfDayEnabled,
+    absenteeismThresholdDays: vm.absenteeismThresholdDays,
+  };
+}

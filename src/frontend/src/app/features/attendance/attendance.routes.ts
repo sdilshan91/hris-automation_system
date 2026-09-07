@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { roleGuard } from '../../core/auth/auth.guard';
+import { permissionGuard, roleGuard } from '../../core/auth/auth.guard';
 
 /**
  * US-ATT-001: Employee-facing attendance routes (self clock-in).
@@ -163,6 +163,24 @@ export const ATTENDANCE_ROUTES: Routes = [
       import(
         './components/attendance-reports/attendance-reports.component'
       ).then((m) => m.AttendanceReportsComponent),
+  },
+  {
+    // US-ATT-011 AC-3/AC-5 (ISSUE-438): tenant attendance policy configuration.
+    //
+    // Gated on the PERMISSION, not a role list, because that is what the backend enforces:
+    // every /attendance/settings endpoint carries [RequirePermission("Attendance.ConfigurePolicy")].
+    // Mirroring the permission means the two answers to "may this persona configure policy?"
+    // cannot drift (ISSUE-210 / BUG-493), and a tenant that re-assigns the permission to a
+    // custom role is followed automatically. By default only Tenant Admin, Tenant Owner and
+    // HR Manager hold it (PermissionCatalog.DefaultPermissionsFor) — and note the PARENT
+    // '/attendance' roleGuard excludes HR Manager, so in practice this admits Tenant Admin
+    // and Tenant Owner.
+    path: 'settings',
+    canActivate: [permissionGuard(['Attendance.ConfigurePolicy'])],
+    loadComponent: () =>
+      import('./components/attendance-settings/attendance-settings.component').then(
+        (m) => m.AttendanceSettingsComponent
+      ),
   },
   { path: '', redirectTo: 'clock-in', pathMatch: 'full' },
 ];
