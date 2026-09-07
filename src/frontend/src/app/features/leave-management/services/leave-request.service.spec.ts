@@ -84,7 +84,7 @@ describe('LeaveRequestService', () => {
         isHalfDay: false,
         halfDaySession: null,
         reason: 'Vacation',
-        attachments: [],
+        attachmentIds: [],
       };
 
       let created: ILeaveRequest | undefined;
@@ -110,7 +110,7 @@ describe('LeaveRequestService', () => {
         isHalfDay: true,
         halfDaySession: 'AM',
         reason: 'Appointment',
-        attachments: [],
+        attachmentIds: [],
       };
 
       service.createLeaveRequest(body).subscribe();

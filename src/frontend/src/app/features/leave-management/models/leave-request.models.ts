@@ -57,10 +57,14 @@ export interface ICreateLeaveRequest {
   halfDaySession: HalfDaySession | null;
   reason: string;
   /**
-   * Attachment URLs. The actual blob upload backend is DEFERRED (US-LV NFR-3);
-   * the frontend submits already-hosted URLs / metadata the backend accepts.
+   * ISSUE-036: ids of attachments ALREADY UPLOADED via POST /leaves/attachments.
+   *
+   * This was `attachments: string[]` holding bare file NAMES — nothing was ever uploaded, and the
+   * backend's `DocumentsRequired` gate counted non-blank strings, so the literal "x.pdf" satisfied a
+   * medical-certificate requirement. The API now resolves these ids to real stored rows owned by the
+   * caller; anything unresolvable is a 400.
    */
-  attachments: string[];
+  attachmentIds: string[];
   /**
    * US-LV-011 (AC-1): Loss-of-Pay confirmation flag. When the employee has
    * insufficient balance and negative balance is not allowed, the FE prompts
@@ -346,4 +350,16 @@ export function buildProjection(
     projectedRemaining,
     insufficient: !negativeAllowed && requestedDays > 0 && projectedRemaining < 0,
   };
+}
+
+/**
+ * An attachment that has been uploaded and stored, returned by POST /leaves/attachments.
+ * `id` is what goes into `ICreateLeaveRequest.attachmentIds`; the rest is for rendering the chip.
+ */
+export interface ILeaveAttachment {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: string;
 }

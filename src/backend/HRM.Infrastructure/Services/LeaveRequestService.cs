@@ -183,12 +183,37 @@ public sealed class LeaveRequestService : ILeaveRequestService
             return Result<LeaveRequestDto>.Failure(
                 $"This leave type allows a maximum of {leaveType.MaxConsecutiveDays.Value} consecutive days.", 400);
 
-        // AC-3: Document requirement.
-        var attachments = request.Attachments?.Where(a => !string.IsNullOrWhiteSpace(a)).ToList() ?? [];
+        // ISSUE-036: resolve the caller-supplied attachment ids to REAL uploaded rows before the AC-3 gate
+        // looks at them. This USED to be `request.Attachments?.Where(a => !string.IsNullOrWhiteSpace(a))` —
+        // any non-blank string with an allowed extension counted, so the literal "x.pdf" satisfied a
+        // medical-certificate requirement and no bytes were ever uploaded or stored. Every id must
+        //   (a) exist,
+        //   (b) belong to this tenant — enforced by the LeaveRequestAttachment global query filter,
+        //   (c) belong to THIS employee (an id borrowed from a colleague resolves to nothing), and
+        //   (d) not already be claimed by another leave request (no re-using one certificate twice).
+        // Anything failing that is a 400 attachment_not_found — never a 404/403, so we don't disclose
+        // whether another employee's attachment exists.
+        var attachmentIds = request.AttachmentIds?.Where(id => id != Guid.Empty).Distinct().ToList() ?? [];
+        var attachmentRows = new List<LeaveRequestAttachment>();
+        if (attachmentIds.Count > 0)
+        {
+            attachmentRows = await _dbContext.LeaveRequestAttachments
+                .Where(a => attachmentIds.Contains(a.Id)
+                    && a.UploadedByEmployeeId == employee.Id
+                    && a.LeaveRequestId == null)
+                .ToListAsync(cancellationToken);
+
+            if (attachmentRows.Count != attachmentIds.Count)
+                return Result<LeaveRequestDto>.Failure(
+                    "One or more attachments could not be found. Upload the file again and retry.",
+                    400, "attachment_not_found");
+        }
+
+        // AC-3: Document requirement — now counting RESOLVED ROWS, not client strings.
         if (leaveType.DocumentsRequired)
         {
             int threshold = leaveType.DocumentDayThreshold ?? 0;
-            if (totalDays > threshold && attachments.Count == 0)
+            if (totalDays > threshold && attachmentRows.Count == 0)
                 return Result<LeaveRequestDto>.Failure(
                     $"Medical certificate is required for {leaveType.Name.ToLowerInvariant()} exceeding {threshold} days.", 400);
         }
@@ -275,12 +300,20 @@ public sealed class LeaveRequestService : ILeaveRequestService
                 : request.Reason,
             Status = LeaveRequestStatus.Pending,
             RequestedAt = DateTime.UtcNow,
-            AttachmentUrls = attachments,
+            // ISSUE-036: keep populating the existing text[] column from the RESOLVED rows' storage keys,
+            // so the read paths (HasAttachments on the pending queue, Attachments on the DTO) keep working.
+            AttachmentUrls = attachmentRows.Select(a => a.StorageKey).ToList(),
             IsLop = createAsLop,
             LopSource = lopSource,
         };
 
         _dbContext.LeaveRequests.Add(leaveRequest);
+
+        // ISSUE-036: claim the uploads for this request (tracked rows, same SaveChanges) so they cannot be
+        // reused for a second leave request.
+        foreach (var attachment in attachmentRows)
+            attachment.LeaveRequestId = leaveRequest.Id;
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         // US-ADM-011 FR-11/AC-1/AC-11: if the tenant has an Active Leave approval workflow, instantiate it now

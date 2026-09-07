@@ -21,14 +21,14 @@ public sealed class CreateLeaveRequestValidatorTests
         bool isHalfDay = false,
         string? session = null,
         string? reason = "Vacation",
-        IReadOnlyList<string>? attachments = null) => new(
+        IReadOnlyList<Guid>? attachmentIds = null) => new(
         LeaveTypeId: leaveTypeId ?? Guid.NewGuid(),
         StartDate: start ?? new DateOnly(2026, 6, 15),
         EndDate: end ?? new DateOnly(2026, 6, 17),
         IsHalfDay: isHalfDay,
         HalfDaySession: session,
         Reason: reason,
-        Attachments: attachments);
+        AttachmentIds: attachmentIds);
 
     [Fact]
     public void ValidFullDayRequest_Passes()
@@ -92,21 +92,27 @@ public sealed class CreateLeaveRequestValidatorTests
     [Fact]
     public void TooManyAttachments_Fails()
     {
-        var cmd = Make(attachments: ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]);
-        _validator.TestValidate(cmd).ShouldHaveValidationErrorFor(x => x.Attachments);
+        var cmd = Make(attachmentIds: [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()]);
+        _validator.TestValidate(cmd).ShouldHaveValidationErrorFor(x => x.AttachmentIds);
+    }
+
+    // ISSUE-036: this arm used to assert "report.exe" was rejected by an extension check on a client string.
+    // File TYPE is now validated at UPLOAD time against the real bytes (declared-MIME allow-list + extension
+    // allow-list + FileSignatureValidator magic-byte sniff) — see
+    // LeaveAttachmentIntegrationTests.Upload_DisallowedMimeType_Rejected_ISSUE036, which is a strictly
+    // stronger check than a string suffix. What the validator can still catch on the shape is a malformed
+    // (empty) attachment id.
+    [Fact]
+    public void EmptyAttachmentId_Fails()
+    {
+        var cmd = Make(attachmentIds: [Guid.Empty]);
+        _validator.TestValidate(cmd).ShouldHaveValidationErrorFor("AttachmentIds[0]");
     }
 
     [Fact]
-    public void DisallowedAttachmentType_Fails()
+    public void ValidAttachmentIds_Pass()
     {
-        var cmd = Make(attachments: ["report.exe"]);
-        _validator.TestValidate(cmd).ShouldHaveValidationErrorFor("Attachments[0]");
-    }
-
-    [Fact]
-    public void AllowedAttachmentTypes_WithQueryString_Pass()
-    {
-        var cmd = Make(attachments: ["https://x/cert.PDF?sig=abc", "img.jpg", "scan.png"]);
+        var cmd = Make(attachmentIds: [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()]);
         _validator.TestValidate(cmd).ShouldNotHaveAnyValidationErrors();
     }
 }

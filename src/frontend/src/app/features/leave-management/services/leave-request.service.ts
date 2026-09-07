@@ -4,6 +4,7 @@ import { Observable, map } from 'rxjs';
 import { environment } from '../../../../environments/environment';
 import {
   ILeaveRequest,
+  ILeaveAttachment,
   ICreateLeaveRequest,
   ILeaveBalance,
   ILeaveRequestErrorResponse,
@@ -53,6 +54,24 @@ export class LeaveRequestService {
     return this.http
       .post<LeaveRequestWire>(this.baseUrl, request, { withCredentials: true })
       .pipe(map(mapLeaveRequest));
+  }
+
+  /**
+   * ISSUE-036: upload ONE supporting document and get back its stored id (FR-2 / NFR-3).
+   *
+   * The server enforces the real controls here, against real bytes: a 5 MB cap, a PDF/JPG/PNG
+   * allow-list checked by MIME *and* magic bytes (so a renamed .exe is rejected), a virus scan, and a
+   * tenant-scoped storage path. None of that was reachable while the form submitted file names.
+   *
+   * Deliberately NO explicit Content-Type header — the browser must set the multipart boundary itself,
+   * and setting it by hand produces a request the server cannot parse.
+   */
+  uploadAttachment(file: File): Observable<ILeaveAttachment> {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return this.http
+      .post<{ data: ILeaveAttachment }>(`${this.baseUrl}/attachments`, form, { withCredentials: true })
+      .pipe(map((res) => res.data));
   }
 
   /**

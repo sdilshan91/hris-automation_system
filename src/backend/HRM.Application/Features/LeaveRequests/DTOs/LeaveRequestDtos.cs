@@ -2,7 +2,8 @@ namespace HRM.Application.Features.LeaveRequests.DTOs;
 
 /// <summary>
 /// Request body for POST /api/v1/leaves (US-LV-003 FR-5).
-/// Attachments are passed as already-uploaded URLs; blob upload is out of scope (NFR-3, deferred).
+/// ISSUE-036: attachments are references to REAL uploaded files (POST /api/v1/leaves/attachments), not
+/// client-supplied strings — a bare "x.pdf" used to satisfy a medical-certificate requirement.
 /// </summary>
 public sealed record CreateLeaveRequestRequest
 {
@@ -13,8 +14,12 @@ public sealed record CreateLeaveRequestRequest
     /// <summary>"AM" or "PM" when IsHalfDay is true; otherwise null.</summary>
     public string? HalfDaySession { get; init; }
     public string? Reason { get; init; }
-    /// <summary>URLs of already-uploaded attachments (max 3, PDF/JPG/PNG per §10).</summary>
-    public IReadOnlyList<string>? Attachments { get; init; }
+    /// <summary>
+    /// Ids of attachments already uploaded via POST /api/v1/leaves/attachments (max 3, PDF/JPG/PNG per §10).
+    /// Each id must belong to this tenant, to the calling employee, and must not already be linked to another
+    /// leave request; anything else is rejected 400 <c>attachment_not_found</c> (ISSUE-036).
+    /// </summary>
+    public IReadOnlyList<Guid>? AttachmentIds { get; init; }
     /// <summary>
     /// US-LV-011 AC-1: when the balance is insufficient and negative balance is not allowed, the API
     /// returns a signal that the request can be processed as Loss of Pay (LOP). If the employee

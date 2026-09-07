@@ -14,5 +14,5 @@ public sealed record CreateLeaveRequestCommand(
     bool IsHalfDay,
     string? HalfDaySession,
     string? Reason,
-    IReadOnlyList<string>? Attachments,
+    IReadOnlyList<Guid>? AttachmentIds,
     bool ConfirmLop = false) : IRequest<Result<LeaveRequestDto>>;
