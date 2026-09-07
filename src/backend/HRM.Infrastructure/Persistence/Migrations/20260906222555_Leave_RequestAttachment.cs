@@ -39,6 +39,31 @@ namespace HRM.Infrastructure.Persistence.Migrations
                 name: "ix_leave_request_attachment_tenant_id_leave_request_id",
                 table: "leave_request_attachment",
                 columns: new[] { "tenant_id", "leave_request_id" });
+
+            // Critical Rule #1 (three-layer tenant isolation): ship the DORMANT tenant_isolation policy with the
+            // table. Inert until Rls:Enabled flips it on; a new tenant-scoped table WITHOUT a policy is a silent
+            // hole the day RLS is enabled — and this one holds uploaded medical certificates.
+            //
+            // Caught by EveryTenantScopedEntity_HasRlsPolicy_CoverageGuard, which failed CI on this migration:
+            // "items {leave_request_attachment} are not part of the superset". The guard works.
+            migrationBuilder.Sql("""
+                DO $do$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_policies
+                        WHERE schemaname = 'public'
+                          AND tablename  = 'leave_request_attachment'
+                          AND policyname = 'tenant_isolation'
+                    ) THEN
+                        EXECUTE $q$
+                            CREATE POLICY tenant_isolation ON public.leave_request_attachment
+                            USING (tenant_id = NULLIF(current_setting('app.current_tenant', true), '')::uuid)
+                            WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant', true), '')::uuid)
+                        $q$;
+                    END IF;
+                END
+                $do$;
+                """);
         }
 
         /// <inheritdoc />
