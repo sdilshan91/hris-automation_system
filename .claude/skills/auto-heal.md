@@ -92,7 +92,12 @@ deterministic.
 
 1. **File the finding.** Append to [docs/QA/TEST-FINDINGS.md](../../docs/QA/TEST-FINDINGS.md) with the
    full schema (type · severity · status OPEN · layer · module/US/TC · title · root-cause+confidence · repro ·
-   evidence · severity rationale · suggested direction). Assign the next free ID by scanning **BOTH** ledger files
+   evidence · severity rationale · suggested direction), **plus a SURVEY and an AUDIT — both mandatory**
+   (Engineering-Discipline rule #7). **SURVEY:** how many call sites/files/services, and the unit counted —
+   one instance or a class? **AUDIT:** every claim verified against `src/` with `file:line`, in both
+   directions (confirm the defect *and* the premise). An out-of-lane flag that arrives without them is
+   not filed as-is: do the survey and the audit first, or file it explicitly marked
+   `SURVEY: not done` / `AUDIT: not done` so the gap is visible rather than implied. Assign the next free ID by scanning **BOTH** ledger files
    (`grep -hoE 'BUG-[0-9]+|ISSUE-[0-9]+|ENH-[0-9]+' docs/QA/TEST-FINDINGS*.md | sort -t- -k2 -n | tail -1` → +1) —
    the ledger was split 2026-09-01 and scanning only the working file re-issues an archived id. Cross-link the parent finding/PR with `[[wiki-links]]`. **De-dup first, across BOTH files** — if it's the same defect as an existing finding, extend that
    one instead of minting a new ID. A recurring regression's original is usually in the archive.
