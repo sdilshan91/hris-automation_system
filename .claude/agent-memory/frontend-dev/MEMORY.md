@@ -43,4 +43,6 @@
 - [Export-format token mismatch](wire-export-format-token-mismatch.md) — wire ships lowercase csv/xlsx/pdf; dashboard's ExportFormat union is PascalCase — translate via map + drop unknowns, never cast
 - [Proving a spec arm fails](proving-spec-arm-fails.md) — before/after protocol for bug-encoding specs (git show HEAD:f, not stash), ng test --include filtering, lint DELTA not total
 - [Mutually exclusive wire fields](mutually-exclusive-wire-fields.md) — replace-mode: omit the losing field (not `[]`); hand-write request interfaces (generated request schemas are all-optional)
-- [Worktree frontend setup](project-worktree-frontend-setup.md) — worktrees have no node_modules; symlink the main checkout's, then DELETE the symlink (it is not gitignored) or you hand back a dirty tree
+- [Worktree frontend setup](project-worktree-frontend-setup.md) — worktrees have no node_modules; run `npm ci` in the worktree. Symlinking the main checkout's is FORBIDDEN (ISSUE-326 win32 esbuild + dirties the tree)
+- [Full-replace PUT defaults](full-replace-put-defaults.md) — mapper `??` must equal the DTO's OWN default (not least-claiming) or GET-then-PUT silently mutates; use a `-?` required request type
+- [Nav-gate invariant: new item](nav-gate-invariant-new-item.md) — a new nav item must declare exactly the router's gate; roles AND permission are separate ANDed fields; update the module's route allowlist

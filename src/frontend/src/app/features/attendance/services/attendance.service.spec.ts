@@ -37,6 +37,8 @@ import {
   ICustomReportResult,
   ITrendsResult,
   IScheduledReportConfig,
+  IAttendanceSettings,
+  AttendanceSettingsWire,
   // ── D1 slice 3 WIRE CONTRACT ────────────────────────────────────────────────
   // `apiEnvelopeInterceptor` unwraps { success, data } globally, so EVERY `req.flush(x)`
   // in this file delivers `x` straight to a mapper: every fixture below is therefore a
@@ -1920,6 +1922,180 @@ describe('AttendanceService', () => {
       expect(req.request.method).toBe('DELETE');
       req.flush(null);
       expect(done).toBeTrue();
+    });
+  });
+
+  // ─── US-ATT-011 AC-3/AC-5 (ISSUE-438): attendance policy settings ──────────
+  //
+  // These assertions are deliberately on the REQUEST BODY, not just the verb+URL.
+  // `HttpTestingController` echoes back whatever the caller handed it, so a spec that
+  // only checks `req.request.method` proves the service was called — never that it sent
+  // the shape the API actually accepts (ISSUE-500). Because the PUT is a FULL REPLACE,
+  // "did we send every field?" IS the contract: a missing key silently resets a live
+  // setting server-side, and two of these settings decide what people are paid.
+  describe('attendance settings (US-ATT-011 AC-3/AC-5)', () => {
+    /**
+     * A WIRE-typed policy fixture. Typed as `AttendanceSettingsWire` so that if the
+     * generated contract renames or drops a field, THIS FILE stops compiling rather than
+     * silently testing a shape the server no longer sends.
+     */
+    const wireSettings: AttendanceSettingsWire = {
+      locationId: null,
+      locationName: null,
+      requireGeolocation: true,
+      geoFenceEnabled: true,
+      geoFenceLatitude: 6.9271,
+      geoFenceLongitude: 79.8612,
+      geoFenceRadiusMeters: 150,
+      geoFenceLocations: [
+        { name: 'HQ', latitude: 6.9271, longitude: 79.8612, radiusMeters: 150 },
+      ],
+      ipAllowlistEnabled: true,
+      ipAllowlist: ['203.0.113.7', '203.0.113.0/24'],
+      requirePhoto: true,
+      gracePeriodMinutes: 10,
+      standardWorkMinutes: 480,
+      minimumWorkMinutes: 240,
+      autoBreakMinutes: 60,
+      autoBreakThresholdMinutes: 360,
+      overtimeThresholdMinutes: 15,
+      regularizationLookbackDays: 7,
+      overtimeMinimumThresholdMinutes: 30,
+      weekdayOvertimeMultiplier: 2,
+      weekendOvertimeMultiplier: 2.5,
+      holidayOvertimeMultiplier: 3,
+      maxDailyOvertimeMinutes: 240,
+      maxWeeklyOvertimeMinutes: 1200,
+      requireOvertimePreApproval: true,
+      fteScaledOvertimeBase: true,
+      halfDayEnabled: true,
+      absenteeismThresholdDays: 2.5,
+    };
+
+    /** Every field the FULL-REPLACE PUT body must carry (scope fields excluded). */
+    const REQUIRED_BODY_KEYS = [
+      'requireGeolocation',
+      'geoFenceEnabled',
+      'geoFenceLatitude',
+      'geoFenceLongitude',
+      'geoFenceRadiusMeters',
+      'geoFenceLocations',
+      'ipAllowlistEnabled',
+      'ipAllowlist',
+      'requirePhoto',
+      'gracePeriodMinutes',
+      'standardWorkMinutes',
+      'minimumWorkMinutes',
+      'autoBreakMinutes',
+      'autoBreakThresholdMinutes',
+      'overtimeThresholdMinutes',
+      'regularizationLookbackDays',
+      'overtimeMinimumThresholdMinutes',
+      'weekdayOvertimeMultiplier',
+      'weekendOvertimeMultiplier',
+      'holidayOvertimeMultiplier',
+      'maxDailyOvertimeMinutes',
+      'maxWeeklyOvertimeMinutes',
+      'requireOvertimePreApproval',
+      'fteScaledOvertimeBase',
+      'halfDayEnabled',
+      'absenteeismThresholdDays',
+    ];
+
+    it('getAttendanceSettings GETs /settings and maps the wire policy', () => {
+      let result: IAttendanceSettings | undefined;
+      service.getAttendanceSettings().subscribe((s) => (result = s));
+
+      const req = httpMock.expectOne(`${baseUrl}/settings`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.withCredentials).toBeTrue();
+      req.flush(wireSettings);
+
+      // The two money-affecting settings must survive the mapping unchanged — a mapper
+      // that dropped either would show an admin a policy the server is not running.
+      expect(result!.fteScaledOvertimeBase).toBeTrue();
+      expect(result!.weekdayOvertimeMultiplier).toBe(2);
+      expect(result!.ipAllowlist).toEqual(['203.0.113.7', '203.0.113.0/24']);
+      expect(result!.geoFenceLocations).toEqual([
+        { name: 'HQ', latitude: 6.9271, longitude: 79.8612, radiusMeters: 150 },
+      ]);
+    });
+
+    it('getAttendanceSettings maps an absent multiplier to the DTO default, not to zero', () => {
+      // A truncated payload must not produce a policy that pays LESS than the server's own
+      // default, because whatever is mapped here is what the next full-replace save writes
+      // back. 1.5 is the DTO's declared default, so the round-trip stays a no-op.
+      let result: IAttendanceSettings | undefined;
+      service.getAttendanceSettings().subscribe((s) => (result = s));
+
+      httpMock.expectOne(`${baseUrl}/settings`).flush({} as AttendanceSettingsWire);
+
+      expect(result!.weekdayOvertimeMultiplier).toBe(1.5);
+      expect(result!.weekendOvertimeMultiplier).toBe(2);
+      expect(result!.holidayOvertimeMultiplier).toBe(2.5);
+      expect(result!.standardWorkMinutes).toBe(480);
+      // An absent flag must never switch FTE scaling ON.
+      expect(result!.fteScaledOvertimeBase).toBeFalse();
+    });
+
+    it('updateAttendanceSettings PUTs a body carrying EVERY policy field (full replace)', () => {
+      let saved: IAttendanceSettings | undefined;
+      service.getAttendanceSettings().subscribe((s) => (saved = s));
+      httpMock.expectOne(`${baseUrl}/settings`).flush(wireSettings);
+
+      service.updateAttendanceSettings(saved!).subscribe();
+
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/settings` && r.method === 'PUT'
+      );
+      expect(req.request.withCredentials).toBeTrue();
+
+      const body = req.request.body as Record<string, unknown>;
+      // The invariant that matters: nothing may be MISSING. An omitted key does not keep
+      // its stored value — the backend applies the DTO default and resets that setting.
+      const missing = REQUIRED_BODY_KEYS.filter((k) => !(k in body));
+      expect(missing)
+        .withContext(
+          'PUT /attendance/settings is a FULL REPLACE: every key absent from the body is ' +
+            'reset to the DTO default server-side. These keys were not sent.'
+        )
+        .toEqual([]);
+
+      req.flush(wireSettings);
+    });
+
+    it('updateAttendanceSettings sends the edited money values verbatim, and omits the read-only scope', () => {
+      let loaded: IAttendanceSettings | undefined;
+      service.getAttendanceSettings().subscribe((s) => (loaded = s));
+      httpMock.expectOne(`${baseUrl}/settings`).flush(wireSettings);
+
+      service
+        .updateAttendanceSettings({
+          ...loaded!,
+          fteScaledOvertimeBase: false,
+          weekdayOvertimeMultiplier: 1.75,
+        })
+        .subscribe();
+
+      const req = httpMock.expectOne(
+        (r) => r.url === `${baseUrl}/settings` && r.method === 'PUT'
+      );
+      const body = req.request.body as Record<string, unknown>;
+
+      expect(body['fteScaledOvertimeBase']).toBeFalse();
+      expect(body['weekdayOvertimeMultiplier']).toBe(1.75);
+      // Untouched settings must round-trip exactly — a full replace rewrites them all.
+      expect(body['weekendOvertimeMultiplier']).toBe(2.5);
+      expect(body['ipAllowlist']).toEqual(['203.0.113.7', '203.0.113.0/24']);
+      expect(body['geoFenceLocations']).toEqual([
+        { name: 'HQ', latitude: 6.9271, longitude: 79.8612, radiusMeters: 150 },
+      ]);
+      // READ-ONLY on the response; the backend takes the scope from the route and ignores
+      // a body locationId. Sending it would imply the client can retarget the scope.
+      expect('locationId' in body).toBeFalse();
+      expect('locationName' in body).toBeFalse();
+
+      req.flush(wireSettings);
     });
   });
 });

@@ -127,6 +127,11 @@ import {
   mapTrendsResult,
   mapScheduledReportConfig,
   toScheduledReportConfigWire,
+  // US-ATT-011 AC-3/AC-5 (ISSUE-438): attendance policy settings.
+  IAttendanceSettings,
+  AttendanceSettingsWire,
+  mapAttendanceSettings,
+  toAttendanceSettingsWire,
 } from '../models/attendance.models';
 
 /**
@@ -1046,6 +1051,47 @@ export class AttendanceService {
     return this.http.delete<void>(`${this.baseUrl}/reports/scheduled/${id}`, {
       withCredentials: true,
     });
+  }
+
+  // --- US-ATT-011 AC-3/AC-5 (ISSUE-438): attendance policy settings ---
+
+  /**
+   * Read the TENANT-DEFAULT attendance policy. The backend defaults the row when none is
+   * configured, so this never 404s for a provisioned tenant.
+   *   GET /api/v1/attendance/settings -> ApiResponse<AttendanceSettingsDto>
+   * Gated server-side by the `Attendance.ConfigurePolicy` permission.
+   */
+  getAttendanceSettings(): Observable<IAttendanceSettings> {
+    return this.http
+      .get<AttendanceSettingsWire>(`${this.baseUrl}/settings`, {
+        withCredentials: true,
+      })
+      .pipe(map(mapAttendanceSettings));
+  }
+
+  /**
+   * Upsert the TENANT-DEFAULT attendance policy.
+   *   PUT /api/v1/attendance/settings  body AttendanceSettingsDto -> ApiResponse<...>
+   *
+   * ⚠ FULL REPLACE (BUG-117 class): every field is applied as sent, and an OMITTED field
+   * takes the DTO's default rather than keeping its stored value. `toAttendanceSettingsWire`
+   * returns the required-field request type precisely so that a missing field is a compile
+   * error here, not a silent reset of a live policy — which on `weekdayOvertimeMultiplier`
+   * or `fteScaledOvertimeBase` would be a change in what employees get paid.
+   *
+   * Callers must therefore pass a policy obtained from `getAttendanceSettings()` and mutated,
+   * never a partially-populated object.
+   */
+  updateAttendanceSettings(
+    settings: IAttendanceSettings,
+  ): Observable<IAttendanceSettings> {
+    return this.http
+      .put<AttendanceSettingsWire>(
+        `${this.baseUrl}/settings`,
+        toAttendanceSettingsWire(settings),
+        { withCredentials: true },
+      )
+      .pipe(map(mapAttendanceSettings));
   }
 
   // --- Error helper ------------------------------------------

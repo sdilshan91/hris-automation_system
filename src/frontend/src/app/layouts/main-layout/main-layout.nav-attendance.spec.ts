@@ -77,6 +77,11 @@ const ATTENDANCE_SUBROUTES = [
   '/attendance/payroll-integration',
   '/attendance/dashboard',
   '/attendance/reports',
+  // ISSUE-438: tenant attendance policy configuration (US-ATT-011 AC-3/AC-5). Unlike its
+  // siblings this child is permissionGuard'd on Attendance.ConfigurePolicy, so it renders
+  // only for a persona holding that permission — but it IS a real child route, and this
+  // list is the 'no dead/typo link' allowlist, which must name every one of them.
+  '/attendance/settings',
 ];
 
 /**
