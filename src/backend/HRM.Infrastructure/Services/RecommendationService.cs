@@ -29,6 +29,7 @@ public sealed class RecommendationService : IRecommendationService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IHtmlSanitizer _sanitizer;
     private readonly IRecommendationIntegrationService _integration;
     private readonly IPayrollAuditLogger _auditLogger;
     private readonly ILogger<RecommendationService> _logger;
@@ -51,6 +52,7 @@ public sealed class RecommendationService : IRecommendationService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IHtmlSanitizer sanitizer,
         IRecommendationIntegrationService integration,
         IPayrollAuditLogger auditLogger,
         ILogger<RecommendationService> logger)
@@ -58,6 +60,7 @@ public sealed class RecommendationService : IRecommendationService
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _sanitizer = sanitizer;
         _integration = integration;
         _auditLogger = auditLogger;
         _logger = logger;
@@ -394,6 +397,17 @@ public sealed class RecommendationService : IRecommendationService
             .Where(r => r.CycleId == input.CycleId && r.EmployeeId == input.EmployeeId)
             .FirstOrDefaultAsync(cancellationToken);
 
+        // ISSUE-149(b): the FR-3 justification is operator free text stored verbatim. #666 widened the sink —
+        // AuditPayload now copies it into audit_log.before/after on every create and override, and audit rows
+        // are IMMUTABLE and retained, so sanitizing at write time will NOT clean anything already written.
+        // Every day this waits adds permanently unsanitized history. Exposure today is API-only (no innerHTML
+        // sink renders this field), so this is defence-in-depth, not an active XSS fix. Sanitized ONCE here,
+        // above the create/override split, so both write paths and the audit projection see the same value.
+        // Trim() nulls a blank/whitespace result, which is what makes the FR-3 required-check below correct:
+        // a justification consisting only of a payload sanitizes to nothing and must be REFUSED, not accepted
+        // as satisfying FR-3 and then stored blank (the ISSUE-121 ordering).
+        var justification = Trim(_sanitizer.Sanitize(input.Justification));
+
         Recommendation rec;
         if (existing is null)
         {
@@ -409,7 +423,7 @@ public sealed class RecommendationService : IRecommendationService
                 IsDeleted = false,
             };
             ApplyDetails(rec, input.Type, d, employee);
-            rec.Justification = string.IsNullOrWhiteSpace(input.Justification) ? null : input.Justification.Trim();
+            rec.Justification = justification;
             AppendEvent(rec, RecommendationEventType.Created, actor, actorName, input.ClientIpAddress, null);
             _dbContext.Recommendations.Add(rec);
 
@@ -424,8 +438,9 @@ public sealed class RecommendationService : IRecommendationService
         }
         else
         {
-            // FR-3: overriding an existing recommendation REQUIRES a justification.
-            if (string.IsNullOrWhiteSpace(input.Justification))
+            // FR-3: overriding an existing recommendation REQUIRES a justification. Checked on the SANITIZED
+            // value (ISSUE-149(b)) — a justification that is nothing but markup is no justification at all.
+            if (justification is null)
                 return Result<RecommendationDto>.Failure(
                     "A justification is required when overriding an existing recommendation.", 422, "justification_required");
             if (existing.Status is RecommendationStatus.Approved or RecommendationStatus.Rejected)
@@ -439,7 +454,7 @@ public sealed class RecommendationService : IRecommendationService
             var beforeState = AuditState(rec);
 
             ApplyDetails(rec, input.Type, d, employee);
-            rec.Justification = input.Justification.Trim();
+            rec.Justification = justification;
             AppendEvent(rec, RecommendationEventType.Overridden, actor, actorName, input.ClientIpAddress,
                 $"Type set to {input.Type}.");
 
@@ -644,7 +659,12 @@ public sealed class RecommendationService : IRecommendationService
                 "Only the current approver can act on this recommendation.", 403, "not_current_approver");
 
         var actorName = SignerDisplayName(me) ?? _currentUser.Email;
-        var comment = string.IsNullOrWhiteSpace(input.Comment) ? null : input.Comment.Trim();
+        // ISSUE-149(b): the approver's decision comment. It lands in TWO permanent places — the approval step
+        // (RecommendationApprover.Comment) and the append-only FR-7 RecommendationEvent.Detail — neither of
+        // which has an edit path, so this is write-once history exactly like the audit rows. Sanitize BEFORE
+        // the blank check so a comment that is only a payload becomes null (an absent comment) rather than an
+        // empty string recorded as if the approver had typed something.
+        var comment = Trim(_sanitizer.Sanitize(input.Comment));
         nextStep.DecidedAt = DateTime.UtcNow;
         nextStep.Comment = comment;
 
@@ -1105,7 +1125,13 @@ public sealed class RecommendationService : IRecommendationService
         rec.IncrementAmount = d.IncrementAmount;
         rec.IncrementPercent = d.IncrementPercent;
         rec.TrainingCourse = Trim(d.TrainingCourse);
-        rec.CustomTypeLabel = Trim(d.CustomTypeLabel);
+        // ISSUE-149(b): the tenant-defined custom type label (FR-1) — like the justification it is copied
+        // into audit_log via AuditPayload, so an unsanitized value becomes immutable history. Sanitize
+        // BEFORE Trim() so a label that is only a payload collapses to null rather than being stored as an
+        // empty label. NOTE the deliberate scope: TargetGrade/TargetTitle/TrainingCourse above are ALSO
+        // free text with the same audit exposure and are NOT sanitized here — they are in this file's
+        // follow-up, not silently forgotten.
+        rec.CustomTypeLabel = Trim(_sanitizer.Sanitize(d.CustomTypeLabel));
         rec.BudgetId = d.BudgetId;
     }
 

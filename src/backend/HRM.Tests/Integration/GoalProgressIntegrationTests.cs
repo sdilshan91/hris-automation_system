@@ -71,8 +71,8 @@ public sealed class GoalProgressIntegrationTests
         user.Email.Returns("u@t.com");
         user.Permissions.Returns(permissions);
 
-        return new GoalProgressService(db, ctx, user, Substitute.For<IPerformanceNotificationService>(),
-            NullLogger<GoalProgressService>.Instance);
+        return new GoalProgressService(db, ctx, user, new GanssHtmlSanitizer(), // ISSUE-144(b): the REAL sanitizer
+            Substitute.For<IPerformanceNotificationService>(), NullLogger<GoalProgressService>.Instance);
     }
 
     private StaleGoalNudgeService Sweep(Guid tenantId, IPerformanceNotificationService notifications)

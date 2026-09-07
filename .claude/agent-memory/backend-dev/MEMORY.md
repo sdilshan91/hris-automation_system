@@ -46,6 +46,7 @@
 - [Leave attachment upload (ISSUE-036)](reference-leave-attachment-upload.md) — upload-before-create, NULLABLE LeaveRequestId claimed on create; 4-part resolve gate; 5MB/PDF-JPG-PNG differ from self-assessment on purpose
 - [Design-time migration env recipe](reference-design-time-migration-env.md) — dotnet-ef boots Program.cs; needs a REAL PEM + a hyphen-free Encryption key id passed via `env`, not `export`
 - [Statutory-rule normalization + rate precision](reference-statutory-rule-normalization-precision.md) — country_code compare asymmetry (write/index/precheck/resolver), numeric(5,2) rate scale; the InMemory statutory "pipeline" runs NO validators
+- [Sanitize-on-write posture (7 adopters)](reference-sanitize-on-write-posture.md) — sanitize BEFORE the blank check in all 3 of its disguises; Ganss ENCODES so length checks must move onto the sanitized value
 - [Review-signoff agreed actions are API-only](reference-review-signoff-agreed-actions.md) — FE keeps actions inside the notes BODY; the innerHTML sink renders Body, not the action rows (ISSUE-121 premise fix)
 - [Recommendation/performance write audits (ISSUE-149a)](reference-recommendation-write-audit.md) — PayrollAuditAction is the shared catalog; staged Log() for writes, LogAndSaveAsync for reads; comp figures never enter audit_log
 - [Entitlement recalc enqueue seam (ENH-001)](reference-entitlement-recalc-enqueue.md) — 5 sites via one helper; after-SaveChanges; one job per BATCH; overrides carry their own LeaveYear; bulk is non-atomic

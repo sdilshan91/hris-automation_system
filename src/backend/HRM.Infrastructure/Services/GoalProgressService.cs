@@ -34,6 +34,7 @@ public sealed class GoalProgressService : IGoalProgressService
     private readonly AppDbContext _dbContext;
     private readonly ITenantContext _tenantContext;
     private readonly ICurrentUser _currentUser;
+    private readonly IHtmlSanitizer _sanitizer;
     private readonly IPerformanceNotificationService _notifications;
     private readonly ILogger<GoalProgressService> _logger;
 
@@ -41,12 +42,14 @@ public sealed class GoalProgressService : IGoalProgressService
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
+        IHtmlSanitizer sanitizer,
         IPerformanceNotificationService notifications,
         ILogger<GoalProgressService> logger)
     {
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
+        _sanitizer = sanitizer;
         _notifications = notifications;
         _logger = logger;
     }
@@ -104,7 +107,17 @@ public sealed class GoalProgressService : IGoalProgressService
         if (input.ProgressPct is < 0 or > 100)
             return Result<GoalTimelineDto>.Failure("Progress percentage must be between 0 and 100.", 422, "invalid_progress");
 
-        if (input.Notes is { Length: > MaxNotes })
+        // ISSUE-144(b): progress notes were stored with a bare .Trim() while five sibling services
+        // (Offer/Interview/Vacancy/Applicant/ReviewSignoff) already sanitize free text on write. The row is
+        // append-only and IMMUTABLE by design (NFR-3/FR-3 — there is no update or delete path), so an
+        // unsanitized value stored today can never be cleaned up later; sanitizing on write is the only
+        // moment this can be caught. Exposure is API-only right now (no innerHTML sink renders these
+        // fields) — this is defence-in-depth, not a fix for a live XSS. Sanitize BEFORE the length/blank
+        // checks (the ISSUE-121 ordering) so a string that is nothing but a payload collapses to empty and
+        // is dropped rather than persisted as a blank note, and so the stored length — not the submitted
+        // one — is what the 2000-char column bound is checked against.
+        var notes = _sanitizer.Sanitize(input.Notes)?.Trim();
+        if (notes is { Length: > MaxNotes })
             return Result<GoalTimelineDto>.Failure($"Notes cannot exceed {MaxNotes} characters.", 422, "notes_too_long");
 
         var attachments = input.Attachments ?? [];
@@ -130,7 +143,7 @@ public sealed class GoalProgressService : IGoalProgressService
             EmployeeId = me.Id,
             ProgressPct = input.ProgressPct,
             Status = status,
-            Notes = string.IsNullOrWhiteSpace(input.Notes) ? null : input.Notes.Trim(),
+            Notes = string.IsNullOrWhiteSpace(notes) ? null : notes,
             CreatedAtUtc = now,
             IsDeleted = false,
         };
@@ -306,9 +319,15 @@ public sealed class GoalProgressService : IGoalProgressService
         if (!_tenantContext.IsResolved)
             return Result<GoalTimelineDto>.Failure("Tenant context is not resolved.", 400);
 
-        if (string.IsNullOrWhiteSpace(input.Body))
+        // ISSUE-144(b): same posture as the progress notes above — the FR-8 comment body was persisted with
+        // a bare .Trim(). GoalComment rows are append-only with no edit path, so this is write-once history.
+        // Sanitize BEFORE the required-check: a body consisting only of a script payload sanitizes to
+        // nothing, and must be refused as "body_required" rather than stored as an empty comment that
+        // notifies a manager about a blank message.
+        var body = _sanitizer.Sanitize(input.Body)?.Trim();
+        if (string.IsNullOrWhiteSpace(body))
             return Result<GoalTimelineDto>.Failure("Comment body is required.", 422, "body_required");
-        if (input.Body.Length > MaxCommentBody)
+        if (body.Length > MaxCommentBody)
             return Result<GoalTimelineDto>.Failure($"Comment cannot exceed {MaxCommentBody} characters.", 422, "body_too_long");
 
         var goal = await _dbContext.Goals.AsNoTracking()
@@ -348,7 +367,7 @@ public sealed class GoalProgressService : IGoalProgressService
             ProgressUpdateId = input.ProgressUpdateId,
             AuthorEmployeeId = author.Id,
             AuthorName = FullName(author),
-            Body = input.Body.Trim(),
+            Body = body,
             CreatedAtUtc = DateTime.UtcNow,
             IsDeleted = false,
         };

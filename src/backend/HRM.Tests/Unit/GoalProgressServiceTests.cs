@@ -62,7 +62,9 @@ public sealed class GoalProgressServiceTests
     private AppDbContext Db() => TestDbContextFactory.Create(_tenantContext, _dbName);
 
     private GoalProgressService Service(ICurrentUser user) => new(
-        Db(), _tenantContext, user, _notifications, Substitute.For<ILogger<GoalProgressService>>());
+        Db(), _tenantContext, user,
+        new GanssHtmlSanitizer(), // ISSUE-144(b): the REAL sanitizer, so the write-path arms exercise it for real
+        _notifications, Substitute.For<ILogger<GoalProgressService>>());
 
     private ICurrentUser User(Guid userId, params string[] permissions)
     {
@@ -472,6 +474,125 @@ public sealed class GoalProgressServiceTests
         result.StatusCode.Should().Be(422);
     }
 
+    // ── ISSUE-144(b): sanitize free text on write ───────────────────────
+    //
+    // Both fields below were persisted with a bare .Trim() while five sibling services
+    // (Offer/Interview/Vacancy/Applicant/ReviewSignoff) already sanitized on write. Both rows are
+    // append-only with NO edit path (NFR-3/FR-3), so whatever is stored is permanent history. There is no
+    // innerHTML sink rendering these fields today — this is defence-in-depth, and the point of pinning it
+    // is that the guard must not regress the day one appears.
+
+    [Fact]
+    public async Task AddProgress_strips_dangerous_html_from_notes_ISSUE144()
+    {
+        await SeedAsync();
+
+        var result = await Service(EmployeeUser()).AddProgressUpdateAsync(
+            Update(_goalAId, 40, notes: "Blocked on infra<script>alert(1)</script><img src=x onerror=alert(2)>"));
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+
+        using var db = Db();
+        var stored = await db.GoalProgressUpdates.AsNoTracking().Select(u => u.Notes).SingleAsync();
+        stored.Should().NotBeNull();
+        stored!.Should().NotContain("<script").And.NotContain("alert(",
+            "an unsanitized <script> survives into permanent, un-editable progress history");
+        stored.Should().NotContain("onerror",
+            "an event-handler attribute fires without any <script> tag at all");
+        stored.Should().Contain("Blocked on infra", "the legitimate text the employee typed must survive");
+    }
+
+    /// <summary>
+    /// The over-sanitization guard: sanitizing is not a licence to rewrite ordinary prose. Employees type
+    /// percentages, hyphens, parentheses and commas; stripping those would silently corrupt an immutable row.
+    /// </summary>
+    [Fact]
+    public async Task AddProgress_preserves_benign_notes_ISSUE144()
+    {
+        await SeedAsync();
+        const string benign = "Shipped 3 of 5 endpoints - 60% done (auth, users); review on Friday.";
+
+        var result = await Service(EmployeeUser()).AddProgressUpdateAsync(
+            Update(_goalAId, 60, notes: "  " + benign + "  "));
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+
+        using var db = Db();
+        var stored = await db.GoalProgressUpdates.AsNoTracking().Select(u => u.Notes).SingleAsync();
+        stored.Should().Be(benign,
+            "only the surrounding whitespace is trimmed; legitimate punctuation round-trips byte-for-byte");
+    }
+
+    /// <summary>
+    /// ISSUE-121 ordering, applied here: sanitizing must happen BEFORE the blank check, or notes consisting
+    /// of nothing but a payload sanitize down to an empty string and get stored as a blank note.
+    /// </summary>
+    [Fact]
+    public async Task AddProgress_notes_that_are_only_a_payload_are_stored_as_null_ISSUE144()
+    {
+        await SeedAsync();
+
+        var result = await Service(EmployeeUser()).AddProgressUpdateAsync(
+            Update(_goalAId, 40, notes: "<script>alert(1)</script>"));
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+
+        using var db = Db();
+        var stored = await db.GoalProgressUpdates.AsNoTracking().Select(u => u.Notes).SingleAsync();
+        stored.Should().BeNull("a note whose entire content was a payload is an absent note, not a blank one");
+    }
+
+    [Fact]
+    public async Task AddComment_strips_dangerous_html_from_body_ISSUE144()
+    {
+        await SeedAsync();
+        await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 30));
+
+        var result = await Service(ManagerUser()).AddCommentAsync(new AddGoalCommentInput(
+            _goalAId, null, "Nice work<script>alert(1)</script><img src=x onerror=alert(2)>"));
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+
+        using var db = Db();
+        var stored = await db.GoalComments.AsNoTracking().Select(c => c.Body).SingleAsync();
+        stored.Should().NotContain("<script").And.NotContain("alert(").And.NotContain("onerror");
+        stored.Should().Contain("Nice work", "the manager's actual comment must survive");
+    }
+
+    [Fact]
+    public async Task AddComment_preserves_benign_body_ISSUE144()
+    {
+        await SeedAsync();
+        await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 30));
+        const string benign = "Good progress - 60% by Q3 (weekly check-in), then hand off. Well done!";
+
+        var result = await Service(ManagerUser()).AddCommentAsync(
+            new AddGoalCommentInput(_goalAId, null, "  " + benign + "  "));
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+
+        using var db = Db();
+        var stored = await db.GoalComments.AsNoTracking().Select(c => c.Body).SingleAsync();
+        stored.Should().Be(benign, "sanitizing must not rewrite legitimate comment text");
+    }
+
+    /// <summary>
+    /// The FR-8 body is REQUIRED. Sanitizing after the required-check would let a pure payload satisfy it and
+    /// then store an empty comment — which also fires a notification telling the counterparty to go read
+    /// nothing. Sanitize first, so the request is refused as body_required.
+    /// </summary>
+    [Fact]
+    public async Task AddComment_body_that_is_only_a_payload_is_refused_ISSUE144()
+    {
+        await SeedAsync();
+        await Service(EmployeeUser()).AddProgressUpdateAsync(Update(_goalAId, 30));
+
+        var result = await Service(ManagerUser()).AddCommentAsync(
+            new AddGoalCommentInput(_goalAId, null, "<script>alert(1)</script>"));
+
+        result.IsFailure.Should().BeTrue("a comment that sanitizes to nothing is not a comment");
+        result.StatusCode.Should().Be(422);
+        result.ErrorCode.Should().Be("body_required");
+
+        using var db = Db();
+        (await db.GoalComments.AsNoTracking().CountAsync()).Should().Be(0, "no blank row may be persisted");
+    }
+
     // ── Tenant scoping ──────────────────────────────────────────────────
 
     [Fact]
@@ -480,8 +601,8 @@ public sealed class GoalProgressServiceTests
         var unresolved = Substitute.For<ITenantContext>();
         unresolved.IsResolved.Returns(false);
         var svc = new GoalProgressService(
-            TestDbContextFactory.Create(unresolved, _dbName), unresolved, EmployeeUser(), _notifications,
-            Substitute.For<ILogger<GoalProgressService>>());
+            TestDbContextFactory.Create(unresolved, _dbName), unresolved, EmployeeUser(), new GanssHtmlSanitizer(),
+            _notifications, Substitute.For<ILogger<GoalProgressService>>());
 
         var result = await svc.GetMyGoalsAsync();
         result.IsFailure.Should().BeTrue();
