@@ -81,7 +81,21 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    legitimately outrank the story you are mid-way through; say so in the turn summary rather
    than finishing the lower-value item first out of momentum.
 
-7. **Plan it, track it, and finish the pipeline yourself.** Break every non-trivial task
+7. **Every finding carries a SURVEY and an AUDIT — no exceptions.** A `BUG`/`ISSUE`/`ENH`
+   filed without both is not a finding, it is a rumour. **SURVEY:** how many call sites /
+   files / services exhibit this, **and the unit counted** — one instance or a class?
+   Without a count it cannot be sized, tiered, or de-duplicated (`ISSUE-449` carried *three*
+   conflicting numbers for one question because no source stated its unit). **AUDIT:** every
+   claim verified against `src/` with `file:line` evidence, **in both directions** — confirm
+   the defect *and* confirm the premise. A finding's own text is a claim, not evidence.
+   **Findings already filed without them are backfilled before being scheduled**, and
+   re-tiering counts as scheduling. This is a hard rule because the cost was measured on
+   2026-09-07: `ISSUE-150` said "no security exposure today… not a live defect" — auditing it
+   found 2 of 3 claims false and uncovered a live permission bypass (`BUG-533`); `ENH-018`'s
+   own proposed remedy was a false-green that would have greened two TCs over a feature
+   unreachable in production. Details: [.claude/rules/ledgers.md](.claude/rules/ledgers.md).
+
+8. **Plan it, track it, and finish the pipeline yourself.** Break every non-trivial task
    into sub-tasks with a real plan *before* starting, and keep a **todo list** you update
    as each sub-task completes — not retroactively at the end. **Render it as a visible markdown
    checklist in your reply, every turn. Do NOT assume a `TodoWrite` tool exists** — it is absent in
@@ -99,14 +113,14 @@ project rules below. They exist to cut wasted diff, rework, and late surprises.
    as a `DECISION` finding, park that item at the decision-gate, and **continue with the
    next unblocked item**. Never halt the whole queue over one ambiguity, and never resolve
    it by quietly guessing — report every parked question in the turn summary.
-8. **One session, one worktree, one branch.** Concurrent Claude sessions on this repo must
+9. **One session, one worktree, one branch.** Concurrent Claude sessions on this repo must
    not share a working tree. Each takes its **own git worktree on its own branch**
    (`isolation: worktree` for sub-agents) and rebases on fresh `origin/main` before opening
    a PR. For the shared ledgers — `STATUS.md`, `TEST-STATUS.md`, `TEST-FINDINGS.md`,
    `GAP-CLOSURE-QUEUE.md`, `COMPLETION-PLAN.md` — **re-read immediately before every write**: another session may
    have appended since you last looked, and writing back a copy you cached earlier in the
    turn silently deletes their work.
-9. **Keep open PRs mergeable — the merge queue is the mechanism.** Six concurrent PRs
+10. **Keep open PRs mergeable — the merge queue is the mechanism.** Six concurrent PRs
    produced six cascading conflicts in one session (2026-09-02/03); **every one was in a
    ledger/queue/memory file, none in `src/`**. The standing fix is a **GitHub merge queue** on
    the working branch, batched (`max_entries_to_merge: 5`, `grouping_strategy: ALLGREEN`) so
@@ -214,7 +228,7 @@ Setup steps, capability flags and the plugin-collision history: [docs/DEV/mcp-se
 | `/advisor [--radar\|--adr\|--deadcode\|--module]` | Local | **Technical advisory — REPORT-ONLY.** Dependency currency, ADR-drift, complexity/dead-code → one ranked advisory in `docs/Architecture/advisory-reports/`. Never edits `src/`, deletes, or bumps deps. |
 | `/gap-analysis [module\|--nfr\|--reverse\|--arch\|--rollup]` | Local | **Implemented-vs-documented tracing — REPORT-ONLY.** Traces every documented requirement to real code; passes only with code **+ wired + test-bound**, so a strong backend behind a broken FE contract is `PARTIAL`. **Never corrects a false ledger line — it reports the contradiction.** |
 | `/campaign {name}` | Local + MCP | **Batch driver for a large, homogeneous, mechanical backlog.** Phase 1 is a **mandatory survey**: >20% non-mechanical **stops the campaign** (this is how BUG-310 shipped wrong code). Then pilot the smallest module, then one PR per module batch. Parks decision-required items; never closes a finding. |
-| `/pr-pipeline` | Local + MCP | **Autonomous commit → push → PR → merge, and the gate that bounds it.** Merge only on a green verify gate with no CRIT/HIGH from the three audit agents, and never for a diff touching EF migrations, auth/JWT, tenant isolation, or CI/hook/settings config. Encodes Engineering-Discipline rule #7. |
+| `/pr-pipeline` | Local + MCP | **Autonomous commit → push → PR → merge, and the gate that bounds it.** Merge only on a green verify gate with no CRIT/HIGH from the three audit agents, and never for a diff touching EF migrations, auth/JWT, tenant isolation, or CI/hook/settings config. Encodes Engineering-Discipline rule #8. |
 | `/auto-heal` | Local | **Living-plan self-healing.** On any `OUT-OF-LANE:` flag: files it to `TEST-FINDINGS.md`, folds it into the live `GAP-CLOSURE-QUEUE.md`, re-sorts priority (severity × blast-radius × unblocks-others). Encodes Engineering-Discipline rule #6. Never bypasses report-only or the decision-gate. |
 | `/github-pipeline {module}` | GitHub Actions | Trigger remote pipeline (needs API credits) |
 

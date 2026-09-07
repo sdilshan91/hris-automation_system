@@ -41,6 +41,31 @@ Severity `CRIT`/`HIGH`/`MED`/`LOW`. One `- **Type / Severity / Status:**` line p
 own inconvenient finding is the failure mode this boundary exists to prevent. Layer `FE`/`BE`/`DB`/`TEST`/`DATA`/`INFRA`. Always include root
 cause + confidence, reproduction steps, and evidence.
 
+### Mandatory: SURVEY + AUDIT on every finding (global rule, 2026-09-07)
+
+**No `BUG`/`ISSUE`/`ENH` is filed without both.** They go in the finding body — a scope or a
+verification that exists only in a transcript did not happen.
+
+- **SURVEY — how big is it?** State how many call sites / files / services / modules exhibit this,
+  **and the unit you counted**. One instance or a class? A finding with no count cannot be sized,
+  tiered, or de-duplicated, and its remedy cannot be scoped. `ISSUE-449` carried **three conflicting
+  numbers** (276 / 369 / 93) for a single question purely because no source stated its unit.
+- **AUDIT — is it true?** Every claim checked against `src/` with `file:line` evidence, **in both
+  directions**: confirm the defect, *and* confirm the premise the finding asserts. Ledger rows are
+  claims, not evidence (see above) — that applies to a finding's own text too.
+
+**A finding already filed without them gets backfilled before it is scheduled for work.** Re-tiering
+or re-scoping counts as scheduling: treat the stated premise as unverified and re-audit first.
+
+**Why this is a hard rule and not advice** — measured on 2026-09-07:
+- `ISSUE-150` asserted *"no security exposure today… LOW (traceability, not a live defect)"*.
+  Auditing its three claims found **2 of 3 false** and uncovered `BUG-533`, a live permission bypass
+  serving compensation to two personas the catalogue deliberately excludes.
+- `ENH-018`'s own proposed remedy was a **false-green**: seeding bank data would have turned two TCs
+  green while the feature stayed unreachable in production.
+- `ISSUE-534` (**HIGH**) sat in a PR description and no ledger, invalidating every prior NFR-1 verdict.
+- Of 28 findings filed that day — 7 HIGH — almost all were found by **looking**, not by a failing test.
+
 ## Report-only boundary
 `/test-all`, `/test-us` and `@test-runner` **never fix code and never open PRs** — a failing test
 produces a *finding*, not a fix attempt. Only `/verify-fix` may mark a finding RESOLVED.
