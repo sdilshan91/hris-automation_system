@@ -16,6 +16,17 @@ namespace HRM.Application.Features.Attendance.Validators;
 /// NOT here — FluentValidation has no DB access — and live in <c>AttendanceSettingsService</c>, mirroring
 /// LocationService's pre-check pattern.</para>
 /// </summary>
+/// <remarks>
+/// BUG-522: the three overtime multipliers are <c>numeric(3,2)</c> columns
+/// (<c>AttendanceSettingsConfiguration.cs:91,96,101</c>), so 9.99 is the largest value Postgres can
+/// store. The bound was 10m, which meant exactly <c>10.00</c> passed validation and then failed on
+/// INSERT with a 22003 numeric overflow — surfacing as a 500 rather than a 400.
+///
+/// <para>The bound is lowered to match the column rather than widening the column, because a 10x
+/// overtime premium is not a real payroll configuration and a migration would be a larger change for
+/// no user-facing gain. If a tenant ever genuinely needs it, widen the column AND this bound together
+/// — they must not drift apart again.</para>
+/// </remarks>
 public sealed class AttendanceSettingsPolicyValidator : AbstractValidator<AttendanceSettingsDto>
 {
     public AttendanceSettingsPolicyValidator()
@@ -23,13 +34,13 @@ public sealed class AttendanceSettingsPolicyValidator : AbstractValidator<Attend
         // ── Overtime multipliers: a multiplier below 1.0 would pay overtime LESS than regular time; the
         // upper bound catches a fat-fingered 15 that would quietly inflate the payroll run.
         RuleFor(x => x.WeekdayOvertimeMultiplier)
-            .InclusiveBetween(1.0m, 10m).WithMessage("Weekday overtime multiplier must be between 1.0 and 10.");
+            .InclusiveBetween(1.0m, 9.99m).WithMessage("Weekday overtime multiplier must be between 1.0 and 9.99.");
 
         RuleFor(x => x.WeekendOvertimeMultiplier)
-            .InclusiveBetween(1.0m, 10m).WithMessage("Weekend overtime multiplier must be between 1.0 and 10.");
+            .InclusiveBetween(1.0m, 9.99m).WithMessage("Weekend overtime multiplier must be between 1.0 and 9.99.");
 
         RuleFor(x => x.HolidayOvertimeMultiplier)
-            .InclusiveBetween(1.0m, 10m).WithMessage("Holiday overtime multiplier must be between 1.0 and 10.");
+            .InclusiveBetween(1.0m, 9.99m).WithMessage("Holiday overtime multiplier must be between 1.0 and 9.99.");
 
         // ── Minute / day fields are all durations: never negative.
         RuleFor(x => x.GracePeriodMinutes)
