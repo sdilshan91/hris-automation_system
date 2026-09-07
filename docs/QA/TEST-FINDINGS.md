@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 49 | 168 | 217 |
-| ISSUE | 191 | 296 | 487 |
+| ISSUE | 192 | 296 | 488 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **267** | **466** | **733** |
+| **TOTAL** | **268** | **466** | **734** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -385,6 +385,20 @@
 - **Deliberately out of scope of `US-REC-011`** (per-tenant interview lead time): different unit (days vs hours), different entity, and the const's own docstring calls tenant-configurability "a SEPARATE concern … intentionally NOT built here". Filed so it does not live only in a story paragraph.
 - **Found:** 2026-09-07, out-of-lane while authoring `US-REC-011`.
 
+
+### ISSUE-541 — 29 terminal findings sit in the working ledger, and `CLOSED` is a status the schema does not define
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** docs / process
+- **SURVEY:** **29 of ~210** entries in `docs/QA/TEST-FINDINGS.md` carry a terminal status while living in the **working** file — 16 `RESOLVED` and 12 `CLOSED` plus 1 `OBSOLETE` (unit: `### ID —` blocks in the working file only; the archive was not scanned). A further **7** carry a status outside the documented vocabulary entirely: `ISSUE-032` (`RECLASSIFIED`), `ISSUE-355` and `ISSUE-499` (`MERGED INTO`), `DECISION-477`/`478`/`480` (`PARKED AT THE DECISION GATE`), `BUG-489` (`NEEDS-DECISION`). So **36 of ~210 rows (17%) are not live findings**, and only **~181** are.
+- **AUDIT (2026-09-07):**
+  - **CONFIRMED — `CLOSED` is undefined.** `.claude/rules/ledgers.md` states the vocabulary exactly: *"Live: `OPEN`/`DEFERRED`. Terminal: `RESOLVED`/`WONTFIX`/`RETRACTED`/`DUPLICATE`."* `CLOSED` is a **fifth spelling** and appears on 12 entries — including `ENH-011` (`✅ CLOSED 2026-09-07`), which this session wrote. The schema line also records that statuses were *"normalised 2026-09-01 from ten status spellings across four shapes"*, so this is the same drift recurring **six days** after the normalisation.
+  - **CONFIRMED — terminal entries belong in the archive.** Same file: *"`TEST-FINDINGS.md` holds **live** findings; `TEST-FINDINGS-RESOLVED.md` holds **terminal** ones"*, and *"Only `/verify-fix` moves an entry working → archive."* The 29 are therefore correctly *authored* but incorrectly *located* — they were closed by ordinary work rather than by `/verify-fix`, which is the only mover.
+  - **CONFIRMED — the guard is one-directional.** `LedgerTraceabilityTests` is documented as enforcing the family rule *"and that no live finding sits in the archive"*. Nothing asserts the **reverse** — that no terminal finding sits in the working file. Verified by the fact that all 29 pass today.
+- **Why MED, and why it is not cosmetic:** the working file exists so agents do not read past finished work — the 2026-09-01 split cut it from 1.9 MB to 422 KB on exactly that reasoning. Every terminal entry left behind erodes that. Concretely, it **inflates every scoping measurement taken off the file**: this was found because a survey/audit backlog was measured at *267 entries / 252 missing*, when the true live target is *~181 / 172*. A **~40% overstatement**, which would have sent a backfill session to re-verify findings that are already closed.
+- **Same class as `ISSUE-524`:** a guard that checks one direction only. `ISSUE-524` is the mirror image — a finding id cited in `src/` with no ledger entry, because nothing checks `src/` → ledger. Both are cheap to close with a reverse arm on the same test.
+- **Suggested direction (NOT applied):** (1) normalise the 12 `CLOSED` to `RESOLVED`, or add `CLOSED` to the documented vocabulary — either is fine, but the schema and the file must agree; (2) decide whether the 7 non-vocabulary statuses (`MERGED INTO`, `PARKED`, `NEEDS-DECISION`, `RECLASSIFIED`) are legitimate live states that belong in the schema, or should collapse to `DEFERRED`/`DUPLICATE`; (3) add the reverse arm to `LedgerTraceabilityTests` — no terminal status in the working file — and only then move the 29 via `/verify-fix`. Do **not** bulk-move them first: `/verify-fix` is the only authorised mover, and closing that boundary by hand is the failure mode the report-only rule exists to prevent.
+- **Found:** 2026-09-07, in response to the direct question "are these all open right now, or does the list include closed/resolved/wontfix/duplicated ones?" — asked while scoping the survey+audit backfill. The answer was no, and the measurement was wrong until it was asked.
 
 ### ISSUE-540 — three stale claims in the RLS documentation and ledgers, all pointing the same wrong way
 
