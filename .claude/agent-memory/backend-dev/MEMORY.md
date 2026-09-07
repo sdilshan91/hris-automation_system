@@ -60,3 +60,4 @@
 - [worktree-fence rejects complex Bash](project-worktree-fence-blocks-complex-bash.md) — python heredocs and git-in-a-&&-chain are refused; write the script to the scratchpad and run it by absolute path
 - [Masking a field means masking its derivations](reference-mask-derived-fields.md) — BUG-533: BudgetCharge is `BonusAmount ?? IncrementAmount`, so nulling the five comp fields alone left the figure exposed
 - [Upload content sniffer (FileSignatureValidator)](reference-upload-content-sniffer.md) — fail-closed on unmapped types (why adoption stalls); adding a key is additive; image/jpg alias; payroll adjustment is the only path with no virus scan
+- [Overtime defaultMultiplier reachability (BUG-456)](reference-overtime-default-multiplier.md) — the "legacy empty-buckets" path is UNREACHABLE; seed Multiplier<=0 instead; ARCH-004 KnownInert goes red when you fix an entry

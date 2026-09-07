@@ -530,9 +530,17 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
             // GAP-022: the OT hourly base optionally scales by this employee's FTE — their EFFECTIVE attendance
             // policy (Location override → tenant default → code default OFF) decides. Off ⇒ Fte is ignored and
             // the rate is byte-identical to its pre-fix value for every default-policy tenant.
-            var fteScaledOvertimeBase =
-                AttendancePolicyResolver.For(attendancePolicyByLocation, emp.LocationId)?.FteScaledOvertimeBase ?? false;
-            var overtime = ComputeOvertime(result, inputs, attendance, workingDays, emp.Fte, fteScaledOvertimeBase);
+            // BUG-456: the tenant's WeekdayOvertimeMultiplier comes off the SAME effective policy row (one
+            // resolve, not two). It prices only overtime that carries NO usable per-record multiplier; a record
+            // with an explicit rate is still paid at that rate (see PayrollOvertimeCalculator.Compute). Until
+            // this was threaded the calculator's own 1.5 default won, so a tenant that configured 2.0x saved it
+            // successfully and was silently paid 1.5x. No policy row ⇒ the documented code default, unchanged.
+            var attendancePolicy = AttendancePolicyResolver.For(attendancePolicyByLocation, emp.LocationId);
+            var fteScaledOvertimeBase = attendancePolicy?.FteScaledOvertimeBase ?? false;
+            var weekdayOvertimeMultiplier = attendancePolicy?.WeekdayOvertimeMultiplier
+                ?? PayrollOvertimeCalculator.DefaultOvertimeMultiplier;
+            var overtime = ComputeOvertime(
+                result, inputs, attendance, workingDays, emp.Fte, fteScaledOvertimeBase, weekdayOvertimeMultiplier);
             if (!overtime.IsZero)
                 result = ApplyOvertime(result, overtime);
 
@@ -987,10 +995,17 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
     /// <c>FteScaledOvertimeBase</c>, both resolved by the caller. They are passed STRAIGHT THROUGH: the scaling —
     /// and its guard against a non-positive FTE — lives in the pure calculator and must not be reimplemented
     /// here. With the flag off (the default) <paramref name="fte"/> is ignored entirely.</para>
+    ///
+    /// <para><b>BUG-456.</b> <paramref name="defaultMultiplier"/> is the tenant's configured
+    /// <c>AttendanceSettings.WeekdayOvertimeMultiplier</c>, resolved by the caller off the same effective policy
+    /// row as <paramref name="fteScaledBase"/>. Passed STRAIGHT THROUGH for the same reason: the precedence —
+    /// a per-record multiplier beats it, always — lives in the pure calculator and must not be second-guessed
+    /// here. Omitting it left the calculator's own 1.5 default in force, so a tenant configured at 2.0x was
+    /// silently paid 1.5x on any overtime carrying no usable per-record rate.</para>
     /// </summary>
     private static PayrollOvertimeCalculator.OvertimeResult ComputeOvertime(
         PayrollSlipResult result, IReadOnlyList<PayrollComponentInput> inputs, AttendancePayrollRowDto? attendance,
-        decimal workingDays, decimal fte, bool fteScaledBase)
+        decimal workingDays, decimal fte, bool fteScaledBase, decimal defaultMultiplier)
     {
         if (attendance is null
             || (attendance.ApprovedOvertimeMinutes <= 0
@@ -1000,7 +1015,7 @@ public sealed class PayrollRunProcessor : IPayrollRunProcessor
         var basic = ResolvedBasic(result, inputs);
         return PayrollOvertimeCalculator.Compute(
             basic, workingDays, attendance.OvertimeMultiplierDetails, attendance.ApprovedOvertimeMinutes,
-            fte: fte, fteScaledBase: fteScaledBase);
+            defaultMultiplier: defaultMultiplier, fte: fte, fteScaledBase: fteScaledBase);
     }
 
     /// <summary>Adds the overtime earning line (US-PAY-010 AC-2) and re-rolls gross/net.</summary>
