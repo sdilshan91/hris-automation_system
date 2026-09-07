@@ -98,6 +98,7 @@ public sealed class FiscalLeaveYearMoneyIntegrationTests
         }
 
         public Task<Result> CancelAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<Result<CancelAdjustmentSeriesResult>> CancelSeriesAsync(Guid seriesId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Result<PayrollAdjustmentPageDto>> ListAsync(AdjustmentListFilter f, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Result<PayrollAdjustmentDto>> GetAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Result<BulkAdjustmentResultDto>> BulkCreateAsync(int m, int y, Stream s, CancellationToken ct = default) => throw new NotSupportedException();

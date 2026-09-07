@@ -45,6 +45,20 @@ public sealed record CreatePayrollAdjustmentResult(
     int? DeferredToPayYear,
     int? DeferredToPayMonth);
 
+/// <summary>
+/// Outcome of cancelling the remaining occurrences of a recurring adjustment series (ISSUE-171).
+/// "Remaining" means every <c>Pending</c> occurrence. Occurrences that already reached a payslip
+/// (<c>Applied</c>) are deliberately left untouched and REPORTED in <c>AlreadyAppliedCount</c> — an operator
+/// cancelling a series must be told how many occurrences can no longer be undone here, so a bare
+/// cancelled-count would hide exactly the fact they need.
+/// </summary>
+public sealed record CancelAdjustmentSeriesResult(
+    Guid RecurringSeriesId,
+    /// <summary>How many Pending occurrences this call moved to Cancelled.</summary>
+    int CancelledCount,
+    /// <summary>How many occurrences were left alone because they were already Applied to a payslip.</summary>
+    int AlreadyAppliedCount);
+
 /// <summary>Paged adjustment list for the §8 Notion-style table (US-PAY-007).</summary>
 public sealed record PayrollAdjustmentPageDto(
     IReadOnlyList<PayrollAdjustmentDto> Items,

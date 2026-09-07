@@ -47,6 +47,24 @@ public sealed class CancelPayrollAdjustmentCommandHandler : IRequestHandler<Canc
         => _service.CancelAsync(request.AdjustmentId, cancellationToken);
 }
 
+/// <summary>
+/// Cancels the remaining (Pending) occurrences of a recurring adjustment series (ISSUE-171). Already-Applied
+/// occurrences are left alone and reported in the result.
+/// </summary>
+public sealed record CancelPayrollAdjustmentSeriesCommand(Guid RecurringSeriesId)
+    : IRequest<Result<CancelAdjustmentSeriesResult>>;
+
+public sealed class CancelPayrollAdjustmentSeriesCommandHandler
+    : IRequestHandler<CancelPayrollAdjustmentSeriesCommand, Result<CancelAdjustmentSeriesResult>>
+{
+    private readonly IPayrollAdjustmentService _service;
+    public CancelPayrollAdjustmentSeriesCommandHandler(IPayrollAdjustmentService service) => _service = service;
+
+    public Task<Result<CancelAdjustmentSeriesResult>> Handle(
+        CancelPayrollAdjustmentSeriesCommand request, CancellationToken cancellationToken)
+        => _service.CancelSeriesAsync(request.RecurringSeriesId, cancellationToken);
+}
+
 /// <summary>Bulk-creates adjustments from a parsed CSV for one period (US-PAY-007 FR-2).</summary>
 public sealed record BulkCreatePayrollAdjustmentsCommand(int PayMonth, int PayYear, Stream CsvContent)
     : IRequest<Result<BulkAdjustmentResultDto>>;
