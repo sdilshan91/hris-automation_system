@@ -53,6 +53,19 @@ public sealed class UpdateSalaryComponentValidator : AbstractValidator<UpdateSal
                 .WithErrorCode("negative_fixed_value");
         });
 
+        // ISSUE-369: enforce the numeric(18,2) money contract on the stored default value (same contract as
+        // AssignSalaryStructureValidator / PreviewCtcBreakdownValidator, ISSUE-152). Postgres silently ROUNDS
+        // a higher-scale value on write, so 1234.5678 became 1234.57 with nothing telling the caller —
+        // rejecting is honest where rounding is not. Scoped to non-Formula methods because the Formula path
+        // discards DefaultValue entirely. ignoreTrailingZeros so 1234.50 is a valid 2-dp amount.
+        When(x => x.CalculationMethod != CalculationMethod.Formula && x.DefaultValue.HasValue, () =>
+        {
+            RuleFor(x => x.DefaultValue!.Value)
+                .PrecisionScale(18, 2, ignoreTrailingZeros: true)
+                    .WithMessage("Default value cannot have more than 2 decimal places.")
+                    .WithErrorCode("invalid_default_value_scale");
+        });
+
         RuleFor(x => x.ProcessingOrder)
             .GreaterThanOrEqualTo(0).WithMessage("Processing order cannot be negative.");
     }
