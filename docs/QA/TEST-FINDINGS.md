@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 45 | 168 | 213 |
-| ISSUE | 175 | 296 | 471 |
+| ISSUE | 177 | 296 | 473 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **247** | **466** | **713** |
+| **TOTAL** | **249** | **466** | **715** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -301,6 +301,30 @@
 - **Why it matters:** live test theater asserting immutability of the **audit log** in a CRITICAL module. Accepting 404 beside 405 is what makes it unfalsifiable.
 - **Suggested direction (NOT applied):** repoint so the 405 is **earned**, and drop 404 from the accepted set — a rewrite, not a rename.
 - **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-524 — `BUG-522` is cited in shipped source and tests but exists in no ledger
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** process / traceability
+- **Title:** `BUG-522` was fixed and merged (#672, "align the overtime-multiplier validator bound with the column it writes to") and its ID is referenced in `UpsertAttendanceSettingsValidator.cs` and `AttendanceSettingsMultiplierBoundsTests.cs` — but `git grep BUG-522` across the whole tree returns **only those two source files**. There is no entry in `TEST-FINDINGS.md`, none in `TEST-FINDINGS-RESOLVED.md`, and no queue row.
+- **Why it matters:** Critical Rule #4 is traceability — every fix traces to a finding. A finding ID that exists only as a string in a code comment cannot be de-duplicated against, cannot be re-verified by `/verify-fix`, and cannot be counted in any tier. The ID is also now **burned**: the next filing that auto-increments from the ledger's max (521) would reach 522 and collide with shipped code.
+- **What the existing guard does not catch:** `LedgerTraceabilityTests` validates ledger rows point at real US/TC ids — it checks the ledger outward. Nothing checks the **reverse** direction, that a finding id appearing in `src/` has a ledger entry. That reverse check is what would have caught this at commit time.
+- **Suggested direction (NOT applied):** back-fill the `BUG-522` entry from #672's commit message into `TEST-FINDINGS-RESOLVED.md`, and add the reverse arm to `LedgerTraceabilityTests` — every `(BUG|ISSUE|ENH)-\d+` token in `src/` must resolve to a ledger entry.
+- **Found:** 2026-09-07, out-of-lane while sizing the T4 decided-parked items (looking up the next free finding id is what surfaced it).
+
+
+### ISSUE-523 — `employees.bank_account_number` is plaintext while its sibling `national_id` on the same entity is encrypted
+
+- **Type / Severity / Status:** ISSUE · **MED** (latent; would be HIGH the day capture ships) · OPEN
+- **Layer:** BE / security
+- **Module / US / TC:** Core HR + Payroll · `ENH-018` · TC-PAY-009-02, TC-PAY-009-08
+- **Title:** `Employee.BankAccountNumber` (`Employee.cs:197`) maps to `employees.bank_account_number varchar(50)` with **no value converter**. The `ApplyEncryption` hook on this very entity (`EmployeeConfiguration.cs:245-250`) encrypts exactly one field — `NationalId` — and `EncryptedFieldRegistry.cs:67` lists `employees.national_id` and nothing bank-related. So the AES-256-GCM `enc:v1:` machinery is already owned, already wired to this entity, and deliberately not applied to the most sensitive column of its class on it.
+- **Why MED and not HIGH today:** no production row has ever held a value. There is **no write path at all** — an exhaustive search found zero setters outside `PayrollReportIntegrationTests.cs:255-269`, which constructs the entity directly against the DbContext. The columns are structurally NULL in every tenant, so there is no data at risk right now.
+- **Why it must be decided BEFORE any capture work, not after:** the moment a capture endpoint ships, every account number is **born plaintext**, and retrofitting encryption then requires a data migration over live PII instead of a no-op. Encrypting now costs a `varchar(50) → text` retype and one registry line, with a **back-fill that is a guaranteed no-op** because no plaintext history exists. That window closes permanently on the first successful write. Precedent for the retype: `20260712185610_EncryptSensitiveFields`, `20260708055825_WidenMfaSecretForEncryption`.
+- **Related — `ENH-018`'s own proposed remedy is a false-green.** The finding suggests "add bank master data to the QA seed" to make the masking testable. That would turn TC-PAY-009-02/-08 green while the feature stays **permanently dead in production**: the masking (`AccountMasking.MaskLast4`), the audit redaction (`SensitiveFieldMasker.cs:34`), the export carve-out (`ExportSensitiveFields.cs:6`) and the `Payroll.ViewSensitive` reveal endpoint are all correct and all unreachable, because nothing can write the fields. This is the same class as `ISSUE-486`/`ISSUE-492` (P1.4, "checks that report safety they do not provide") — a green test standing in for a capability that does not exist.
+- **Suggested direction (NOT applied):** split `ENH-018`. Keep the seed fixture as the QA-enablement task, but **do not let it close the finding**; raise the capture capability as its own story (see the T4 scoping note in `GAP-CLOSURE-QUEUE.md`), and settle the encryption question as part of that story's design rather than after it.
+- **Found:** 2026-09-07, out-of-lane while sizing `ENH-018` for T4.
+
 
 ### ISSUE-521 — concurrent sub-agents collide on generic scratchpad filenames, which silently degrades every mutation proof
 

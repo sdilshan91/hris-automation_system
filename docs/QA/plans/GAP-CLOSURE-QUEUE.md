@@ -454,6 +454,61 @@ the bulk of T4's value.
 **Still needing a decision before any code:** `ENH-010`(2), `ENH-012`(b), `ENH-013`(a), `ENH-018`,
 `ISSUE-116`, `ISSUE-129`, `ISSUE-144(b)`/`ISSUE-149(b)`, `BUG-075` site 3, and `ISSUE-150` (rewrite).
 
+### T4 residual — the four decided-parked items, sized 2026-09-07
+
+Asked whether the four remaining decided-parked items could still be delivered inside T4. Each was sized
+against `src/` first. **Answer: two can, one splits, one should not be built at all.** Three of the four
+turned out to be **two items wearing one id** — a cheap half that belongs in T4 and an expensive half
+that does not.
+
+| item | ships in T4 | parked, and why |
+|---|---|---|
+| `ISSUE-116` | **Idempotency guard on both reminder jobs.** No migration. | Per-tenant reminder lead time — needs a tenant setting + migration. |
+| `ISSUE-129` | **Redis read-through cache** on the performance dashboard. No migration. | `performance_summary` matview — see the isolation note below. |
+| `ENH-018` | QA seed fixture only — and it **must not close the finding**. | Bank-details capture: a new feature story, not a fix. |
+| `ENH-010`(2) | **nothing — reclassify to T5.** | The requirement itself is undefined; QA already recorded it CONDITIONAL / "NOT a gap". |
+
+**`ISSUE-116` — the #681 note was wrong, and this is a correction to my own record.** #681 stated the
+interview job "needs a new column and a migration." It does not. `Interview.ReminderJobId` exists
+(`Interview.cs:60`), is mapped (`InterviewConfiguration.cs:45`), and is set on schedule, swapped on
+reschedule and cleared on cancel by `InterviewService`. **Both** jobs already own a marker field; neither
+job reads it. `OfferExpiryReminderJob.cs:54` clears it but guards only on `offer is null || !offer.IsActive`,
+so a Hangfire retry finds the offer still active and sends a second reminder; `InterviewReminderJob.cs:41`
+reads `AsNoTracking()` and neither clears nor guards. Same two-line shape, no schema change.
+
+**`ISSUE-129` — ship the cache, park the view.** Redis is wired (`DependencyInjection.cs:977`), fail-open,
+and the tenant-scoped key convention already exists (`CacheTenantPrefix.cs:55` → `t:{tenantId}:`), with
+`HrReportService.cs:1218-1270` already doing read-through keyed by `(tenantId, filter-hash)` — the exact
+seam this needs. Cost today: `/dashboard/overview` is **~9-12 sequential round trips**, and
+`/dashboard/trend` re-runs the 7-query fan-out **once per cycle**.
+⚠ **The matview half is not merely bigger, it is an isolation regression.** A materialized view is a
+physical **cross-tenant** artifact, so isolation stops being the EF global query filter and becomes a
+hand-written `WHERE tenant_id =` on every read — the precise class `BUG-003` already exploits, confirmed
+leaking **on this same dashboard**. NFR-2's stated mitigation is RLS on the view, which is still dormant
+(`20260710120000_Platform_RlsPolicies_Dormant`). Park it behind `US-PLT-002` / RLS enablement.
+*Correction:* the queue previously implied this reverses a recorded decision. There is **no ADR** — only
+a docstring (`IPerformanceDashboardService.cs:20-24`) that pre-authorises this exact design. The cache
+half is ordinary loop work, not a human gate.
+
+**`ENH-018` — the filed remedy is a false-green; do not let the seed close it.** See `ISSUE-523`.
+Complete delivery needs DTO + endpoint + permission + validation + audit + encryption + FE + tests — a
+new story at M, not a T4 fix. The encryption question (`ISSUE-523`) must be settled **before** capture
+ships, not after, because the no-op back-fill window closes on the first successful write.
+
+**`ENH-010`(2) — reclassified to T5; it is a product decision, not engineering.** NFR-6 is **not about
+notifications** — the framing carried in this queue was wrong. Its full text (`US-REC-005.md:49`) is a
+*scheduling-form* rule: "Interview scheduling form SHALL validate date/time is in the future and within
+business hours (configurable)." That one clause defines none of: what the hours are (no default, no
+weekend/holiday rule), **whose** hours (tenant / interviewer / overseas candidate), hard reject vs soft
+warn, or where "configurable" lives (`tenants` vs `attendance_settings`). QA reached the same place
+independently — `TC-REC-005-07.md:42` hedges its own expected result and `TEST-MATRIX.md:326` records it
+CONDITIONAL, explicitly **"NOT a gap."**
+Two ledger corrections fall out of it: `ScheduleInterviewValidator.cs:82-83` still says "no tenant-timezone
+infra yet" — **stale**, `TenantClock` shipped with per-tenant zones and `LocalTimeOfDay`; and `ENH-010`'s
+own text calls the recruitment notifier a "log-only seam" — **stale**, `RealRecruitmentNotificationService`
+is DI-registered at `DependencyInjection.cs:372`.
+
+
 ### T4 — Re-scope before working (residual is smaller than filed)
 
 `ENH-001`(enqueue shipped; only the on-demand endpoint remains) · `ENH-010`(SMTP already off-thread;
