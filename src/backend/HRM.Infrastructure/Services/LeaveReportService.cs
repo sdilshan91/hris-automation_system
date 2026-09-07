@@ -1055,8 +1055,13 @@ public sealed class LeaveReportService : ILeaveReportService
             // No employee record + no All permission → an empty Employee scope (returns nothing).
             return new ReportScope(ScopeKind.Employee, null);
 
-        // DEC-1: Team scope requires BOTH the explicit Reports.View.Team perm AND actually managing someone.
-        bool isManager = _currentUser.Permissions.Contains(PermissionCatalog.Reports.ViewTeam)
+        // DEC-1: Team scope requires BOTH an explicit team-scope permission AND actually managing someone.
+        // ENH-002 adds Leave.Reports.Team alongside the cross-module Reports.View.Team: a caller granted the
+        // leave-report TEAM permission must resolve to team scope, or the permission's name would lie — it
+        // would open the gate and then hand back self-scoped rows. Still fail-closed: managing nobody, or
+        // holding only Leave.Reports.Own, falls through to Employee (self) scope.
+        bool isManager = (_currentUser.Permissions.Contains(PermissionCatalog.Reports.ViewTeam)
+                          || _currentUser.Permissions.Contains(PermissionCatalog.Leave.ReportsTeam))
             && await _dbContext.Employees.AsNoTracking()
                 .AnyAsync(e => e.ReportsToEmployeeId == me.Id, ct);
 

@@ -117,6 +117,34 @@ public static class PermissionCatalog
         /// the per-resource pattern used by LeaveType.* / Holiday.* / Leave.ManageLop.
         /// </summary>
         public const string Reports = "Leave.Reports";
+
+        /// <summary>
+        /// ENH-002: the TEAM-scoped grant for the leave report/analytics/export surface. Admits a caller to
+        /// the same endpoints as <see cref="Reports"/>, but the BR-2 row scope resolved by LeaveReportService
+        /// then restricts the rows to the caller's own direct reports + self. Granted to the built-in Manager
+        /// role.
+        ///
+        /// <para>WHY IT EXISTS. BR-2 ("HR sees all; managers see their team; employees see only their own
+        /// data") was implemented in the service — the Manager and Employee scope branches are real — but the
+        /// endpoints gated SOLELY on <see cref="Reports"/>, which only the admin-tier roles hold. Manager and
+        /// Employee therefore got a 403 before the scope branches could ever run, making a designed and tested
+        /// behaviour unreachable. This permission (and <see cref="ReportsOwn"/>) reopens the gate at the
+        /// granularity BR-2 describes rather than by widening <see cref="Reports"/> itself, which would have
+        /// replaced a fine-grained design with a coarser one.</para>
+        ///
+        /// <para>Named <c>.Team</c>/<c>.Own</c> to match the row-scope convention used throughout this catalog
+        /// (<see cref="ViewOwn"/>/<see cref="ViewTeam"/>/<see cref="ViewAll"/>, Employee.*, Attendance.*,
+        /// Reports.*). <c>.Self</c> is reserved here for ACTION permissions
+        /// (<see cref="Attendance.RegularizeSelf"/>, <see cref="Performance.ReadSelf"/>).</para>
+        /// </summary>
+        public const string ReportsTeam = "Leave.Reports.Team";
+
+        /// <summary>
+        /// ENH-002: the SELF-scoped grant for the leave report/analytics/export surface — the caller reaches
+        /// the endpoints and BR-2 restricts every row to their own employee record. Granted to the built-in
+        /// Employee role. See <see cref="ReportsTeam"/> for the full rationale.
+        /// </summary>
+        public const string ReportsOwn = "Leave.Reports.Own";
     }
 
     // ── Leave Type Configuration (US-LV-001) ─────────────────────────
@@ -550,7 +578,8 @@ public static class PermissionCatalog
 
         // Leave
         Leave.ViewOwn, Leave.ViewTeam, Leave.ViewAll,
-        Leave.Apply, Leave.ApproveTeam, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop, Leave.Reports,
+        Leave.Apply, Leave.ApproveTeam, Leave.ApproveAll, Leave.ConfigurePolicy, Leave.ManageLop,
+        Leave.Reports, Leave.ReportsTeam, Leave.ReportsOwn,
 
         // Leave Type
         LeaveType.View, LeaveType.Create, LeaveType.Edit, LeaveType.Deactivate,
@@ -766,6 +795,9 @@ public static class PermissionCatalog
             // DEC-1: holds Employee/Leave/Attendance.View.Team (not .All) → team report scope preserved via Reports.View.Team.
             // BR-5 (ISSUE-137): department-scoped recruitment dashboard — auto-restricted to the manager's own department.
             Reports.View, Reports.ViewTeam, Reports.ViewDepartment,
+            // ENH-002: BR-2 grants a manager the TEAM slice of the leave reports. The endpoints previously
+            // gated on Leave.Reports alone (admin-tier only), so the manager scope branch was unreachable.
+            Leave.ReportsTeam,
             Training.ViewAll,
         },
         BuiltInRoles.Employee => new[]
@@ -773,6 +805,8 @@ public static class PermissionCatalog
             Employee.ViewOwn, Employee.EditOwn,
             EmployeeDocument.ViewOwn,
             Leave.ViewOwn, Leave.Apply,
+            // ENH-002: BR-2 grants an employee the SELF slice of the leave reports (own rows only).
+            Leave.ReportsOwn,
             Holiday.View,
             Attendance.ViewOwn, Attendance.CheckIn, Attendance.RegularizeSelf,
             Payroll.ViewOwn,

@@ -57,6 +57,7 @@
 - [HrReport SQL pushdown (ENH-455)](reference-hrreport-sql-pushdown.md) — what translates to Postgres GROUP BY, why the BR-3/BR-4 text rules stay in C#, and the enum-vs-SQL empty-group trap
 - [Dry-run guards need a caller with pending work](feedback-inert-guard-needs-a-caller-with-pending-work.md) — a SaveChanges guard is a surviving mutant unless the arm stages unrelated unsaved work
 - [RLS WITH CHECK blocks null-tenant writes](reference-rls-withcheck-blocks-null-tenant-writes.md) — the read convention is NOT permission to write one; ISSUE-062 500s login under RLS
+- [Leave report scope permissions (US-LV-012 BR-2 / ENH-002)](reference-leave-report-scope-permissions.md) — gate reads Leave.Reports*, row scope reads cross-module Reports.View.*; built-in Manager already holds ViewTeam (masks the branch); BalanceSummary needs a Used ledger row or it is empty
 - [worktree-fence rejects complex Bash](project-worktree-fence-blocks-complex-bash.md) — python heredocs and git-in-a-&&-chain are refused; write the script to the scratchpad and run it by absolute path
 - [Masking a field means masking its derivations](reference-mask-derived-fields.md) — BUG-533: BudgetCharge is `BonusAmount ?? IncrementAmount`, so nulling the five comp fields alone left the figure exposed
 - [Upload content sniffer (FileSignatureValidator)](reference-upload-content-sniffer.md) — fail-closed on unmapped types (why adoption stalls); adding a key is additive; image/jpg alias; payroll adjustment is the only path with no virus scan
