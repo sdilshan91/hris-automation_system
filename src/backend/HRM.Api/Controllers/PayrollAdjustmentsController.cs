@@ -100,6 +100,29 @@ public sealed class PayrollAdjustmentsController : ControllerBase
     }
 
     /// <summary>
+    /// POST — cancels the REMAINING occurrences of a recurring adjustment series (ISSUE-171): every Pending
+    /// row in the series. Occurrences already Applied to a payslip are left untouched and reported back in
+    /// <c>alreadyAppliedCount</c>. Unknown/cross-tenant series → 404; nothing left to cancel → 409.
+    /// </summary>
+    [HttpPost("series/{seriesId:guid}/cancel")]
+    [RequirePermission("Payroll.Configure")]
+    [ProducesResponseType(typeof(ApiResponse<CancelAdjustmentSeriesResult>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CancelSeries(Guid seriesId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new CancelPayrollAdjustmentSeriesCommand(seriesId), cancellationToken);
+        if (result.IsFailure)
+            return StatusCode(result.StatusCode ?? 400, ApiResponse.Fail(result.Error!, result.ErrorCode));
+
+        var value = result.Value!;
+        return Ok(ApiResponse<CancelAdjustmentSeriesResult>.Ok(value,
+            value.AlreadyAppliedCount == 0
+                ? $"{value.CancelledCount} remaining adjustment(s) cancelled."
+                : $"{value.CancelledCount} remaining adjustment(s) cancelled; {value.AlreadyAppliedCount} already applied and left unchanged."));
+    }
+
+    /// <summary>
     /// POST (multipart/form-data) — bulk-creates adjustments from a CSV for one period (FR-2). CSV header:
     /// employee_no, adjustment_type, amount, description, is_taxable. Returns per-row results.
     /// </summary>

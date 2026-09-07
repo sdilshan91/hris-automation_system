@@ -8765,6 +8765,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/payroll/adjustments/series/{seriesId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    seriesId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponseOfPayrollCancelAdjustmentSeriesResult"];
+                        "text/json": components["schemas"]["ApiResponseOfPayrollCancelAdjustmentSeriesResult"];
+                        "text/plain": components["schemas"]["ApiResponseOfPayrollCancelAdjustmentSeriesResult"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiResponse"];
+                        "text/json": components["schemas"]["ApiResponse"];
+                        "text/plain": components["schemas"]["ApiResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/payroll/adjustments/{id}": {
         parameters: {
             query?: never;
@@ -33358,6 +33419,15 @@ export interface components {
             /** Format: date-time */
             timestamp?: string;
         };
+        ApiResponseOfPayrollCancelAdjustmentSeriesResult: {
+            code?: string | null;
+            data?: components["schemas"]["PayrollCancelAdjustmentSeriesResult"];
+            errors?: string[] | null;
+            message?: string | null;
+            success?: boolean;
+            /** Format: date-time */
+            timestamp?: string;
+        };
         ApiResponseOfPayrollCreatePayrollAdjustmentResult: {
             code?: string | null;
             data?: components["schemas"]["PayrollCreatePayrollAdjustmentResult"];
@@ -37977,6 +38047,14 @@ export interface components {
             reason?: string | null;
             /** Format: uuid */
             salaryStructureId?: string;
+        };
+        PayrollCancelAdjustmentSeriesResult: {
+            /** Format: int32 */
+            alreadyAppliedCount?: number;
+            /** Format: int32 */
+            cancelledCount?: number;
+            /** Format: uuid */
+            recurringSeriesId?: string;
         };
         PayrollCloneFiscalYearRequest: {
             /** Format: date */

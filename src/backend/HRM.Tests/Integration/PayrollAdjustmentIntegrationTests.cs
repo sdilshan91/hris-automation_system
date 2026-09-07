@@ -654,4 +654,128 @@ public sealed class PayrollAdjustmentIntegrationTests
         result.Value.Results.Should().Contain(r => r.EmployeeNo == "A9" && r.ErrorCode == "employee_not_found");
         result.Value.Results.Should().Contain(r => r.EmployeeNo == "A1" && r.ErrorCode == "invalid_adjustment_type");
     }
+
+    // ── ISSUE-171: cancel the REMAINING occurrences of a recurring series ────────
+    //
+    // "Remaining" = every Pending occurrence. Already-Applied occurrences hit a payslip and are left alone —
+    // and REPORTED, because an operator killing a series must be told how many can no longer be undone here.
+
+    /// <summary>A recurring deduction spanning [startMonth..endMonth] of <paramref name="year"/>.</summary>
+    private static CreatePayrollAdjustmentCommand RecurringDeduction(
+        Guid empId, decimal amount, int startMonth, int endMonth, int year)
+        => new(empId, nameof(AdjustmentType.Deduction), amount, "Loan repayment",
+            startMonth, year, false, true, endMonth, year, null);
+
+    [Fact]
+    public async Task CancelSeries_AllPending_CancelsEveryOccurrence()
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        var create = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(RecurringDeduction(emp, 2_000m, 1, 3, 2026));            // Jan..Mar 2026 = 3 occurrences.
+        create.IsSuccess.Should().BeTrue();
+        create.Value!.GeneratedOccurrences.Should().Be(2);
+        var seriesId = create.Value.Adjustment.RecurringSeriesId;
+        seriesId.Should().NotBeNull();
+
+        var cancel = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(new CancelPayrollAdjustmentSeriesCommand(seriesId!.Value));
+
+        cancel.IsSuccess.Should().BeTrue();
+        cancel.Value!.CancelledCount.Should().Be(3);
+        cancel.Value.AlreadyAppliedCount.Should().Be(0);
+        cancel.Value.RecurringSeriesId.Should().Be(seriesId.Value);
+
+        using var db = Db(_tenantA);
+        var rows = await db.PayrollAdjustments.Where(a => a.RecurringSeriesId == seriesId).ToListAsync();
+        rows.Should().HaveCount(3);
+        rows.Should().OnlyContain(a => a.Status == AdjustmentStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task CancelSeries_MixedStatuses_CancelsOnlyPending_AndReportsTheApplied()
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        var create = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(RecurringDeduction(emp, 2_000m, 1, 4, 2026));            // Jan..Apr 2026 = 4 occurrences.
+        create.IsSuccess.Should().BeTrue();
+        var seriesId = create.Value!.Adjustment.RecurringSeriesId!.Value;
+
+        // Jan + Feb already reached a payslip: they are Applied and cannot be undone here.
+        var appliedRunId = BaseEntity.NewUuidV7();
+        List<Guid> appliedIds;
+        using (var seed = Db(_tenantA))
+        {
+            var applied = await seed.PayrollAdjustments
+                .Where(a => a.RecurringSeriesId == seriesId && a.ApplicablePayMonth <= 2)
+                .ToListAsync();
+            applied.Should().HaveCount(2);
+            foreach (var a in applied)
+            {
+                a.Status = AdjustmentStatus.Applied;
+                a.AppliedInPayrollRunId = appliedRunId;
+            }
+            appliedIds = applied.Select(a => a.Id).ToList();
+            await seed.SaveChangesAsync();
+        }
+
+        var cancel = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(new CancelPayrollAdjustmentSeriesCommand(seriesId));
+
+        cancel.IsSuccess.Should().BeTrue();
+        cancel.Value!.CancelledCount.Should().Be(2);
+        // The whole point of ISSUE-171: the two Applied occurrences are REPORTED, never silently skipped.
+        cancel.Value.AlreadyAppliedCount.Should().Be(2);
+
+        using var db = Db(_tenantA);
+        var rows = await db.PayrollAdjustments.Where(a => a.RecurringSeriesId == seriesId).ToListAsync();
+        rows.Where(a => appliedIds.Contains(a.Id)).Should()
+            .OnlyContain(a => a.Status == AdjustmentStatus.Applied && a.AppliedInPayrollRunId == appliedRunId);
+        rows.Where(a => !appliedIds.Contains(a.Id)).Should()
+            .HaveCount(2).And.OnlyContain(a => a.Status == AdjustmentStatus.Cancelled);
+    }
+
+    [Fact]
+    public async Task CancelSeries_FromAnotherTenant_ResolvesToNothing()
+    {
+        var empA = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        await SeedEmployeeWithSalary(_tenantB, "B1", 50_000m);
+
+        var createA = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(RecurringDeduction(empA, 2_000m, 1, 3, 2026));
+        var seriesId = createA.Value!.Adjustment.RecurringSeriesId!.Value;
+
+        // Tenant B holds Tenant A's series id — the global query filter makes it resolve to nothing (AC-5).
+        var cancelB = await Provider(_tenantB).GetRequiredService<IMediator>()
+            .Send(new CancelPayrollAdjustmentSeriesCommand(seriesId));
+
+        cancelB.IsSuccess.Should().BeFalse();
+        cancelB.StatusCode.Should().Be(404);
+        cancelB.ErrorCode.Should().Be("adjustment_not_found");
+
+        // ...and Tenant A's occurrences are untouched.
+        using var db = Db(_tenantA);
+        var rows = await db.PayrollAdjustments.Where(a => a.RecurringSeriesId == seriesId).ToListAsync();
+        rows.Should().HaveCount(3).And.OnlyContain(a => a.Status == AdjustmentStatus.Pending);
+    }
+
+    [Fact]
+    public async Task CancelSeries_AlreadyFullyCancelled_Returns409_NotAnUnhandledError()
+    {
+        var emp = await SeedEmployeeWithSalary(_tenantA, "A1", 50_000m);
+        var create = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(RecurringDeduction(emp, 2_000m, 1, 3, 2026));
+        var seriesId = create.Value!.Adjustment.RecurringSeriesId!.Value;
+
+        var first = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(new CancelPayrollAdjustmentSeriesCommand(seriesId));
+        first.IsSuccess.Should().BeTrue();
+        first.Value!.CancelledCount.Should().Be(3);
+
+        var second = await Provider(_tenantA).GetRequiredService<IMediator>()
+            .Send(new CancelPayrollAdjustmentSeriesCommand(seriesId));
+
+        second.IsSuccess.Should().BeFalse();
+        second.StatusCode.Should().Be(409);
+        second.ErrorCode.Should().Be("adjustment_already_cancelled");
+    }
 }

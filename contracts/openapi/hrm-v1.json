@@ -6677,6 +6677,37 @@
         },
         "type": "object"
       },
+      "ApiResponseOfPayrollCancelAdjustmentSeriesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PayrollCancelAdjustmentSeriesResult"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "nullable": true,
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "timestamp": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ApiResponseOfPayrollCreatePayrollAdjustmentResult": {
         "additionalProperties": false,
         "properties": {
@@ -20890,6 +20921,24 @@
             "type": "string"
           },
           "salaryStructureId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PayrollCancelAdjustmentSeriesResult": {
+        "additionalProperties": false,
+        "properties": {
+          "alreadyAppliedCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "cancelledCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "recurringSeriesId": {
             "format": "uuid",
             "type": "string"
           }
@@ -45362,6 +45411,86 @@
               }
             },
             "description": "Bad Request"
+          }
+        },
+        "tags": [
+          "PayrollAdjustments"
+        ]
+      }
+    },
+    "/api/v1/payroll/adjustments/series/{seriesId}/cancel": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "seriesId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfPayrollCancelAdjustmentSeriesResult"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfPayrollCancelAdjustmentSeriesResult"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfPayrollCancelAdjustmentSeriesResult"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              },
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           }
         },
         "tags": [

@@ -178,6 +178,52 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
         return Result.Success();
     }
 
+    // ── ISSUE-171: cancel the remaining occurrences of a recurring series ────────
+
+    public async Task<Result<CancelAdjustmentSeriesResult>> CancelSeriesAsync(
+        Guid recurringSeriesId, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved)
+            return Result<CancelAdjustmentSeriesResult>.Failure("Tenant context is not resolved.", 400);
+
+        // Tenant-scoped by the global query filter (AC-5): another tenant's series resolves to zero rows.
+        var occurrences = await _dbContext.PayrollAdjustments
+            .Where(a => a.RecurringSeriesId == recurringSeriesId)
+            .ToListAsync(cancellationToken);
+
+        if (occurrences.Count == 0)
+            return Result<CancelAdjustmentSeriesResult>.Failure(
+                "Adjustment series not found.", 404, "adjustment_not_found");
+
+        var pending = occurrences.Where(a => a.Status == AdjustmentStatus.Pending).ToList();
+        var alreadyAppliedCount = occurrences.Count(a => a.Status == AdjustmentStatus.Applied);
+
+        if (pending.Count == 0)
+            return alreadyAppliedCount == occurrences.Count
+                ? Result<CancelAdjustmentSeriesResult>.Failure(
+                    "Every adjustment in this series has already been applied and cannot be cancelled.",
+                    409, "adjustment_already_applied")
+                : Result<CancelAdjustmentSeriesResult>.Failure(
+                    "This series has no remaining adjustments to cancel.", 409, "adjustment_already_cancelled");
+
+        var now = DateTime.UtcNow;
+        foreach (var adj in pending)
+        {
+            var before = Snapshot(adj);
+            adj.Status = AdjustmentStatus.Cancelled;
+            adj.UpdatedAt = now;
+
+            // US-PAY-012 (FR-2): one audit entry per cancelled occurrence, same action as the single-row path.
+            _audit.Log(PA.PayrollAdjustmentCancelled, PA.ResourceType.PayrollAdjustment,
+                adj.Id.ToString(), before: before, after: Snapshot(adj));
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<CancelAdjustmentSeriesResult>.Success(
+            new CancelAdjustmentSeriesResult(recurringSeriesId, pending.Count, alreadyAppliedCount));
+    }
+
     // ── List / get ───────────────────────────────────────────────────────────
 
     public async Task<Result<PayrollAdjustmentPageDto>> ListAsync(

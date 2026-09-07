@@ -50,6 +50,15 @@ public interface IPayrollAdjustmentService
     /// <summary>FR-6: cancels a Pending adjustment (Applied/Cancelled → 409). Tenant-scoped; cross-tenant → 404.</summary>
     Task<Result> CancelAsync(Guid adjustmentId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// ISSUE-171: cancels the REMAINING occurrences of a recurring series — every <c>Pending</c> row sharing
+    /// <c>RecurringSeriesId</c>. Occurrences already <c>Applied</c> to a payslip are left untouched and
+    /// reported back in the result, never silently skipped. Tenant-scoped; an unknown or cross-tenant series
+    /// resolves to nothing → 404. A series with nothing left to cancel → 409, matching the single-row codes.
+    /// </summary>
+    Task<Result<CancelAdjustmentSeriesResult>> CancelSeriesAsync(
+        Guid recurringSeriesId, CancellationToken cancellationToken = default);
+
     /// <summary>Lists adjustments with §8 filters (status/type/period/employee), most-recent-first, paginated.</summary>
     Task<Result<PayrollAdjustmentPageDto>> ListAsync(AdjustmentListFilter filter, CancellationToken cancellationToken = default);
 
