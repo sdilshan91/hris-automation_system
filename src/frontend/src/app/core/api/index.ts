@@ -34,10 +34,27 @@
  * disagreed. The failures ARE the contract bugs — GAP-009 through GAP-016 are all instances. Do it a module
  * at a time; a rename surfaced this way is a compile error, which is the entire point.
  *
- * Note on optionality: every generated property is optional (`?`) because Swashbuckle does not emit
- * `required` for non-nullable C# reference types under the current configuration. So these types catch WRONG
- * and MISSPELLED fields — the whole of the observed drift — but do not yet prove a field is always present.
- * Tightening that is a follow-up on the backend schema config, not a reason to hand-edit these types.
+ * Note on optionality: MOST generated properties are optional (`?`), but NOT all — do not assume it. As of
+ * 2026-09-07, 11 of the 1036 schemas in `contracts/openapi/hrm-v1.json` carry a `required` array and so emit
+ * non-optional properties: e.g. `amount: number` on `PayrollMyPayslipComponentDto`, and the rest of the
+ * `PayrollMyPayslip*` / `PayrollPayslip*` DTOs.
+ *
+ * The cause is the C# 11 `required` member modifier, not a global schema setting: every one of those 11 comes
+ * from a DTO whose properties are declared `public required … { get; init; }` (see
+ * `HRM.Application/Features/Payroll/DTOs/MyPayslipDtos.cs`), and every DTO using that modifier which reaches
+ * the OpenAPI document produces a `required` entry. Swashbuckle 7.x picks the modifier up; a plain
+ * non-nullable C# reference type WITHOUT it still emits an optional property, which is why the other 1025
+ * schemas are fully optional.
+ *
+ * Two consequences for consumers:
+ *   - `required` here means "the key is always present", NOT "the value is non-null" — `componentName:
+ *     string | null` is both required and nullable.
+ *   - Do not write code that assumes uniform optionality (e.g. blanket `?.` chains justified by "they're all
+ *     optional anyway", or a helper typed over `Partial<Schema<'…'>>`). Read the generated type.
+ *
+ * The practical value is unchanged: these types catch WRONG and MISSPELLED fields — the whole of the observed
+ * drift — and prove presence only for the properties actually marked required. Broadening that is a follow-up
+ * on the backend DTOs/schema config, not a reason to hand-edit these types.
  */
 
 import type { components, paths, operations } from './generated/api-types';
