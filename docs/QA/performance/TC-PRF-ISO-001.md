@@ -37,8 +37,8 @@ Verify NFR-2: all goal data is isolated per tenant. A manager/HR authenticated i
 | Step | Action | Expected Result |
 |------|--------|-----------------|
 | 1 | Authenticate in globex; JWT carries globex `tenant_id` | Tenant context resolves to globex. |
-| 2 | `GET /api/v1/performance/goals/team?cycleId=*` and any goal list endpoint | Responses contain only globex goals; zero acme goals (NFR-2). |
-| 3 | `GET /api/v1/performance/goals/{acme_goal_id}` using an acme goal UUID | 404 Not Found — the global query filter excludes it; never 200 with acme's goal. |
+| 2 | `GET /api/v1/tenant/performance/cycles/{globex_cycle_id}/team-dashboard` (positive control), then the same route with `{acme_cycle_id}`, then the goal list `GET /api/v1/tenant/performance/employees/{acme_employee_id}/cycles/{acme_cycle_id}/goals` | Control: 200 listing only globex members/goals — proves the route is live and the arm is not passing on a dead path. Both acme-ID probes: 404 Not Found (the global query filter excludes the acme rows); never 200 containing acme goals (NFR-2). |
+| 3 | `GET /api/v1/tenant/performance/goals/{acme_goal_id}` using an acme goal UUID | 404 Not Found — the global query filter excludes it; never 200 with acme's goal. |
 | 4 | Verify at the DB level | `SELECT * FROM goals WHERE tenant_id = acme_id` returns only acme rows; a session/context set to globex never reads acme rows. (If RLS exists, confirm a session set to globex cannot read acme rows even via direct query.) |
 | 5 | Switch to acme and repeat | acme sees only its own goals; zero globex goals. |
 

@@ -1,15 +1,18 @@
 /**
  * US-PRF-001: Performance goal-setting models matching the backend API contract.
  *
- * Backend endpoints (ASSUMED contract — backend agent building in parallel; the
- * service layer is intentionally thin so a route mismatch is a one-file fix):
- *   GET    /api/v1/performance/cycles/active                                  - current open cycle + window state
- *   GET    /api/v1/performance/cycles/:cycleId/team                           - manager's team members + goal-setting status (AC-4)
- *   GET    /api/v1/performance/cycles/:cycleId/employees/:employeeId/goals    - goals for one employee in a cycle (AC-1)
- *   PUT    /api/v1/performance/cycles/:cycleId/employees/:employeeId/goals    - save (replace) the full goal set (AC-2)
+ * Backend endpoints (VERIFIED against the live controllers — ISSUE-100; these are
+ * the routes `performance-goal.service.ts` actually calls):
+ *   GET    /api/v1/tenant/performance/cycles/active                                  - current open cycle + window state (CyclesController)
+ *   GET    /api/v1/tenant/performance/cycles/:cycleId/team-dashboard                 - manager's team members + goal-setting status (AC-4)
+ *   GET    /api/v1/tenant/performance/employees/:employeeId/cycles/:cycleId/goals    - goals for one employee in a cycle (AC-1)
+ *   PUT    /api/v1/tenant/performance/employees/:employeeId/cycles/:cycleId/goals    - save (replace) the full goal set (AC-2)
+ *
+ * Note the employee/cycle segment ORDER: `employees/:employeeId/cycles/:cycleId`,
+ * not the reverse. There is no `cycles/:cycleId/team` and no `goals/team` route.
  *
  * NOTE: `apiBaseUrl` already includes `/api/v1`, so the resource is
- * `${apiBaseUrl}/performance/...`. All requests are tenant-scoped via the
+ * `${apiBaseUrl}/tenant/performance/...`. All requests are tenant-scoped via the
  * tenantInterceptor (X-Tenant-Subdomain header) and use withCredentials for the
  * httpOnly cookie auth. The backend stamps tenant_id + audit fields server-side
  * (§7) and enforces RLS + the Performance.SetGoal.Team permission (BR-4, NFR-2).
