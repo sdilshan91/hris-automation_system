@@ -26,11 +26,11 @@
 
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
-| BUG | 47 | 168 | 215 |
-| ISSUE | 183 | 296 | 479 |
+| BUG | 48 | 168 | 216 |
+| ISSUE | 185 | 296 | 481 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **257** | **466** | **723** |
+| **TOTAL** | **260** | **466** | **726** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -335,6 +335,23 @@
 - **Why MED:** the payload is real email (`DependencyInjection.cs:378`), the failure is silent, and it reaches candidates directly. Initially filed LOW on the false premise that recruitment notifications were a log-only seam — see `ISSUE-531`.
 - **Suggested direction (NOT applied):** move **both** offer job schedules to after `SaveChangesAsync`.
 - **Found:** 2026-09-07, out-of-lane while fixing `ISSUE-116`.
+
+
+### BUG-533 — the recommendation workspace returns unmasked compensation to every caller who lacks the permission that exists to stop it
+
+- **Type / Severity / Status:** BUG · **HIGH** · OPEN
+- **Layer:** BE / security (authorization bypass, in-tenant)
+- **Module / US / TC:** Performance · US-PRF-010 FR-5 / AC-5 · TC-PRF-010-09 steps 5-6
+- **Title:** `GET /api/v1/tenant/performance/recommendations/workspace` is gated by `[RequirePermission("Performance.Publish.All", "Performance.Review.Team")]` (`RecommendationController.cs:69`) and returns each row's nested recommendation via an **unconditional** `BuildDto(...)` (`RecommendationService.cs:147`). `BuildDto` (`:1274-1279`) copies `CurrentCompensation`, `BonusAmount`, `BonusPercent`, `IncrementAmount`, `IncrementPercent` straight off the entity **with no `CanSeeCompensation` check**. The detail endpoint `GetAsync` 403s without `Payroll.ViewCompensation` (`:193-196`) — so the gate is simply **bypassable by calling the workspace instead**.
+- **Who is exposed — two concrete personas, neither holding the permission:**
+  1. **HR Officer** holds `Performance.PublishAll` (`PermissionCatalog.cs:745`) and is **deliberately denied** `Payroll.ViewCompensation` (`:227`, granted only to Owner / Tenant Admin / HR Manager). They receive the **whole org's** bonus and increment figures.
+  2. **Any line manager** holds `Performance.Review.Team`, which the workspace also admits, so they receive **their direct reports'** figures.
+  The response even carries `compensationVisible: false` alongside the data it says is not visible (`RecommendationService.cs:164`), so the FE hides what the wire already delivered — a client-side-only control over server-supplied data.
+- **Why HIGH:** this is a **server-side authorization bypass on data the permission model explicitly withholds**, reachable by a normal authenticated call to a documented endpoint, with no crafted input. `AutoGenerateAsync` (`:305`) has the same unguarded `BuildDto`. It is not a tenant-isolation break — the data stays inside the tenant — but the separation-of-duties boundary between performance administration and compensation visibility is exactly what `Payroll.ViewCompensation` was created to enforce, and it does not hold on this path.
+- **Why it went unseen:** `ISSUE-150` recorded this surface as *"no security exposure today because there is no real compensation data flowing through recommendations"* and rated it LOW. That premise was false — bonus/increment amounts **are** compensation data, and they are stored (and encrypted at rest, which is itself evidence the project treats them as sensitive). A finding asserting "not a live defect" is a strong reason for nobody to look again.
+- **Suggested direction (NOT applied):** mask or omit the five comp fields in `BuildDto` when `CanSeeCompensation` is false, at every call site (workspace `:147`, auto-generate `:305`), rather than at the controller — the service is where the permission is already evaluated. Prefer omission/masking over a blanket 403 so the workspace stays usable for its actual purpose, which is what TC-PRF-010-09 step 5 asks for.
+- **Regression test it needs:** an HR Officer (and separately a manager) calling the workspace must receive rows **without** comp figures. Mutation-prove it — the test must go RED when the guard is removed, or it is asserting nothing.
+- **Found:** 2026-09-07, out-of-lane while re-verifying `ISSUE-150`'s three claims for a ledger rewrite.
 
 
 ### ISSUE-532 — `AttendanceSettingsMultiplierBoundsTests` silently skips a duplicate test case that the suite reports as a pass
@@ -1144,6 +1161,40 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Root cause (confidence 95%):** (a) `SaveAsync` (`RecommendationService.cs:258`) has no cycle-status gate; the BR-1/BR-2 checks live in `SubmitAsync` (`:379`,`:385`). (b) the service returns `Result.Failure(..., 422, code)` for these business violations (`:280`,`:328`). (c) `SaveRecommendationValidator` caps `IncrementPercent`/`BonusPercent` at `InclusiveBetween(0,1000)` (`RecommendationValidators.cs:24-29`).
 - **Reproduction:** create Bonus on Active cycle FY26-A to 200 Draft, submit to 422 `final_ratings_not_published`; create on calibration cycle FY26-B to 200, submit to 422 `calibration_incomplete`; override with blank justification to 422 `justification_required`; Promotion missing grade/date to 422 `promotion_details_required`; increment 500% to 200 (persisted 500.0); increment 1500% to 422 "must be between 0 and 1000".
 - **Severity rationale:** Every actual business rule (BR-1/BR-2/BR-5/FR-3) IS enforced server-side and cannot be bypassed; these are wording/timing/status-code/threshold mismatches between the TCs and a reasonable implementation, not security or correctness defects. LOW.
+
+### ISSUE-149 — No central `audit_logs` row for any recommendation write; + justification & custom-label text stored RAW (no server-side XSS sanitization)
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-010 / TC-PRF-010-12, TC-PRF-ISO-040
+- **Title:** Two defense-in-depth nits bundled (recurring cross-module theme). (a) Recommendation writes append immutable `recommendation_event` rows (a complete per-rec history — FR-7 met) + Serilog, but write ZERO rows to the central `audit_logs` table, so recommendation actions never surface in the unified audit-search surface. (b) `justification` and `customTypeLabel` are persisted verbatim — `<script>alert(1)</script>` is stored raw with no HTML escaping/sanitization server-side; safety relies entirely on the FE (Angular interpolation) output-encoding. SQLi payloads are safely parameterized (EF Core — `recommendation` table intact after `'; DROP TABLE recommendation;--`).
+- **Root cause (confidence 88%):** `RecommendationService` calls `SaveChangesAsync` + `AppendEvent` (append-only RecommendationEvent) + Serilog but never a central audit writer (consistent with the leave/attendance/core-HR/PIP/PRF-009 "no central audit on writes" findings). Free-text fields are only `.Trim()`-ed (`ApplyDetails` `:897-905`, `Justification` `:319`/`:335`) — no sanitization.
+- **Reproduction:** create + override + submit + approve a recommendation, then query `audit_logs` for recommendation/promotion/bonus actions to 0 rows (the trail is the `recommendation_event` table only). `POST .../recommendations {"justification":"<script>alert(1)</script>"}` to stored verbatim; `{"details":{"customTypeLabel":"'; DROP TABLE recommendation;--"}}` to label stored literal, table intact (6 rows).
+- **Severity rationale:** The legally-meaningful immutable history exists (append-only `recommendation_event`, tenant-scoped) and SQLi cannot execute; gaps are (a) unified-audit visibility and (b) reliance on FE encoding for XSS — both defense-in-depth, matching documented platform patterns. LOW.
+
+### ISSUE-150 — the comp seam: encryption SHIPPED, `currentCompensation` still unbuilt, and the comp gate is bypassable (see `BUG-533`)
+
+- **Type / Severity / Status:** ISSUE · LOW · OPEN
+- **Layer:** BE · **US/TC:** US-PRF-010 / TC-PRF-010-06, TC-PRF-010-09 (steps 5-6), TC-PRF-010-11
+- **⚠ REWRITTEN 2026-09-07 — the previous text was two-thirds false and would have sent an implementer to rebuild shipped work.** Every claim below was re-verified against `src/`. The prior wording is preserved in git history; it is not reproduced here because its whole problem was that it read as authoritative.
+
+**Claim 1 — "NFR-3 compensation-at-rest encryption (pgcrypto) is entirely absent" → FALSE.**
+All five comp fields are encrypted at rest and fully wired: entity `Recommendation.cs:75-87`; converter applied at `RecommendationConfiguration.cs:99-106` (`EncryptedFieldConverters.Decimal` + `HasColumnType("text")`); invoked from `AppDbContext.cs:266` with the injected `IFieldEncryptor` (`DependencyInjection.cs:88`, `AesGcmFieldEncryptor`); columns retyped `numeric → text` by `20260712185610_EncryptSensitiveFields.cs:13-65`; back-fill registered at `EncryptedFieldRegistry.cs:53-59`. Test-bound both in-process and against real Postgres (`FieldEncryptionIntegrationTests.cs:136-165`, `FieldEncryptionPostgresTests.cs:156-256`).
+**But the mechanism is NOT pgcrypto** — it is application-side AES-256-GCM through EF value converters (`enc:v1:{kid}:base64(nonce‖ct‖tag)`). That difference is substantive, not pedantic: it changes how the TC must assert (no DB extension to provision) and it adds an ops deploy gate, because `Encryption__Keys__*` must be set or the app fail-fasts.
+
+**Claim 2 — "comp comparison/masking cannot be exercised" → HALF FALSE, and it concealed a live defect.**
+The gate is real and shipped: `PermissionCatalog.cs:227` (`Payroll.ViewCompensation`), granted to Owner / Tenant Admin / HR Manager and **deliberately withheld from HR Officer**; enforced service-side at `RecommendationService.cs:74-75` and `:193-196` (403 `compensation_not_permitted` **before** the read and before the audit row). Test-bound both ways (`RecommendationServiceTests.cs:542-596`). So "a *hypothetical* comp-hidden role" was wrong — the persona is concrete.
+*Masking*, however, was never built, and the previous entry's "there is no comp to mask" is false: bonus and increment amounts are real compensation data. The workspace path returns them **unmasked to callers who lack the permission** — filed separately as **`BUG-533` (HIGH)**.
+
+**Claim 3 — "`currentCompensation` always null" → TRUE.** The one claim that survived.
+`RecommendationService.cs:141` hardcodes `CurrentCompensation = null`; nothing anywhere writes the entity property (`ApplyDetails` at `:1097-1109` does not, and the input record has no such field). The service injects no payroll source. **The other side of the seam already exists** — `ISalaryAssignmentService.cs:56` → `SalaryAssignmentService.cs:148` resolves current compensation from `EmployeeSalaryComponents` by validity window. What is missing is narrow: consume it (batched — a per-row call is N+1 across a 200-row page), write the snapshot at save/auto-generate, and **decide snapshot-at-save vs live-join**. Those last two conflict: TC-PRF-010-06 step 4 demands the current side be live, not a stale snapshot. **A human must pick before this is built.**
+
+- **Severity rationale — corrected.** The old text said *"no security exposure today because there is no real compensation data flowing through recommendations… LOW (traceability, not a live defect)."* That sentence was the most damaging one in the entry: comp data **does** flow, and there **is** a live defect. This entry stays LOW only because what remains under *this* id is the unbuilt `currentCompensation` seam; the exposure moved to `BUG-533`.
+- **Doc drift to fix with it:** two source comments still tell the old story, so anyone verifying from `src/` reads it twice — `RecommendationController.cs:19-20` ("no pgcrypto/PII-encryption mechanism exists; stored plain numeric today") and `RecommendationBudget.cs:12-14` ("The codebase has no field/PII (pgcrypto) encryption mechanism"). The second is half-true: budget-pool amounts genuinely are plain numeric **by design**, but "no mechanism exists" is false.
+- **TC dispositions:**
+  - `TC-PRF-010-06` — **still blocked, needs re-scoping.** The grade/title arm is executable today; the compensation arm is not. Split them. Also fix the precondition: it names Core HR as the authoritative current side, but the real source is Payroll (`SalaryAssignmentService.cs:148`).
+  - `TC-PRF-010-09` steps 5-6 — **now executable, and expected to FAIL as written.** Split into a reveal-path arm (passes) and a workspace-masking arm (fails → `BUG-533`); the "current/recommended pay" clause stays unassertable while `currentCompensation` is null.
+  - `TC-PRF-010-11` — **now executable, but must be re-scoped off pgcrypto.** Its `exec_note` ("needs pgcrypto provisioning") is obsolete. Re-point at the existing coverage and assert `enc:v1:` ciphertext + round-trip + tamper-reject. Two carve-outs: step 4's masking arm inherits the `BUG-533` failure, and `recommendation_budget` amounts are intentionally NOT encrypted, so the TC must not assert over them.
+- **Rewritten:** 2026-09-07, from a code-verified re-audit of all three claims.
+
 
 ### ISSUE-149 — No central `audit_logs` row for any recommendation write; + justification & custom-label text stored RAW (no server-side XSS sanitization)
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
