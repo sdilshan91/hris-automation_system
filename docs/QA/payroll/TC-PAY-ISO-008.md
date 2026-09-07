@@ -22,7 +22,7 @@ Verify FR-8 / NFR-2 cache isolation: any caching of CTC breakdown / preview comp
 
 ## 3. Preconditions
 - Tenant "acme" employee Ravi and Tenant "globex" employee Lena both have assignments.
-- Both tenants use the same structure code FT-IN (different rows per tenant) to maximize collision risk.
+- Both tenants use the same structure code FT_IN (different rows per tenant) to maximize collision risk.
 - HR users authenticated in each tenant.
 
 ## 4. Test Data
