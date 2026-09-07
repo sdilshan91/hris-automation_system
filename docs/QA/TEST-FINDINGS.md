@@ -26,11 +26,11 @@
 
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
-| BUG | 45 | 168 | 213 |
-| ISSUE | 177 | 296 | 473 |
+| BUG | 47 | 168 | 215 |
+| ISSUE | 183 | 296 | 479 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **249** | **466** | **715** |
+| **TOTAL** | **257** | **466** | **723** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -301,6 +301,94 @@
 - **Why it matters:** live test theater asserting immutability of the **audit log** in a CRITICAL module. Accepting 404 beside 405 is what makes it unfalsifiable.
 - **Suggested direction (NOT applied):** repoint so the 405 is **earned**, and drop 404 from the accepted set — a rewrite, not a rename.
 - **Found:** 2026-09-07, out-of-lane while fixing ISSUE-113.
+
+### ISSUE-531 — `IRecruitmentNotificationService`'s own doc names a log-only implementation that is no longer wired
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** BE (docs-in-code)
+- **Title:** The interface doc on `IRecruitmentNotificationService` says "The default implementation (`LogOnlyRecruitmentNotificationService`) emits structured log events instead of sending real email / in-app." That has been false since the US-NTF-006 Phase 5a switch — `DependencyInjection.cs:378` registers `RealRecruitmentNotificationService`, which dispatches real email and in-app via `INotificationDispatcher`.
+- **Why a stale comment is worth a finding:** this one **actively produced two wrong engineering judgements in a single session.** An agent read it, concluded a dropped recruitment notification "costs nothing", and on that basis (a) rated a real candidate-facing email-loss bug LOW instead of MED and (b) justified a reminder-ordering choice on a premise that did not hold. The orchestrator then repeated the same error in the opposite direction. A doc that contradicts the composition root is not cosmetic — it is a trap for exactly the reader who is being careful enough to check.
+- **Related:** `ENH-010`'s own ledger text carries the same stale "log-only seam" claim.
+- **Suggested direction (NOT applied):** correct the doc to name the real implementation, and make the "which impl is wired" claim point at `DependencyInjection.cs` rather than restating it.
+- **Found:** 2026-09-07, out-of-lane while fixing `ISSUE-116`.
+
+
+### BUG-530 — every recruitment notification failure is swallowed and reported to callers as success
+
+- **Type / Severity / Status:** BUG · **MED** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Recruitment · US-REC-005 NFR-4, US-REC-007 FR-7/AC-4
+- **Title:** `RealRecruitmentNotificationService.DispatchInterviewAsync` (`:190-244`) wraps its **entire** body in `try { … } catch (Exception ex) { LogFailure(ex, …); }`, and `NotifyOfferAsync` (`:272`) has the identical shape. `NotifyInterviewReminderAsync` (`:185`) is a direct delegation, so **nothing sits outside the try.** The method returns an identical completed `Task` whether every email was delivered or every one failed. `RealRecruitmentNotificationServiceTests` asserts "never throws" as *intended* behaviour, so this is by design, not an oversight.
+- **Why it matters more than the ordering question it blocks:** **no caller — job or service — can detect or retry a failed candidate email.** A reminder whose delivery fails is silently lost, and *no ordering of the clear-and-dispatch steps in the reminder jobs can prevent that*, because there is no success signal to condition on. This was established while trying to make `ISSUE-116`'s reminder jobs at-least-once: the requested "clear the marker only after a **successful** dispatch" turned out to be **inexpressible** against this seam.
+- **Consequence for `ISSUE-116` (recorded so the reasoning is not re-derived):** clear-BEFORE-dispatch was retained deliberately. Clear-after buys **zero** protection against loss here — the exception is swallowed before the job sees it, so the marker is cleared either way — while adding a duplicate-send path on any post-dispatch `SaveChanges` failure (deadlock, connection drop, RLS transaction abort), which is the exact NFR-4 violation `ISSUE-116` exists to close.
+- **Needs a decision, not just a fix:** at-least-once delivery requires either returning a `Result`/`bool` from the seam (a contract change with several call sites) or routing dispatch through an **outbox** row committed with the state change. The outbox is the more correct answer and the more expensive one.
+- **Found:** 2026-09-07, out-of-lane while fixing `ISSUE-116`.
+
+
+### BUG-529 — an offer sent inside the reminder lead window can lose its expiry warning entirely
+
+- **Type / Severity / Status:** BUG · **MED** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Recruitment · US-REC-007 FR-7/AC-4
+- **Title:** `OfferService.SendAsync` calls `ScheduleExpiryReminder()` at `:288` — **before** `SaveChangesAsync` at `:293` — and `HangfireOfferExpiryReminderScheduler` enqueues with `TimeSpan.Zero` when the computed fire-time is already past. For an offer sent *inside* the reminder lead window the job can therefore execute before the row commits, read `ExpiryReminderJobId` as null, and skip. A real expiry-warning email to a candidate is then **never sent, silently.**
+- **Interaction with `ISSUE-116`:** the marker guard added there converts this race's outcome from "reminder sent, stale marker left behind" into "reminder skipped". The race pre-existed; the guard changes which way it fails. The interview sibling is **not** affected — `HangfireInterviewReminderScheduler` returns null for a past fire-time and enqueues nothing.
+- **Why MED:** the payload is real email (`DependencyInjection.cs:378`), the failure is silent, and it reaches candidates directly. Initially filed LOW on the false premise that recruitment notifications were a log-only seam — see `ISSUE-531`.
+- **Suggested direction (NOT applied):** move **both** offer job schedules to after `SaveChangesAsync`.
+- **Found:** 2026-09-07, out-of-lane while fixing `ISSUE-116`.
+
+
+### ISSUE-532 — `AttendanceSettingsMultiplierBoundsTests` silently skips a duplicate test case that the suite reports as a pass
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** TEST
+- **Title:** `src/backend/HRM.Tests/Unit/AttendanceSettingsMultiplierBoundsTests.cs:50` — xUnit emits "Skipping test case with duplicate ID … `The_weekend_and_holiday_multipliers_share_the_same_ceiling(value: 10)`", and the build emits `xUnit1025` (duplicate `InlineData`) for it. The case never runs, and the suite still reports green.
+- **Why it is worth filing:** it is a small instance of the session's recurring pattern — a check that reports safety it does not provide (`ISSUE-486`, `ISSUE-492`). Also note this test file belongs to `BUG-522`, the fix that has **no ledger entry at all** (`ISSUE-524`).
+- **Suggested direction (NOT applied):** drop the redundant `[InlineData]`.
+- **Found:** 2026-09-07, out-of-lane while fixing `ISSUE-116`.
+
+
+### ISSUE-528 — the read-through cache helper is now duplicated verbatim in three services
+
+- **Type / Severity / Status:** ENH · **LOW** · OPEN
+- **Layer:** BE
+- **Title:** `TryGetCachedAsync`/`SetCachedAsync` + the JSON options + the fail-open catch are now copy-pasted in `HrReportService`, `DashboardService` and (as of `ISSUE-129`) `PerformanceDashboardService`. The third instance is what makes it a pattern rather than a coincidence.
+- **Why it is filed and not fixed:** extracting a shared `TenantScopedReadThroughCache` helper means editing two services outside the lane of the change that created the third copy. Reuse-over-duplication wants the extraction; "surgical changes" (Engineering-Discipline #3) forbids doing it as a side quest. Filed so the next cache adopter extracts it instead of writing a fourth.
+- **Suggested direction (NOT applied):** extract to `HRM.Application/Common/Helpers/` as its own PR, carrying the fail-open behaviour (BUG-115) unchanged.
+- **Found:** 2026-09-07, out-of-lane while implementing `ISSUE-129`.
+
+
+### ISSUE-527 — `GetDepartmentDrilldownAsync` was left uncached while its two siblings were cached
+
+- **Type / Severity / Status:** ENH · **LOW** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Performance · US-PRF-007
+- **Title:** `PerformanceDashboardService.GetDepartmentDrilldownAsync` (`:180`) runs the same `ResolveScope` + `ResolveCycle` + `LoadPopulationAsync` fan-out (6-7 queries) live. `ISSUE-129` cached `GetOverviewAsync` and `GetTrendAsync` because those were the scoped methods; the drilldown reuses the identical `BuildCacheKey` with variant `drilldown:{deptId}`.
+- **Explicitly NOT a candidate:** `GetCalibrationCohortAsync`. Caching an interactive calibration cohort for 3 minutes would be a correctness regression, not a latency win — record this so a later "finish the caching" sweep does not add it by symmetry.
+- **Suggested direction (NOT applied):** small follow-up reusing the shipped key builder.
+- **Found:** 2026-09-07, out-of-lane while implementing `ISSUE-129`.
+
+
+### ISSUE-526 — the performance dashboard has no cache-bypass, unlike both its cached siblings
+
+- **Type / Severity / Status:** ENH · **LOW** · OPEN
+- **Layer:** BE + FE
+- **Module / US / TC:** Performance · US-PRF-007 NFR-3
+- **Title:** `HrReportService` (FR-8) and `DashboardService` both expose a `refresh` flag that bypasses the cache. `IPerformanceDashboardService` does not, so after `ISSUE-129` an HR lead in a live calibration session cannot force the 3-minute TTL to drop and must wait it out.
+- **Why it was not built with the cache:** adding it changes the interface **and** the query DTOs — an OpenAPI contract change plus an FE control to make it usable. `ISSUE-129` was scoped to no FE change and no contract change deliberately, so bundling it would have pulled the contract gate into a backend-only PR.
+- **Needs a decision, not just a fix:** worth building only if the 3-minute staleness is judged unacceptable during calibration. That is a product call on a real but bounded irritation.
+- **Found:** 2026-09-07, out-of-lane while implementing `ISSUE-129`.
+
+
+### ISSUE-525 — six shipped tests carry a `TC-PRF-ISO-129` trait that points at no spec file
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** TEST / docs
+- **Module / US / TC:** Performance · US-PRF-007 NFR-3/AC-5
+- **Title:** `ISSUE-129`'s six cache tests are tagged `[Trait("TC","TC-PRF-ISO-129")]`, following the existing `TC-PRF-ISO-NNN` series, but **no `docs/QA/performance/TC-PRF-ISO-129.md` exists.** The trait currently resolves to nothing.
+- **Why MED rather than LOW:** this is Critical Rule #4 (traceability) failing in the direction that is hardest to notice — the tests are real, green and valuable, so nothing ever goes red to reveal that the id they claim is fictional. It is the same shape as `ISSUE-524`: an id cited in `src/` with no ledger/spec entry, and the same missing reverse check would catch both.
+- **Suggested direction (NOT applied):** author `docs/QA/performance/TC-PRF-ISO-129.md` covering cache read-through plus tenant/scope key isolation, bound to US-PRF-007 NFR-3/AC-5.
+- **Found:** 2026-09-07, out-of-lane while implementing `ISSUE-129`.
+
 
 ### ISSUE-524 — `BUG-522` is cited in shipped source and tests but exists in no ledger
 
