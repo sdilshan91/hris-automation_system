@@ -57,3 +57,4 @@
 - [HrReport SQL pushdown (ENH-455)](reference-hrreport-sql-pushdown.md) — what translates to Postgres GROUP BY, why the BR-3/BR-4 text rules stay in C#, and the enum-vs-SQL empty-group trap
 - [Dry-run guards need a caller with pending work](feedback-inert-guard-needs-a-caller-with-pending-work.md) — a SaveChanges guard is a surviving mutant unless the arm stages unrelated unsaved work
 - [RLS WITH CHECK blocks null-tenant writes](reference-rls-withcheck-blocks-null-tenant-writes.md) — the read convention is NOT permission to write one; ISSUE-062 500s login under RLS
+- [Leave report scope permissions (US-LV-012 BR-2 / ENH-002)](reference-leave-report-scope-permissions.md) — gate reads Leave.Reports*, row scope reads cross-module Reports.View.*; built-in Manager already holds ViewTeam (masks the branch); BalanceSummary needs a Used ledger row or it is empty
