@@ -32,6 +32,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using HRM.Tests.Unit.Helpers;
 
 namespace HRM.Tests.Unit;
 
@@ -62,7 +63,7 @@ public sealed class OfferServiceTests
         db,
         _tenantContext,
         _fileStorage,
-        Substitute.For<IRecruitmentNotificationService>(),
+        RecruitmentNotifications.Succeeding(),
         Substitute.For<ILogger<OfferService>>(),
         new GanssHtmlSanitizer(), // REAL sanitizer (ISSUE-226) — actually strips XSS vectors.
         expiryScheduler: null); // Hangfire seam absent -> no-op scheduling in tests.
@@ -431,7 +432,7 @@ public sealed class OfferServiceTests
         db,
         _tenantContext,
         _fileStorage,
-        notifications ?? Substitute.For<IRecruitmentNotificationService>(),
+        notifications ?? RecruitmentNotifications.Succeeding(),
         Substitute.For<ILogger<OfferService>>(),
         new GanssHtmlSanitizer(), // REAL sanitizer (ISSUE-226).
         expiryScheduler: null,
@@ -526,7 +527,7 @@ public sealed class OfferServiceTests
     [Fact]
     public async Task ReminderJob_ActiveOffer_FiresExpiryReminderNotification()
     {
-        var notifications = Substitute.For<IRecruitmentNotificationService>();
+        var notifications = RecruitmentNotifications.Succeeding();
         var offerId = SeedOfferForJob(OfferStatus.Sent, reminderJobId: "rem-job-1");
         var provider = BuildJobProvider(notifications);
 
@@ -547,7 +548,7 @@ public sealed class OfferServiceTests
     [Fact]
     public async Task ReminderJob_InactiveOffer_DoesNotNotify()
     {
-        var notifications = Substitute.For<IRecruitmentNotificationService>();
+        var notifications = RecruitmentNotifications.Succeeding();
         // Already accepted (terminal) — the candidate responded before the reminder fired.
         var offerId = SeedOfferForJob(OfferStatus.Accepted, reminderJobId: "rem-job-1");
         var provider = BuildJobProvider(notifications);
@@ -558,6 +559,116 @@ public sealed class OfferServiceTests
         await notifications.DidNotReceive().NotifyOfferAsync(
             Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
             Arg.Any<CancellationToken>());
+    }
+
+    // ══ BUG-529: an offer sent INSIDE the reminder lead window must not lose its expiry warning ════════
+
+    /// <summary>
+    /// BUG-529. <c>HangfireOfferExpiryReminderScheduler</c> enqueues with <c>TimeSpan.Zero</c> when the computed
+    /// "N days before expiry" fire-time is already past, so for an offer sent inside the lead window Hangfire can
+    /// start <c>OfferExpiryReminderJob</c> the instant <c>Schedule()</c> returns. <c>SendAsync</c> used to call both
+    /// schedulers BEFORE its <c>SaveChangesAsync</c>, so that job could read the offer row in its pre-send state and
+    /// take the wrong branch — and the candidate's expiry warning was then silently never sent.
+    ///
+    /// <para><b>What this test actually observes, stated plainly.</b> The defect IS an ordering defect, so the
+    /// observable has to be ordering-sensitive — but this asserts it BEHAVIOURALLY rather than by counting call
+    /// sequences on a mock: each scheduler substitute, at the moment <c>Schedule()</c> is invoked, opens a SEPARATE
+    /// <c>AppDbContext</c> over the same store and reads back what is COMMITTED. That is precisely what a Hangfire
+    /// job racing this call would see, because an EF change tracker's un-saved edits are invisible to every other
+    /// context. Pre-fix the committed row reads <c>Draft</c>; post-fix it reads <c>Sent</c>. It is a proxy for a real
+    /// concurrent job — no unit test can schedule a genuine Hangfire race — but it is the same read, through the
+    /// same isolation boundary, at the same instant.</para>
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-REC-007-20")]
+    public async Task Send_SchedulesBothOfferJobs_OnlyAfterTheSentStatusIsCommitted_BUG529()
+    {
+        using var db = CreateDb();
+
+        // Expiry TOMORROW: the reminder fire-time (expiry - 3d) is already past, which is exactly the lead-window
+        // case where the reminder scheduler enqueues with TimeSpan.Zero and the job can run immediately.
+        var offer = await CreateServiceWithBothSchedulers(db, out _, out _, out _)
+            .GenerateAsync(Input(expiry: DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1))) with { ApplicantId = _applicantId });
+        offer.IsSuccess.Should().BeTrue(offer.Error);
+
+        // A FRESH service for the send, so the observation records only what SendAsync's schedulers saw.
+        var svc = CreateServiceWithBothSchedulers(db, out _, out _, out var observed);
+        var sent = await svc.SendAsync(offer.Value!.Id);
+        sent.IsSuccess.Should().BeTrue();
+
+        // Both schedulers ran, and both saw a row that was ALREADY committed as Sent.
+        observed.ExpiryJobSawStatus.Should().Be(OfferStatus.Sent,
+            "the expiry job is scheduled after the Sent status commits (BUG-529) — a job firing immediately must " +
+            "not be able to read the offer in its pre-send state");
+        observed.ReminderJobSawStatus.Should().Be(OfferStatus.Sent,
+            "the expiry-REMINDER job enqueues with TimeSpan.Zero inside the lead window, so it is the one that " +
+            "actually races the commit (BUG-529)");
+
+        // ...and the job ids are still durably persisted by the follow-up save, so cancellation on
+        // respond/withdraw/supersede keeps working.
+        using var verify = CreateDb();
+        var reloaded = await verify.Offers.AsNoTracking().FirstAsync(o => o.Id == offer.Value!.Id);
+        reloaded.Status.Should().Be(OfferStatus.Sent);
+        reloaded.ReminderJobId.Should().Be("expiry-job-1");
+        reloaded.ExpiryReminderJobId.Should().Be("reminder-job-1");
+    }
+
+    /// <summary>What each scheduler substitute read back from the COMMITTED store when it was invoked.</summary>
+    private sealed class ScheduleTimeObservation
+    {
+        public OfferStatus? ExpiryJobSawStatus { get; set; }
+        public OfferStatus? ReminderJobSawStatus { get; set; }
+    }
+
+    /// <summary>
+    /// Builds an OfferService whose two Hangfire scheduler seams each read the COMMITTED offer row at the moment
+    /// they are asked to schedule — the same read a job racing SendAsync would perform (BUG-529).
+    /// </summary>
+    private OfferService CreateServiceWithBothSchedulers(
+        AppDbContext db,
+        out IOfferExpiryScheduler expiryScheduler,
+        out IOfferExpiryReminderScheduler reminderScheduler,
+        out ScheduleTimeObservation observed)
+    {
+        var observation = new ScheduleTimeObservation();
+        observed = observation;
+
+        expiryScheduler = Substitute.For<IOfferExpiryScheduler>();
+        expiryScheduler.Schedule(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>())
+            .Returns(call =>
+            {
+                observation.ExpiryJobSawStatus = ReadCommittedStatus((Guid)call[1]);
+                return "expiry-job-1";
+            });
+
+        reminderScheduler = Substitute.For<IOfferExpiryReminderScheduler>();
+        reminderScheduler.Schedule(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<DateTime>())
+            .Returns(call =>
+            {
+                observation.ReminderJobSawStatus = ReadCommittedStatus((Guid)call[1]);
+                return "reminder-job-1";
+            });
+
+        return new OfferService(
+            db,
+            _tenantContext,
+            _fileStorage,
+            RecruitmentNotifications.Succeeding(),
+            Substitute.For<ILogger<OfferService>>(),
+            new GanssHtmlSanitizer(),
+            expiryScheduler: expiryScheduler,
+            expiryReminderScheduler: reminderScheduler);
+    }
+
+    /// <summary>
+    /// Reads the offer's status through a FRESH DbContext, i.e. only what is committed to the shared store — an
+    /// EF change tracker's pending edits are invisible across contexts, which is the whole point.
+    /// </summary>
+    private OfferStatus? ReadCommittedStatus(Guid offerId)
+    {
+        using var probe = CreateDb();
+        return probe.Offers.AsNoTracking().Where(o => o.Id == offerId)
+            .Select(o => (OfferStatus?)o.Status).FirstOrDefault();
     }
 
     private ServiceProvider BuildJobProvider(IRecruitmentNotificationService notifications)

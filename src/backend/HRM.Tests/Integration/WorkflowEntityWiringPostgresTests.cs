@@ -31,6 +31,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Testcontainers.PostgreSql;
+using HRM.Tests.Unit.Helpers;
 
 namespace HRM.Tests.Integration;
 
@@ -346,7 +347,7 @@ public sealed class WorkflowEntityWiringPostgresTests : IAsyncLifetime
     }
 
     private OfferService OfferSvc(AppDbContext db, ITenantContext tc, ICurrentUser cu) =>
-        new(db, tc, Substitute.For<IFileStorage>(), Substitute.For<IRecruitmentNotificationService>(),
+        new(db, tc, Substitute.For<IFileStorage>(), RecruitmentNotifications.Succeeding(),
             NullLogger<OfferService>.Instance, new GanssHtmlSanitizer(),
             currentUser: cu, workflowRuntime: Runtime(db, tc, cu));
 

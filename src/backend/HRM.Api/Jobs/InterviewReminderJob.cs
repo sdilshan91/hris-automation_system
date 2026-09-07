@@ -13,7 +13,17 @@ namespace HRM.Api.Jobs;
 /// (NFR-4), and the job restores the tenant context for its scope so the EF global query filters apply
 /// (mirrors <c>AutoClockOutJob.ProcessTenantAsync</c>). Idempotent (NFR-4): if the interview is missing,
 /// cancelled, or no longer Scheduled, it simply no-ops; otherwise it re-sends the reminder via the
-/// log-only notification seam.
+/// notification seam.
+///
+/// <para><b>BUG-530 — retry on a failed dispatch.</b> The seam never throws, so before it returned a
+/// <c>Result</c> this job could not tell a delivered reminder from a wholly failed one and every failure was
+/// lost in silence. It now THROWS on a failed <c>Result</c>, which fails the Hangfire run and hands the retry
+/// to Hangfire's existing automatic-retry machinery. Re-running is safe because the job is idempotent.</para>
+///
+/// <para><b>The limit, stated honestly:</b> this covers transient dispatch failures — the dominant real cause —
+/// and nothing more. It is NOT at-least-once delivery: a process death between a successful dispatch and the
+/// enclosing work is not recovered, because nothing durably records that a send is owed. A transactional
+/// outbox would be at-least-once and was deliberately not built.</para>
 /// </summary>
 public sealed class InterviewReminderJob
 {
@@ -60,8 +70,22 @@ public sealed class InterviewReminderJob
 
         var interviewerEmployeeIds = interview.Interviewers.Select(ii => ii.EmployeeId).ToList();
 
-        await notifications.NotifyInterviewReminderAsync(
+        var dispatch = await notifications.NotifyInterviewReminderAsync(
             interview.Id, interview.ApplicantId, interview.VacancyId, applicantEmail, interviewerEmployeeIds);
+
+        // BUG-530: fail the run so Hangfire retries the dispatch. Throwing is the ONLY way to signal failure to
+        // Hangfire — a job that returns normally is recorded as Succeeded, which is exactly how a lost candidate
+        // reminder used to be reported as a delivered one.
+        if (dispatch.IsFailure)
+        {
+            Log.Warning(
+                "InterviewReminderJob: reminder dispatch FAILED for interview {InterviewId} (tenant {TenantId}); " +
+                "failing the run so Hangfire retries. Error={Error}",
+                interview.Id, tenantId, dispatch.Error);
+
+            throw new InvalidOperationException(
+                $"Interview reminder dispatch failed for interview {interview.Id} (tenant {tenantId}): {dispatch.Error}");
+        }
 
         Log.Information(
             "InterviewReminderJob: sent reminder for interview {InterviewId} (tenant {TenantId}) to applicant + {Count} interviewer(s)",

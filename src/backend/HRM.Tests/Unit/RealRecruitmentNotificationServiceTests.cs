@@ -9,7 +9,11 @@
 //   • OFFER-PDF vs FALLBACK SPLIT — offer_sent sends the offer letter INLINE via IEmailSender (with the PDF from
 //     IFileStorage) and does NOT use the dispatcher for that leg; when the PDF can't be read it FALLS BACK to a
 //     plain dispatcher email (no attachment) and still never throws.
-// Every method is never-throw.
+//
+// Every method is never-throw. BUG-530 did NOT change that half of the contract — it added the missing half. The
+// never-throw tests below are unchanged in what they assert about throwing; each now ALSO asserts the returned
+// Result, because "never throws" on its own is what let a total delivery failure be reported to every caller as a
+// success. A test that only proves the method returned quietly is not a test that delivery happened.
 //
 // PROVIDER: EF Core InMemory AppDbContext (recruiter-pool resolution is a real UserTenants⋈UserTenantRoles⋈
 // RolePermissions query with IgnoreQueryFilters) + a hand RecordingDispatcher + a hand FakeEmailSender (captures
@@ -98,17 +102,27 @@ public sealed class RealRecruitmentNotificationServiceTests
 
     // ── Fakes ───────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Records dispatched requests per leg; optionally throws to prove the never-throw contract.</summary>
+    /// <summary>
+    /// Records dispatched requests per leg; optionally throws to prove the never-throw contract. BUG-530 added
+    /// <c>throwOnInApp</c> so a PARTIAL failure can be staged — some legs land, some raise — which is the case a
+    /// whole-body catch is least visible on.
+    /// </summary>
     private sealed class RecordingDispatcher : INotificationDispatcher
     {
         private readonly bool _throw;
+        private readonly bool _throwOnInApp;
         public List<NotificationRequest> InApp { get; } = new();
         public List<NotificationRequest> Email { get; } = new();
-        public RecordingDispatcher(bool throwOnDispatch = false) => _throw = throwOnDispatch;
+
+        public RecordingDispatcher(bool throwOnDispatch = false, bool throwOnInApp = false)
+        {
+            _throw = throwOnDispatch;
+            _throwOnInApp = throwOnInApp;
+        }
 
         public Task SendInAppAsync(NotificationRequest request, CancellationToken cancellationToken = default)
         {
-            if (_throw) throw new InvalidOperationException("in-app dispatch boom");
+            if (_throw || _throwOnInApp) throw new InvalidOperationException("in-app dispatch boom");
             InApp.Add(request);
             return Task.CompletedTask;
         }
@@ -605,10 +619,11 @@ public sealed class RealRecruitmentNotificationServiceTests
         dispatcher.InApp.Select(r => r.RecipientUserId).Should().BeEquivalentTo(new Guid?[] { _recruiter1, _recruiter2 });
     }
 
-    // ── #8: never-throw — the dispatcher throws / the IEmailSender throws ──
+    // ── #8: never-throw AND report the failure — the dispatcher throws / the IEmailSender throws ──
 
     [Fact]
-    public async Task NotifyNewApplicationAsync_DispatcherThrows_DoesNotThrow()
+    [Trait("TC", "TC-REC-002-20")]
+    public async Task NotifyNewApplicationAsync_DispatcherThrows_DoesNotThrow_AndReportsFailure_BUG530()
     {
         await SeedRecruiterPoolAsync();
         await SeedRecruitmentDataAsync();
@@ -616,11 +631,19 @@ public sealed class RealRecruitmentNotificationServiceTests
 
         var act = () => Service(dispatcher).NotifyNewApplicationAsync(_applicantId, _vacancyId, _hiringManagerEmpId);
 
-        await act.Should().NotThrowAsync();
+        // Unchanged: a delivery failure must never break the committed recruitment write.
+        var result = await act.Should().NotThrowAsync();
+
+        // BUG-530 — the half that was missing. Every dispatch leg raised, so nothing at all was delivered; before
+        // the fix this returned an identical completed Task to the fully-delivered case and no caller could tell.
+        result.Subject.IsFailure.Should().BeTrue(
+            "every dispatch leg threw, so the seam must REPORT the failure rather than swallow it");
+        result.Subject.ErrorCode.Should().Be("notification_dispatch_failed");
     }
 
     [Fact]
-    public async Task NotifyOfferAsync_OfferSent_EmailSenderThrows_DoesNotThrow()
+    [Trait("TC", "TC-REC-007-21")]
+    public async Task NotifyOfferAsync_OfferSent_EmailSenderThrows_DoesNotThrow_AndReportsFailure_BUG530()
     {
         await SeedRecruitmentDataAsync();
         var dispatcher = new RecordingDispatcher();
@@ -630,7 +653,47 @@ public sealed class RealRecruitmentNotificationServiceTests
         var act = () => Service(dispatcher, emailSender, fileStorage)
             .NotifyOfferAsync("offer-sent", _offerId, _applicantId, _vacancyId, CandidateEmail);
 
-        await act.Should().NotThrowAsync();
+        var result = await act.Should().NotThrowAsync();
         emailSender.Sent.Should().ContainSingle("the inline send was attempted before it threw");
+
+        // The inline send is the candidate's ONLY leg for offer_sent — the offer letter did not reach them.
+        result.Subject.IsFailure.Should().BeTrue(
+            "the offer letter was never delivered, so OfferService must not be told the dispatch succeeded");
+    }
+
+    [Fact]
+    [Trait("TC", "TC-REC-007-21")]
+    public async Task NotifyOfferAsync_AllLegsSucceed_ReportsSuccess_BUG530()
+    {
+        // The paired success arm. Without it, a seam that returned Failure unconditionally would satisfy every
+        // assertion above — and would make Hangfire retry healthy sends forever.
+        await SeedRecruiterPoolAsync();
+        await SeedRecruitmentDataAsync();
+        var dispatcher = new RecordingDispatcher();
+
+        var result = await Service(dispatcher)
+            .NotifyOfferAsync("offer-expired", _offerId, _applicantId, _vacancyId, CandidateEmail);
+
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("TC", "TC-REC-007-21")]
+    public async Task NotifyOfferAsync_PartialLegFailure_ReportsFailure_BUG530()
+    {
+        // offer_expired fans out to the candidate (email-only) AND the recruiter pool (in-app + email). The
+        // recruiter legs are individually guarded so one bad recipient cannot stop the rest — that guard is kept,
+        // but a leg it swallows must still fail the aggregate. The caller's only retry unit is the whole event, so
+        // reporting a partial loss as success is the same defect at a smaller scale.
+        await SeedRecruiterPoolAsync();
+        await SeedRecruitmentDataAsync();
+        var dispatcher = new RecordingDispatcher(throwOnInApp: true);
+
+        var result = await Service(dispatcher)
+            .NotifyOfferAsync("offer-expired", _offerId, _applicantId, _vacancyId, CandidateEmail);
+
+        result.IsFailure.Should().BeTrue("the recruiter-pool legs failed even though the candidate email went out");
+        dispatcher.Email.Should().Contain(r => r.RecipientEmail == CandidateEmail,
+            "the surviving legs must still be attempted — per-recipient isolation is deliberate");
     }
 }

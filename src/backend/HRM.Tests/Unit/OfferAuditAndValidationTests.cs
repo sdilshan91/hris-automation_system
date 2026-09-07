@@ -27,6 +27,7 @@ using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using HRM.Tests.Unit.Helpers;
 
 namespace HRM.Tests.Unit;
 
@@ -215,7 +216,7 @@ public sealed class OfferAuditAndValidationTests
         db,
         _tenantContext,
         new NoopFileStorage(),
-        Substitute.For<IRecruitmentNotificationService>(),
+        RecruitmentNotifications.Succeeding(),
         Substitute.For<ILogger<OfferService>>(),
         new GanssHtmlSanitizer(),
         expiryScheduler: null,

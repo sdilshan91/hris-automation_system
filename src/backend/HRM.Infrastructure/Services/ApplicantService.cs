@@ -203,13 +203,19 @@ public sealed class ApplicantService : IApplicantService
             applicant.Id, applicant.ApplicationReferenceNumber, applicant.VacancyId, applicant.Source,
             applicant.IsInternal, storageKey, _tenantContext.TenantId);
 
-        // FR-5 + FR-7: fire notifications (log-only seam). Never let a notification failure fail the submit.
+        // FR-5 + FR-7: fire notifications. Never let a notification failure fail the submit — but BUG-530: the
+        // seam now REPORTS a failed dispatch, so log it explicitly instead of discarding a completed Task that said
+        // nothing. This request path deliberately does not retry: the application is already committed and the caller
+        // is a candidate waiting on an HTTP response.
         try
         {
-            await _notifications.NotifyApplicationReceivedAsync(
+            var confirmation = await _notifications.NotifyApplicationReceivedAsync(
                 applicant.Id, applicant.VacancyId, applicant.Email, applicant.ApplicationReferenceNumber, cancellationToken);
-            await _notifications.NotifyNewApplicationAsync(
+            LogNotificationOutcome(confirmation, "application-received", applicant.Id);
+
+            var newApplication = await _notifications.NotifyNewApplicationAsync(
                 applicant.Id, applicant.VacancyId, vacancy.HiringManagerId, cancellationToken);
+            LogNotificationOutcome(newApplication, "new-application", applicant.Id);
         }
         catch (Exception ex)
         {
@@ -647,9 +653,10 @@ public sealed class ApplicantService : IApplicantService
     {
         try
         {
-            await _notifications.NotifyStageChangedAsync(
+            var outcome = await _notifications.NotifyStageChangedAsync(
                 applicant.Id, applicant.VacancyId, applicant.Email,
                 row.FromStage.ToString(), row.ToStage.ToString(), cancellationToken);
+            LogNotificationOutcome(outcome, "stage-changed", applicant.Id);
         }
         catch (Exception ex)
         {
@@ -657,6 +664,20 @@ public sealed class ApplicantService : IApplicantService
                 "Stage-change notification failed (non-fatal). ApplicantId={ApplicantId}, TenantId={TenantId}",
                 applicant.Id, _tenantContext.TenantId);
         }
+    }
+
+    /// <summary>
+    /// BUG-530: the recruitment notification seam now returns a <see cref="Result"/> instead of an
+    /// indistinguishable completed Task. A request-path caller still must not fail a committed write over a lost
+    /// email, but it must no longer pretend the dispatch succeeded — so a failure is logged as a warning here.
+    /// </summary>
+    private void LogNotificationOutcome(Result outcome, string eventType, Guid applicantId)
+    {
+        if (outcome.IsFailure)
+            _logger.LogWarning(
+                "Applicant notification {EventType} did not fully dispatch (non-fatal). ApplicantId={ApplicantId}, " +
+                "TenantId={TenantId}, Error={Error}",
+                eventType, applicantId, _tenantContext.TenantId, outcome.Error);
     }
 
     /// <summary>

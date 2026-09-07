@@ -88,11 +88,22 @@ public sealed class OfferExpiryJob
             .Select(a => a.Email)
             .FirstOrDefaultAsync() ?? string.Empty;
 
-        await notifications.NotifyOfferAsync(
+        var dispatch = await notifications.NotifyOfferAsync(
             "offer-expired", offer.Id, offer.ApplicantId, offer.VacancyId, applicantEmail);
 
         Log.Information(
             "OfferExpiryJob: expired offer {OfferId} (tenant {TenantId})", offer.Id, tenantId);
+
+        // BUG-530: the status flip is already COMMITTED above, so a retry re-enters the guard at the top of this
+        // method, finds the offer no longer active, and no-ops — it would NOT re-send the notification. Throwing
+        // here would therefore buy no retry, only a red job. Log it as the delivery failure it is instead. That the
+        // status change survives while its notification does not is a real gap; closing it needs an outbox, which
+        // was deliberately not built (see IRecruitmentNotificationService).
+        if (dispatch.IsFailure)
+            Log.Warning(
+                "OfferExpiryJob: offer-expired notification FAILED for offer {OfferId} (tenant {TenantId}) and is NOT " +
+                "retried — the offer is already Expired, so a re-run would no-op at the IsActive guard. Error={Error}",
+                offer.Id, tenantId, dispatch.Error);
         });
     }
 }

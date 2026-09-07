@@ -57,7 +57,7 @@ public sealed class ApplicantStageMoveServiceTests
 
     private ApplicantService CreateService(out IRecruitmentNotificationService notifications)
     {
-        notifications = Substitute.For<IRecruitmentNotificationService>();
+        notifications = RecruitmentNotifications.Succeeding();
         return new ApplicantService(
             CreateDbContext(),
             _tenantContext,
