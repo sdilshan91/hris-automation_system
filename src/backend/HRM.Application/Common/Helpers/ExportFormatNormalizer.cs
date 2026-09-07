@@ -6,9 +6,9 @@ namespace HRM.Application.Common.Helpers;
 /// null/blank/unrecognized input.
 ///
 /// <para>Extracted from the identical private <c>NormalizeFormat</c> helper that was duplicated across the
-/// dashboard/summary export services (attendance dashboard + summary, performance dashboard). Prefer this
-/// over re-declaring a private copy. Note: some export surfaces intentionally support a narrower set of
-/// formats (e.g. the recruitment dashboard has no PDF export) and keep their own normalizer.</para>
+/// dashboard/summary export services (attendance dashboard + summary, performance dashboard, and — since
+/// ISSUE-138 — the recruitment dashboard). Prefer this over re-declaring a private copy. A surface that
+/// genuinely supports a narrower set of formats keeps its own normalizer; none currently does.</para>
 /// </summary>
 public static class ExportFormatNormalizer
 {

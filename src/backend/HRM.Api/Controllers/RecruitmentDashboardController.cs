@@ -67,9 +67,11 @@ public sealed class RecruitmentDashboardController : ControllerBase
     }
 
     /// <summary>
-    /// GET /api/v1/recruitment/dashboard/export?from=&amp;to=&amp;format=csv|xlsx&amp;departmentId=&amp;vacancyId=
-    /// Exports the dashboard's tabular data (KPIs + funnel + source effectiveness) as a CSV/XLSX file
-    /// download (FR-8). PDF + async large-dataset export are deferred. Requires Recruitment.View.
+    /// GET /api/v1/recruitment/dashboard/export?from=&amp;to=&amp;format=csv|xlsx|pdf&amp;departmentId=&amp;vacancyId=
+    /// Exports the dashboard's tabular data (KPIs + funnel + source effectiveness) as a CSV/XLSX/PDF file
+    /// download (FR-8). The PDF is branded (tenant colour + logo) and carries the same tables — no charts,
+    /// which is a documented platform-wide deferral. Async large-dataset export is still deferred.
+    /// Requires Recruitment.View.
     /// </summary>
     [HttpGet("dashboard/export")]
     [RequirePermission("Recruitment.View", "Reports.View.All", "Reports.View.Department")]

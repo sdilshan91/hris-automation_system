@@ -56,3 +56,4 @@
 - [InMemory enforces required scalars](feedback-inmemory-enforces-required-scalars.md) — a null required string throws at SaveChanges; deleting a `?? string.Empty` trades a blank row for a loud 500, and reddens the whole workflow
 - [HrReport SQL pushdown (ENH-455)](reference-hrreport-sql-pushdown.md) — what translates to Postgres GROUP BY, why the BR-3/BR-4 text rules stay in C#, and the enum-vs-SQL empty-group trap
 - [Dry-run guards need a caller with pending work](feedback-inert-guard-needs-a-caller-with-pending-work.md) — a SaveChanges guard is a surviving mutant unless the arm stages unrelated unsaved work
+- [RLS WITH CHECK blocks null-tenant writes](reference-rls-withcheck-blocks-null-tenant-writes.md) — the read convention is NOT permission to write one; ISSUE-062 500s login under RLS
