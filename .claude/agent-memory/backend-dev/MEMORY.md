@@ -45,3 +45,4 @@
 - [Leave attachment upload (ISSUE-036)](reference-leave-attachment-upload.md) — upload-before-create, NULLABLE LeaveRequestId claimed on create; 4-part resolve gate; 5MB/PDF-JPG-PNG differ from self-assessment on purpose
 - [Design-time migration env recipe](reference-design-time-migration-env.md) — dotnet-ef boots Program.cs; needs a REAL PEM + a hyphen-free Encryption key id passed via `env`, not `export`
 - [Statutory-rule normalization + rate precision](reference-statutory-rule-normalization-precision.md) — country_code compare asymmetry (write/index/precheck/resolver), numeric(5,2) rate scale; the InMemory statutory "pipeline" runs NO validators
+- [Review-signoff agreed actions are API-only](reference-review-signoff-agreed-actions.md) — FE keeps actions inside the notes BODY; the innerHTML sink renders Body, not the action rows (ISSUE-121 premise fix)
