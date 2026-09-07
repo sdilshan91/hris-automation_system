@@ -21,6 +21,7 @@
 | `test-integrity-guard` | `PreToolUse` on `Write\|Edit` | **Enforces** the "never weaken/skip/delete a test to go green" rule. Blocks edits to test files (`*.spec.ts`, `*Tests.cs`, …) that introduce skip/focus markers (`xit`/`fit`/`.skip`/`.only`/`[Fact(Skip)]`/`[Ignore]`) or remove test cases. Fails open. Override with `CLAUDE_DISABLE_TEST_GUARD=1`. |
 | `careful-guard` | `PreToolUse` on `Bash` | **Speed-bump on irreversible commands.** Returns `ask` (forces a prompt even under `bypassPermissions`, which the `permissions.ask` list can't do during unattended loops) for `rm -r`, SQL `DROP`/`TRUNCATE`, `git push --force`, `git reset --hard`, `git checkout/restore .`, `kubectl delete`, `docker rm -f`/`prune`, `dotnet ef database drop`. Exempts recursive-delete of build artefacts (`node_modules`, `dist`, `bin`, `obj`, `.angular`, `coverage`…). Fails open. Override with `CLAUDE_DISABLE_CAREFUL=1`. Adapted (MIT) from gstack `/careful`. |
 | `freeze-guard` | `PreToolUse` on `Write\|Edit` | **Edit-scope fence (dormant until armed).** When a boundary is armed, blocks any Write/Edit outside it — stops scope-creep into unrelated files during a focused fix/debug. **Arm:** `echo "<abs-dir>" > .claude/hooks/.freeze-dir` (or set `CLAUDE_FREEZE_DIR`). **Disarm:** delete that file. State file is gitignored (never travels in a commit). Fails open when unarmed. Adapted (MIT) from gstack `/freeze`. |
+| `worktree-fence` | `PreToolUse` Write\|Edit | **Denies** a write that reaches out of the caller's own git worktree back into the shared checkout (or another worktree). Fires only when cwd is inside `.claude/worktrees/<name>/`, so the orchestrator is unaffected. No arming, no shared state — the fence is derived per-invocation from the caller's cwd, which is why `freeze-guard` (one global fence) could not be reused. ISSUE-512. Override: `CLAUDE_DISABLE_WORKTREE_FENCE`. |
 | `config-protection-guard` | `PreToolUse` on `Write\|Edit` | **Config-file sibling of `test-integrity-guard`.** Blocks edits that *weaken a lint/format config* to fake a green gate — `eslint.config.*`/`.eslintrc*`, `.prettierrc*`, `.stylelintrc*`, `.markdownlint*`, `.editorconfig`, `ruff.toml`. Allows **first-time creation** (nothing to weaken); `pyproject.toml`/`package.json` deliberately unprotected (carry metadata/deps). Fails open. Override with `CLAUDE_DISABLE_CONFIG_GUARD=1`. Ported (MIT) from ECC `config-protection.js`. |
 | `antipattern-advisor` | `PreToolUse` on `Write\|Edit` | **Advisory (NON-blocking) .NET code-smell nudge.** On a `*.cs` write, greps the *pending* content for four mechanically-detectable anti-patterns (`DateTime.Now`/`UtcNow` → TimeProvider · `new HttpClient()` → IHttpClientFactory/ResilientClient · non-event-handler `async void` · `.Result`/`.GetAwaiter().GetResult()` sync-over-async) and surfaces a note the model can act on — it **never denies** (unlike the deny-guards), so it can't wedge the `/implement-all` loop. Catches smells at write-time because agents commit via GitHub MCP `push_files`, which no git pre-commit hook would see. Backed by [docs/DEV/references/dotnet-common-antipatterns.md](references/dotnet-common-antipatterns.md). Fails open. Silence with `CLAUDE_DISABLE_ANTIPATTERN_ADVISOR=1`. Adapted (MIT) from codewithmukesh/dotnet-claude-kit. |
 | `no-verify-guard` | `PreToolUse` on `Bash` | **Blocks git-hook bypass.** Denies `git commit/push/merge/… --no-verify` (and `git commit -n`) and `-c core.hooksPath=…` overrides so pre-commit/commit-msg/pre-push hooks can't be skipped to force a red gate green. shlex-tokenized so a commit *message* mentioning `--no-verify` is not a false block. Fails open. Override with `CLAUDE_DISABLE_NOVERIFY_GUARD=1`. Ported (MIT) from ECC `block-no-verify.js`. |
@@ -35,3 +36,27 @@
 - **Write-time, not commit-time.** Agents commit through the GitHub MCP `push_files`, which no
   git pre-commit hook ever sees. Anything that must be caught has to be caught on `Write`/`Edit`.
 - **Fail open, always.** Every guard exits 0 on its own error.
+
+## Why you still see prompts in `bypassPermissions` mode (2026-09-07)
+
+`.claude/settings.json` sets `permissions.defaultMode: bypassPermissions`, so the
+`permissions.ask` list does not run. **Every confirmation prompt you see on a Bash command
+comes from `careful-guard.py`, not from settings** — a PreToolUse hook returning
+`permissionDecision: "ask"` is NOT suppressed by the permission mode. That is by design: it
+is what makes the guard unbypassable, and it is also why tuning the prompt volume means
+tuning the hook, not the settings file.
+
+The 29-entry `permissions.ask` list was removed on 2026-09-07 because it was inert and
+therefore misleading — it implied a control that had not run for as long as
+`bypassPermissions` had been set. `permissions.deny` is kept (it is the hard stop, and the
+`.env` entries there are additionally backed by `secret-guard`).
+
+`permissions.additionalDirectories` held `C:\HRIS\.claude`, a Windows path on a Linux
+host. Unresolvable, granting nothing — setup drift from an earlier environment. Removed.
+
+**Tuning principle for `careful-guard`:** the scarce resource a guard protects is the
+user's attention. Prompt on the irreversible-and-silent (`git checkout -- <path>` discards
+a file with no reflog entry); stay silent on the merely-destructive-looking that the tool
+already protects (`git checkout <branch>` refuses when it would overwrite local changes).
+A guard that cries wolf on routine work is one people disable — which costs more than it
+ever saved.

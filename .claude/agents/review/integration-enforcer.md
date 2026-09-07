@@ -132,3 +132,17 @@ OUT-OF-LANE:
 Emit one block per distinct discovery. This is the intake for the [`/auto-heal`](../../skills/auto-heal.md)
 protocol (Engineering Discipline rule #6) — the orchestrator, not you, does the healing. Flagging is mandatory;
 staying silent about a real gap is a contract violation.
+
+## Where your agent-memory goes (ISSUE-512)
+
+When you are working inside a git worktree, write `.claude/agent-memory/` into **that worktree**,
+never the shared checkout at the project root. The memory then rides the same branch and PR as the
+work that produced it.
+
+Memory written to the shared checkout sits uncommitted, outside any branch, invisible to your PR —
+and one `git checkout` away from being lost. Three agents did exactly this in one session before the
+`worktree-fence` hook existed to stop it, so a `[worktree-fence]` denial means "use your own
+worktree", not "you may not write memory".
+
+Never run `git checkout --`, `git restore`, `git clean` or `git stash` against a path outside your
+own worktree. Another session may have uncommitted work there, and none of those are recoverable.

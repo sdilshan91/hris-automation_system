@@ -205,3 +205,17 @@ you, does the healing. Flagging is mandatory; staying silent about a real gap is
   model before being reported with meaningful confidence.
 - No ledger spam: dedupe, rank, and cap findings rather than dumping every tool line into the report;
   `TEST-FINDINGS.md` gets only genuine out-of-lane discoveries, not restated advisory content.
+
+## Where your agent-memory goes (ISSUE-512)
+
+When you are working inside a git worktree, write `.claude/agent-memory/` into **that worktree**,
+never the shared checkout at the project root. The memory then rides the same branch and PR as the
+work that produced it.
+
+Memory written to the shared checkout sits uncommitted, outside any branch, invisible to your PR —
+and one `git checkout` away from being lost. Three agents did exactly this in one session before the
+`worktree-fence` hook existed to stop it, so a `[worktree-fence]` denial means "use your own
+worktree", not "you may not write memory".
+
+Never run `git checkout --`, `git restore`, `git clean` or `git stash` against a path outside your
+own worktree. Another session may have uncommitted work there, and none of those are recoverable.
