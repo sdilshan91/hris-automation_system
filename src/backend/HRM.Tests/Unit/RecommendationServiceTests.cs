@@ -103,6 +103,14 @@ public sealed class RecommendationServiceTests
     /// <summary>A caller authorized to VIEW the recommendation but not to see compensation figures.</summary>
     private ICurrentUser ManagerWithoutCompensation() =>
         User(_managerUserId, PermissionCatalog.Performance.ReviewTeam);
+
+    /// <summary>
+    /// BUG-533: an HR OFFICER — holds Performance.Publish.All (PermissionCatalog.cs, the HR Officer bundle) and
+    /// therefore the whole-org workspace scope, but NOT Payroll.ViewCompensation, which is granted only to
+    /// Owner / Tenant Admin / HR Manager. Distinct from <see cref="HrUser"/>, which is an HR MANAGER.
+    /// </summary>
+    private ICurrentUser HrOfficerUser() =>
+        User(_hrUserId, PermissionCatalog.Performance.PublishAll);
     private ICurrentUser OtherUser() => User(_otherUserId, PermissionCatalog.Performance.ReadSelf);
     private ICurrentUser ApproverUser() => User(_approverUserId, PermissionCatalog.Performance.ReviewTeam);
 
@@ -686,6 +694,139 @@ public sealed class RecommendationServiceTests
         var denied = await Service(ManagerWithoutCompensation()).GetWorkspaceAsync(new RecommendationWorkspaceQueryInput(_cycleId, 1, 100));
         denied.Value!.CompensationVisible.Should().BeFalse(
             "a caller without the permission must be told so, or the UI offers a reveal that will 403");
+    }
+
+    // -- BUG-533: the workspace must not hand out what the reveal path refuses --
+
+    /// <summary>
+    /// Puts real values on all five NFR-3 sensitive fields. The service's write path only ever sets
+    /// BonusAmount/IncrementAmount, so CurrentCompensation and the two percentages have to be seeded directly --
+    /// otherwise a "field is null" assertion would pass because the field was never populated, not because the
+    /// guard masked it.
+    /// </summary>
+    private async Task SeedCompensationFiguresAsync(Guid recommendationId)
+    {
+        using var db = Db();
+        var rec = await db.Recommendations.IgnoreQueryFilters().FirstAsync(r => r.Id == recommendationId);
+        rec.CurrentCompensation = 120_000m;
+        rec.BonusAmount = 5_000m;
+        rec.BonusPercent = 12.5m;
+        rec.IncrementAmount = 3_000m;
+        rec.IncrementPercent = 7.5m;
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<RecommendationDto?> WorkspaceRecommendationAsync(ICurrentUser caller, Guid employeeId)
+    {
+        var ws = await Service(caller).GetWorkspaceAsync(new RecommendationWorkspaceQueryInput(_cycleId, 1, 100));
+        ws.IsSuccess.Should().BeTrue();
+        return ws.Value!.Rows.Single(r => r.EmployeeId == employeeId).Recommendation;
+    }
+
+    [Fact]
+    public async Task BUG533_TheWorkspace_MasksCompensation_ForAnHrOfficerWhoLacksTheCompensationPermission()
+    {
+        // The bypass: /recommendations/{id} 403s an HR Officer (TheRevealPath_Refuses... below), but
+        // /recommendations/workspace admits Performance.Publish.All and shipped the same figures on the nested
+        // recommendation -- the WHOLE ORG's bonus and increment numbers, to a persona the reveal path refuses.
+        // Asserted on the VALUES, not on CompensationVisible: that flag already read false while the payload
+        // carried the numbers, so asserting it would pass with the guard deleted and prove nothing.
+        await SeedAsync();
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 5000m), null, null))).Value!;
+        await SeedCompensationFiguresAsync(rec.Id);
+
+        var row = await WorkspaceRecommendationAsync(HrOfficerUser(), _topPerformerId);
+
+        row.Should().NotBeNull("the row itself must still render -- the workspace exists to serve this persona");
+        row!.CurrentCompensation.Should().BeNull();
+        row.BonusAmount.Should().BeNull();
+        row.BonusPercent.Should().BeNull();
+        row.IncrementAmount.Should().BeNull();
+        row.IncrementPercent.Should().BeNull();
+        // BudgetCharge is `BonusAmount ?? IncrementAmount ?? 0m` on the entity -- masking the five while leaving
+        // this one would re-expose the exact bonus figure (5000) the five just hid.
+        row.BudgetCharge.Should().Be(0m);
+        // The non-sensitive columns the screen actually needs are untouched.
+        row.Type.Should().Be(RecommendationType.Bonus);
+        row.EmployeeId.Should().Be(_topPerformerId);
+    }
+
+    [Fact]
+    public async Task BUG533_TheWorkspace_MasksCompensation_ForALineManagerWhoLacksTheCompensationPermission()
+    {
+        // Same bypass, narrower blast radius: Performance.Review.Team also admits the workspace, so any line
+        // manager read their direct reports' figures. AC-5 scoping limits WHICH rows they see, not WHAT is on them.
+        await SeedAsync();
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 5000m), null, null))).Value!;
+        await SeedCompensationFiguresAsync(rec.Id);
+
+        var row = await WorkspaceRecommendationAsync(ManagerWithoutCompensation(), _topPerformerId);
+
+        row.Should().NotBeNull("a manager still needs the recommendation's status for their own report");
+        row!.CurrentCompensation.Should().BeNull();
+        row.BonusAmount.Should().BeNull();
+        row.BonusPercent.Should().BeNull();
+        row.IncrementAmount.Should().BeNull();
+        row.IncrementPercent.Should().BeNull();
+        row.BudgetCharge.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task BUG533_TheWorkspace_StillReturnsCompensation_ToAPayrollViewCompensationHolder()
+    {
+        // The control arm. Without it, `BuildDto` returning null unconditionally would satisfy both arms above --
+        // a "fix" that breaks the screen for the personas entitled to the figures would look green.
+        await SeedAsync();
+        var rec = (await Service(HrUser()).SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 5000m), null, null))).Value!;
+        await SeedCompensationFiguresAsync(rec.Id);
+
+        var row = await WorkspaceRecommendationAsync(HrUser(), _topPerformerId);
+
+        row.Should().NotBeNull();
+        row!.CurrentCompensation.Should().Be(120_000m);
+        row.BonusAmount.Should().Be(5_000m);
+        row.BonusPercent.Should().Be(12.5m);
+        row.IncrementAmount.Should().Be(3_000m);
+        row.IncrementPercent.Should().Be(7.5m);
+        row.BudgetCharge.Should().Be(5_000m);
+    }
+
+    [Fact]
+    public async Task BUG533_AutoGenerate_MasksCompensation_ForAnHrOfficer()
+    {
+        // Auto-generate is gated on Performance.Publish.All alone, so the HR Officer reaches it -- and the
+        // rule-derived BonusPercent came straight back on the suggestion DTOs.
+        await SeedAsync();
+        await SeedRulesAsync();
+
+        var result = await Service(HrOfficerUser()).AutoGenerateAsync(_cycleId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.SuggestionsCreated.Should().Be(3, "the officer may still generate -- only the figures are hidden");
+        var bonus = result.Value.Suggestions.Single(s => s.EmployeeId == _midPerformerId);
+        bonus.Type.Should().Be(RecommendationType.Bonus);
+        bonus.BonusPercent.Should().BeNull("the Bonus rule's 10% default is a compensation figure");
+        bonus.BonusAmount.Should().BeNull();
+        bonus.IncrementPercent.Should().BeNull();
+        bonus.IncrementAmount.Should().BeNull();
+        bonus.CurrentCompensation.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task BUG533_AutoGenerate_StillReturnsCompensation_ToAPayrollViewCompensationHolder()
+    {
+        // Control arm for the auto-generate guard, mirroring the workspace one above.
+        await SeedAsync();
+        await SeedRulesAsync();
+
+        var result = await Service(HrUser()).AutoGenerateAsync(_cycleId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Suggestions.Single(s => s.EmployeeId == _midPerformerId)
+            .BonusPercent.Should().Be(10m, "an HR Manager holds Payroll.ViewCompensation");
     }
 
     [Fact]
