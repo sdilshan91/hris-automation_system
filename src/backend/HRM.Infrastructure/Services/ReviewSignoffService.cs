@@ -177,7 +177,7 @@ public sealed class ReviewSignoffService : IReviewSignoffService
 
             var actor = await GetCurrentEmployeeAsync(cancellationToken);
             AppendSignoff(review, SignoffParty.Manager, SignoffAction.RequestedSignOff,
-                SignerDisplayName(actor), actor?.Id, clientIp, comments: null);
+                ResolveSignerName(actor), actor?.Id, clientIp, comments: null);
         }
         else if (review.SignoffStatus == ReviewSignoffStatus.NotStarted)
         {
@@ -246,7 +246,7 @@ public sealed class ReviewSignoffService : IReviewSignoffService
             return Result<ReviewMeetingNotesDto>.Failure(
                 "You must open and read the review notes before signing off.", 409, "notes_not_read");
 
-        var signerName = SignerDisplayName(actor);
+        var signerName = ResolveSignerName(actor);
 
         if (dispute)
         {
@@ -303,7 +303,7 @@ public sealed class ReviewSignoffService : IReviewSignoffService
                 "Only a disputed review can be resolved.", 409, "not_disputed");
 
         var actor = await GetCurrentEmployeeAsync(cancellationToken);
-        var resolverName = SignerDisplayName(actor) ?? _currentUser.Email;
+        var resolverName = ResolveSignerName(actor);
         var comments = string.IsNullOrWhiteSpace(input.Comments) ? null : input.Comments.Trim();
 
         if (input.Amend)
@@ -582,7 +582,7 @@ public sealed class ReviewSignoffService : IReviewSignoffService
 
     private void AppendSignoff(
         ManagerReview review, SignoffParty party, SignoffAction action,
-        string? signerName, Guid? signerEmployeeId, string? clientIp, string? comments)
+        string signerName, Guid? signerEmployeeId, string? clientIp, string? comments)
     {
         var entry = new ReviewSignoff
         {
@@ -591,7 +591,7 @@ public sealed class ReviewSignoffService : IReviewSignoffService
             ManagerReviewId = review.Id,
             Party = party,
             Action = action,
-            SignerName = signerName ?? string.Empty,
+            SignerName = signerName,
             SignerUserId = _currentUser.IsAuthenticated ? _currentUser.UserId : null,
             SignerEmployeeId = signerEmployeeId,
             SignedAt = DateTime.UtcNow,
@@ -627,6 +627,28 @@ public sealed class ReviewSignoffService : IReviewSignoffService
 
     private static string? SignerDisplayName(Employee? e)
         => e is null ? null : $"{e.FirstName} {e.LastName}".Trim();
+
+    /// <summary>
+    /// ENH-012(c): THE single source of the name written into the immutable sign-off log. Every sign-off
+    /// action — request-sign-off, acknowledge, dispute, resolve-dispute — must go through this, so the same
+    /// signer is recorded the same way whichever action they take.
+    /// <para>
+    /// An append-only sign-off log that records a signature with no identifiable signer defeats the point of
+    /// the log (FR-3/FR-7/NFR-3): "who signed, when, from where" is the whole evidentiary value. An unlovely
+    /// name is better than a blank one, so the login email is the fallback.
+    /// </para>
+    /// <para>
+    /// Blank counts as absent, not just null. Two distinct ways to end up unidentifiable: an actor with no
+    /// linked employee record at all (HR resolving a dispute or requesting sign-off — those paths take
+    /// <c>Employee?</c>), and a linked employee whose first+last name are empty/whitespace (the column is
+    /// NOT NULL but "" satisfies it). A bare <c>??</c> would only catch the first.
+    /// </para>
+    /// </summary>
+    private string ResolveSignerName(Employee? actor)
+    {
+        var displayName = SignerDisplayName(actor);
+        return string.IsNullOrWhiteSpace(displayName) ? _currentUser.Email : displayName;
+    }
 
     /// <summary>
     /// Authorization mirroring ManagerReviewService: HR (Review.All) reviews anyone; a manager (Review.Team)

@@ -53,3 +53,4 @@
 - [Scratchpad filename collisions](feedback-scratchpad-filename-collisions.md) — the scratchpad is SHARED across concurrent sessions; name backups/checksums after the finding id or `sha256sum -c` lies
 - [Target-typed `new(...)` hides test harnesses](feedback-target-typed-new-hides-test-harnesses.md) — grep the bare type name before declaring a service untested; cost a duplicate test class on BUG-075
 - [Regenerating the OpenAPI contract from a worktree](reference-contract-regen-in-worktree.md) — gen-openapi.sh works anywhere; `npm run api:types` needs the main checkout's node_modules binary
+- [InMemory enforces required scalars](feedback-inmemory-enforces-required-scalars.md) — a null required string throws at SaveChanges; deleting a `?? string.Empty` trades a blank row for a loud 500, and reddens the whole workflow
