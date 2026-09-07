@@ -40,6 +40,12 @@ public sealed class ReviewSignoffServiceTests
 
     private readonly ITenantContext _tenantContext;
 
+    // ENH-012(c): the login emails behind the three actors. HR is deliberately NOT linked to an employee
+    // row by Seed() — that is the production shape (an HR admin who is not themselves in the org chart).
+    private const string ManagerEmail = "grace.hopper@acme.com";
+    private const string EmployeeEmail = "ada.lovelace@acme.com";
+    private const string HrEmail = "hr.admin@acme.com";
+
     private readonly Guid _managerUserId = Guid.NewGuid();
     private readonly Guid _reportUserId = Guid.NewGuid();
     private readonly Guid _hrUserId = Guid.NewGuid();
@@ -71,6 +77,7 @@ public sealed class ReviewSignoffServiceTests
     {
         var u = Substitute.For<ICurrentUser>();
         u.UserId.Returns(_managerUserId);
+        u.Email.Returns(ManagerEmail);   // ENH-012(c): the recorded fallback when there is no display name
         u.IsAuthenticated.Returns(true);
         u.Permissions.Returns(new[] { PermissionCatalog.Performance.ReviewTeam });
         return u;
@@ -80,6 +87,7 @@ public sealed class ReviewSignoffServiceTests
     {
         var u = Substitute.For<ICurrentUser>();
         u.UserId.Returns(_reportUserId);
+        u.Email.Returns(EmployeeEmail);  // ENH-012(c)
         u.IsAuthenticated.Returns(true);
         u.Permissions.Returns(new[] { PermissionCatalog.Performance.ViewOwn });
         return u;
@@ -89,6 +97,7 @@ public sealed class ReviewSignoffServiceTests
     {
         var u = Substitute.For<ICurrentUser>();
         u.UserId.Returns(_hrUserId);
+        u.Email.Returns(HrEmail);        // ENH-012(c)
         u.IsAuthenticated.Returns(true);
         u.Permissions.Returns(new[] { PermissionCatalog.Performance.ReviewAll });
         return u;
@@ -660,5 +669,204 @@ public sealed class ReviewSignoffServiceTests
             "an unscored review has no final score; 0 would display as a real and very bad rating on a "
             + "screen the employee is asked to acknowledge and sign");
         result.Value.CycleName.Should().Be("FY2026", "the cycle context is available regardless of scoring");
+    }
+
+    // ── ENH-012(c): ONE signer, ONE recorded name, whichever action they take ──────────────
+
+    /// <summary>
+    /// Links an employee row to the HR user so the HR-side happy path has a display name to record.
+    /// Seed() deliberately leaves the HR user unlinked (the fallback case), so this is opt-in.
+    /// </summary>
+    private void LinkHrEmployee()
+    {
+        using var db = CreateDbContext();
+        db.Employees.Add(new Employee
+        {
+            Id = Guid.NewGuid(), TenantId = _tenantId, UserId = _hrUserId,
+            EmployeeNo = "EMP-HR", FirstName = "Hedy", LastName = "Lamarr",
+            Email = HrEmail, Status = EmployeeStatus.Active, IsDeleted = false,
+        });
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// The second way to become unidentifiable: the actor IS linked to an employee row, but that row carries
+    /// no usable name. The column is NOT NULL, and "" satisfies NOT NULL — imported/partially-migrated rows
+    /// hit this. AcknowledgeAsync/DisputeAsync cannot see a null actor at all (they 403 with
+    /// "no_employee_record" first), so this is what an unidentifiable employee signature actually looks like.
+    /// </summary>
+    private void BlankOutReportEmployeeName()
+    {
+        using var db = CreateDbContext();
+        var e = db.Employees.First(x => x.Id == _reportEmpId);
+        e.FirstName = "";
+        e.LastName = "   ";
+        db.SaveChanges();
+    }
+
+    /// <summary>
+    /// ENH-012(c) — request sign-off. HR (Review.All) may request sign-off for anyone and need not be in the
+    /// org chart themselves, so <c>actor</c> is null here. Before the fix this site passed the null straight
+    /// into AppendSignoff, which coerced it to <see cref="string.Empty"/>: an append-only sign-off log row
+    /// that records WHEN and from WHICH IP a review was put up for signature, but not by WHOM.
+    /// </summary>
+    [Fact]
+    public async Task RequestSignOff_RecordsTheEmail_WhenTheActorHasNoLinkedEmployeeRecord()
+    {
+        Seed();
+
+        var result = await CreateService(HrUser()).RequestSignOffAsync(Notes(), "203.0.113.5");
+
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+        var entry = result.Value!.Signoffs.Single(s => s.Action == SignoffAction.RequestedSignOff);
+        entry.SignerName.Should().Be(HrEmail,
+            "a sign-off log that cannot say who signed defeats the point of the log");
+        entry.SignerName.Should().NotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// ENH-012(c) — acknowledge. Asserted separately from dispute and request-sign-off on purpose: the whole
+    /// defect was that the same signer was recorded three different ways depending on the action taken.
+    /// </summary>
+    [Fact]
+    public async Task Acknowledge_RecordsTheEmail_WhenTheSignerHasNoUsableName()
+    {
+        Seed();
+        await RequestSignOffAsync();
+        await OpenNotesAsync();
+        BlankOutReportEmployeeName();
+
+        var result = await CreateService(EmployeeUser())
+            .AcknowledgeAsync(new SignoffActionInput(_cycleId, _reportEmpId, null, "198.51.100.9"));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+        var ack = result.Value!.Signoffs.Single(s => s.Action == SignoffAction.Acknowledged);
+        ack.SignerName.Should().Be(EmployeeEmail,
+            "this is the signature that LOCKS the review — a blank one is unattributable evidence");
+        ack.SignerName.Should().NotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>ENH-012(c) — dispute. Third of the three actions, asserted independently.</summary>
+    [Fact]
+    public async Task Dispute_RecordsTheEmail_WhenTheSignerHasNoUsableName()
+    {
+        Seed();
+        await RequestSignOffAsync();
+        BlankOutReportEmployeeName();
+
+        var result = await CreateService(EmployeeUser())
+            .DisputeAsync(new SignoffActionInput(_cycleId, _reportEmpId, "I disagree.", "198.51.100.9"));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+        var entry = result.Value!.Signoffs.Single(s => s.Action == SignoffAction.Disputed);
+        entry.SignerName.Should().Be(EmployeeEmail,
+            "HR must be able to see who raised the dispute they are being asked to resolve");
+        entry.SignerName.Should().NotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// ENH-012(c) — resolve-dispute was the one site that already fell back to the email. Pinned so the
+    /// three are held to the same rule from now on rather than converging by accident.
+    /// </summary>
+    [Fact]
+    public async Task ResolveDispute_RecordsTheEmail_WhenTheActorHasNoLinkedEmployeeRecord()
+    {
+        Seed();
+        await RequestSignOffAsync();
+        await CreateService(EmployeeUser())
+            .DisputeAsync(new SignoffActionInput(_cycleId, _reportEmpId, "Disagree.", "198.51.100.9"));
+
+        var result = await CreateService(HrUser()).ResolveDisputeAsync(
+            new ResolveDisputeInput(_cycleId, _reportEmpId, Amend: false, "Confirmed.", "203.0.113.1"));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorCode + ": " + result.Error);
+        var entry = result.Value!.Signoffs.Single(s => s.Action == SignoffAction.DisputeConfirmed);
+        entry.SignerName.Should().Be(HrEmail);
+        entry.SignerName.Should().NotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// The happy path must not regress: when the signer IS linked to a named employee, every action still
+    /// records the display name, never the email. Drives the whole workflow so all four actions are covered
+    /// by real transitions rather than four isolated stubs.
+    /// </summary>
+    [Fact]
+    public async Task EverySignoffAction_StillRecordsTheDisplayName_WhenTheSignerIsLinked()
+    {
+        Seed();
+        LinkHrEmployee();
+
+        await RequestSignOffAsync();                                     // manager: Grace Hopper
+        await CreateService(EmployeeUser())
+            .DisputeAsync(new SignoffActionInput(_cycleId, _reportEmpId, "Disagree.", "198.51.100.9"));
+        await CreateService(HrUser()).ResolveDisputeAsync(               // HR: Hedy Lamarr
+            new ResolveDisputeInput(_cycleId, _reportEmpId, Amend: true, "Revising.", "203.0.113.1"));
+        await RequestSignOffAsync("203.0.113.7");
+        await OpenNotesAsync();
+        var final = await CreateService(EmployeeUser())
+            .AcknowledgeAsync(new SignoffActionInput(_cycleId, _reportEmpId, null, "198.51.100.42"));
+
+        final.IsSuccess.Should().BeTrue(final.ErrorCode + ": " + final.Error);
+        var log = final.Value!.Signoffs;
+
+        log.Where(s => s.Action == SignoffAction.RequestedSignOff)
+            .Should().OnlyContain(s => s.SignerName == "Grace Hopper");
+        log.Single(s => s.Action == SignoffAction.Disputed).SignerName.Should().Be("Ada Lovelace");
+        log.Single(s => s.Action == SignoffAction.DisputeAmended).SignerName.Should().Be("Hedy Lamarr");
+        log.Single(s => s.Action == SignoffAction.Acknowledged).SignerName.Should().Be("Ada Lovelace");
+
+        log.Should().NotContain(s => s.SignerName == ManagerEmail || s.SignerName == EmployeeEmail
+                                     || s.SignerName == HrEmail,
+            "the email is the FALLBACK; a linked, named signer must never be downgraded to it");
+    }
+
+    /// <summary>
+    /// The invariant behind all of the above, asserted over the persisted rows rather than a DTO: no path
+    /// through this service may append a sign-off whose signer cannot be identified. This is the arm that
+    /// catches a FIFTH call site added later — the per-action arms only cover the four that exist today.
+    /// </summary>
+    [Fact]
+    public async Task NoSignoffRowIsEverWrittenWithoutAnIdentifiableSigner()
+    {
+        Seed();                       // HR user unlinked …
+        BlankOutReportEmployeeName(); // … and the employee has no usable name: the worst case for both shapes.
+
+        await CreateService(HrUser()).RequestSignOffAsync(Notes(), "203.0.113.5");
+        await CreateService(EmployeeUser())
+            .DisputeAsync(new SignoffActionInput(_cycleId, _reportEmpId, "Disagree.", "198.51.100.9"));
+        await CreateService(HrUser()).ResolveDisputeAsync(
+            new ResolveDisputeInput(_cycleId, _reportEmpId, Amend: true, "Revising.", "203.0.113.1"));
+        await CreateService(HrUser()).RequestSignOffAsync(Notes(), "203.0.113.7");
+        await OpenNotesAsync();
+        await CreateService(EmployeeUser())
+            .AcknowledgeAsync(new SignoffActionInput(_cycleId, _reportEmpId, null, "198.51.100.42"));
+
+        using var db = CreateDbContext();
+        var stored = await db.ReviewSignoffs.AsNoTracking().ToListAsync();
+
+        stored.Should().HaveCount(5, "every action in the workflow above appended a row");
+        stored.Should().OnlyContain(s => s.SignerName != null && s.SignerName.Trim().Length > 0);
+    }
+
+    /// <summary>
+    /// ENH-012(c) removed <c>AppendSignoff</c>'s <c>signerName ?? string.Empty</c> coercion. Every one of its
+    /// call sites now goes through <c>ResolveSignerName</c>, which returns a non-nullable string, so the
+    /// coercion was dead code that would silently swallow a blank signature if a future site reintroduced one.
+    /// This asserts the compiler now carries that guarantee: re-widening the parameter to <c>string?</c>
+    /// (the only way to pass null again) turns this red.
+    /// </summary>
+    [Fact]
+    public void AppendSignoff_NoLongerAcceptsANullSignerName()
+    {
+        var method = typeof(ReviewSignoffService).GetMethod(
+            "AppendSignoff", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        method.Should().NotBeNull("the sign-off append path is what this guarantee is about");
+
+        var parameter = method!.GetParameters().Single(p => p.Name == "signerName");
+        var nullability = new System.Reflection.NullabilityInfoContext().Create(parameter);
+
+        nullability.WriteState.Should().Be(System.Reflection.NullabilityState.NotNull,
+            "a null here used to become an empty SignerName — the coercion hid the defect instead of "
+            + "surfacing it, so the type has to carry the rule now that the coercion is gone");
     }
 }
