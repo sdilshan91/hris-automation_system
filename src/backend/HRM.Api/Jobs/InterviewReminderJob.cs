@@ -11,9 +11,11 @@ namespace HRM.Api.Jobs;
 /// Hangfire job that fires ~24h (configurable) before an interview to remind all participants
 /// (US-REC-005 FR-4/AC-2/NFR-3/NFR-4). It is TENANT-AWARE: the tenant id is passed in the job args
 /// (NFR-4), and the job restores the tenant context for its scope so the EF global query filters apply
-/// (mirrors <c>AutoClockOutJob.ProcessTenantAsync</c>). Idempotent (NFR-4): if the interview is missing,
-/// cancelled, or no longer Scheduled, it simply no-ops; otherwise it re-sends the reminder via the
-/// notification seam.
+/// (mirrors <c>AutoClockOutJob.ProcessTenantAsync</c>). Idempotent (NFR-4): it no-ops if the interview is
+/// missing, cancelled, or no longer Scheduled — and, since ISSUE-116, also if its <c>ReminderJobId</c> marker
+/// is already null, which is what makes a Hangfire RETRY a no-op rather than a second reminder. Otherwise it
+/// clears the marker and dispatches the reminder via <c>IRecruitmentNotificationService</c> — which in
+/// production is <c>RealRecruitmentNotificationService</c> (REAL email + in-app), NOT a log-only seam.
 ///
 /// <para><b>BUG-530 — retry on a failed dispatch.</b> The seam never throws, so before it returned a
 /// <c>Result</c> this job could not tell a delivered reminder from a wholly failed one and every failure was
@@ -48,19 +50,40 @@ public sealed class InterviewReminderJob
         // on Rls:Enabled, the app.current_tenant GUC) — this interview-by-id job stays inside the RLS backstop.
         await runner.RunForTenantAsync(tenantId, $"tenant-{tenantId}", async _ =>
         {
+        // ISSUE-116 (NFR-4): TRACKED read (no AsNoTracking) — the reminder marker is cleared and committed
+        // below, and that write is what makes a Hangfire retry a no-op instead of a second reminder.
         var interview = await dbContext.Interviews
-            .AsNoTracking()
             .Include(i => i.Interviewers)
             .FirstOrDefaultAsync(i => i.Id == interviewId);
 
-        // Idempotent / defensive: only remind for a still-scheduled interview.
-        if (interview is null || interview.Status != InterviewStatus.Scheduled)
+        // Idempotent / defensive (NFR-4): only remind for a still-scheduled interview that still has a
+        // PENDING reminder marker. ReminderJobId is set on schedule and swapped on reschedule, and is
+        // cleared here as the reminder is dispatched — so a null marker means "already reminded" (or never
+        // scheduled at all), and a Hangfire retry of this job no-ops instead of double-sending.
+        if (interview is null || interview.Status != InterviewStatus.Scheduled || interview.ReminderJobId is null)
         {
             Log.Information(
-                "InterviewReminderJob: skipping interview {InterviewId} for tenant {TenantId} (missing or not scheduled)",
+                "InterviewReminderJob: skipping interview {InterviewId} for tenant {TenantId} (missing, not scheduled, or reminder already sent)",
                 interviewId, tenantId);
             return;
         }
+
+        // ISSUE-116: CLAIM the reminder BEFORE dispatching it, mirroring OfferExpiryJob/OfferExpiryReminderJob
+        // (which commit their state change before notifying).
+        //
+        // Why not clear AFTER dispatch: the job cannot observe whether dispatch succeeded.
+        // RealRecruitmentNotificationService.DispatchInterviewAsync wraps its whole body in
+        // `catch (Exception) { LogFailure(...); }`, so NotifyInterviewReminderAsync returns an identical
+        // completed Task whether every email was delivered or every one failed. "Clear only on success" is
+        // therefore not expressible here. Clearing after the await would NOT save a failed reminder (the
+        // failure is already swallowed) but WOULD add a duplicate-send path: if SaveChanges then fails,
+        // Hangfire retries and re-dispatches an already-delivered reminder — the exact NFR-4 violation this
+        // guard exists to prevent.
+        //
+        // Residual risk, stated plainly: a reminder whose dispatch fails internally is LOST, and no ordering
+        // in this job can fix that — it needs a success signal from the seam (or an outbox). See ISSUE-116.
+        interview.ReminderJobId = null;
+        await dbContext.SaveChangesAsync();
 
         var applicantEmail = await dbContext.Applicants
             .AsNoTracking()

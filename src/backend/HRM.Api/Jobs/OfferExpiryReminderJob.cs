@@ -10,9 +10,11 @@ namespace HRM.Api.Jobs;
 /// Hangfire job that fires N days BEFORE an offer's expiry to nudge the candidate (+ recruiter pool) that the
 /// offer is about to lapse (US-REC-007 FR-7/AC-4). Sibling of <see cref="OfferExpiryJob"/> (which auto-expires
 /// AT the boundary). TENANT-AWARE: the tenant id is passed in the job args and the job restores the tenant
-/// context for its scope so the EF global query filters apply. Idempotent: if the offer is missing or no
-/// longer Draft/Sent (already responded/withdrawn/expired), it no-ops — this is what prevents a reminder
-/// firing after the candidate already accepted/withdrew. Otherwise it emits the reminder notification
+/// context for its scope so the EF global query filters apply. Idempotent: it no-ops if the offer is missing
+/// or no longer Draft/Sent (already responded/withdrawn/expired) — this is what prevents a reminder firing
+/// after the candidate already accepted/withdrew — and, since ISSUE-116, also if its
+/// <c>ExpiryReminderJobId</c> marker is already null, which makes a Hangfire RETRY a no-op rather than a
+/// second reminder. Otherwise it emits the reminder notification
 /// (candidate + recruiter pool) via <c>NotifyOfferAsync("offer-expiry-reminder", …)</c> and clears the
 /// reminder job id. Unlike the expiry job it does NOT change the offer status.
 ///
@@ -53,14 +55,19 @@ public sealed class OfferExpiryReminderJob
 
         // Idempotent / defensive: only remind about a still-active (Draft/Sent) offer. If it has already been
         // accepted/declined/withdrawn/expired, do NOT send a "your offer is expiring soon" nudge.
-        if (offer is null || !offer.IsActive)
+        // ISSUE-116 (NFR-4): the ExpiryReminderJobId check is the RETRY guard. This job already cleared the
+        // marker below but never READ it, so a Hangfire retry of a still-active offer sent a SECOND reminder.
+        // The marker is set on send and cleared on respond/withdraw/supersede, so null means "already
+        // reminded" (or no reminder pending) and the retry now no-ops.
+        if (offer is null || !offer.IsActive || offer.ExpiryReminderJobId is null)
         {
             Log.Information(
-                "OfferExpiryReminderJob: skipping offer {OfferId} for tenant {TenantId} (missing or no longer active)",
+                "OfferExpiryReminderJob: skipping offer {OfferId} for tenant {TenantId} (missing, no longer active, or reminder already sent)",
                 offerId, tenantId);
             return;
         }
 
+        // Claim the reminder BEFORE dispatch (unchanged order) — see the ISSUE-116 note in InterviewReminderJob.
         offer.ExpiryReminderJobId = null;
         await dbContext.SaveChangesAsync();
 
