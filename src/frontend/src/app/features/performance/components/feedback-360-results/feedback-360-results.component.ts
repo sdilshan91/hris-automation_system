@@ -14,7 +14,6 @@ import { ToastrService } from 'ngx-toastr';
 import { Feedback360Service } from '../../services/feedback-360.service';
 import {
   IFeedback360Results,
-  ICompetencyResult,
   ICategoryAverage,
   ReviewerCategory,
   REVIEWER_CATEGORY_ORDER,
@@ -270,23 +269,6 @@ import {
                         data-testid="competency-bar"
                       ></div>
                     </div>
-                    <!-- per-category split chips for this competency -->
-                    <div class="mt-2 flex flex-wrap gap-2">
-                      @for (split of categorySplit(c); track split.category) {
-                        <span
-                          class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset"
-                          [class]="categoryBadge(split.category)"
-                          data-testid="competency-split"
-                        >
-                          {{ categoryLabel(split.category) }}:
-                          @if (split.average != null) {
-                            {{ split.average | number: '1.1-1' }}
-                          } @else {
-                            —
-                          }
-                        </span>
-                      }
-                    </div>
                   </div>
                 }
               </div>
@@ -398,18 +380,6 @@ export class Feedback360ResultsComponent implements OnInit {
         this.loading.set(false);
       },
     });
-  }
-
-  /** Per-competency category split in canonical order (AC-4 comparison). */
-  categorySplit(competency: ICompetencyResult): ICategoryAverage[] {
-    return REVIEWER_CATEGORY_ORDER.map(
-      (cat) =>
-        competency.byCategory.find((c) => c.category === cat) ?? {
-          category: cat,
-          average: null,
-          responseCount: 0,
-        },
-    ).filter((c) => c.average != null);
   }
 
   /** BR-4 banner hint: how many more peer reviews are needed before the threshold. */

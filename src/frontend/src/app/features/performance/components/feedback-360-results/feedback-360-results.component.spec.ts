@@ -27,12 +27,10 @@ function makeResults(
         questionId: 'q-1',
         title: 'Communication',
         kind: 'Competency',
+        // Flat, exactly as `mapFeedback360Results` builds it from the wire: the
+        // backend `competencyAverages` carries ONE overall average per competency and
+        // no per-category split (ISSUE-378).
         overallAverage: 4.2,
-        byCategory: [
-          { category: 'Self', average: 4, responseCount: 1 },
-          { category: 'Manager', average: 4.5, responseCount: 1 },
-          { category: 'Peer', average: 4.1, responseCount: 3 },
-        ],
       },
     ],
     categoryAverages: [
@@ -111,7 +109,32 @@ describe('Feedback360ResultsComponent', () => {
       '[data-testid="competency-row"]',
     );
     expect(rows.length).toBe(1);
-    expect((rows[0] as HTMLElement).textContent).toContain('Communication');
+    const row = rows[0] as HTMLElement;
+    expect(row.textContent).toContain('Communication');
+    // The overall average IS the only per-competency figure the API sends, so the row
+    // must render it against the tenant scale (ISSUE-378).
+    expect(row.textContent?.replace(/\s+/g, ' ')).toContain('4.2 / 5');
+    expect(row.querySelector('[data-testid="competency-bar"]')).toBeTruthy();
+  });
+
+  it('renders "No data" for a competency the API returns without an average', async () => {
+    await setup(
+      makeResults({
+        competencies: [
+          {
+            questionId: 'q-2',
+            title: 'Collaboration',
+            kind: 'Competency',
+            overallAverage: null,
+          },
+        ],
+      }),
+    );
+    const row = fixture.nativeElement.querySelector(
+      '[data-testid="competency-row"]',
+    ) as HTMLElement;
+    expect(row.textContent).toContain('Collaboration');
+    expect(row.textContent).toContain('No data');
   });
 
   it('orders the perspective comparison Self/Manager/Peer/DirectReport (AC-4)', async () => {

@@ -277,8 +277,6 @@ export interface ICompetencyResult {
   kind: QuestionKind;
   /** Overall average across all categories (AC-4 bar chart). */
   overallAverage: number | null;
-  /** The per-category averages for the perspective comparison (AC-4 radar). */
-  byCategory: ICategoryAverage[];
 }
 
 /**
@@ -324,8 +322,9 @@ export interface IFeedback360Results {
   /** FR-6 composite score the SERVER computes (weighted across categories). Display-only
    *  — the FE NEVER computes this. */
   compositeScore: number | null;
-  /** Per-competency aggregation (AC-4 bars). NOTE: the backend `competencyAverages` is
-   *  flat (no per-category split), so `ICompetencyResult.byCategory` is always []. */
+  /** Per-competency aggregation (AC-4 bars). The backend `competencyAverages` is flat —
+   *  one overall average per competency, with no per-category split (ISSUE-378). The
+   *  per-category perspective split exists only at cycle level, in `categoryAverages`. */
   competencies: ICompetencyResult[];
   /** Per-category overall averages (the radar/comparison rings, AC-4). */
   categoryAverages: ICategoryAverage[];
@@ -376,8 +375,6 @@ export function mapFeedback360Results(
       title: c.label ?? '',
       kind: c.goalId != null ? ('Goal' as const) : ('Competency' as const),
       overallAverage: c.averageRating ?? null,
-      // No per-competency category split exists on the wire (GAP — see S-1 report).
-      byCategory: [] as ICategoryAverage[],
     })),
     categoryAverages: (raw.categoryAverages ?? []).map((c) => ({
       category: c.category as ReviewerCategory,

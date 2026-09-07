@@ -259,13 +259,12 @@ describe('feedback-360 model helpers', () => {
       expect(r.compositeScore).toBe(82);
     });
 
-    it('maps competencyAverages → competencies (flat, byCategory always [])', () => {
+    it('maps competencyAverages → competencies (flat: one overall average each)', () => {
       const r = mapFeedback360Results(makeRaw());
       expect(r.competencies.length).toBe(1);
       expect(r.competencies[0].title).toBe('Communication'); // ← label
       expect(r.competencies[0].overallAverage).toBe(4.2); // ← averageRating
       expect(r.competencies[0].kind).toBe('Competency');
-      expect(r.competencies[0].byCategory).toEqual([]);
     });
 
     it('marks a competency backed by a goalId as kind Goal', () => {

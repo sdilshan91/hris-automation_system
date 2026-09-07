@@ -322,12 +322,11 @@ describe('Feedback360Service', () => {
     expect(result?.employeeName).toBe('Alex Doe'); // ← revieweeName
     expect(result?.anonymous).toBeTrue(); // ← isAnonymousFeedback
     expect(result?.jobTitle).toBe('Engineer');
-    // competencyAverages → competencies (flat, byCategory always [])
+    // competencyAverages → competencies (flat: one overall average each)
     expect(result?.competencies.length).toBe(1);
     expect(result?.competencies[0].title).toBe('Communication');
     expect(result?.competencies[0].overallAverage).toBe(4.2);
     expect(result?.competencies[0].kind).toBe('Competency');
-    expect(result?.competencies[0].byCategory).toEqual([]);
     // categoryAverages[].averageRating → .average
     expect(result?.categoryAverages[0].category).toBe('Peer');
     expect(result?.categoryAverages[0].average).toBe(4.1);
