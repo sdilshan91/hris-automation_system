@@ -78,6 +78,7 @@
 | [US-CHR-011](core-hr/US-CHR-011.md) | Employee reporting structure | Must Have | HR Officer |
 | [US-CHR-012](core-hr/US-CHR-012.md) | Custom fields per tenant | Could Have | Tenant Admin |
 | [US-CHR-013](core-hr/US-CHR-013.md) | Employee FTE & work arrangement | Should Have | HR Officer |
+| [US-CHR-014](core-hr/US-CHR-014.md) | Capture employee bank details for salary disbursement *(net-new; ENH-018 — blocked on ISSUE-523)* | Must Have | HR Manager / Payroll Manager / Employee |
 
 ## 3. Leave Management
 
@@ -95,6 +96,7 @@
 | [US-LV-010](leave-management/US-LV-010.md) | Leave cancellation by employee | Must Have | Employee |
 | [US-LV-011](leave-management/US-LV-011.md) | Compulsory leave / LOP handling | Should Have | HR Officer |
 | [US-LV-012](leave-management/US-LV-012.md) | Leave reports and analytics | Should Have | HR Officer |
+| [US-LV-013](leave-management/US-LV-013.md) | On-demand leave accrual / recalculation trigger *(net-new; ENH-001 — operator/test-enablement, not an end-user feature)* | Should Have | System Admin / Platform Operator |
 
 ## 4. Attendance
 
@@ -126,6 +128,7 @@
 | [US-REC-008](recruitment/US-REC-008.md) | Applicant tracks application status | Should Have | Applicant |
 | [US-REC-009](recruitment/US-REC-009.md) | Recruitment dashboard and analytics | Should Have | HR Officer |
 | [US-REC-010](recruitment/US-REC-010.md) | Convert applicant to employee record | Must Have | HR Officer |
+| [US-REC-011](recruitment/US-REC-011.md) | Per-tenant interview reminder lead time *(net-new; ISSUE-116 — closes US-REC-005 BR-5)* | Should Have | Tenant Admin / Recruiter |
 
 ## 6. Payroll
 
@@ -160,6 +163,7 @@
 | [US-PRF-009](performance/US-PRF-009.md) | Goal tracking with progress updates | Should Have | Employee |
 | [US-PRF-010](performance/US-PRF-010.md) | Performance-based recommendations | Could Have | HR Officer |
 | [US-PRF-011](performance/US-PRF-011.md) | Performance calibration workspace *(net-new STUB)* | Should Have | HR Officer |
+| [US-PRF-012](performance/US-PRF-012.md) | ⛔ **BLOCKED** — `performance_summary` materialized view *(net-new; ISSUE-129. Block is **categorical**, not "waiting on RLS" — Postgres has no RLS for matviews. Needs a bespoke isolation design first; story recommends WONTFIX)* | Could Have | HR Officer / Manager |
 
 ## 8. Admin Console
 
