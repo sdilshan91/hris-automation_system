@@ -4,6 +4,7 @@
 - [Per-tenant SSO settings (US-AUTH-012)](reference-sso-settings.md) — SSO config lives on Tenant (no TenantAuthSettings entity); entitlement/break-glass/cache seams; FR-8 gap: US-AUTH-013 still reads config not DB
 - [SSO enforcement + break-glass + admin-consent (US-AUTH-016)](reference-sso-enforcement-breakglass.md) — login gate reads cached snapshot; designation guard replaces 012's; consent-state carries subdomain not tid; MFA-break-glass audit gap
 - [Attendance module reference](reference-attendance-module.md) — where US-ATT domain rules live + key scaffold decisions
+- [Attendance summary freshness (ISSUE-083)](reference-attendance-summary-freshness.md) — current month recomputes on read (TenantClock, not UtcNow); closed months served from the row; InMemory fixture has no Tenant row → UTC
 - [Recruitment module reference](reference-recruitment-module.md) — US-REC-001 vacancy + US-REC-002 applicant scaffold, routes, seams reused
 - [Payroll payslip-PDF reference](reference-payroll-payslip-pdf.md) — US-PAY-004: QuestPDF already referenced, reuse IFileStorage, 3-seam split, YTD/branding deferred
 - [Payroll reports reference](reference-payroll-reports.md) — US-PAY-009: reused leave-module export (ClosedXML/CsvHelper/QuestPDF), Payroll.Export gate, report-type IDs, bank-fields gap
