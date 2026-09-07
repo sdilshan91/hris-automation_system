@@ -285,4 +285,83 @@ public sealed class HrReportPostgresTests : IClassFixture<PostgresContainerFixtu
             result.Value.Table.Rows.Single()[1].Should().Be(2);
         }
     }
+
+    // ── ENH-455: empty-group handling after the aggregation moved into SQL ───
+    // These three arms pin the one behaviour that genuinely differs between LINQ-to-Objects and SQL
+    // GROUP BY: an empty group. LINQ-to-Objects code that enumerates the ENUM emits a 0; Postgres
+    // GROUP BY emits no row at all. Nothing above pinned it, so a pushdown could have quietly changed
+    // the chart/table shape while all four existing arms stayed green.
+
+    [Fact]
+    public async Task HeadcountSummary_EmploymentTypesWithNoEmployees_StillReportZero()
+    {
+        var dept = await SeedDepartment(_tenantA, "Engineering");
+        await SeedEmployee(_tenantA, "F1", dept, type: EmploymentType.FullTime);
+        await SeedEmployee(_tenantA, "F2", dept, type: EmploymentType.FullTime);
+        await SeedEmployee(_tenantA, "C1", dept, type: EmploymentType.Contract);
+
+        var (db, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(HrReportType.HeadcountSummary, new HrReportQueryParams());
+
+            result.IsSuccess.Should().BeTrue();
+            var rows = result.Value!.Table.Rows;
+            // EVERY EmploymentType must be represented, including the two with no employees at all.
+            foreach (var (type, expected) in new[]
+            {
+                (EmploymentType.FullTime, 2), (EmploymentType.PartTime, 0),
+                (EmploymentType.Contract, 1), (EmploymentType.Intern, 0),
+            })
+            {
+                rows.Single(r => (string?)r[0] == $"Employment Type: {type}")[1].Should().Be(expected);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DepartmentDistribution_DepartmentWithNoActiveMembers_IsOmitted()
+    {
+        var eng = await SeedDepartment(_tenantA, "Engineering");
+        var sales = await SeedDepartment(_tenantA, "Sales");
+        await SeedEmployee(_tenantA, "E1", eng);
+        await SeedEmployee(_tenantA, "E2", eng);
+        await SeedEmployee(_tenantA, "S1", sales, EmployeeStatus.Terminated);  // Sales has no ACTIVE member
+
+        var (db, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(HrReportType.DepartmentDistribution, new HrReportQueryParams());
+
+            result.IsSuccess.Should().BeTrue();
+            // Sales exists but contributes no active employee, so it forms no group and gets no row —
+            // and it must not be counted in the "Departments" KPI either.
+            result.Value!.Table.Rows.Should().ContainSingle()
+                .Which.Should().BeEquivalentTo(new object?[] { "Engineering", 2 });
+            result.Value.Metadata.Summary.Single(s => s.Label == "Total Active Headcount").Value.Should().Be(2);
+            result.Value.Metadata.Summary.Single(s => s.Label == "Departments").Value.Should().Be(1);
+        }
+    }
+
+    [Fact]
+    public async Task Turnover_TenantWithNoEmployees_ReportsZeroRateNotDivideByZero()
+    {
+        // Nothing seeded for this tenant: the population query returns no groups at all.
+        var (db, svc) = Scope(_tenantA);
+        using (db)
+        {
+            var result = await svc.GenerateReportAsync(HrReportType.EmployeeTurnover, new HrReportQueryParams
+            {
+                DateFrom = new DateTime(2026, 1, 1),
+                DateTo = new DateTime(2026, 12, 31),
+            });
+
+            result.IsSuccess.Should().BeTrue();
+            var rows = result.Value!.Table.Rows;
+            rows.Single(r => (string?)r[0] == "Total Separations")[1].Should().Be(0);
+            rows.Single(r => (string?)r[0] == "Average Headcount (period)")[1].Should().Be(0);
+            rows.Single(r => (string?)r[0] == "Turnover Rate %")[1].Should().Be(0m);
+            rows.Single(r => (string?)r[0] == "Average Tenure (years)")[1].Should().Be(0m);
+        }
+    }
 }

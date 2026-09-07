@@ -54,3 +54,4 @@
 - [Target-typed `new(...)` hides test harnesses](feedback-target-typed-new-hides-test-harnesses.md) — grep the bare type name before declaring a service untested; cost a duplicate test class on BUG-075
 - [Regenerating the OpenAPI contract from a worktree](reference-contract-regen-in-worktree.md) — gen-openapi.sh works anywhere; `npm run api:types` needs the main checkout's node_modules binary
 - [InMemory enforces required scalars](feedback-inmemory-enforces-required-scalars.md) — a null required string throws at SaveChanges; deleting a `?? string.Empty` trades a blank row for a loud 500, and reddens the whole workflow
+- [HrReport SQL pushdown (ENH-455)](reference-hrreport-sql-pushdown.md) — what translates to Postgres GROUP BY, why the BR-3/BR-4 text rules stay in C#, and the enum-vs-SQL empty-group trap

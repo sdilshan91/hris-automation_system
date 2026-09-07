@@ -134,27 +134,47 @@ public sealed class HrReportService : IHrReportService
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
         var scope = await ResolveScopeAsync(ct);
-        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope).ToListAsync(ct);
+
+        // ENH-455: aggregate in SQL. A single GROUP BY (department_id, employment_type, status) with a
+        // COUNT(*) replaces materialising the whole filtered employee population and counting it in
+        // memory; every number below is derived from the small bucket set, not from employee rows.
+        // The BR-4 "active" rule stays in C# so IsActive() remains its single definition.
+        var buckets = await ApplyScopeToEmployees(FilteredEmployees(qp), scope)
+            .GroupBy(e => new { e.DepartmentId, e.EmploymentType, e.Status })
+            .Select(g => new
+            {
+                g.Key.DepartmentId,
+                g.Key.EmploymentType,
+                g.Key.Status,
+                Count = g.Count(),
+            })
+            .ToListAsync(ct);
         var deptNames = await DepartmentNameLookup(ct);
 
-        var active = employees.Count(e => IsActive(e.Status));
-        var inactive = employees.Count - active;
+        var total = buckets.Sum(b => b.Count);
+        var active = buckets.Where(b => IsActive(b.Status)).Sum(b => b.Count);
+        var inactive = total - active;
 
-        // Breakdown by employment type.
+        // Breakdown by employment type. Driven off the ENUM rather than off the SQL groups, because
+        // GROUP BY emits no row for an empty group and a type with zero employees must still show a 0.
         var byType = Enum.GetValues<EmploymentType>()
-            .Select(t => new HrChartPoint { Label = t.ToString(), Value = employees.Count(e => e.EmploymentType == t) })
+            .Select(t => new HrChartPoint
+            {
+                Label = t.ToString(),
+                Value = buckets.Where(b => b.EmploymentType == t).Sum(b => b.Count),
+            })
             .ToList();
 
-        // Breakdown by department (bar chart, AC-2).
-        var byDept = employees
-            .GroupBy(e => e.DepartmentId)
-            .Select(g => new HrChartPoint { Label = DeptName(deptNames, g.Key), Value = g.Count() })
+        // Breakdown by department (bar chart, AC-2) — re-folds the buckets, which are already aggregated.
+        var byDept = buckets
+            .GroupBy(b => b.DepartmentId)
+            .Select(g => new HrChartPoint { Label = DeptName(deptNames, g.Key), Value = g.Sum(b => b.Count) })
             .OrderByDescending(p => p.Value)
             .ToList();
 
         var summary = new List<HrSummaryStat>
         {
-            new() { Label = "Total Headcount", Value = employees.Count, Tone = "neutral" },
+            new() { Label = "Total Headcount", Value = total, Tone = "neutral" },
             new() { Label = "Active", Value = active, Tone = "positive" },
             new() { Label = "Inactive / Separated", Value = inactive, Tone = "negative" },
             new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
@@ -162,7 +182,7 @@ public sealed class HrReportService : IHrReportService
 
         var rows = new List<object?[]>
         {
-            new object?[] { "Total Headcount", employees.Count },
+            new object?[] { "Total Headcount", total },
             new object?[] { "Active", active },
             new object?[] { "Inactive / Separated", inactive },
         };
@@ -184,20 +204,35 @@ public sealed class HrReportService : IHrReportService
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
         var scope = await ResolveScopeAsync(ct);
-        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope).ToListAsync(ct);
-        var employeeIds = employees.Select(e => e.Id).ToList();
+        var empQuery = ApplyScopeToEmployees(FilteredEmployees(qp), scope);
         var deptNames = await DepartmentNameLookup(ct);
+
+        // ENH-455: the BR-3 denominator's active headcount is a SQL COUNT(*) GROUP BY status, not a
+        // client-side scan of the materialised population. Grouping by status (instead of filtering on
+        // Active/Probation in the query) keeps IsActive() the single definition of BR-4.
+        var statusCounts = await empQuery
+            .GroupBy(e => e.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
 
         // Separations are recorded in the EmploymentHistory timeline as Status changes whose NEW value is a
         // separated status (BR-4: terminated / resigned / contract_ended; we map the EmployeeStatus enum's
         // separated states). EffectiveDate must fall inside the report window.
-        var statusHistory = await _db.EmploymentHistories
+        // ENH-455: joined to the scoped employee query IN SQL instead of materialising the population and
+        // shipping its ids back as an IN list. The department and joining date needed further down come
+        // from the same join, so no employee row is ever loaded for this report.
+        var statusHistory = await _db.EmploymentHistories.AsNoTracking()
             .Where(h => h.ChangeType == "Status")
-            .Where(h => employeeIds.Contains(h.EmployeeId))
             .Where(h => h.EffectiveDate >= dateFrom && h.EffectiveDate <= dateTo)
-            .Select(h => new { h.EmployeeId, h.NewValue, h.Reason, h.EffectiveDate })
+            .Join(empQuery, h => h.EmployeeId, e => e.Id,
+                (h, e) => new { h.NewValue, h.Reason, h.EffectiveDate, e.DepartmentId, e.DateOfJoining })
             .ToListAsync(ct);
 
+        // STAYS CLIENT-SIDE, deliberately: IsSeparatedValue / IsVoluntary are BR-4 / BR-3 free-text
+        // keyword rules over NewValue+Reason ("terminat", "resign", "contract ended") with an
+        // Enum.TryParse arm. They have no faithful SQL translation, and approximating them with LIKE
+        // would change which rows count as a separation. Only the already-windowed status-change rows
+        // (not the employee population) reach memory.
         var separations = statusHistory.Where(h => IsSeparatedValue(h.NewValue)).ToList();
         var totalSeparations = separations.Count;
 
@@ -209,31 +244,33 @@ public sealed class HrReportService : IHrReportService
         // Average headcount in the period (BR-3 denominator) = (active at start + active at end) / 2,
         // approximated as the current active headcount (no point-in-time snapshot table exists). This is the
         // documented denominator for the on-the-fly report; a snapshot/materialized table is the FR-6 follow-up.
-        var avgHeadcount = employees.Count(e => IsActive(e.Status));
+        var avgHeadcount = statusCounts.Where(s => IsActive(s.Status)).Sum(s => s.Count);
         // Add back the separated employees so the denominator reflects the population that COULD separate.
         avgHeadcount += totalSeparations;
         var rate = avgHeadcount > 0 ? Math.Round((decimal)totalSeparations / avgHeadcount * 100m, 2) : 0m;
 
-        // Monthly turnover trend (line chart) across the window.
+        // Monthly turnover trend (line chart) across the window. STAYS CLIENT-SIDE: the separations set
+        // is already in memory (see IsSeparatedValue above), so truncating EffectiveDate to a month here
+        // costs nothing and avoids relying on date-part translation.
         var monthly = separations
             .GroupBy(s => new DateTime(s.EffectiveDate.Year, s.EffectiveDate.Month, 1))
             .OrderBy(g => g.Key)
             .Select(g => new HrChartPoint { Label = g.Key.ToString("yyyy-MM"), Value = g.Count() })
             .ToList();
 
-        // Turnover by department (horizontal bar).
-        var empDept = employees.ToDictionary(e => e.Id, e => e.DepartmentId);
+        // Turnover by department (horizontal bar). DepartmentId rides along on the SQL join above, so the
+        // employee->department dictionary this used to build is gone.
         var byDept = separations
-            .GroupBy(s => empDept.TryGetValue(s.EmployeeId, out var d) ? d : Guid.Empty)
+            .GroupBy(s => s.DepartmentId)
             .Select(g => new HrChartPoint { Label = DeptName(deptNames, g.Key), Value = g.Count() })
             .OrderByDescending(p => p.Value)
             .ToList();
 
         // Average tenure of departed employees (in years), using DateOfJoining → separation EffectiveDate.
-        var empJoin = employees.ToDictionary(e => e.Id, e => e.DateOfJoining);
+        // DateOfJoining also rides along on the join; the inner join guarantees a matching employee, which
+        // is what the old ContainsKey() guard was checking.
         var tenures = separations
-            .Where(s => empJoin.ContainsKey(s.EmployeeId))
-            .Select(s => (s.EffectiveDate - empJoin[s.EmployeeId]).TotalDays / 365.25)
+            .Select(s => (s.EffectiveDate - s.DateOfJoining).TotalDays / 365.25)
             .ToList();
         var avgTenureYears = tenures.Count > 0 ? Math.Round((decimal)tenures.Average(), 2) : 0m;
 
@@ -407,13 +444,20 @@ public sealed class HrReportService : IHrReportService
         HrReportQueryParams qp, DateTime dateFrom, DateTime dateTo, CancellationToken ct)
     {
         var scope = await ResolveScopeAsync(ct);
-        var employees = await ApplyScopeToEmployees(FilteredEmployees(qp), scope)
-            .Where(e => e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation).ToListAsync(ct);
+
+        // ENH-455: COUNT(*) ... GROUP BY department_id runs in SQL; one row per department comes back
+        // instead of the whole active population. A department with no active members produces no SQL
+        // group and therefore no row — identical to the previous client-side GroupBy, which likewise only
+        // ever saw departments that had at least one member in the materialised list.
+        var deptCounts = await ApplyScopeToEmployees(FilteredEmployees(qp), scope)
+            .Where(e => e.Status == EmployeeStatus.Active || e.Status == EmployeeStatus.Probation)
+            .GroupBy(e => e.DepartmentId)
+            .Select(g => new { DepartmentId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
         var deptNames = await DepartmentNameLookup(ct);
 
-        var byDept = employees
-            .GroupBy(e => e.DepartmentId)
-            .Select(g => new HrChartPoint { Label = DeptName(deptNames, g.Key), Value = g.Count() })
+        var byDept = deptCounts
+            .Select(x => new HrChartPoint { Label = DeptName(deptNames, x.DepartmentId), Value = x.Count })
             .OrderByDescending(p => p.Value)
             .ToList();
 
@@ -421,7 +465,7 @@ public sealed class HrReportService : IHrReportService
 
         var summary = new List<HrSummaryStat>
         {
-            new() { Label = "Total Active Headcount", Value = employees.Count, Tone = "neutral" },
+            new() { Label = "Total Active Headcount", Value = deptCounts.Sum(x => x.Count), Tone = "neutral" },
             new() { Label = "Departments", Value = byDept.Count, Tone = "neutral" },
             new() { Label = "Scope", Value = scope.Kind, Tone = "neutral" },
         };
