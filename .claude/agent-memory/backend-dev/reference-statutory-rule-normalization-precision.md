@@ -38,6 +38,12 @@ returns 201 with the rounded number** (the response is DB-fresh via `BuildDtoRes
 missing-validation defect, never a stale-echo one). Fix is `PrecisionScale(5, 2, ignoreTrailingZeros: true)`
 — same idiom as ISSUE-152 on `AnnualCtc` (`numeric(18,2)`).
 
+The two halves shipped in **separate** PRs — slab `RatePercentage` (ISSUE-169, PR #652) and
+social-security `EmployeeRate`/`EmployerRate` (ISSUE-501) — and #652 was still absent from
+`test/local-subdomains` on 2026-09-07. **Grep `PrecisionScale` in `CreateStatutoryRuleValidator.cs`
+before assuming either half is present**; error code is `invalid_rate_scale`, arms live in
+`HRM.Tests/Unit/StatutoryRuleAmountBoundsTests.cs`.
+
 Related: `StatutoryLimits.MaxMonetary` is the **numeric(18,2)** ceiling, but exemption `Value`/`MaxAmount`
 are `numeric(18,4)` — the shared constant is ~100x too permissive for those two columns.
 
