@@ -32,6 +32,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Testcontainers.PostgreSql;
+using HRM.Tests.Unit.Helpers;
 
 namespace HRM.Tests.Integration;
 
@@ -106,7 +107,7 @@ public sealed class ApplicantConcurrencyPostgresTests : IAsyncLifetime
 
     private ApplicantService Service(AppDbContext db) => new(db, _tc, _cu,
         Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(),
-        Substitute.For<IRecruitmentNotificationService>(), new GanssHtmlSanitizer(),
+        RecruitmentNotifications.Succeeding(), new GanssHtmlSanitizer(),
         NullLogger<ApplicantService>.Instance);
 
     // Reads the applicant's current xmin concurrency token.

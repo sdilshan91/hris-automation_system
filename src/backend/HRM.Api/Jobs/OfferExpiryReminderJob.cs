@@ -15,6 +15,16 @@ namespace HRM.Api.Jobs;
 /// firing after the candidate already accepted/withdrew. Otherwise it emits the reminder notification
 /// (candidate + recruiter pool) via <c>NotifyOfferAsync("offer-expiry-reminder", …)</c> and clears the
 /// reminder job id. Unlike the expiry job it does NOT change the offer status.
+///
+/// <para><b>BUG-530 — retry on a failed dispatch.</b> The seam never throws, so before it returned a
+/// <c>Result</c> this job could not tell a delivered expiry warning from a wholly failed one. It now THROWS on
+/// a failed <c>Result</c>, failing the Hangfire run so Hangfire's existing automatic retries re-run the
+/// dispatch. Re-running is safe: the <c>IsActive</c> guard above already makes the job idempotent, and the
+/// marker clear is a no-op on the second pass.</para>
+///
+/// <para><b>The limit, stated honestly:</b> this is retry-on-detected-failure, NOT at-least-once delivery. A
+/// process death between a successful dispatch and the surrounding work is not recovered, because nothing
+/// durably records that a send is owed. A transactional outbox would be; it was deliberately not built.</para>
 /// </summary>
 public sealed class OfferExpiryReminderJob
 {
@@ -60,8 +70,21 @@ public sealed class OfferExpiryReminderJob
             .Select(a => a.Email)
             .FirstOrDefaultAsync() ?? string.Empty;
 
-        await notifications.NotifyOfferAsync(
+        var dispatch = await notifications.NotifyOfferAsync(
             "offer-expiry-reminder", offer.Id, offer.ApplicantId, offer.VacancyId, applicantEmail);
+
+        // BUG-530: fail the run so Hangfire retries. A job that returns normally is recorded as Succeeded, which is
+        // how a candidate's lost "your offer expires soon" email used to be indistinguishable from a delivered one.
+        if (dispatch.IsFailure)
+        {
+            Log.Warning(
+                "OfferExpiryReminderJob: reminder dispatch FAILED for offer {OfferId} (tenant {TenantId}); " +
+                "failing the run so Hangfire retries. Error={Error}",
+                offer.Id, tenantId, dispatch.Error);
+
+            throw new InvalidOperationException(
+                $"Offer expiry-reminder dispatch failed for offer {offer.Id} (tenant {tenantId}): {dispatch.Error}");
+        }
 
         Log.Information(
             "OfferExpiryReminderJob: reminder sent for offer {OfferId} (tenant {TenantId})", offer.Id, tenantId);

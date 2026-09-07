@@ -279,18 +279,30 @@ public sealed class OfferService : IOfferService
         offer.Status = OfferStatus.Sent;
         offer.SentAt = DateTime.UtcNow;
 
-        // FR-7/AC-4: schedule the tenant-aware expiry follow-up job (no-op if the seam is absent — tests —
-        // or if the fire-time is already past).
-        offer.ReminderJobId = ScheduleExpiry(offer);
-
-        // ISSUE-262 / FR-7/AC-4: also schedule the "N days before expiry" reminder nudge (no-op if the seam
-        // is absent). Stored on a SEPARATE field so cancelling the reminder never clobbers the expiry job.
-        offer.ExpiryReminderJobId = ScheduleExpiryReminder(offer);
-
         AddOfferAudit(OfferAuditAction.Sent, offer,
             before: new { Status = statusBeforeSend.ToString() },
             after: new { Status = offer.Status.ToString(), offer.SentAt, offer.ExpiryDate });
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        // BUG-529: both offer jobs are scheduled AFTER the Sent status commits, never before.
+        //
+        // HangfireOfferExpiryReminderScheduler enqueues with TimeSpan.Zero when the computed "N days before expiry"
+        // fire-time is already past — i.e. for an offer sent INSIDE the reminder lead window, Hangfire may start the
+        // job the instant Schedule() returns. Scheduling before the commit meant that job could read the offer row
+        // in its pre-send state (still Draft) and take the wrong branch, and the candidate's expiry warning was then
+        // silently never sent. Committing first means any job that fires immediately sees a row that is already Sent.
+        //
+        // The job ids are persisted by the SECOND save below. They are bookkeeping for cancellation
+        // (respond/withdraw/supersede) and are not read by the jobs themselves, so a job that fires between the two
+        // saves still behaves correctly.
+        offer.ReminderJobId = ScheduleExpiry(offer);
+
+        // ISSUE-262 / FR-7/AC-4: the "N days before expiry" reminder nudge (no-op if the seam is absent — tests).
+        // Stored on a SEPARATE field so cancelling the reminder never clobbers the expiry job.
+        offer.ExpiryReminderJobId = ScheduleExpiryReminder(offer);
+
+        if (offer.ReminderJobId is not null || offer.ExpiryReminderJobId is not null)
+            await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
             "Offer sent. OfferId={OfferId}, ExpiryDate={ExpiryDate}, ReminderJobId={ReminderJobId}, " +
@@ -593,8 +605,16 @@ public sealed class OfferService : IOfferService
                 .Select(a => a.Email)
                 .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
 
-            await _notifications.NotifyOfferAsync(
+            // BUG-530: the seam reports a failed dispatch now; log it rather than discard it. Not retried here —
+            // the offer write is already committed and this runs on the request path. The RETRYING callers are the
+            // Hangfire jobs (OfferExpiryReminderJob / OfferExpiryJob), which fail their run on a failed Result.
+            var outcome = await _notifications.NotifyOfferAsync(
                 eventType, offer.Id, offer.ApplicantId, offer.VacancyId, applicantEmail, cancellationToken);
+            if (outcome.IsFailure)
+                _logger.LogWarning(
+                    "Offer notification did not fully dispatch (non-fatal). EventType={EventType}, " +
+                    "OfferId={OfferId}, TenantId={TenantId}, Error={Error}",
+                    eventType, offer.Id, _tenantContext.TenantId, outcome.Error);
         }
         catch (Exception ex)
         {

@@ -1,4 +1,5 @@
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Common.Models;
 using Microsoft.Extensions.Logging;
 
 namespace HRM.Infrastructure.Services;
@@ -20,7 +21,7 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
         _logger = logger;
     }
 
-    public Task NotifyApplicationReceivedAsync(
+    public Task<Result> NotifyApplicationReceivedAsync(
         Guid applicantId,
         Guid vacancyId,
         string applicantEmail,
@@ -31,10 +32,10 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
             "Notification event {EventType} for applicant {ApplicantId} on vacancy {VacancyId}: confirmation to {Email} (ref {Ref})",
             "application-received", applicantId, vacancyId, applicantEmail, applicationReferenceNumber);
 
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
-    public Task NotifyNewApplicationAsync(
+    public Task<Result> NotifyNewApplicationAsync(
         Guid applicantId,
         Guid vacancyId,
         Guid? hiringManagerEmployeeId,
@@ -44,10 +45,10 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
             "Notification event {EventType} for vacancy {VacancyId}: new application {ApplicantId} -> hiring manager {HiringManagerEmployeeId}",
             "new-application", vacancyId, applicantId, hiringManagerEmployeeId);
 
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
-    public Task NotifyStageChangedAsync(
+    public Task<Result> NotifyStageChangedAsync(
         Guid applicantId,
         Guid vacancyId,
         string applicantEmail,
@@ -59,10 +60,10 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
             "Notification event {EventType} for applicant {ApplicantId} on vacancy {VacancyId}: stage {From} -> {To} (notify {Email})",
             "stage-changed", applicantId, vacancyId, fromStage, toStage, applicantEmail);
 
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
-    public Task NotifyInterviewAsync(
+    public Task<Result> NotifyInterviewAsync(
         string eventType,
         Guid interviewId,
         Guid applicantId,
@@ -76,10 +77,10 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
             eventType, interviewId, applicantId, vacancyId, applicantEmail,
             interviewerEmployeeIds.Count, string.Join(", ", interviewerEmployeeIds));
 
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
-    public Task NotifyInterviewReminderAsync(
+    public Task<Result> NotifyInterviewReminderAsync(
         Guid interviewId,
         Guid applicantId,
         Guid vacancyId,
@@ -92,10 +93,10 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
             "interview-reminder", interviewId, applicantId, vacancyId, applicantEmail,
             interviewerEmployeeIds.Count, string.Join(", ", interviewerEmployeeIds));
 
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
-    public Task NotifyScorecardSubmittedAsync(
+    public Task<Result> NotifyScorecardSubmittedAsync(
         Guid scorecardId,
         Guid interviewId,
         Guid applicantId,
@@ -107,10 +108,10 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
             "Notification event {EventType} for scorecard {ScorecardId} on interview {InterviewId} (applicant {ApplicantId}, vacancy {VacancyId}): interviewer {InterviewerEmployeeId} submitted -> notify recruiter",
             "scorecard-submitted", scorecardId, interviewId, applicantId, vacancyId, interviewerEmployeeId);
 
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 
-    public Task NotifyOfferAsync(
+    public Task<Result> NotifyOfferAsync(
         string eventType,
         Guid offerId,
         Guid applicantId,
@@ -122,6 +123,6 @@ public sealed class LogOnlyRecruitmentNotificationService : IRecruitmentNotifica
             "Notification event {EventType} for offer {OfferId} (applicant {ApplicantId}, vacancy {VacancyId}): notify applicant {Email}",
             eventType, offerId, applicantId, vacancyId, applicantEmail);
 
-        return Task.CompletedTask;
+        return Task.FromResult(Result.Success());
     }
 }
