@@ -26,11 +26,11 @@
 
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
-| BUG | 48 | 168 | 216 |
-| ISSUE | 187 | 296 | 483 |
+| BUG | 49 | 168 | 217 |
+| ISSUE | 191 | 296 | 487 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **262** | **466** | **728** |
+| **TOTAL** | **267** | **466** | **733** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -335,6 +335,68 @@
 - **Why MED:** the payload is real email (`DependencyInjection.cs:378`), the failure is silent, and it reaches candidates directly. Initially filed LOW on the false premise that recruitment notifications were a log-only seam — see `ISSUE-531`.
 - **Suggested direction (NOT applied):** move **both** offer job schedules to after `SaveChangesAsync`.
 - **Found:** 2026-09-07, out-of-lane while fixing `ISSUE-116`.
+
+
+### BUG-536 — the bank-advice EXPORT serves full unmasked account numbers to a permission the catalogue says is not trusted with them, and writes no audit row
+
+- **Type / Severity / Status:** BUG · **HIGH** (latent today; live the day capture ships) · OPEN
+- **Layer:** BE / security (PII exposure + missing audit)
+- **Module / US / TC:** Payroll · US-PAY-009 / US-RPT-003 AC-4 · TC-PAY-009-02, TC-PAY-009-08
+- **Title:** `GET /api/v1/payroll/reports/{reportType}/export` is gated by `[RequirePermission("Payroll.Export")]` (`PayrollReportsController.cs:191`) and, for `BankAdvice`, calls `BuildBankAdviceReportAsync(..., masked: false, ...)` (`PayrollReportService.cs:250`) — a downloadable file carrying **full account numbers**. **HR Officer holds `Payroll.Export`** (`PermissionCatalog.cs:751`).
+- **The codebase contradicts itself in its own words.** `PermissionCatalog.cs:200-202`, on `Payroll.ViewSensitive`:
+  > "Held by Tenant Owner / Tenant Admin / HR Manager ONLY — **deliberately NOT HR Officer** (who generates/exports reports via `Payroll.Export` but **is not trusted with unmasked PII**)"
+  and `PayrollReportsController.cs:187`, on the export:
+  > "For BankAdvice the file carries **FULL account numbers** (BR-2)."
+  Both statements are deliberate, both are documented, and they cannot both hold. Either the catalogue's separation-of-duties rationale is wrong, or the export gate is.
+- **Audit asymmetry, measured:** the audited reveal path (`RevealBankAdviceAsync`, `:150`) writes `PayrollAuditAction.PayrollReportViewSensitive` **before** returning — 4 audit references in that method. The export path has **0**. So the *harder* route to unmasked PII is logged and the *easier* one is not: an HR Officer can download every account number in the tenant and leave **no trace** on the sensitive-read trail that exists precisely to record such access.
+- **Why HIGH despite being latent:** no production row currently holds a bank value, because **no capture API exists** (`ISSUE-523`). But that is exactly what `US-CHR-014` (net-new, storied 2026-09-07) builds. **This finding is a precondition of that story, not a follow-up** — shipping capture first converts a documented contradiction into a live bulk-PII exposure with no audit trail, and the exposure would then be *retroactive* over every row captured before it is fixed.
+- **Related but distinct:** `DataExportController.cs:33` (`Tenant.ExportData`) also emits `BankAccountNumber` in full, and that one is **deliberate and test-pinned** (`ExportSensitiveFieldsTests.cs:31` — "PII — must be EXPORTABLE (FR-8)"). Do not "fix" that by symmetry without a decision; a full-tenant data export is a different consent surface from a routine payroll report.
+- **Needs a decision, not just a fix.** Three shapes, and they are not equivalent: (a) mask the export unless the caller also holds `Payroll.ViewSensitive` — safest, but may break a real bank-submission workflow that legitimately needs the full file; (b) keep it unmasked but require `Payroll.ViewSensitive` **and** audit it, aligning with the reveal path; (c) accept it and correct the catalogue comment, which at minimum stops the code asserting something false. **(b) is the recommendation** — it makes the two unmasked routes consistent and closes the audit gap without removing a capability payroll operations may depend on.
+- **Found:** 2026-09-07, out-of-lane while researching `ENH-018`/`ISSUE-523` for the `US-CHR-014` story. Verified independently: gate at `PayrollReportsController.cs:191`, `masked: false` at `PayrollReportService.cs:250`, HR Officer grant at `PermissionCatalog.cs:751`, audit counts 0 (export) vs 4 (reveal).
+
+
+### ISSUE-537 — the raw-SQL tenant-isolation semgrep rule misses two of the four shapes it needs to cover
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** INFRA / static analysis
+- **Title:** `.semgrep/tenant-isolation.yml:42-46` (rule `hrm-raw-sql-no-tenant-predicate`, `severity: ERROR`, blocking) matches `ExecuteSqlRaw`, `ExecuteSqlRawAsync`, `ExecuteSqlInterpolated(Async)`, `FromSqlRaw` and `FromSqlInterpolated` — but **not `FromSql`** (the interpolated overload) and **not `SqlQueryRaw`**. A raw read through either of those unguarded shapes passes the gate with no tenant predicate at all.
+- **Why MED and not LOW:** this is a **blocking ERROR-severity guard whose coverage is narrower than its name implies**, which is the `ISSUE-486`/`ISSUE-492` pattern again — a check that reports safety it does not fully provide, and therefore stops anyone looking. It is a live gap **today**, independent of any materialized view.
+- **How it surfaced:** while establishing that a `performance_summary` matview would be isolated only by a hand-written predicate (`US-PRF-012`), since a matview read uses exactly these two uncovered shapes. But the gap is not conditional on that story.
+- **Suggested direction (NOT applied):** extend the pattern list to `FromSql` and `SqlQueryRaw`, then run it across `src/backend` and triage whatever it newly catches — the existing raw-SQL census (`AuditLogService.cs:253`, `FieldEncryptionMaintenanceService.cs:249/258/285/301`) all carry hand-written `tenant_id` predicates, so the expected new-catch count is low.
+- **Found:** 2026-09-07, out-of-lane while authoring the T4 parked-half stories.
+
+
+### ISSUE-538 — `Employee.cs:183-185` documents a capture path that has never existed
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** BE (docs-in-code)
+- **Title:** The bank-details comment block states the columns are "nullable and **populated elsewhere**". There is no elsewhere: an exhaustive search finds the only code that ever sets `BankName`/`BankBranchCode`/`BankAccountNumber` is the test fixture at `PayrollReportIntegrationTests.cs:269`.
+- **Why it is worth an id:** it is the same class as `ISSUE-531` (the stale "log-only seam" doc that produced two wrong engineering judgements in one session) — a comment asserting a capability that does not exist, positioned exactly where someone verifying the feature would read it and stop looking. It is also why `ENH-018` was filed as "seed the data" rather than "there is no way to enter the data".
+- **Suggested direction (NOT applied):** correct it as part of `US-CHR-014`, which is what makes "populated elsewhere" true.
+- **Found:** 2026-09-07, out-of-lane while researching `ENH-018`.
+
+
+### ISSUE-539 — `OfferService.ExpiryReminderDaysBefore` is a bare const with no configuration read at all
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Recruitment · US-REC-007 FR-7
+- **Title:** `OfferService.cs:51` hardcodes `ExpiryReminderDaysBefore = 3`, used at `:551-552`. `OfferService` injects **no `IConfiguration` at all**, so unlike its interview sibling — which at least reads the app-global `Recruitment:InterviewReminderLeadHours` (`InterviewService.cs:474`) — this value is not tunable even instance-wide. `PipReminderService.cs:25` (`ReminderLeadDays = 3`) is a third instance of the same shape.
+- **Deliberately out of scope of `US-REC-011`** (per-tenant interview lead time): different unit (days vs hours), different entity, and the const's own docstring calls tenant-configurability "a SEPARATE concern … intentionally NOT built here". Filed so it does not live only in a story paragraph.
+- **Found:** 2026-09-07, out-of-lane while authoring `US-REC-011`.
+
+
+### ISSUE-540 — three stale claims in the RLS documentation and ledgers, all pointing the same wrong way
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** docs
+- **Title:** `Rls:Enabled` **ships `true`** (`appsettings.json:48-50`); only `appsettings.Development.json:14-16` overrides it to `false`. Three tracked places still say otherwise or contradict themselves:
+  1. `Rls/README.md` — states the flag defaults to **false**. False since PR #476 (`b4c61945`).
+  2. `docs/BA/STATUS.md:297` — "committed OFF", directly contradicting `:200` ("committed **ON** — corrected 2026-08-18; this line said 'committed OFF' and had been stale since PR #476"). The correction was applied to one line and not the other.
+  3. `docs/BA/platform/US-PLT-002.md` frontmatter — still `status: draft` although STATUS.md:111 records the code as complete and proven on real Postgres, with only the ops prod flip outstanding.
+- **Why MED:** "RLS is dormant" was repeated as fact **by the orchestrator throughout the 2026-09-07 session** and used as load-bearing reasoning for parking `ISSUE-129`'s materialized view — a decision that happened to be right, but for a reason that was wrong. A ledger that contradicts itself on whether a security control is ON is worse than one that is merely silent.
+- **Suggested direction (NOT applied):** correct all three; make the README point at `appsettings.json` rather than restating the value, so it cannot drift again.
+- **Found:** 2026-09-07, out-of-lane while authoring `US-PRF-012`.
 
 
 ### ISSUE-535 — `TC-PRF-ISO-028`'s per-tenant refresh-job arm can now never pass, because the job it tests was deliberately refused
