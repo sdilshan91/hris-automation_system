@@ -47,3 +47,4 @@
 - [Design-time migration env recipe](reference-design-time-migration-env.md) — dotnet-ef boots Program.cs; needs a REAL PEM + a hyphen-free Encryption key id passed via `env`, not `export`
 - [Statutory-rule normalization + rate precision](reference-statutory-rule-normalization-precision.md) — country_code compare asymmetry (write/index/precheck/resolver), numeric(5,2) rate scale; the InMemory statutory "pipeline" runs NO validators
 - [Review-signoff agreed actions are API-only](reference-review-signoff-agreed-actions.md) — FE keeps actions inside the notes BODY; the innerHTML sink renders Body, not the action rows (ISSUE-121 premise fix)
+- [Recommendation/performance write audits (ISSUE-149a)](reference-recommendation-write-audit.md) — PayrollAuditAction is the shared catalog; staged Log() for writes, LogAndSaveAsync for reads; comp figures never enter audit_log

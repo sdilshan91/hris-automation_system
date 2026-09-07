@@ -60,6 +60,15 @@ public static class PayrollAuditAction
     // is queryable together. The After JSON NAMES the accessed fields but stores NO values.
     public const string PayslipViewSensitive = "Payslip.ViewSensitive";
     public const string RecommendationViewSensitive = "Recommendation.ViewSensitive";
+    // ISSUE-149(a) — compensation-recommendation WRITE audits (US-PRF-010). Merely LOOKING at a
+    // recommendation was audited while creating, overriding, submitting and deciding one left NO central
+    // trail at all. Same "{Resource}.{Verb}" catalog convention as the payroll-run lifecycle above; the
+    // Approved/Rejected pair deliberately mirrors PayrollRun.Approved/PayrollRun.Rejected.
+    public const string RecommendationCreated = "Recommendation.Created";
+    public const string RecommendationOverridden = "Recommendation.Overridden";
+    public const string RecommendationSubmitted = "Recommendation.Submitted";
+    public const string RecommendationApproved = "Recommendation.Approved";
+    public const string RecommendationRejected = "Recommendation.Rejected";
     // ISSUE-293 (Core-HR PII reveal): an authorized (Employee.View.All) unmask of an employee's national ID.
     // Same ".ViewSensitive" suffix so every PII-access audit is queryable together. The After JSON NAMES the
     // accessed field ("nationalId") but stores NO value.
