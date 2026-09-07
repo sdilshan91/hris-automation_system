@@ -429,6 +429,31 @@ next file lands silently invisible to every scanner, including the three guards 
 ⚠ `ISSUE-147` and `ISSUE-149(b)` touch `RecommendationService.cs`, **which F3 is editing now.** Sequence
 after F3 merges.
 
+## ▶ T4 VERIFICATION OUTCOMES — 2026-09-07
+
+All 13 T4 items verified against `src/` before any code was written, because the tier's own premise
+("residual is smaller than filed") is exactly the kind of claim that wastes effort when trusted.
+**The queue's own notes were wrong or understated on 6 of 13.** That verification, not the code, was
+the bulk of T4's value.
+
+| item | outcome |
+|---|---|
+| `ENH-011` | **ALREADY DONE — closed.** Note said "~80% stale"; it is 100%. All three sub-claims false (`c2cc333b`, #465). |
+| `ENH-012` | **(a) ALREADY DONE** (`63f502a5` + `69447b82`); (b) and (c) open. **The queue carried NO note here** — the entry where a stale premise would have cost most. |
+| `ISSUE-100` | **STALE** — the FE was never broken, in any of the 12 performance services. Docs-only. Fixed (#678). |
+| `ISSUE-150` | **STALE — 2 of 3 claims false.** Needs a REWRITE, not work; two-thirds of the text would mislead an implementer. |
+| `ENH-001` | Note understated it: an **unfiled defect** sat inside — 4 of 5 entitlement mutations enqueued no recalc. Fixed (#679); the on-demand endpoint remains parked. |
+| `ISSUE-116` | "identical defect" is **half wrong** — the two jobs need DIFFERENT remedies (one has a marker field already, one needs a migration), and the lead-time halves are not comparable. |
+| `ISSUE-129` | Note understated by a whole piece: the **cache layer is absent too**, and there is **no materialized view anywhere in the repo** — no precedent to copy. |
+| `ENH-018` | The filed ENH is the **smaller** half. The masking is unreachable in production because **no capture API exists**, so a seed fixture would paper over that. |
+| `ENH-010` | Note is accurate but misreads what it closes: part (1) is now low-value (SMTP is off-thread); part (2) NFR-6 is untouched and **its stated blocker no longer exists** — `TenantClock` shipped. |
+| `ENH-013` | **The only note accurate as written.** |
+| `ISSUE-144(b)` / `ISSUE-149(b)` | **NOT the ISSUE-121 pattern.** Those services have no sanitizer dependency at all, so this is a posture decision, not a mechanical batch. |
+| `BUG-075` | Note correct. 2 of 3 sites fixed (#680); the third is blocked on an `image/jpg` alias decision. |
+
+**Still needing a decision before any code:** `ENH-010`(2), `ENH-012`(b), `ENH-013`(a), `ENH-018`,
+`ISSUE-116`, `ISSUE-129`, `ISSUE-144(b)`/`ISSUE-149(b)`, `BUG-075` site 3, and `ISSUE-150` (rewrite).
+
 ### T4 — Re-scope before working (residual is smaller than filed)
 
 `ENH-001`(enqueue shipped; only the on-demand endpoint remains) · `ENH-010`(SMTP already off-thread;
