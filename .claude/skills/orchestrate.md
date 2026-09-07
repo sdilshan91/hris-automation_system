@@ -26,6 +26,13 @@ Agents run locally via Claude Code and push to GitHub via MCP server.
 ### Stage 2: Development + QA (Parallel)
 After user stories are committed, launch THREE agents **in parallel using git worktrees**:
 
+> ⚠ **Worktree carve-out (rule #9, 2026-09-07).** Stage 2 is the sanctioned exception to
+> branch-only working: three agents writing genuinely disjoint paths (`src/frontend`,
+> `src/backend`, `docs/QA`). It is allowed **because those paths are nameable in advance**.
+> **Remove every worktree the same session** — `git worktree remove <path> --force` once its PR
+> merges, then `git worktree prune`. Left uncleaned, 61 worktrees reached **22 GB** and drove the
+> disk to 88% on 2026-09-07; **48 of them were dead**. Cleanup is part of the stage, not "later".
+
 2a. Launch the `frontend-dev` agent (isolation: worktree) to:
    - Read the committed user stories
    - Implement Angular 20 frontend components

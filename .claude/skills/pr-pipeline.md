@@ -7,7 +7,7 @@ user_invocable: true
 # PR pipeline (autonomous) and the merge gate
 
 > Authorized by the user on **2026-09-01**, replacing the previous "PRs are opened, not
-> auto-merged" rule. Encodes Engineering-Discipline rule #7.
+> auto-merged" rule. Encodes Engineering-Discipline rule #8.
 
 ## What is authorized
 

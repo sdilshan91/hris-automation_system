@@ -147,7 +147,10 @@ public sealed class RecommendationService : IRecommendationService
                 ManagerFlag = review?.Flag ?? ReviewFlag.None,
                 ManagerFlagName = (review?.Flag ?? ReviewFlag.None).ToString(),
                 ManagerReviewId = review?.Id,
-                Recommendation = rec is null ? null : BuildDto(rec, e, review, nameLookup),
+                // BUG-533: the workspace admits Performance.Publish.All | Performance.Review.Team, neither of
+                // which implies Payroll.ViewCompensation. Mask the nested recommendation's comp figures here,
+                // where the permission is already evaluated, so the row agrees with CompensationVisible below.
+                Recommendation = rec is null ? null : BuildDto(rec, e, review, nameLookup, CanSeeCompensation),
             };
         }).ToList();
 
@@ -161,9 +164,10 @@ public sealed class RecommendationService : IRecommendationService
             // GAP-012 / ISSUE-373: PDF is validated but its rendering is deferred, so it is deliberately NOT
             // advertised — offering a button that 500s is worse than not offering it.
             AvailableExportFormats = SupportedExportFormats,
-            // GAP-012 / ISSUE-373: a real permission check. The rows themselves still null CurrentCompensation
-            // here (that reveal lives on the audited GetAsync path), so this tells the UI whether to offer the
-            // reveal at all rather than rendering a control that will 403.
+            // GAP-012 / ISSUE-373: a real permission check, telling the UI whether to offer the reveal at all
+            // rather than rendering a control that will 403. BUG-533: this flag is now the truth rather than a
+            // claim — when it is false the rows carry NO compensation figures, on the row itself or on its
+            // nested recommendation. Until BUG-533 it read false while the payload shipped the numbers anyway.
             CompensationVisible = CanSeeCompensation,
             RatingScaleMax = cycle.RatingScaleMax,
             Page = page,
@@ -325,7 +329,12 @@ public sealed class RecommendationService : IRecommendationService
             cycleId, reviews.Count, created.Count, skipped, dryRun, _tenantContext.TenantId, _currentUser.Email);
 
         var nameLookup = await EmployeeNameLookupAsync(created.Select(c => c.EmployeeId), cancellationToken);
-        var dtos = created.Select(c => BuildDto(c, nameLookup.GetValueOrDefault(c.EmployeeId), null, nameLookup)).ToList();
+        // BUG-533: auto-generate is HR-only (Performance.Publish.All), which an HR Officer holds WITHOUT
+        // Payroll.ViewCompensation. The generated suggestions carry rule-derived BonusPercent/IncrementPercent,
+        // so they are masked on the same rule as every other read.
+        var dtos = created
+            .Select(c => BuildDto(c, nameLookup.GetValueOrDefault(c.EmployeeId), null, nameLookup, CanSeeCompensation))
+            .ToList();
 
         return Result<AutoGenerateResultDto>.Success(new AutoGenerateResultDto
         {
@@ -1283,7 +1292,11 @@ public sealed class RecommendationService : IRecommendationService
             ? await _dbContext.ManagerReviews.AsNoTracking().FirstOrDefaultAsync(r => r.Id == mrId, ct)
             : null;
         var nameLookup = await EmployeeNameLookupAsync(ApproverEmployeeIds(rec), ct);
-        return BuildDto(rec, employee, review, nameLookup);
+        // BUG-533: unchanged behaviour, stated explicitly. Callers are GetAsync — which has ALREADY refused a
+        // caller without Payroll.ViewCompensation with a 403, so CanSeeCompensation is provably true here — and
+        // ReloadAsync, the echo of a write the caller just performed. Narrowing the write-path echo is a
+        // separate decision (it would change what an approver sees after deciding), not part of BUG-533.
+        return BuildDto(rec, employee, review, nameLookup, includeCompensation: true);
     }
 
     private static IEnumerable<Guid> ApproverEmployeeIds(Recommendation rec) =>
@@ -1298,8 +1311,26 @@ public sealed class RecommendationService : IRecommendationService
             .ToDictionaryAsync(e => e.Id, ct);
     }
 
+    /// <summary>
+    /// Projects a <see cref="Recommendation"/> onto its DTO.
+    ///
+    /// BUG-533: <paramref name="includeCompensation"/> is NOT optional on purpose. This projection is reached by
+    /// the audited reveal path (<see cref="GetAsync"/>, which 403s without <c>Payroll.ViewCompensation</c>) AND by
+    /// the workspace / auto-generate paths, which are gated only on <c>Performance.Publish.All</c> or
+    /// <c>Performance.Review.Team</c>. An HR Officer (Publish.All, no ViewCompensation) therefore read the whole
+    /// org's bonus and increment figures, and any line manager read their reports', simply by calling the
+    /// workspace instead of the detail endpoint. Every caller must now state its answer; there is no fail-open
+    /// default to inherit by accident.
+    ///
+    /// The fields are NULLED, not omitted: the DTO shape stays byte-identical, so no OpenAPI regeneration and no
+    /// frontend change is needed, and <c>RecommendationWorkspaceDto.CompensationVisible</c> already carries the
+    /// signal the UI needs. <see cref="RecommendationDto.BudgetCharge"/> is masked with them because
+    /// <see cref="Recommendation.BudgetCharge"/> is <c>BonusAmount ?? IncrementAmount ?? 0m</c> — leaving it
+    /// would re-expose the exact figure the other five just hid.
+    /// </summary>
     private RecommendationDto BuildDto(
-        Recommendation rec, Employee? employee, ManagerReview? review, Dictionary<Guid, Employee> nameLookup)
+        Recommendation rec, Employee? employee, ManagerReview? review, Dictionary<Guid, Employee> nameLookup,
+        bool includeCompensation)
     {
         return new RecommendationDto
         {
@@ -1319,17 +1350,21 @@ public sealed class RecommendationService : IRecommendationService
             CurrentTitle = rec.CurrentTitle,
             TargetTitle = rec.TargetTitle,
             EffectiveDate = rec.EffectiveDate,
-            CurrentCompensation = rec.CurrentCompensation,
-            BonusAmount = rec.BonusAmount,
-            BonusPercent = rec.BonusPercent,
-            IncrementAmount = rec.IncrementAmount,
-            IncrementPercent = rec.IncrementPercent,
+            // BUG-533: the five NFR-3 sensitive figures. Null unless the caller holds Payroll.ViewCompensation.
+            CurrentCompensation = includeCompensation ? rec.CurrentCompensation : null,
+            BonusAmount = includeCompensation ? rec.BonusAmount : null,
+            BonusPercent = includeCompensation ? rec.BonusPercent : null,
+            IncrementAmount = includeCompensation ? rec.IncrementAmount : null,
+            IncrementPercent = includeCompensation ? rec.IncrementPercent : null,
             TrainingCourse = rec.TrainingCourse,
             CustomTypeLabel = rec.CustomTypeLabel,
             Justification = rec.Justification,
             AutoGenerationRationale = rec.AutoGenerationRationale,
             BudgetId = rec.BudgetId,
-            BudgetCharge = rec.BudgetCharge,
+            // BUG-533: Recommendation.BudgetCharge is `BonusAmount ?? IncrementAmount ?? 0m` — an exact copy of a
+            // figure masked above, so it has to be masked with them or the mask is cosmetic. Zeroed rather than
+            // made nullable: `decimal` keeps the wire shape identical (no OpenAPI regeneration).
+            BudgetCharge = includeCompensation ? rec.BudgetCharge : 0m,
             SubmittedAt = rec.SubmittedAt,
             DecidedAt = rec.DecidedAt,
             FinalScore = review?.FinalScore,
