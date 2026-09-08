@@ -44,12 +44,14 @@ public sealed class CycleValidatorTests
         DateTime? end = null,
         ParticipantScopeInput? scope = null,
         int ratingScaleMax = 5,
-        int selfWeightPercent = 30)
+        int selfWeightPercent = 30,
+        int? signoffAutoCloseDays = null)
         => new(new CreateCycleInput(
             "FY2026 Annual", CycleType.Annual, start ?? Start, end ?? End,
             phases ?? ValidPhases(), scope ?? new ParticipantScopeInput(ParticipantScopeType.AllEmployees),
             ratingScaleMax, selfWeightPercent,
-            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false));
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            SignoffAutoCloseDays: signoffAutoCloseDays));
 
     // ── Happy path ───────────────────────────────────────────────────────
 
@@ -265,6 +267,61 @@ public sealed class CycleValidatorTests
             Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
             RatingScaleMax: null, SelfWeightPercent: null));
         _update.TestValidate(cmd).ShouldHaveValidationErrorFor("Phases");
+    }
+
+    // ── ENH-012 (US-PRF-006 BR-3): sign-off auto-close window bounds ─────
+
+    [Theory]
+    [InlineData(0)]      // "off"? no — see AppraisalCycle.MinSignoffAutoCloseDays. Rejected, not reinterpreted.
+    [InlineData(-1)]
+    [InlineData(366)]
+    public void Create_SignoffAutoCloseDays_OutOfRange_HasNamedErrorCode(int days)
+    {
+        var result = _create.TestValidate(CreateCmd(signoffAutoCloseDays: days));
+
+        result.ShouldHaveValidationErrorFor(x => x.Input.SignoffAutoCloseDays)
+            .WithErrorCode("invalid_signoff_autoclose_days");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(365)]
+    public void Create_SignoffAutoCloseDays_InRange_IsValid(int days)
+    {
+        _create.TestValidate(CreateCmd(signoffAutoCloseDays: days)).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Create_SignoffAutoCloseDays_Omitted_IsValid()
+    {
+        // Omitted ⇒ the cycle takes the 7-day column default; the rule must not fire on null.
+        _create.TestValidate(CreateCmd(signoffAutoCloseDays: null)).ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void Update_SignoffAutoCloseDays_Zero_HasNamedErrorCode()
+    {
+        // ENH-012 0-semantics, pinned on the tenant-facing surface: 0 is NOT "disabled" and NOT "immediate"
+        // here — it is refused, so an HR admin who meant "turn it off" never silently gets "close everything".
+        var cmd = new UpdateCycleCommand(Guid.NewGuid(), new UpdateCycleInput(
+            "FY2026 Annual", Start, End, ValidPhases(),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null, Scope: null, SignoffAutoCloseDays: 0));
+
+        _update.TestValidate(cmd).ShouldHaveValidationErrorFor(x => x.Input.SignoffAutoCloseDays)
+            .WithErrorCode("invalid_signoff_autoclose_days");
+    }
+
+    [Fact]
+    public void Update_SignoffAutoCloseDays_InRange_IsValid()
+    {
+        var cmd = new UpdateCycleCommand(Guid.NewGuid(), new UpdateCycleInput(
+            "FY2026 Annual", Start, End, ValidPhases(),
+            Is360Enabled: false, IsCalibrationEnabled: false, IsAnonymousFeedback: false,
+            RatingScaleMax: null, SelfWeightPercent: null, Scope: null, SignoffAutoCloseDays: 14));
+
+        _update.TestValidate(cmd).ShouldNotHaveAnyValidationErrors();
     }
 
     // ── Clone validator ──────────────────────────────────────────────────

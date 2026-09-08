@@ -2,6 +2,7 @@ using FluentValidation;
 using HRM.Application.Features.Performance.Commands;
 using HRM.Application.Features.Performance.DTOs;
 using HRM.Domain.Enums;
+using HRM.Domain.Performance;
 
 namespace HRM.Application.Features.Performance.Validators;
 
@@ -122,6 +123,18 @@ public sealed class CreateCycleCommandValidator : AbstractValidator<CreateCycleC
             .WithMessage("At least one employee is required for a custom-list cycle.")
             .When(x => x.Input.Scope is not null);
 
+
+        // ENH-012 (US-PRF-006 BR-3): the sign-off auto-close window is tenant-configurable but bounded.
+        // 0 is REJECTED on purpose — see AppraisalCycle.MinSignoffAutoCloseDays. Named error code so the FE
+        // can surface a specific message rather than a generic 400.
+        RuleFor(x => x.Input.SignoffAutoCloseDays)
+            .InclusiveBetween(AppraisalCycle.MinSignoffAutoCloseDays, AppraisalCycle.MaxSignoffAutoCloseDays)
+            .WithMessage(
+                $"The sign-off auto-close window must be between {AppraisalCycle.MinSignoffAutoCloseDays} and "
+                + $"{AppraisalCycle.MaxSignoffAutoCloseDays} days.")
+            .WithErrorCode("invalid_signoff_autoclose_days")
+            .When(x => x.Input.SignoffAutoCloseDays.HasValue);
+
         CyclePhaseRules.Apply(this, x => x.Input.Phases, x => x.Input.StartDate, x => x.Input.EndDate,
             x => x.Input.IsCalibrationEnabled);
     }
@@ -159,6 +172,18 @@ public sealed class UpdateCycleCommandValidator : AbstractValidator<UpdateCycleC
                        (s.EmployeeIds is not null && s.EmployeeIds.Count > 0))
             .WithMessage("At least one employee is required for a custom-list cycle.")
             .When(x => x.Input.Scope is not null);
+
+
+        // ENH-012 (US-PRF-006 BR-3): the sign-off auto-close window is tenant-configurable but bounded.
+        // 0 is REJECTED on purpose — see AppraisalCycle.MinSignoffAutoCloseDays. Named error code so the FE
+        // can surface a specific message rather than a generic 400.
+        RuleFor(x => x.Input.SignoffAutoCloseDays)
+            .InclusiveBetween(AppraisalCycle.MinSignoffAutoCloseDays, AppraisalCycle.MaxSignoffAutoCloseDays)
+            .WithMessage(
+                $"The sign-off auto-close window must be between {AppraisalCycle.MinSignoffAutoCloseDays} and "
+                + $"{AppraisalCycle.MaxSignoffAutoCloseDays} days.")
+            .WithErrorCode("invalid_signoff_autoclose_days")
+            .When(x => x.Input.SignoffAutoCloseDays.HasValue);
 
         CyclePhaseRules.Apply(this, x => x.Input.Phases, x => x.Input.StartDate, x => x.Input.EndDate,
             x => x.Input.IsCalibrationEnabled);

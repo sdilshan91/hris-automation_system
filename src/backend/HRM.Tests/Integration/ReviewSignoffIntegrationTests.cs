@@ -28,6 +28,7 @@ using HRM.Domain.Performance;
 using HRM.Infrastructure.Persistence;
 using HRM.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -55,6 +56,17 @@ public sealed class ReviewSignoffIntegrationTests
             string? logoUrl = null, string? primaryColor = null) => TenantId = tenantId;
         public void SetSystemContext() { }
     }
+
+    /// <summary>ENH-012: no override key set — the production shape (every committed appsettings omits it).</summary>
+    private static readonly IConfiguration EmptyConfiguration =
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
+
+    /// <summary>ENH-012: builds a configuration whose ONLY key is the auto-close window override.</summary>
+    private static IConfiguration OverrideConfiguration(string value) =>
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [ReviewSignoffAutoCloseService.OverrideConfigKey] = value,
+        }).Build();
 
     private AppDbContext Db(Guid tenantId)
     {
@@ -92,13 +104,14 @@ public sealed class ReviewSignoffIntegrationTests
             NullLogger<ReviewSignoffService>.Instance);
     }
 
-    private ReviewSignoffAutoCloseService AutoCloseService(Guid tenantId)
+    private ReviewSignoffAutoCloseService AutoCloseService(Guid tenantId, IConfiguration? configuration = null)
     {
         var ctx = new MutableTenantContext { TenantId = tenantId };
         var options = new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(_dbName).Options;
         var db = new AppDbContext(options, ctx);
         return new ReviewSignoffAutoCloseService(db, ctx,
             Substitute.For<IPerformanceNotificationService>(),
+            configuration ?? EmptyConfiguration,
             NullLogger<ReviewSignoffAutoCloseService>.Instance);
     }
 
@@ -371,6 +384,111 @@ public sealed class ReviewSignoffIntegrationTests
         using var checkB = Db(_tenantB);
         (await checkB.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == b.ReportEmpId))
             .SignoffStatus.Should().Be(ReviewSignoffStatus.PendingEmployeeSignOff, "Tenant B was not swept");
+    }
+
+    // ── ENH-012 (BR-3): the PER-CYCLE window actually drives behaviour ──
+    //
+    // Both arms use a window that is NOT the 7-day default, and they push in OPPOSITE directions, so a
+    // service that ignored the cycle row and hardcoded 7 would fail one of them whichever way it leaned.
+
+    [Fact]
+    public async Task AutoClose_PerCycleWindow_LongerThanDefault_KeepsReviewOpen()
+    {
+        // 30-day window; requested 8 days ago. Past the 7-day DEFAULT, well inside this cycle's window.
+        var s = await SeedAsync(_tenantA, autoCloseDays: 30);
+        var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        await RequestAndBackdateAsync(s, requestedAt: now.AddDays(-8));
+
+        var closed = await AutoCloseService(_tenantA).AutoCloseOverdueAsync(now);
+
+        closed.Should().Be(0, "the cycle allows 30 days, not the 7-day default");
+        using var check = Db(_tenantA);
+        (await check.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == s.ReportEmpId))
+            .SignoffStatus.Should().Be(ReviewSignoffStatus.PendingEmployeeSignOff);
+    }
+
+    [Fact]
+    public async Task AutoClose_PerCycleWindow_ShorterThanDefault_ClosesReviewEarly()
+    {
+        // 3-day window; requested 4 days ago. Inside the 7-day DEFAULT, past this cycle's window.
+        var s = await SeedAsync(_tenantA, autoCloseDays: 3);
+        var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        await RequestAndBackdateAsync(s, requestedAt: now.AddDays(-4));
+
+        var closed = await AutoCloseService(_tenantA).AutoCloseOverdueAsync(now);
+
+        closed.Should().Be(1, "the cycle allows only 3 days");
+        using var check = Db(_tenantA);
+        (await check.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == s.ReportEmpId))
+            .SignoffStatus.Should().Be(ReviewSignoffStatus.NoResponse);
+        (await check.ReviewSignoffs.AsNoTracking()
+            .SingleAsync(e => e.Action == SignoffAction.AutoClosedNoResponse))
+            .Comments.Should().Contain("3 day(s)", "the audit entry records the window that was applied");
+    }
+
+    // ── ENH-012: the config override, and its documented PRECEDENCE ──────
+
+    [Fact]
+    public async Task AutoClose_ConfigOverrideOfZero_ForcesImmediateClose_AndOutranksTheCycleWindow()
+    {
+        // The cycle says 30 days and sign-off was requested THIS INSTANT: nothing about the tenant's own
+        // configuration would close this review. Override 0 = "no grace period" closes it on this sweep.
+        // This is both halves of the contract in one arm: the override wins, and 0 means immediate.
+        var s = await SeedAsync(_tenantA, autoCloseDays: 30);
+        var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        await RequestAndBackdateAsync(s, requestedAt: now);
+
+        var closed = await AutoCloseService(_tenantA, OverrideConfiguration("0"))
+            .AutoCloseOverdueAsync(now);
+
+        closed.Should().Be(1, "the override outranks the cycle's 30-day window");
+        using var check = Db(_tenantA);
+        (await check.ManagerReviews.AsNoTracking().FirstAsync(r => r.EmployeeId == s.ReportEmpId))
+            .SignoffStatus.Should().Be(ReviewSignoffStatus.NoResponse);
+        (await check.ReviewSignoffs.AsNoTracking()
+            .SingleAsync(e => e.Action == SignoffAction.AutoClosedNoResponse))
+            .Comments.Should().Contain("0 day(s)");
+    }
+
+    [Fact]
+    public async Task AutoClose_WithoutTheOverrideKey_TheSameSetupIsLeftAlone()
+    {
+        // The control for the arm above: identical seed + clock, no override key. Without this, a service
+        // that closed EVERYTHING would still pass the override test.
+        var s = await SeedAsync(_tenantA, autoCloseDays: 30);
+        var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        await RequestAndBackdateAsync(s, requestedAt: now);
+
+        var closed = await AutoCloseService(_tenantA).AutoCloseOverdueAsync(now);
+
+        closed.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AutoClose_OutOfRangeOverride_IsIgnored_AndTheCycleWindowStillApplies()
+    {
+        // A fat-fingered override must degrade to the tenant's configured behaviour, never close early.
+        var s = await SeedAsync(_tenantA, autoCloseDays: 30);
+        var now = new DateTime(2026, 6, 1, 12, 0, 0, DateTimeKind.Utc);
+        await RequestAndBackdateAsync(s, requestedAt: now.AddDays(-8));
+
+        var closed = await AutoCloseService(_tenantA, OverrideConfiguration("-1"))
+            .AutoCloseOverdueAsync(now);
+
+        closed.Should().Be(0, "a negative override is ignored, so the cycle's 30-day window still governs");
+    }
+
+    /// <summary>Requests sign-off as the manager, then back-dates the request stamp to a fixed instant.</summary>
+    private async Task RequestAndBackdateAsync(Seeded s, DateTime requestedAt)
+    {
+        var request = await Service(_tenantA, s.ManagerUserId, PermissionCatalog.Performance.ReviewTeam)
+            .RequestSignOffAsync(Notes(s.CycleId, s.ReportEmpId), "203.0.113.5");
+        request.IsSuccess.Should().BeTrue(request.ErrorCode + ": " + request.Error);
+
+        using var db = Db(_tenantA);
+        var review = await db.ManagerReviews.FirstAsync(r => r.EmployeeId == s.ReportEmpId);
+        review.SignoffRequestedAt = requestedAt;
+        await db.SaveChangesAsync();
     }
 
     // ── PDF export of the review record (AC-4/FR-6, deferred-PDF work item) ──

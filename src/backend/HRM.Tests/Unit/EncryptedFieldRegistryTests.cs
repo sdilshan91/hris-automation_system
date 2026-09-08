@@ -52,18 +52,40 @@ public sealed class EncryptedFieldRegistryTests
                 // ISSUE-293 / DF-enc-nationalid-backfill: born-encrypted, but INCLUDED in the startup back-fill
                 // as safe idempotent defence-in-depth on a PII column (no-op today; heals any residue at boot).
                 ("employees", "national_id", true),
+                // ISSUE-523: bank account number — same class of PII as national_id, on the same entity.
+                ("employees", "bank_account_number", true),
             });
     }
 
     [Fact]
-    public void StartupBackfillFields_covers_the_p34_set_plus_national_id()
+    public void StartupBackfillFields_covers_the_p34_set_plus_the_employee_pii_columns()
     {
         var backfill = EncryptedFieldRegistry.StartupBackfillFields.ToList();
 
-        backfill.Should().HaveCount(9);
+        backfill.Should().HaveCount(10);
         backfill.Should().Contain(f => f.Column == "national_id",
             "DF-enc-nationalid-backfill: national_id is now healed at boot (defence-in-depth on a PII column)");
+        backfill.Should().Contain(f => f.Column == "bank_account_number",
+            "ISSUE-523: bank_account_number is born encrypted, so the scan is a no-op today — it is included "
+            + "for the same idempotent defence-in-depth reason as national_id");
         backfill.Select(f => f.Table).Distinct().Should().BeEquivalentTo("pip", "recommendation", "employees");
+    }
+
+    [Fact]
+    public void Bank_name_and_branch_code_are_deliberately_NOT_encrypted()
+    {
+        // ISSUE-523 decision pin. A bank name and an IFSC/SWIFT-BIC branch code are PUBLIC-directory values that
+        // identify a BRANCH, not a person — neither is in the audit-log SensitiveFieldMasker deny-list that
+        // bank_account_number is in. Encrypting them would buy no confidentiality while permanently forfeiting
+        // SQL grouping/filtering by bank (how a real bank-advice file is split per sponsor bank). If a later
+        // change encrypts one of them, this test goes red so the tradeoff is re-argued rather than drifted into.
+        EncryptedFieldRegistry.Fields.Should().NotContain(f => f.Column == "bank_name");
+        EncryptedFieldRegistry.Fields.Should().NotContain(f => f.Column == "bank_branch_code");
+
+        using var db = BuildInMemoryContext();
+        var employee = db.Model.GetEntityTypes().Single(t => t.ClrType.Name == "Employee");
+        employee.FindProperty("BankName")!.GetValueConverter().Should().BeNull();
+        employee.FindProperty("BankBranchCode")!.GetValueConverter().Should().BeNull();
     }
 
     // ── 2. Registry ↔ EF model binding (every entry names a real, converter-carrying property) ──

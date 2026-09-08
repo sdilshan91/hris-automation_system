@@ -22,8 +22,10 @@ DELETE FROM user_tenant_roles utr
 DELETE FROM user_tenants WHERE tenant_id = :perf_tid;
 DELETE FROM roles        WHERE tenant_id = :perf_tid;
 
--- the synthetic perf admin user (global table) — match by exact email + home tenant
-DELETE FROM users WHERE email = 'perfadmin@perf.test' AND tenant_id = :perf_tid;
+-- the synthetic perf admin + the ISSUE-534 perfuserNNN login pool (global table) — matched by exact
+-- home tenant AND an email shape only this seed produces. refresh_tokens/user_tenants cascade off users.
+DELETE FROM users WHERE tenant_id = :perf_tid
+                    AND (email = 'perfadmin@perf.test' OR email LIKE 'perfuser%@perf.test');
 
 DELETE FROM tenants WHERE id = :perf_tid;
 
@@ -36,4 +38,5 @@ UNION ALL SELECT 'job_titles',  count(*) FROM job_titles  WHERE tenant_id = :per
 UNION ALL SELECT 'user_tenants',count(*) FROM user_tenants WHERE tenant_id = :perf_tid
 UNION ALL SELECT 'roles',       count(*) FROM roles       WHERE tenant_id = :perf_tid
 UNION ALL SELECT 'perf_user',   count(*) FROM users WHERE email='perfadmin@perf.test'
+UNION ALL SELECT 'perf_pool',   count(*) FROM users WHERE tenant_id = :perf_tid AND email LIKE 'perfuser%@perf.test'
 UNION ALL SELECT 'tenant',      count(*) FROM tenants WHERE id = :perf_tid;

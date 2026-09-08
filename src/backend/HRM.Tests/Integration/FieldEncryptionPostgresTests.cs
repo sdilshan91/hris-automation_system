@@ -4,6 +4,8 @@
 // Proves the two things InMemory cannot:
 //   1. The RAW stored column value is `enc:v1:` ciphertext (NOT the plaintext) — genuine at-rest encryption.
 //   2. The DbInitializer back-fill encrypts pre-existing plaintext and is IDEMPOTENT (a second run rewrites nothing).
+//   3. ISSUE-523: employees.bank_account_number is ciphertext at rest, its sibling bank_name/bank_branch_code
+//      are deliberately NOT, and the back-fill is a no-op on both an all-NULL and an already-encrypted row.
 //
 // Legacy plaintext rows are produced by writing through an AppDbContext built with the NO-OP encryptor over the SAME
 // database (the model-cache factory keeps the two models separate), exactly modelling a pre-P3-4 row.
@@ -14,6 +16,7 @@
 
 using System.Security.Cryptography;
 using FluentAssertions;
+using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -122,6 +125,13 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
             Status = EmployeeStatus.Active, DepartmentId = deptId, JobTitleId = jobTitleId,
             DateOfJoining = new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc),
             NationalId = "SL-CIPHER-001", // ISSUE-293: PII encrypted at rest — asserted ciphertext below
+            // ISSUE-523: bank account number is PII encrypted at rest — asserted ciphertext below. The two
+            // sibling bank columns are seeded too and asserted to remain PLAINTEXT: that is the deliberate
+            // scope boundary of ISSUE-523 (public-directory branch data stays SQL-queryable), and asserting it
+            // makes an accidental future widening of the encrypted set visible instead of silent.
+            BankAccountNumber = "SL-ACCT-4455667788",
+            BankName = "Bank of Ceylon",
+            BankBranchCode = "BCEYLKLX",
         });
         db.AppraisalCycles.Add(new AppraisalCycle
         {
@@ -183,6 +193,17 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
             var rawNationalId = await RawScalarAsync(db, "employees", "national_id", empId);
             rawNationalId.Should().StartWith("enc:v1:");
             rawNationalId.Should().NotContain("CIPHER");
+
+            // ISSUE-523: the WHOLE POINT of the finding — a round-trip through the encrypting context proves
+            // nothing about what a DBA (or a stolen backup) can read. This reads the RAW column with SQL.
+            var rawBankAccount = await RawScalarAsync(db, "employees", "bank_account_number", empId);
+            rawBankAccount.Should().StartWith("enc:v1:");
+            rawBankAccount.Should().NotContain("4455667788",
+                "the account number must not appear in the stored column in any form");
+
+            // ...and the deliberate NON-encryption of the sibling bank columns, asserted rather than assumed.
+            (await RawScalarAsync(db, "employees", "bank_name", empId)).Should().Be("Bank of Ceylon");
+            (await RawScalarAsync(db, "employees", "bank_branch_code", empId)).Should().Be("BCEYLKLX");
         }
 
         // A fresh EF read decrypts back to the originals.
@@ -197,6 +218,60 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
 
             var emp = await db.Employees.SingleAsync(e => e.Id == empId);
             emp.NationalId.Should().Be("SL-CIPHER-001"); // decrypts back on read
+            emp.BankAccountNumber.Should().Be("SL-ACCT-4455667788"); // ISSUE-523: decrypts back on read
+
+            // AccountMasking (the payslip/bank-advice masking path) still sees DECRYPTED plaintext, so the
+            // last-4 it produces are the last-4 of the real account number, not of the ciphertext.
+            AccountMasking.MaskLast4(emp.BankAccountNumber!).Should().EndWith("7788");
+        }
+    }
+
+    /// <summary>
+    /// ISSUE-523: the startup back-fill is a genuine NO-OP for <c>employees.bank_account_number</c>. Two arms,
+    /// because "no-op" means two different things and only one of them is idempotency:
+    ///
+    /// <list type="number">
+    ///   <item>An employee whose account number is NULL — which is EVERY production row today, since the column
+    ///     has no write path — is not selected by the back-fill's
+    ///     <c>WHERE col IS NOT NULL AND col NOT LIKE 'enc:v1:%'</c> predicate, so it stays NULL and no UPDATE is
+    ///     issued. This is the arm that proves the migration is safe to ship over live data.</item>
+    ///   <item>An employee written through the encrypting context is already <c>enc:v1:</c>, so the back-fill
+    ///     skips it and the stored ciphertext is BYTE-FOR-BYTE unchanged — it is never double-encrypted.</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    [Trait("TC", "TC-CHR-332")]
+    public async Task Backfill_is_a_no_op_for_bank_account_number_whether_the_row_is_null_or_already_encrypted()
+    {
+        var (encryptedEmpId, _) = await SeedFkChainAsync();   // seeded WITH a bank account (ciphertext)
+        var nullEmpId = await SeedEmployeeWithoutBankAccountAsync();
+
+        string cipherBefore;
+        await using (var db = Db(_encryptor))
+        {
+            cipherBefore = await RawScalarAsync(db, "employees", "bank_account_number", encryptedEmpId);
+            cipherBefore.Should().StartWith("enc:v1:");
+            (await NullableRawScalarAsync(db, "employees", "bank_account_number", nullEmpId)).Should().BeNull();
+        }
+
+        await using (var db = Db(_encryptor))
+        {
+            await DbInitializer.EncryptSensitiveFieldsAtRestAsync(
+                db, _encryptor, NullLogger.Instance, CancellationToken.None);
+        }
+
+        await using (var db = Db(_encryptor))
+        {
+            (await NullableRawScalarAsync(db, "employees", "bank_account_number", nullEmpId)).Should().BeNull(
+                "a NULL account number is outside the back-fill predicate — this is why shipping the encryption "
+                + "BEFORE any capture path exists makes the back-fill a provable no-op rather than a PII migration");
+
+            (await RawScalarAsync(db, "employees", "bank_account_number", encryptedEmpId)).Should().Be(cipherBefore,
+                "an already-encrypted value must never be re-encrypted by the startup back-fill");
+
+            // And it still decrypts — the back-fill did not corrupt it.
+            (await db.Employees.SingleAsync(e => e.Id == encryptedEmpId))
+                .BankAccountNumber.Should().Be("SL-ACCT-4455667788");
         }
     }
 
@@ -268,6 +343,50 @@ public sealed class FieldEncryptionPostgresTests : IAsyncLifetime
             (await RawScalarAsync(db, "pip", "reason", pipId)).Should().Be(cipherAfterFirst,
                 "an already-encrypted value must not be re-encrypted on a subsequent startup");
         }
+    }
+
+    /// <summary>
+    /// ISSUE-523: like <see cref="RawScalarAsync"/> but tolerates a NULL column value (needed to prove the
+    /// all-NULL production shape is left untouched by the back-fill).
+    /// </summary>
+    private async Task<string?> NullableRawScalarAsync(AppDbContext db, string table, string column, Guid id)
+    {
+        var sql = "SELECT " + column + " AS \"Value\" FROM " + table + " WHERE id = {0}";
+        return await db.Database.SqlQueryRaw<string?>(sql, id).SingleAsync();
+    }
+
+    /// <summary>
+    /// ISSUE-523: an employee with NO bank account number — the shape of EVERY production row today, since the
+    /// column has no write path. Reuses the department/job-title created by <see cref="SeedFkChainAsync"/>'s
+    /// caller only in spirit: it creates its own FK parents so the two rows never collide on the per-tenant
+    /// unique indexes.
+    /// </summary>
+    private async Task<Guid> SeedEmployeeWithoutBankAccountAsync()
+    {
+        var deptId = Guid.NewGuid();
+        var jobTitleId = Guid.NewGuid();
+        var empId = Guid.NewGuid();
+        var suffix = empId.ToString("N")[..6];
+
+        await using var db = Db(_encryptor);
+        db.Departments.Add(new Department
+        {
+            Id = deptId, TenantId = _tenantId, Name = "NoBank " + suffix, Code = "NOBK-" + suffix, IsActive = true,
+        });
+        db.JobTitles.Add(new JobTitle
+        {
+            Id = jobTitleId, TenantId = _tenantId, TitleName = "Analyst", IsActive = true,
+        });
+        db.Employees.Add(new Employee
+        {
+            Id = empId, TenantId = _tenantId, EmployeeNo = "NOBK-" + suffix,
+            FirstName = "Grace", LastName = "Hopper", Email = "nobank" + suffix + "@t.com",
+            Status = EmployeeStatus.Active, DepartmentId = deptId, JobTitleId = jobTitleId,
+            DateOfJoining = new DateTime(2021, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            // BankAccountNumber deliberately left NULL.
+        });
+        await db.SaveChangesAsync();
+        return empId;
     }
 
     /// <summary>Minimal resolved-tenant context for the raw test AppDbContext.</summary>
