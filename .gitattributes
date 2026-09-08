@@ -22,3 +22,4 @@
 docs/QA/TEST-FINDINGS.md            merge=union
 docs/QA/TEST-FINDINGS-RESOLVED.md   merge=union
 .claude/agent-memory/**/MEMORY.md   merge=union
+graphify-out/graph.json merge=graphify

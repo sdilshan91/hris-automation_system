@@ -221,8 +221,17 @@ public sealed class LedgerTraceabilityTests
     ///     already warns about. Systemic findings (BUG-003) carry sub-entries, so the whole ID family
     ///     moves together or not at all.
     ///  2. **No live finding may sit in the archive.** OPEN/DEFERRED work in an append-only archive is
-    ///     work nobody will look at again. The reverse (a resolved entry lingering in the working file)
-    ///     is harmless and deliberately NOT asserted — the split errs toward visibility.
+    ///     work nobody will look at again.
+    ///  3. **Terminal findings in the WORKING file are RATCHETED (ISSUE-541, 2026-09-08).** This reverses
+    ///     an earlier deliberate choice recorded here — "the reverse is harmless and deliberately NOT
+    ///     asserted; the split errs toward visibility". It is not harmless, and the cost was measured:
+    ///     scoping a survey/audit backfill off this file sized it at 267 entries / 252 missing when the
+    ///     true live target was ~219 / 208 — a ~40% overstatement that would have sent a session to
+    ///     re-verify already-closed findings. The split exists precisely so agents do not read past
+    ///     finished work (1.9 MB → 422 KB); every terminal entry left behind erodes that.
+    ///     Asserted as a ratchet, not as zero, because <c>/verify-fix</c> is the ONLY authorised mover
+    ///     working → archive. Relocating them here would cross the report-only boundary. So the count
+    ///     may FALL and must never RISE — which stops new drift today without usurping that boundary.
     /// </summary>
     [Fact]
     public void TheSplitLedger_KeepsEachIdInOneFile_AndNoLiveFindingInTheArchive()
@@ -255,6 +264,28 @@ public sealed class LedgerTraceabilityTests
             "TEST-FINDINGS-RESOLVED.md is an append-only archive of terminal findings; a live one filed "
             + "there is work the team will never see again. Move it back to TEST-FINDINGS.md. Stranded: {0}",
             string.Join(", ", stranded));
+
+        // ISSUE-541 ratchet. Terminal entries still sitting in the WORKING file. This number may only go
+        // DOWN — lower it whenever /verify-fix relocates a family. Measured 31 on 2026-09-08 by this detector
+        // itself (a looser match than a hand count: it also catches "PARTIALLY RESOLVED"). Raising it means drift was accepted
+        // instead of fixed, which is how ten status spellings accumulated before the 2026-09-01 normalisation.
+        const int TerminalInWorkingFileBaseline = 31;
+
+        var terminal = new[] { "RESOLVED", "WONTFIX", "RETRACTED", "DUPLICATE", "CLOSED", "OBSOLETE" };
+        var lingering = Regex.Split(working, @"\n### ")
+            .Select(b => (id: Regex.Match(b, @"^((?:BUG|ISSUE|ENH|GAP)-\d+)"),
+                          st: Regex.Match(b, @"\*\*Type / Severity / Status:\*\*[^\n]*")))
+            .Where(x => x.id.Success && x.st.Success
+                        && terminal.Any(t => x.st.Value.ToUpperInvariant().Contains(t)))
+            .Select(x => x.id.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal)   // BUG-003 carries family sub-entries; count the id once
+            .ToList();
+
+        lingering.Count.Should().BeLessThanOrEqualTo(TerminalInWorkingFileBaseline,
+            "terminal findings in the working file inflate every measurement taken off it — this backlog was "
+            + "sized 40% too high because of exactly this. The baseline may only DECREASE, and only via "
+            + "/verify-fix, which is the sole authorised mover. Currently {0}: {1}",
+            lingering.Count, string.Join(", ", lingering.Take(40)));
     }
 
     /// <summary>
