@@ -27,10 +27,10 @@
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
 | BUG | 50 | 168 | 218 |
-| ISSUE | 220 | 296 | 516 |
+| ISSUE | 221 | 296 | 517 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **297** | **466** | **763** |
+| **TOTAL** | **298** | **466** | **764** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -4356,6 +4356,27 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **AUDIT (2026-09-08):** the early-allow — **CONFIRMED** at `worktree-fence.py:90-91`, with its rationale at `:19-20`; the Bash matcher omission — **CONFIRMED** in `settings.json`. **The failure is not hypothetical: it occurred during this backfill on 2026-09-07.** After a commit, the shell's cwd reverted to the main checkout and roughly 8 subsequent edits landed on `test/local-subdomains` instead of the intended worktree branch; nothing fired. The edits were made via `cat >` heredoc, so they would have evaded the fence from either direction anyway. They were caught only because a finding-count check disagreed, then reverted with `git checkout --`; **no commit was made to the wrong branch**. **Not audited:** whether adding the fence to the Bash matcher is practical without parsing shell redirection targets, which is the reason this is filed rather than patched.
 - **Severity rationale:** MED — no data was lost this time, but the loss mechanism is real, silent, and demonstrated. It is also the reason `ISSUE-512` should move from LOW to MED: that entry's severity rested on "nothing was lost", which is now only true because a separate check happened to catch it.
 - **Found:** 2026-09-08, auditing `ISSUE-512` — and by committing the defect it describes.
+
+### ISSUE-571 — BUG-530's Hangfire retry is INERT on both reminder jobs, because ISSUE-116 clears the marker before dispatch
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** BE
+- **Module / US / TC:** Recruitment · US-REC-005 NFR-4, US-REC-007 FR-7/AC-4 · TC-REC-005-02
+- **SURVEY:** **2 of 2** recruitment reminder jobs are affected — `InterviewReminderJob` and `OfferExpiryReminderJob` (unit: Hangfire job classes in `src/backend/HRM.Api/Jobs/` that dispatch a reminder through `IRecruitmentNotificationService`). Both received the ISSUE-116 marker guard and both received BUG-530's throw-on-failure, so the interaction is not specific to one. No other job class dispatches through that seam.
+- **AUDIT (2026-09-08):** verified on the merged result of `#689` (ISSUE-116) and `#696` (BUG-529/530), in `InterviewReminderJob.cs`:
+  1. **CONFIRMED — the guard returns early on a null marker** (`:63`): `if (interview is null || interview.Status != InterviewStatus.Scheduled || interview.ReminderJobId is null) return;`
+  2. **CONFIRMED — the marker is cleared BEFORE dispatch** (`:85-86`): `interview.ReminderJobId = null; await dbContext.SaveChangesAsync();`, and the dispatch is at `:96`.
+  3. **CONFIRMED — the throw happens after that clear** (`:109`): `throw new InvalidOperationException(...)` on `dispatch.IsFailure`.
+  4. **Therefore:** Hangfire re-runs the job, step 1 sees a null marker, and the job **returns without re-sending**. The retry the throw exists to trigger cannot do the thing it was added for.
+- **Neither PR is wrong on its own.** ISSUE-116 chose clear-before-dispatch deliberately and documented why in-code: clear-after "WOULD add a duplicate-send path: if SaveChanges then fails" — the exact NFR-4 violation that finding exists to close. BUG-530 chose to throw so Hangfire retries, which is correct against a seam that had just gained a failure signal. **The defect exists only in the composition**, which is why neither PR's own tests catch it: each is green in isolation and both are green together.
+- **What the throw still buys, so this is not rated higher:** the run is recorded **Failed** in the Hangfire dashboard instead of **Succeeded**, so a lost candidate reminder is now *visible* where before it was silent. That is a real improvement and it survives. What does **not** survive is automatic recovery.
+- **Why MED:** it is not a regression — before ISSUE-116 the retry re-sent but produced duplicates (the NFR-4 violation); now it neither duplicates nor recovers. Delivery is strictly no worse than the pre-ISSUE-116 state and observability is better. But the code and its own doc-comment now claim a retry capability that does not function, and a claim that outruns the behaviour is the failure mode that produced `ISSUE-531` and `ISSUE-150`.
+- **Needs a decision, not a quiet fix.** The three shapes are not equivalent:
+  1. **Clear the marker only after a successful dispatch** — restores the retry, reopens the duplicate-send window on a post-dispatch `SaveChanges` failure. ISSUE-116 explicitly rejected this and its reasoning still holds.
+  2. **Keep clear-first; soften the throw to a logged failure** — honest about what the system does, gives up the dashboard-visible Failed run.
+  3. **An outbox row committed with the state change** — the only shape that is genuinely at-least-once, and the one `BUG-530` already names as deliberately not built.
+  **(3) is the correct answer and the expensive one.** (1) trades a silent loss for a silent duplicate, which for an interview reminder is arguably the better trade — a candidate receiving two reminders is a nuisance, missing one costs them the interview. That is a product call, not an engineering one.
+- **Found:** 2026-09-08, while rebasing `#689` onto `#696`. Six tests went red on the merged result, which is what exposed it; both were fixture/contract adaptations, and fixing them left this behavioural gap untouched and untested.
 
 ### ISSUE-570 — `StatutoryRuleService.UpdateAsync` has no duplicate/overlap pre-check, so an update can move a rule onto a sibling's window
 - **Type / Severity / Status:** ISSUE · **MED** · OPEN
