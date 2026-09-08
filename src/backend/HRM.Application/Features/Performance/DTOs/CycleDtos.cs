@@ -16,7 +16,14 @@ public sealed record ParticipantScopeInput(
     IReadOnlyList<Guid>? DepartmentIds = null,
     IReadOnlyList<Guid>? EmployeeIds = null);
 
-/// <summary>Full create-cycle input (US-PRF-004 AC-1/AC-2). Phases must be sequential, non-overlapping, in-range.</summary>
+/// <summary>
+/// Full create-cycle input (US-PRF-004 AC-1/AC-2). Phases must be sequential, non-overlapping, in-range.
+/// <para>
+/// ENH-012: <c>SignoffAutoCloseDays</c> is the US-PRF-006 BR-3 sign-off auto-close window. Optional — omit it
+/// and the cycle takes the 7-day default. Range 1..365; 0 is rejected (see
+/// <c>AppraisalCycle.MinSignoffAutoCloseDays</c> for why).
+/// </para>
+/// </summary>
 public sealed record CreateCycleInput(
     string Name,
     CycleType Type,
@@ -28,7 +35,8 @@ public sealed record CreateCycleInput(
     int SelfWeightPercent,
     bool Is360Enabled,
     bool IsCalibrationEnabled,
-    bool IsAnonymousFeedback);
+    bool IsAnonymousFeedback,
+    int? SignoffAutoCloseDays = null);
 
 /// <summary>
 /// Edit-cycle input (US-PRF-004 AC-5). Re-validates phase dates; reschedules jobs; notifies.
@@ -38,6 +46,11 @@ public sealed record CreateCycleInput(
 /// It is nullable/optional: an update that omits it leaves the participant set untouched (back-compat — a
 /// caller that never intends to re-scope should not have to resend the whole selection). Same shape as
 /// <see cref="CreateCycleInput.Scope"/> (<see cref="ParticipantScopeInput"/>).
+/// </para>
+/// <para>
+/// ENH-012: <c>SignoffAutoCloseDays</c> is likewise optional — omitted ⇒ the cycle's current window is left
+/// alone. Unlike the rating scale it is NOT locked once the cycle is Active: extending an employee's time to
+/// sign is a legitimate mid-cycle operational decision, and it changes no scoring input.
 /// </para>
 /// </summary>
 public sealed record UpdateCycleInput(
@@ -50,7 +63,8 @@ public sealed record UpdateCycleInput(
     bool IsAnonymousFeedback,
     int? RatingScaleMax,
     int? SelfWeightPercent,
-    ParticipantScopeInput? Scope = null);
+    ParticipantScopeInput? Scope = null,
+    int? SignoffAutoCloseDays = null);
 
 /// <summary>Clone an existing cycle as a template with a new name + shifted dates (US-PRF-004 FR-8).</summary>
 public sealed record CloneCycleInput(
@@ -122,6 +136,15 @@ public sealed record CycleDto
     public bool Is360Enabled { get; init; }
     public bool IsCalibrationEnabled { get; init; }
     public bool IsAnonymousFeedback { get; init; }
+
+    /// <summary>
+    /// ENH-012: the cycle's sign-off auto-close window in days (US-PRF-006 BR-3) — how long an employee has
+    /// to sign a review before it auto-closes as <c>NoResponse</c>. Tenant-configurable in
+    /// [<c>AppraisalCycle.MinSignoffAutoCloseDays</c>, <c>AppraisalCycle.MaxSignoffAutoCloseDays</c>];
+    /// defaults to 7. Previously column-only — readable by the Hangfire sweep and by nothing else.
+    /// </summary>
+    public int SignoffAutoCloseDays { get; init; }
+
     public ParticipantScopeType ParticipantScope { get; init; }
 
     /// <summary>

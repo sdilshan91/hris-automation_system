@@ -24546,6 +24546,11 @@
             "format": "int32",
             "type": "integer"
           },
+          "signoffAutoCloseDays": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
           "startDate": {
             "format": "date-time",
             "type": "string"
@@ -24753,6 +24758,10 @@
             "$ref": "#/components/schemas/PerformanceCycleScopeDto"
           },
           "selfWeightPercent": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "signoffAutoCloseDays": {
             "format": "int32",
             "type": "integer"
           },
@@ -28161,6 +28170,11 @@
             "$ref": "#/components/schemas/PerformanceParticipantScopeInput"
           },
           "selfWeightPercent": {
+            "format": "int32",
+            "nullable": true,
+            "type": "integer"
+          },
+          "signoffAutoCloseDays": {
             "format": "int32",
             "nullable": true,
             "type": "integer"

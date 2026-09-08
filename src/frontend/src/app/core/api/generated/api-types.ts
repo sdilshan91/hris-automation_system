@@ -39345,6 +39345,8 @@ export interface components {
             scope?: components["schemas"]["PerformanceParticipantScopeInput"];
             /** Format: int32 */
             selfWeightPercent?: number;
+            /** Format: int32 */
+            signoffAutoCloseDays?: number | null;
             /** Format: date-time */
             startDate?: string;
             type?: components["schemas"]["CycleType"];
@@ -39419,6 +39421,8 @@ export interface components {
             scope?: components["schemas"]["PerformanceCycleScopeDto"];
             /** Format: int32 */
             selfWeightPercent?: number;
+            /** Format: int32 */
+            signoffAutoCloseDays?: number;
             /** Format: date-time */
             startDate?: string;
             status?: components["schemas"]["AppraisalCycleStatus"];
@@ -40588,6 +40592,8 @@ export interface components {
             scope?: components["schemas"]["PerformanceParticipantScopeInput"];
             /** Format: int32 */
             selfWeightPercent?: number | null;
+            /** Format: int32 */
+            signoffAutoCloseDays?: number | null;
             /** Format: date-time */
             startDate?: string;
         };

@@ -75,6 +75,8 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             EndDate = input.EndDate,
             RatingScaleMax = input.RatingScaleMax,
             SelfWeightPercent = input.SelfWeightPercent,
+            // ENH-012 (US-PRF-006 BR-3): optional — omitted ⇒ the 7-day default.
+            SignoffAutoCloseDays = input.SignoffAutoCloseDays ?? AppraisalCycle.DefaultSignoffAutoCloseDays,
             Is360Enabled = input.Is360Enabled,
             IsCalibrationEnabled = input.IsCalibrationEnabled,
             IsAnonymousFeedback = input.IsAnonymousFeedback,
@@ -190,6 +192,13 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
                 "The rating scale and weights are locked once the cycle is active.", 409, "rating_scale_locked");
         }
 
+        // ENH-012 (US-PRF-006 BR-3): the sign-off auto-close window is editable at ANY status, unlike the
+        // BR-5 rating scale above. It feeds no score and rewrites no submitted data — it only moves a future
+        // cutoff — so giving employees more (or less) time to sign mid-cycle is a normal HR operation.
+        // Omitted ⇒ unchanged. The 1..365 bound is enforced by UpdateCycleCommandValidator.
+        if (input.SignoffAutoCloseDays.HasValue)
+            cycle.SignoffAutoCloseDays = input.SignoffAutoCloseDays.Value;
+
         // Replace the phase set (re-validated by the validator before this point). Remove the old phase rows
         // and add the new ones via the DbSet WITHOUT reassigning/clearing the tracked navigation collection —
         // mutating cycle.Phases leaves the just-deleted children referenced by the parent relationship, and EF's
@@ -288,6 +297,8 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             EndDate = input.EndDate,
             RatingScaleMax = source.RatingScaleMax,
             SelfWeightPercent = source.SelfWeightPercent,
+            // ENH-012: the auto-close window is a cycle SETTING, so a template clone carries it over.
+            SignoffAutoCloseDays = source.SignoffAutoCloseDays,
             Is360Enabled = source.Is360Enabled,
             IsCalibrationEnabled = source.IsCalibrationEnabled,
             IsAnonymousFeedback = source.IsAnonymousFeedback,
@@ -794,6 +805,7 @@ public sealed class AppraisalCycleService : IAppraisalCycleService
             RatingScaleMax = c.RatingScaleMax,
             SelfWeightPercent = c.SelfWeightPercent,
             ManagerWeightPercent = c.ManagerWeightPercent,
+            SignoffAutoCloseDays = c.SignoffAutoCloseDays,
             Is360Enabled = c.Is360Enabled,
             IsCalibrationEnabled = c.IsCalibrationEnabled,
             IsAnonymousFeedback = c.IsAnonymousFeedback,
