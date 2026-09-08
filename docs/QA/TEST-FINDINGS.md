@@ -151,6 +151,14 @@
 - **Suggested direction (NOT applied):** none — report only. (Deliver the US-PLT-002 RLS phase: enable `ROW LEVEL SECURITY` + `tenant_isolation_select/modify` policies on `leave_types` (and siblings) reading a per-request `app.tenant_id` GUC set from the validated token claim — which also requires the BUG-003 token-vs-subdomain fix to be the source of that GUC.)
 
 ### ENH-001 — No on-demand accrual/recalculation trigger endpoint: AC-5's "modify rule → Hangfire recalculates affected balances" and all accrual-effect verification depend on the daily recurring LeaveAccrualJob, which cannot be invoked via the API
+**▶ DISPOSITION 2026-09-08 (T4).** **Half shipped, half storied — status stays OPEN pending `/verify-fix`.**
+The finding's title is the on-demand endpoint, but auditing it found an **unfiled defect sitting inside**: 4 of
+5 entitlement mutations enqueued no recalculation at all. That half is **fixed and merged (#679)** — all five
+now route through one `EnqueueRecalcAsync` helper, called *after* `SaveChangesAsync` so the Hangfire worker
+cannot race uncommitted state. The **on-demand trigger endpoint remains unbuilt** and is now story
+**`US-LV-013`** (#692) rather than a queue comment. That story is deliberately honest that its user is an
+operator/tester, not an end user — `US-LV-002.md:89`'s own test hint describes a capability that does not exist.
+
 - **Type / Severity / Status:** ENH · — · OPEN
 - **Type:** ENH
 - **Title / Module:** Add an authorized on-demand "recalculate entitlements / run accrual" endpoint · Leave Management · US-LV-002 (AC-5, FR-5)
@@ -945,6 +953,12 @@
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-100 — Test cases (and likely the FE) target `/api/v1/performance/goals*`; the live API is `/api/v1/tenant/performance/*` (route prefix drift)
+**▶ DISPOSITION 2026-09-08 (T4).** **STALE — the premise was false. Docs corrected, merged (#678).**
+The FE was **never broken**. All 12 performance services already target the live `/api/v1/tenant/performance/*`
+routes. The finding, and five test cases derived from it, documented a defect that did not exist — and the
+"obvious" remedy was worse than nothing: a naive `/tenant/` prefix still 404s, and `goals/team` does not exist
+at all, so following the TCs would have produced a broken client. Five TCs corrected rather than the code.
+
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Layer:** TEST (and potentially FE)
 - **Module / US / TC:** Performance · US-PRF-001 · TC-PRF-001-01/02/03/06/11, TC-PRF-ISO-001/002 (all reference the un-prefixed path)
@@ -1076,6 +1090,23 @@
 - **RESOLVED (PR #353, 2026-07-17):** added `IInterviewService.MarkOutcomeAsync` (Completed|NoShow) with a transition guard — only a still-Scheduled interview can be concluded, any terminal state → 409 `interview_invalid_transition` — plus `CompleteInterviewCommand`/`MarkInterviewNoShowCommand` and `POST interviews/{id}/complete` + `POST interviews/{id}/no-show` (`Recruitment.Manage`), mirroring the Cancel path (reminder cleared, participants notified). Binds TC-REC-005-10 steps 1-3. Regression: 6 integration arms (happy Completed/NoShow; Completed/Cancelled/NoShow prior-state 409 guards; cross-tenant 404); clear-reminder arm made mutation-resistant with a recording scheduler fake. Auditors: integration-enforcer PASS, test-authenticator AUTHENTIC.
 
 ### ISSUE-116 — Interview reminder job is not strictly idempotent on re-run, and the reminder lead-time is app-global, not per-tenant — NFR-4 / BR-5 partial
+**▶ DISPOSITION 2026-09-08 (T4).** **Idempotency merged (#689); lead-time storied. Status stays OPEN pending `/verify-fix`.**
+- **Idempotency (NFR-4) — fixed for BOTH jobs.** ⚠ **This entry names only `InterviewReminderJob`;
+  `OfferExpiryReminderJob` had the same defect** and is not recorded anywhere. It *cleared* its marker but never
+  *read* it, so a retry re-sent.
+- ⚠ **A previous note claimed the interview job "needs a new column and a migration". That was wrong** —
+  `Interview.ReminderJobId` already existed (`Interview.cs:60`), mapped, set on schedule and cleared on cancel.
+  **Both** jobs already owned a marker; neither read it. No schema change was needed.
+- ⚠ **This entry's severity rationale — "the notification is a log-only seam (no real email yet)" — is FALSE**
+  and materially mis-rated the finding. See [[ISSUE-531]] and [[BUG-530]].
+- **Composition defect found on merge, fixed before shipping:** [[ISSUE-571]] — clearing the marker *before*
+  dispatch made [[BUG-530]]'s Hangfire retry **inert**, because the retry hit the null-marker guard and returned
+  without re-sending. Both jobs now clear **only after a confirmed-successful dispatch**. Neither PR was wrong
+  alone; only the composition was, which is why neither PR's own tests caught it.
+- **Per-tenant lead time (BR-5) — NOT built.** Storied as **`US-REC-011`**. `InterviewService.cs:474` (not
+  `:418`, as this entry states) reads an app-global config key. The offer sibling is worse and out of scope:
+  `OfferService.cs:51` is a bare const with no `IConfiguration` at all ([[ISSUE-539]]).
+
 - **Type / Severity / Status:** ISSUE · — · OPEN
 
 | Field | Value |
@@ -1112,6 +1143,18 @@
 - **Severity rationale:** LOW — stored-only, no auto-execution under Angular's default rendering; defense-in-depth gap, not an active XSS. Raise if any view binds notes via innerHTML.
 
 ### ENH-010 — Create/update/cancel notifications are dispatched inline on the request thread; business-hours validation (NFR-6) is absent
+**▶ DISPOSITION 2026-09-08 (T4).** **Part (1) OBSOLETE; part (2) reclassified to T5. Status stays OPEN pending `/verify-fix`.**
+- **(1) inline dispatch** — the premise was overtaken: SMTP is already off-thread via Hangfire, so the concern
+  the finding was filed for no longer applies. No work needed.
+- **(2) NFR-6 business hours** — **moved to T5 as a product decision, not engineering.** The framing carried in
+  the queue was wrong: **NFR-6 is not about notifications at all.** Its full text (`US-REC-005.md:49`) is a
+  *scheduling-form* rule. That single clause defines none of: what the hours are, **whose** hours (tenant /
+  interviewer / overseas candidate), hard-reject vs soft-warn, or where "configurable" lives. QA reached the
+  same conclusion independently — `TEST-MATRIX.md:326` records it CONDITIONAL, explicitly **"NOT a gap"**.
+- ⚠ This entry's own text calls the recruitment notifier a "log-only seam". **That is false** and was false when
+  written — `DependencyInjection.cs:378` registers `RealRecruitmentNotificationService`. See [[ISSUE-531]]; the
+  stale claim produced two wrong engineering judgements in one session before it was caught.
+
 - **Type / Severity / Status:** ENH · — · OPEN
 
 | Field | Value |
@@ -1137,6 +1180,15 @@
 > Routes: `/api/v1/tenant/performance/360/*` — reviewer config (`GET .../reviewers`), add/remove reviewer, `notify`, `submit feedback`, `results`, `report`. Config/results/report/notify/remove are **HR-only** (`Performance.Review.All`); **submit** is open to any authenticated user but self-resolves the reviewer from the caller + requires a Pending assignment (so all four categories self-submit, no IDOR). BR-2 (no self-as-peer), BR-3 (one feedback per reviewer/reviewee/cycle, 409 `already_submitted`), FR-4 rating-range (422), FR-6 composite via `ThreeSixtyScoreCalculator` (normalizes by weight of categories WITH data), BR-4 peer-threshold = **warn not block** (`releaseWarning`), anonymity captured per-row at submit (BR-5) + enforced in the projection (NFR-3 → `reviewerEmployeeId`/`reviewerName` null). Reminder job `performance-360-reviewer-reminders` IS DI-registered + tenant-iterates (unlike the US-PRF-004 cycle scheduler, BUG-063). Personas: `hr@acme.test`/`tenantadmin@acme.test` (Review.All); reviewers submitted AS `employee@acme.test` (John, Peer) + `manager@acme.test` (EMP-MGR01, Manager); reviewee = Et Contract (EMP-0014, no user). 18 TCs executed: **13 PASS / 4 FAIL / 1 BLOCKED-pair (= 2 BLOCKED)** → **13 PASS / 4 FAIL / 2 BLOCKED... wait** correction below. Actual: **12 PASS / 4 FAIL / 2 BLOCKED**. NEW finding: ISSUE-118. Extends: BUG-003.
 
 ### ENH-011 · ENH · BE — Scorecard lock-period (BR-4) is not testable/observable at the API layer; no `GET /scorecards/{id}`; no version history
+**▶ DISPOSITION 2026-09-08 (T4).** **Code CLOSED — already done. QA residual outstanding.**
+Verified line by line against current `src/`: all three sub-claims are false, shipped by `c2cc333b` (#465). The
+queue recorded this as "~80% stale"; it is **100%**.
+**The residual is real and NOT closed:** TC-REC-006-05, TC-REC-006-08 step 4 and TC-REC-ISO-015 are still
+recorded **BLOCKED** in `TEST-STATUS.md` and have **not** been re-run. They cannot be re-run yet — the local
+Docker stack's backend image was built 2026-09-02 and is **~98 commits stale**, so a run against it would test a
+binary that predates most of this work. **Rebuild the container, then re-run those three.** Flipping them
+without a run would cross the report-only boundary.
+
 - **✅ CLOSED 2026-09-07 — ALREADY DONE. All three sub-claims are false against current `src/`.** The queue recorded this as "~80% stale"; it is **100%**. Shipped by commit `c2cc333b` ("feat(US-REC-006 AC-K1)", #465), verified line by line:
   - **(a) "a locked state is unreachable without DB access or a 48h wait"** — false. The lock lead is configurable: `ScorecardService.cs:430-434` reads `Recruitment:ScorecardLockPeriodHours` (default 48), and the test hook is already in use at `HRM.Tests/Unit/ScorecardServiceTests.cs:273` (`= "0"`).
   - **(b) "there is no single-scorecard `GET /scorecards/{id}`"** — false. `InterviewsController.cs:365-377` exists, and its own comment at `:358-364` names TC-REC-006-05/-08 and ISO-015 as the reason it was added. `ScorecardService.cs:503-540` deliberately routes through `GetForInterviewAsync` so the anti-bias filter is not re-implemented, and answers **404 not 403** for a hidden card (`:518-527`).
@@ -1184,6 +1236,14 @@
 - **Severity rationale:** LOW — defense-in-depth: exploitability depends on whether the FE renders the action description as raw HTML (if rendered as text it's inert); the four primary note fields are sanitized. Should be aligned (sanitize the action description too) since S10 mandates "rich text stored as sanitized HTML" for the notes including FR-2's agreed actions.
 
 ### ENH-012 · ENH · BE — Sign-off employee read-path + per-cycle auto-close window have no test/observability hooks; HR resolver signer-name falls back to email
+**▶ DISPOSITION 2026-09-08 (T4).** **All three parts settled; status stays OPEN pending `/verify-fix`.**
+- **(a) ALREADY DONE** (`63f502a5` + `69447b82`), including the BR-2 read-tracking this finding framed as a
+  downstream benefit. The queue carried **no note at all** on this entry, which made it the one where a stale
+  premise would have cost most.
+- **(b) auto-close window** — configurable and test-observable, **merged (#682)**.
+- **(c) signer identity** — **merged (#685)**. The finding described a single email fallback; the audit found the
+  behaviour was **inconsistent across three call sites** — one fell back to email, two wrote an empty string.
+
 - **⚠ PARTIALLY CLOSED 2026-09-07 — half (a) is ALREADY DONE; (b) and (c) remain open.** The queue carried **no note** on this entry, which made it the one where a stale premise would have cost the most.
 - **(a) employee self-service read path — SHIPPED.** `ReviewSignoffController.cs:132-133` `GET reviews/cycles/active/me/notes` gated `Performance.Read.Self`, plus `:145 /me/acknowledge` and `:159 /me/dispute` (commit `63f502a5`, ISSUE-288). The BR-2 read-tracking this finding framed as a downstream benefit is **also** enforced: `ReviewSignoffService.cs:246-247` returns 409 `notes_not_read` (commit `69447b82`, BUG-065).
 - **(b) auto-close window — STILL FULLY OPEN.** `AppraisalCycle.SignoffAutoCloseDays` is read only by `ReviewSignoffAutoCloseService.cs:45-47`; it appears in **zero** files under `HRM.Application` or `HRM.Api`, is absent from `CreateCycleInput`/`UpdateCycleInput`, and there is no on-demand trigger endpoint anywhere. Testing BR-3 still requires a raw DB UPDATE plus the Hangfire dashboard. No migration needed — the column exists.
@@ -1230,6 +1290,24 @@ Routes `/api/v1/recruitment/offers*` + `/api/v1/recruitment/applicants/{id}/offe
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-129 · ISSUE · LOW · OPEN · BE — NFR-3/BR-4 materialized view (`performance_summary`) + Redis cache + Hangfire 4h refresh are not implemented; aggregates computed live each request (documented deferral)
+**▶ DISPOSITION 2026-09-08 (T4).** **Cache SHIPPED (#688). Materialized view REFUSED, not deferred.**
+⚠ This entry's body still describes the pre-#688 world ("Redis cache … not implemented"). That is now wrong;
+read this block first.
+- **Redis read-through cache — merged (#688).** Tenant- *and* scope-scoped keys. `GetOverviewAsync` was ~9-12
+  sequential round trips and `GetTrendAsync` re-ran the 7-query fan-out **once per cycle**; both are cached.
+  An independent adversarial review held the PR until its tests could catch the one mistake this codebase has
+  already made — swapping the key prefix from the resolved tenant to the JWT tenant. That mutation now turns
+  **4 of 19 tests red**, including a behavioural arm showing tenant B's dashboard served to a tenant-A user.
+- **`performance_summary` matview — REFUSED.** Storied as **`US-PRF-012`**, marked `[~] BLOCKED` so
+  `/implement-all` cannot pick it up. **The block is CATEGORICAL, not temporal:** PostgreSQL has **no RLS for
+  materialized views at all**, and both the policy migration (`20260710120000…:55`) and the enabler
+  (`DbInitializer.cs:218`) filter on `table_type = 'BASE TABLE'`. Enabling RLS buys it **nothing, ever**. A
+  matview is a physical **cross-tenant** artifact — isolation would move off the EF global query filter onto a
+  hand-written `WHERE tenant_id =` on every read, the exact class [[BUG-003]] already exploits **on this same
+  dashboard**, and `.semgrep/tenant-isolation.yml` would not catch an omission ([[ISSUE-537]]).
+- ⚠ **Correction:** an earlier note claimed RLS was "dormant". It is not — `appsettings.json:48-50` ships
+  `"Rls": { "Enabled": true }`; only Development overrides it. See [[ISSUE-540]].
+
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Module / US / TC:** Performance / US-PRF-007 / TC-PRF-007-11 (NFR-1/NFR-3), TC-PRF-007-13 (BR-4), TC-PRF-ISO-028 (cache/refresh tenant-scoping)
 - **Title:** NFR-3 + BR-4 + Data §7 specify a `performance_summary` PostgreSQL materialized view, Redis read-through caching, and a tenant-configurable Hangfire refresh job (default 4h) backing the dashboard aggregates. None exist: the `performance_summary` table is absent (`information_schema.tables` count = 0), there is no Redis cache layer for the dashboard, and no dashboard/materialized-view refresh recurring job is registered (the only PRF recurring jobs are `CyclePhaseTransitionJob` and `SelfAssessmentReminderJob`). All aggregates are computed **live** on each request via tenant-scoped EF queries + in-memory GroupBy.
@@ -1383,6 +1461,13 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Severity rationale:** A confusing but non-harmful nudge (no data corruption, no cross-tenant issue); affects only goals in the post-tracking phase of an Active cycle. LOW.
 
 ### ISSUE-144 — No central audit_logs row for any goal-progress write (update / comment); + progress-update notes stored RAW (no server-side XSS sanitization)
+**▶ DISPOSITION 2026-09-08 (T4).** **Sanitize half merged (#684); audit half remains. Status OPEN pending `/verify-fix`.**
+`(b)` server-side XSS sanitization of goal-progress notes is **shipped**. The audit-row half of this finding is
+**not** addressed here.
+⚠ **Re-scoped during the audit:** this was queued as "the [[ISSUE-121]] pattern — a mechanical batch". It is
+not. Those services carry **no sanitizer dependency at all**, so there were no sanitized siblings to be
+inconsistent with; it was a posture decision, not a repeat. Treating it as mechanical would have mis-sized it.
+
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-009 / TC-PRF-009-01, TC-PRF-009-11, TC-PRF-ISO-036
 - **Title:** Two defense-in-depth nits bundled. (a) Posting a progress update or comment writes ZERO rows to the central audit_logs table - the only trail is the append-only goal_progress_update/goal_comment rows + Serilog + the log-only notification seam. NFR-3's audit-compliance intent IS met by the immutable tables, but goal actions never appear in the unified audit-search surface (recurring cross-module theme). (b) Progress-update notes are persisted verbatim - <script>alert(1)</script> is stored raw (no HTML escaping/sanitization server-side); safety relies entirely on the FE (Angular interpolation) output-encoding, risky given section-8 calls notes "rich text."
@@ -1422,6 +1507,11 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Severity rationale:** Every actual business rule (BR-1/BR-2/BR-5/FR-3) IS enforced server-side and cannot be bypassed; these are wording/timing/status-code/threshold mismatches between the TCs and a reasonable implementation, not security or correctness defects. LOW.
 
 ### ISSUE-149 — No central `audit_logs` row for any recommendation write; + justification & custom-label text stored RAW (no server-side XSS sanitization)
+**▶ DISPOSITION 2026-09-08 (T4).** **Both halves merged; status stays OPEN pending `/verify-fix`.**
+- **(a) audit rows on recommendation WRITES — merged (#666).** The finding described the gap as a missing row on
+  the sensitive *read*; the audit found writes were unaudited too.
+- **(b) sanitize-on-write — merged (#684).** Same re-scope note as [[ISSUE-144]]: not the [[ISSUE-121]] pattern.
+
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Type:** ISSUE · **Severity:** LOW · **Status:** OPEN · **Layer:** BE · **US/TC:** US-PRF-010 / TC-PRF-010-12, TC-PRF-ISO-040
 - **Title:** Two defense-in-depth nits bundled (recurring cross-module theme). (a) Recommendation writes append immutable `recommendation_event` rows (a complete per-rec history — FR-7 met) + Serilog, but write ZERO rows to the central `audit_logs` table, so recommendation actions never surface in the unified audit-search surface. (b) `justification` and `customTypeLabel` are persisted verbatim — `<script>alert(1)</script>` is stored raw with no HTML escaping/sanitization server-side; safety relies entirely on the FE (Angular interpolation) output-encoding. SQLi payloads are safely parameterized (EF Core — `recommendation` table intact after `'; DROP TABLE recommendation;--`).
@@ -1430,6 +1520,16 @@ Scope: all 15 `TC-PRF-008-*` + 4 bound `TC-PRF-ISO-029..032`. Stack: BE native :
 - **Severity rationale:** The legally-meaningful immutable history exists (append-only `recommendation_event`, tenant-scoped) and SQLi cannot execute; gaps are (a) unified-audit visibility and (b) reliance on FE encoding for XSS — both defense-in-depth, matching documented platform patterns. LOW.
 
 ### ISSUE-150 — the comp seam: encryption SHIPPED, `currentCompensation` still unbuilt, and the comp gate is bypassable (see `BUG-533`)
+**▶ DISPOSITION 2026-09-08 (T4).** **REWRITTEN (#690) — see the rewrite block in this entry. It was hiding a HIGH.**
+Two of three claims were false. Auditing the false one — *"the comp-visibility role gate has nothing to mask"* —
+uncovered **[[BUG-533]]**, a live server-side authorization bypass: the recommendation workspace returned
+unmasked compensation to **HR Officer** (whole org) and **any line manager** (their reports), both of whom the
+catalogue **deliberately** denies `Payroll.ViewCompensation`. **Fixed and merged (#693)**, with
+`includeCompensation` made a *required* parameter so a future projection cannot default to leaking.
+**The entry's own severity rationale is what kept it hidden** — it read *"no security exposure today… LOW
+(traceability, not a live defect)"*. That sentence is why nobody looked. Surviving residual:
+`currentCompensation` is still always-null, and snapshot-at-save vs live-join is an open design question.
+
 
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Layer:** BE · **US/TC:** US-PRF-010 / TC-PRF-010-06, TC-PRF-010-09 (steps 5-6), TC-PRF-010-11
@@ -1529,6 +1629,15 @@ Scope: TC-PAY-007-01..12 + ISO TC-PAY-ISO-025..028. API-layer (curl + JWT), acme
 - **Severity rationale:** LOW — functionally complete (each occurrence is cancellable) but ergonomically misses the BR-6 "cancel remaining" intent; FE/manual workaround exists.
 
 ### BUG-075 · ISSUE · LOW · OPEN · BE — US-PAY-007 supporting-document validation does not content-sniff (spoofed extension accepted) (NFR-5)
+**▶ DISPOSITION 2026-09-08 (T4).** **All three sites merged (#680, #683); status stays OPEN pending `/verify-fix`.**
+Content-sniffing now covers every upload path the finding names. Site 3 (payroll supporting documents) was
+blocked on a non-standard `image/jpg` string in `AllowedContentTypes`, resolved by giving
+`FileSignatureValidator` an alias sharing the JPEG signature field rather than duplicating it.
+⚠ **Scope correction:** the finding says "3 sites, 2 outside payroll". The sniffer now has **8 adopters**, and
+two upload surfaces validate by their own means — branding uses `BrandingFileValidator` (magic-byte, extension
+ignored) and holiday import is CSV, where content-sniffing is not the applicable control. Recorded so a future
+sweep does not read "3 sites" as the full census.
+
 - **Type / Severity / Status:** BUG · LOW · OPEN
 - **Module/US/TC:** Payroll / US-PAY-007 / TC-PAY-007-09
 - **Title:** A file with a `.pdf` extension + `application/pdf` declared content-type but non-PDF bytes (GIF89a content) is accepted by `POST /adjustments/{id}/document`. NFR-5/TC-09 expects content-type sniffing to reject a renamed/spoofed file.
@@ -1649,6 +1758,19 @@ Scope: API-layer (curl + JWT) execution of TC-PAY-009-01..12 + TC-PAY-ISO-033..0
 - **Severity rationale:** LOW — cosmetic/contract drift between the note and the numbers; no incorrect disbursement, but misleading for CTC consumers.
 
 ### ENH-018 — Bank-advice masking unverifiable at runtime: seeded employees carry no bank master data
+**▶ DISPOSITION 2026-09-08 (T4).** **The filed remedy was a FALSE-GREEN and was deliberately NOT built.**
+This finding proposes seeding bank master data so BR-2 masking becomes testable. **That would have turned
+TC-PAY-009-02/-08 green while the feature stayed permanently dead in production**, because **no bank-details
+capture API exists anywhere** — the only code that ever sets those fields is a test fixture
+(`PayrollReportIntegrationTests.cs:255-269`). The masking, audit redaction, export carve-out and
+`Payroll.ViewSensitive` reveal path are all correct and all unreachable. Same class as [[ISSUE-486]] /
+[[ISSUE-492]] / [[ISSUE-534]].
+**Decided with the human: do not seed.** The capability is storied as **`US-CHR-014`** (#692, Core HR, Must
+Have). Two hard preconditions, both filed: **[[ISSUE-523]]** — encrypt `bank_account_number` **before** capture
+ships, merged (#699), because the no-op back-fill window closes on the first successful write; and
+**[[BUG-536]]** — the bank-advice export served full unmasked numbers under `Payroll.Export` with **no audit
+row**, which this story would turn from latent into live and retroactive.
+
 - **Type / Severity / Status:** ENH · — · OPEN
 - **Type:** ENH · **Title:** Seed a bank account number (+ bank name, branch code) on at least one acme employee so BR-2 masking (****1234 in preview, full in file) and the bank-advice file columns can be exercised end-to-end.
 - **Module:** Payroll / US-PAY-009 / TC-PAY-009-02, -08
@@ -2069,6 +2191,10 @@ Hot reads: 0 errors / 96,709 checks. Scale reads: 0.08% errors (104/121,547 — 
 ---
 
 ### ISSUE-373 — GAP-012's remaining performance surface: 17 response-DTO gaps, and a warning about how to measure them
+**▶ DISPOSITION 2026-09-08 (T4).** **Merged (#646); status stays OPEN pending `/verify-fix`.**
+Re-scoped by the audit from **17 DTO gaps to 6** — the other 11 were already closed or misfiled. The fix stops
+the FE fabricating a performance trend the API never sends.
+
 - **Type / Severity / Status:** ISSUE · HIGH · OPEN ` — **triage COMPLETE 2026-08-12; the 17 are now classified and mapped (see below). No code changed yet.
 - **Layer:** FE
 - **Module / US / TC:** Performance / US-PRF-002/003/006/009/010 / — — found 2026-08-10 while fixing GAP-012's request half
