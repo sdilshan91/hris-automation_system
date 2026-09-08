@@ -115,6 +115,44 @@ public sealed class RecruitmentNotificationRetryTests
 
     [Fact]
     [Trait("TC", "TC-REC-005-20")]
+    public async Task InterviewReminderJob_AfterAFailedDispatch_TheRetryActuallyReSends_ISSUE571()
+    {
+        // ISSUE-571: BUG-530's throw only buys something if the RETRY can re-send. While the marker was
+        // cleared BEFORE dispatch, the retry hit the null-marker guard and returned silently — the throw
+        // failed the run but recovered nothing. This asserts the recovery itself, not just the throw.
+        SeedInterview(InterviewStatus.Scheduled);
+        var failing = RecruitmentNotifications.Failing("dispatcher down");
+        var job1 = new InterviewReminderJob(BuildProvider(failing).GetRequiredService<IServiceScopeFactory>());
+
+        await ((Func<Task>)(() => job1.RunAsync(_tenantId, _interviewId)))
+            .Should().ThrowAsync<InvalidOperationException>();
+
+        // The marker MUST survive a failed dispatch, or the retry below cannot pass the guard.
+        using (var db = RawDb())
+        {
+            db.Interviews.Single(i => i.Id == _interviewId).ReminderJobId
+                .Should().NotBeNull("a failed dispatch must leave the reminder still owed");
+        }
+
+        // Hangfire's retry: a second run against a healthy seam must genuinely dispatch.
+        var healthy = RecruitmentNotifications.Succeeding();
+        var job2 = new InterviewReminderJob(BuildProvider(healthy).GetRequiredService<IServiceScopeFactory>());
+        await job2.RunAsync(_tenantId, _interviewId);
+
+        await healthy.Received(1).NotifyInterviewReminderAsync(
+            _interviewId, _applicantId, _vacancyId, Arg.Any<string>(),
+            Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>());
+
+        // And only after that success is the reminder marked done, so a THIRD run no-ops.
+        using (var db = RawDb())
+        {
+            db.Interviews.Single(i => i.Id == _interviewId).ReminderJobId
+                .Should().BeNull("a delivered reminder must not be sent again");
+        }
+    }
+
+    [Fact]
+    [Trait("TC", "TC-REC-005-20")]
     public async Task InterviewReminderJob_DispatchSucceeds_CompletesTheRun_BUG530()
     {
         SeedInterview(InterviewStatus.Scheduled);
@@ -232,6 +270,10 @@ public sealed class RecruitmentNotificationRetryTests
             StartTime = new TimeOnly(10, 0),
             InterviewType = InterviewType.Video,
             Status = status,
+            // ISSUE-116 guards on a PENDING reminder marker, and InterviewService.cs:136 always sets one
+            // when it schedules. Without it the job correctly no-ops and never reaches the dispatch these
+            // BUG-530 tests are about — mirrors the offer seed's ExpiryReminderJobId above.
+            ReminderJobId = "int-rem-job-1",
         });
         db.SaveChanges();
     }
