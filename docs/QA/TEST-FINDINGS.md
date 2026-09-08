@@ -26,11 +26,11 @@
 
 | Type | Live | Archived | Total |
 |---|---:|---:|---:|
-| BUG | 50 | 168 | 218 |
-| ISSUE | 221 | 296 | 517 |
+| BUG | 51 | 168 | 219 |
+| ISSUE | 223 | 296 | 519 |
 | ENH | 23 | 2 | 25 |
 | DECISION | 4 | 0 | 4 |
-| **TOTAL** | **298** | **466** | **764** |
+| **TOTAL** | **301** | **466** | **767** |
 
 <!-- SUMMARY-ASSERTED: regenerate by running the test; do not hand-edit the numbers above. -->
 
@@ -816,6 +816,12 @@ number — the same class of false-green this very finding is about.
 - **Suggested direction (NOT applied):** none — report only. (Dev would tag ledger reversals to the original allocation buckets once carry-forward pools are tracked distinctly, per the existing TODO.)
 
 ### ENH-002 — BR-2 manager/employee report scoping is effectively dead code: the report/analytics/export endpoints are gated solely on `Leave.Reports`, which built-in Manager and Employee roles do not hold, so a manager/employee always gets 403 and never reaches the (implemented) "team" / "self" scope branches
+**▶ OBSOLETE 2026-09-08 — resolved by #676; the ledger and the queue had not caught up.**
+An **Employee can reach self-scoped leave reports today.** Verified: `PermissionCatalog.cs:809` grants the built-in Employee role `Leave.Reports.Own`; `LeaveReportService.ResolveScopeAsync` (`:1046-1071`) falls through to `ScopeKind.Employee`, and `ScopedEmployeesQuery` (`:1113-1116`) filters to `e.Id == ownId`. Manager gets `Leave.Reports.Team` (`:800`) → direct reports + self. All four endpoints accept any of three permissions (`LeaveReportsController.cs:57,78,103,129`), OR-semantics via `PermissionAuthorizationHandler.cs:27`. Six real-HTTP regression tests bind it (`LeaveReportScopeAuthorizationApiTests.cs`).
+⚠ **The queue's blocker line was false in BOTH clauses** — *"Employee holds no `Reports.*` at all, so re-gating alone won't reach self-scope"* (`GAP-CLOSURE-QUEUE.md:759`). Employee holds `Leave.Reports.Own`, and re-gating **plus a grant** is exactly what shipped. The premise was also a red herring from the start: the service's Employee branch was never gated on holding a permission — it is the **fall-through** — so the only thing ever needed was passage through the endpoint filter.
+⚠ **Correction to a hypothesis I raised:** the fix added `Leave.Reports.Team`/`Leave.Reports.Own`, **not** `Reports.View.Team`/`Reports.View.Department` — those are the cross-module report permissions and predate this work (DEC-1).
+**Disposition:** RESOLVED #676. Move to `TEST-FINDINGS-RESOLVED.md` via `/verify-fix`, strike the stale queue line, and un-block TC-LV-246/247 — they are testable now. Leaving it in T5's "needs a decision" bucket is actively misleading; it is the reverse-drift shape of `ISSUE-479`.
+
 - **Type / Severity / Status:** ENH · — · OPEN
 - **Type / Title / Module / why-it-matters / suggested-direction (ENH — lighter schema)**
 - **Type:** ENH
@@ -2893,6 +2899,12 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 ---
 
 ### ISSUE-390
+**▶ DECISION-FREE 2026-09-08 — mislabelled into T5, and it has cost ~17 days.**
+The condition still fully holds, and is drifting the wrong way: a **full census** of tracked backend files (not the 600-file sample this was filed on) is **2,106 CRLF / 623 LF across 2,729 `.cs` files — 77% CRLF**, worse than the 76% originally measured. `core.autocrlf=input` confirmed; `.gitattributes` still pins only `*.sh`.
+⚠ **"Documented deferral" is the wrong label, and the reasoning is circular.** The note at `.editorconfig:10-16` defers **declaring `end_of_line` in `.editorconfig`** — a scoping decision internal to that file. It does not defer the fix; it says the opposite in the same breath (*"Normalizing the tree is the right fix"*) and then points **back at `TEST-FINDINGS.md`**, i.e. back at this finding. The finding cites the comment as its deferral and the comment cites the finding as where the work is tracked. **Neither is a decision**, and `grep` across `DECISIONS.md`, `DEFERRED-FOLLOWUPS.md`, `LOW-TIER-DECISIONS.md` and `LOW-TIER-TRIAGE.md` finds **no governance record at all**.
+**Latent exposure quantified:** 10 tracked shebang'd non-`.sh` files, **7 checked out CRLF** (six `.claude/hooks/scripts/*.py` plus `advisor/currency-scan.py`). No live breakage — `.claude/settings.json` invokes them as `python <path>`, so the shebang is unused and CPython tolerates CRLF. A loaded gun not currently pointed at anything.
+**Disposition:** move OUT of T5 into the work queue. One standalone commit containing nothing else — `* text=auto eol=lf` → `git add --renormalize .` → `end_of_line = lf` → delete the `.editorconfig` note. Sequence **before** `ISSUE-391`, as that finding already states.
+
 - **Type / Severity / Status:** ISSUE · MED · OPEN
 
 - **Type:** ISSUE · **Severity:** MED · **Status:** OPEN · **Layer:** INFRA
@@ -3709,6 +3721,13 @@ Rebuilt and verified 2026-09-08: backend image 5 days → 3 minutes, container h
 - **Suggested direction (NOT applied):** decide the contract (op-based vs list-based), then fix in both lanes.
 
 ### ISSUE-445 — two `agent-memory/frontend-dev` stores exist; the configured path points at an empty scaffold
+**▶ RETRACTED 2026-09-08 — FALSE as written. The real defect is 6× bigger and points the other way.**
+- **`src/frontend/.claude/` does not exist**, on this branch or any other: `find src -name .claude` → 0 results, and `git log --all --diff-filter=A -- src/frontend/.claude` → 0 adds. The stray was **never committed**. This entry's own Evidence line already says the fix happened ("wrote to the root store and **removed the stray copy**") — it was **filed already-remediated and left OPEN**.
+- **"Two `frontend-dev` stores exist" — FALSE.** Exactly one, at the repo root, 53 files, all tracked. (The second apparent hit is a `.claude/worktrees/` checkout of this same repo, not a stray.)
+- ⚠ **The "papered over with an ignore rule" premise is UNSUPPORTED.** `.gitignore:72` does ignore `src/backend/HRM.Api/.claude/`, but that directory **has never existed and was never committed** (`git log --all --diff-filter=A` → 0). The rule is prophylactic, not a cover-up. This claim came from an untracked TODO note and was relayed into a verification brief without being checked — see `ISSUE-573`.
+- **Where the real defect is:** **6 stray `.claude/` directories under `docs/QA/`, holding 13 git-TRACKED `agent-memory/test-runner/` files, none of them ignored** (`docs/QA/.claude`, and one each under `admin-console`, `attendance`, `authentication`, `core-hr`, `leave-management`). Same cwd-relative root cause this finding describes, same silent memory fragmentation — but for `test-runner`, in-repo, and 6× the size. Re-filed as **[[ISSUE-573]]**.
+- **Status stays OPEN pending `/verify-fix`** — only that skill may retire an entry — but treat the FRONTEND claim as dead and work `ISSUE-573` instead.
+
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Layer:** INFRA (agent config)
 - **Module / US / TC:** cross-module
@@ -4004,6 +4023,12 @@ Rebuilt and verified 2026-09-08: backend image 5 days → 3 minutes, container h
 - **Severity rationale:** LOW by blast radius, but it is a **coverage hole with a shape worth noting**: any persona-based suite runs with plan limits silently disabled, so a plan-limit regression cannot be caught there. That matters more now — the `F4` audit found `max_api_calls_per_month` is metered and displayed but **never enforced**, and this is precisely the class of defect these tests could not see.
 - **Suggested direction (NOT applied):** point the factory at a real plan. Shared fixture across ~35 classes in the HttpApi collection, so it needs its own change and a full-suite run.
 ### ENH-470 — "a comment outlived its code" is now 7 recorded cases; most are NOT mechanically detectable, and that is the finding
+**▶ RE-SCOPED 2026-09-08 — the negative result holds; the conclusion drawn from it does not.**
+The entry sized "would a guard catch anything?" against **7 anecdotes** rather than the corpus, and concluded "process, not code". Against the real population — **~36 `file.ext:NN` citations across ~30 backend `.cs` files, plus 24 in the frontend** — a **13-sample spot check found 4 stale claims across 7 sites, roughly 30%**. Every one names a real symbol adjacent to the number, so the mechanically-checkable variant this entry dismissed as *"one partial case out of seven"* has a hit rate near one in three.
+**Confirmed stale right now:** `PipReminderJob.cs:17` (+ identical text in `SelfAssessmentReminderJob.cs:18`, `Feedback360ReminderJob.cs:18`, `ReviewSignoffAutoCloseJob.cs:19`) cites `DependencyInjection.cs:597`; the symbol is at `:607`. `InterviewService.cs:118` cites `:899`; it is at `:929`. `TenantDataDeletionPostgresTests.cs:29,162` cites `:41`; it is at `:147`. `DataProtectionKeyPersistencePostgresTests.cs:9` cites `:67-69`; it is at `:188-189`.
+**The sharpest case is this entry's own thesis eating itself:** `PipReminderJob.cs:17` is explicitly a *correction* whose text reads *"Verified before editing, not assumed."* It **was** verified, it **was** correct, and it went stale anyway when `DependencyInjection.cs` shifted ten lines — **duplicated across four job files**. That is the "corrected comment re-rots" pattern this entry cites as its severity argument, live, and 100% machine-detectable.
+**Disposition — RE-SCOPE, not WONTFIX.** The citation-checker half is now **decision-free**: parse `<Identifier>.(cs|ts|json):NN` from comments and assert the identifier occurs within ±N lines. Natural home is `HRM.ArchitectureTests` beside `SourceFileIsGreppableTests.cs`. Strike *"0 of 7 ⇒ process, not code"* from `GAP-CLOSURE-QUEUE.md:833`. **Still needs a human decision on the `/retro` prose-sampling half only** — that half is a genuine cadence-cost call.
+
 - **Type / Severity / Status:** ENH · MED · OPEN
 - **Layer:** TEST / process
 - **Module / US / TC:** cross-cutting
@@ -4043,6 +4068,10 @@ Rebuilt and verified 2026-09-08: backend image 5 days → 3 minutes, container h
 - **Suggested direction (NOT applied):** route both call sites through `PlanLimitLookup`.
 
 ### ISSUE-474 — a limit-only plan edit leaves the tenant's denormalized limit snapshots stale
+**▶ STALE 2026-09-08 — the central claim is now false.**
+This entry states the plan-edit sweep *"does **not** re-stamp `Tenant.MaxEmployees` or `Tenant.AuditLogRetentionDays`"*. **It does both** — `SubscriptionPlanService.cs:364-365`, with the ISSUE-474 rationale written into the doc comment at `:337-344`. Reverse drift of the expensive kind: a row claiming remaining work that has already shipped, which wastes a scheduling slot and invites a second implementation. Same class as `ISSUE-479`.
+**Disposition:** rewrite or close via `/verify-fix`. What may remain is narrower than the entry implies and must be re-stated from `src/`, not from this text.
+
 - **Type / Severity / Status:** ISSUE · MED · OPEN
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-012 BR
@@ -4172,6 +4201,14 @@ Rebuilt and verified 2026-09-08: backend image 5 days → 3 minutes, container h
 - **Needs from a human:** what should an unresolvable `plan_id` mean to a **destructive** job — fail closed and never purge, use `StrictestConfiguredAsync`, or keep the 90-day default? Changing a delete job's behaviour on a config error is not a call to make in-lane.
 
 ### ISSUE-490 — `PlanEditableFields` omits `MaxTemplateLanguageVariants`
+**▶ CONFIRMED 2026-09-08 — and the "unverified / ~70% / second-hand" caveat is now retired. Severity LOW → MED.**
+The entry flagged itself as least trustworthy. It was **the only one of its verification group that was true.**
+- **CONFIRMED, exact cite:** `SubscriptionPlanDtos.cs:56-74` — `PlanEditableFields` carries 7 `Max*` params and **omits** `MaxTemplateLanguageVariants`. `SubscriptionPlanService.ApplyEditableFields` (`:387-418`) never assigns it. `PlanEditableFields` is the **only** input type for both create and update, so **the field is unwritable through the plan API, full stop.** Its only non-test writer is `DbInitializer.cs:678` (`= 2`).
+- **Worse than filed — the limit is LIVE and ENFORCED.** `NotificationTemplateService.ResolveMaxLanguageVariantsAsync` (`:157-194`) resolves it via `PlanLimitLookup` with full BUG-307 fail-closed handling. Net effect: **every plan is permanently pinned at 2** unless an operator writes a per-tenant override row. "Enterprise: unlimited language variants" is not expressible in the plan catalog.
+- **"Unreachable from two directions" is now FALSE** — the per-tenant override path works (`PlanModules.cs:126,132`), and the FE offers it (`plan.models.ts:208`, `OVERRIDE_LIMIT_FIELDS`). Only the **plan-level default** is unreachable.
+- ⚠ **A false comment was guarding it** — `plan.models.ts:152,198` assert the key *"has no plan column of its own"* / *"no plan column at all"*. **Both false**: `SubscriptionPlan.cs:80` is the column, and `NotificationTemplateService.cs:175` reads it off the plan. The comment reframes a bug as by-design, which is exactly why this sat unverified. Counts as an additional `ENH-470` case.
+**DECIDED (human, 2026-09-08): make it a plan-tier lever.** Add to `PlanEditableFields`, `ApplyEditableFields`, `PlanDetailDto` (also omits it, `:26-50`) and the FE `LIMIT_FIELDS`. **Correcting `plan.models.ts:152,198` is decision-free and required either way.**
+
 - **Type / Severity / Status:** ISSUE · LOW · OPEN
 - **Layer:** BE
 - **Module / US / TC:** Admin Console · US-ADM-009
@@ -4560,6 +4597,45 @@ Rebuilt and verified 2026-09-08: backend image 5 days → 3 minutes, container h
 - **AUDIT (2026-09-08):** the early-allow — **CONFIRMED** at `worktree-fence.py:90-91`, with its rationale at `:19-20`; the Bash matcher omission — **CONFIRMED** in `settings.json`. **The failure is not hypothetical: it occurred during this backfill on 2026-09-07.** After a commit, the shell's cwd reverted to the main checkout and roughly 8 subsequent edits landed on `test/local-subdomains` instead of the intended worktree branch; nothing fired. The edits were made via `cat >` heredoc, so they would have evaded the fence from either direction anyway. They were caught only because a finding-count check disagreed, then reverted with `git checkout --`; **no commit was made to the wrong branch**. **Not audited:** whether adding the fence to the Bash matcher is practical without parsing shell redirection targets, which is the reason this is filed rather than patched.
 - **Severity rationale:** MED — no data was lost this time, but the loss mechanism is real, silent, and demonstrated. It is also the reason `ISSUE-512` should move from LOW to MED: that entry's severity rested on "nothing was lost", which is now only true because a separate check happened to catch it.
 - **Found:** 2026-09-08, auditing `ISSUE-512` — and by committing the defect it describes.
+
+### ISSUE-574 — I relayed an unverified claim into a verification brief, and it was false
+
+- **Type / Severity / Status:** ISSUE · **LOW** · OPEN
+- **Layer:** process
+- **SURVEY:** **1 confirmed instance**, in the T5 `ISSUE-445` verification brief (unit: claims passed to a sub-agent as established fact). The source was the untracked TODO block in `GAP-CLOSURE-QUEUE.md`, which held **8 items with no finding id** — none of them carrying a survey or an audit, because they predate rule #7.
+- **AUDIT (2026-09-08):** the relayed claim was *"`src/backend/HRM.Api/.claude/` is gitignored — the stray-agent-directory defect already happened on the backend and was papered over with an ignore rule."* Verified: `.gitignore:72` **does** ignore that path (CONFIRMED), but `git log --all --diff-filter=A -- src/backend/HRM.Api/.claude` → **0 adds** and the directory does not exist on disk (**the "already happened" half is FALSE**). The rule is prophylactic. I passed it to the agent as a "known related fact to verify, not assume" — the hedge was in the wording but the framing still primed the search.
+- **Why file it rather than just correct it:** rule #7 requires a finding's claims to be audited **in both directions**. A claim that has never been audited is not upgraded by being repeated in a brief, and a sub-agent given a confident premise spends its budget confirming rather than testing it. This one was caught because the agent checked anyway and said so; the failure mode is that it usually would not be. **The 8 TODO items are the standing exposure** — they read as facts and none has been audited.
+- **Suggested direction (NOT applied):** the decided backfill already covers filing the 8 TODO items as findings with survey + audit. Until then, any claim taken from that block must be marked UNVERIFIED when relayed. Related: [[ISSUE-445]], and the rule itself in `.claude/rules/ledgers.md`.
+- **Found:** 2026-09-08, while verifying `ISSUE-445` for T5.
+
+
+### ISSUE-573 — 13 agent-memory files are fragmented across 6 tracked `.claude/` stores under `docs/QA/`
+
+- **Type / Severity / Status:** ISSUE · **MED** · OPEN
+- **Layer:** process / tooling
+- **SURVEY:** **6 directories, 13 git-tracked files** (unit: `.claude/` directories outside the repo root, excluding `node_modules/` and the `.claude/worktrees/` mirror). All hold `agent-memory/test-runner/` notes; **none is covered by any ignore rule** (`git check-ignore -v` → not ignored):
+  `docs/QA/.claude` (5 files) · `docs/QA/admin-console/.claude` (2) · `docs/QA/attendance/.claude` (2) · `docs/QA/authentication/.claude` (1) · `docs/QA/core-hr/.claude` (2) · `docs/QA/leave-management/.claude` (1). Accumulating since `5bc3d929` (2026-07-11).
+- **AUDIT (2026-09-08):** verified independently of the finding that produced it — `find docs -name .claude -type d` returns exactly those 6, and `git ls-files | grep '^docs/QA/.*\.claude/'` returns exactly 13. The root `test-runner` store cannot see any of them, so a `@test-runner` run started from a module directory writes memory the next run will never read. Same cwd-relative root cause `ISSUE-445` describes for the frontend — except **that one never existed and this one is in the repo**.
+- **Why MED, not LOW:** agent memory exists so a later run does not re-derive what an earlier one learned. Fragmenting it across 6 invisible stores does not fail loudly — it silently degrades every subsequent run, and the loss is invisible precisely because the notes *were* written. 13 files of module-specific QA findings are currently unreadable by the agent that wrote them.
+- **Suggested direction (NOT applied):** merge the 13 into the root `.claude/agent-memory/test-runner/` store, delete the 6 directories, and add an architecture assertion that no `.claude/` exists outside the repo root — the merge must come first or the guard lands red. Note `src/frontend/.claude` is **not** covered by any ignore rule either, so a recurrence there would be committed.
+- **Found:** 2026-09-08, re-filed from the retracted `ISSUE-445`, which pointed at an artifact that does not exist while six real ones sat unexamined.
+
+
+### BUG-572 — one double-click can clear TWO approval levels when the same approver is configured on consecutive workflow steps
+
+- **Type / Severity / Status:** BUG · **HIGH** · OPEN
+- **Layer:** BE / security (segregation-of-duties bypass)
+- **Module / US / TC:** Workflow · AC-12 · `WorkflowRuntimeConcurrencyPostgresTests`
+- **SURVEY:** **1 code path, 2 configuration shapes, 0 tests.** The path is `WorkflowRuntimeService.DecideAsync` — the single decision entry point for every workflow (unit counted: methods in non-test `src/backend` that transition a `WorkflowStepInstance`). The exposure requires the same approver on consecutive steps, reachable **two** ways: the same `NamedUser` on both, or — far more likely in practice — the same **Role**, since role-based steps resolve to whoever holds the role. **Zero** of the repo's workflow fixtures configure it: both `WorkflowRuntimeConcurrencyPostgresTests.cs:78,83` and `WorkflowRuntimeParallelPostgresTests.cs:73` use distinct approvers per step, which is exactly why no test has ever seen this.
+- **AUDIT (2026-09-08):**
+  1. **CONFIRMED — nothing forbids the same approver on consecutive steps.** `CreateWorkflowValidator.cs:21-25` applies `WorkflowStepRequestValidator` per step, and that validator (`WorkflowStepRequestValidator.cs:52-84`) has **no cross-step uniqueness rule**. The configuration is legal.
+  2. **CONFIRMED — the instance is read before any lock.** `WorkflowRuntimeService.cs:227-231` loads `instance` via `FirstOrDefaultAsync` outside the `FOR UPDATE` at `:243-245`, and the lock predicate is built from that already-read `CurrentStepOrder`.
+  3. **CONFIRMED — the idempotency check is group-scoped AND actor-scoped.** `:263` tests `group.Any(s => s.DecidedByUserId == actingUserId && s.Decision != Pending)`. It therefore cannot fire for a step the caller has not personally decided.
+  4. **CONFIRMED — the exploit path.** When the winner commits before the loser's read, the loser evaluates step N+1: check (3) does not fire (no decision of theirs on N+1), and `IsAuthorizedApproverAsync` (`:271`, `:590-600`) **succeeds** because they are also N+1's approver. The loser then approves N+1. **Two approval levels cleared by one double-click.**
+- **This is NOT a locking bug, and that matters for the fix.** In the exploit interleaving the loser reads the instance *after* the winner committed, so it sees genuinely current state and is genuinely the approver of the step it acts on. There is no staleness to correct. **The defect is that a decision request carries no idempotency key**, so a double-click is two independent, individually-valid requests. *(Recorded because the obvious remedy — "reload the instance under the lock" — does not fix it, and I tried that first before tracing it properly.)*
+- **`ISSUE-418` classified this surface as "UX of the losing path" / a status-code cosmetic.** That framing is what kept it unexamined; the flake and this bypass share a symptom but not a cause. `ISSUE-418`'s own proposed remedy — treat "decided **any** row on this instance" as duplicate — is also **wrong**: it would permanently block one person legitimately approving steps 1 and 3 of a three-step chain, which the same missing validation makes configurable. It converts a race into a standing functional regression.
+- **Needs a decision, not a quiet fix.** Three shapes, not equivalent: **(a)** the request names the step it intends to decide, and a mismatch returns 409 — precise, but an API contract change; **(b)** a client-supplied idempotency key on the decision endpoint — the general solution, also a contract change; **(c)** forbid the same approver on consecutive steps in `WorkflowStepRequestValidator` — cheapest, but it outlaws a configuration some organisations legitimately want, and does nothing for the same person approving steps 1 and 3.
+- **Found:** 2026-09-08, while verifying `ISSUE-418` for T5. Surfaced only because the verification treated the finding's "only the status code varies" claim as a claim rather than as evidence.
 
 ### ISSUE-571 — BUG-530's Hangfire retry is INERT on both reminder jobs, because ISSUE-116 clears the marker before dispatch
 

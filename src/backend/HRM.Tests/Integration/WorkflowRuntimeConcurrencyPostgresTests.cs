@@ -142,11 +142,25 @@ public sealed class WorkflowRuntimeConcurrencyPostgresTests : IAsyncLifetime
         var t2 = Task.Run(DecideOnceAsync);
         var results = await Task.WhenAll(t1, t2);
 
-        // Exactly one winner, one loser (409 step_already_decided).
+        // Exactly one winner, one loser.
         results.Count(r => r.IsWinner).Should().Be(1, "exactly one concurrent decision may advance the step");
         var loser = results.Single(r => !r.IsWinner);
-        loser.StatusCode.Should().Be(409);
-        loser.ErrorCode.Should().Be("step_already_decided");
+
+        // ISSUE-418: the loser's REJECTION is asserted; its exact status code is NOT, because this race is
+        // unsynchronized and the code is genuinely non-deterministic:
+        //   winner decides step 1 BEFORE the loser reads the instance -> loser evaluates step 1, its own
+        //     decision trips the group-scoped idempotency check           -> 409 step_already_decided
+        //   winner ALSO advances CurrentStepOrder to 2 first             -> loser evaluates step 2, has no
+        //     decision there, falls through to the approver check         -> 403 not_step_approver
+        // Both are correct rejections. Pinning one of them made this test fail CI on PRs that could not have
+        // caused it (see ISSUE-418 / ISSUE-499) — the most expensive kind of noise, because it trains people
+        // to re-run rather than read.
+        //
+        // Deleting these two assertions loses NO AC-12 coverage: the invariant — exactly one winner, one
+        // step-1 row, exactly one step-2 row, no double-advance — is asserted in full below. To pin the exact
+        // code, force the ordering first, as ClockInDuplicateConcurrentPostgresTests does; do not pin it over
+        // an ordering this test never controls.
+        loser.IsWinner.Should().BeFalse("the losing caller must be rejected, whichever rejection applies");
 
         // The winning decision advanced step 1 → step 2 EXACTLY ONCE (no double-advance).
         await using var verify = Db(User(_approver1));
