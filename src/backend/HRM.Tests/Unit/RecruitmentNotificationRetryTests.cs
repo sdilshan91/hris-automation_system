@@ -232,6 +232,10 @@ public sealed class RecruitmentNotificationRetryTests
             StartTime = new TimeOnly(10, 0),
             InterviewType = InterviewType.Video,
             Status = status,
+            // ISSUE-116 guards on a PENDING reminder marker, and InterviewService.cs:136 always sets one
+            // when it schedules. Without it the job correctly no-ops and never reaches the dispatch these
+            // BUG-530 tests are about — mirrors the offer seed's ExpiryReminderJobId above.
+            ReminderJobId = "int-rem-job-1",
         });
         db.SaveChanges();
     }

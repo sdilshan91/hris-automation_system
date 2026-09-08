@@ -44,8 +44,11 @@ public sealed class ReminderJobIdempotencyTests
 {
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly string _dbName = Guid.NewGuid().ToString();
+    // BUG-530 changed the seam from Task to Task<Result>. A bare Substitute returns null for
+    // Task<Result>, so these ISSUE-116 tests must stub a SUCCEEDING seam — otherwise every job
+    // under test fails on the null Result before it ever reaches the idempotency guard being asserted.
     private readonly IRecruitmentNotificationService _notifications =
-        Substitute.For<IRecruitmentNotificationService>();
+        HRM.Tests.Unit.Helpers.RecruitmentNotifications.Succeeding();
 
     // ── Interview reminder ──────────────────────────────────────────────────
 
