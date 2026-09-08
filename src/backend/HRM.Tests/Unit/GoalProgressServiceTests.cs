@@ -66,6 +66,14 @@ public sealed class GoalProgressServiceTests
         new GanssHtmlSanitizer(), // ISSUE-144(b): the REAL sanitizer, so the write-path arms exercise it for real
         _notifications, Substitute.For<ILogger<GoalProgressService>>());
 
+    /// <summary>ISSUE-144: same service over a SHARED db, with a real audit logger, so audit rows persist.</summary>
+    private GoalProgressService ServiceWithAudit(ICurrentUser user, AppDbContext db) => new(
+        db, _tenantContext, user, new GanssHtmlSanitizer(), _notifications,
+        Substitute.For<ILogger<GoalProgressService>>(),
+        new HRM.Infrastructure.Services.PayrollAuditLogger(
+            db, _tenantContext, user,
+            Substitute.For<ILogger<HRM.Infrastructure.Services.PayrollAuditLogger>>()));
+
     private ICurrentUser User(Guid userId, params string[] permissions)
     {
         var u = Substitute.For<ICurrentUser>();
@@ -668,6 +676,42 @@ public sealed class GoalProgressServiceTests
 
         using var db = Db();
         (await db.GoalComments.AsNoTracking().CountAsync()).Should().Be(0, "no blank row may be persisted");
+    }
+
+    // ── ISSUE-144(a): every goal-progress WRITE leaves a central audit_logs row ──
+
+    [Fact]
+    public async Task Progress_update_writes_a_central_audit_row_ISSUE144()
+    {
+        await SeedAsync();
+        using var db = Db();
+        var r = await ServiceWithAudit(EmployeeUser(), db).AddProgressUpdateAsync(Update(_goalAId, 40));
+        r.IsSuccess.Should().BeTrue();
+
+        var rows = db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.Action == "GoalProgress.Updated").ToList();
+        rows.Should().ContainSingle("a progress write must be traceable centrally, not only in Serilog");
+        rows[0].ResourceType.Should().Be("Goal");
+        rows[0].ResourceId.Should().Be(_goalAId.ToString());
+    }
+
+    [Fact]
+    public async Task Goal_comment_writes_a_central_audit_row_and_does_NOT_copy_the_body_ISSUE144()
+    {
+        await SeedAsync();
+        using var db = Db();
+        var r = await ServiceWithAudit(ManagerUser(), db)
+            .AddCommentAsync(new AddGoalCommentInput(_goalAId, null, "Good progress, keep it up."));
+        r.IsSuccess.Should().BeTrue();
+
+        var rows = db.AuditLogs.IgnoreQueryFilters()
+            .Where(a => a.Action == "GoalProgress.CommentAdded").ToList();
+        rows.Should().ContainSingle();
+
+        // The body is deliberately excluded: it is user free text, and duplicating it into audit_logs
+        // would widen the very XSS surface ISSUE-144(b)'s sanitizer just closed.
+        (rows[0].After ?? string.Empty).Should().NotContain("keep it up",
+            "the comment body must NOT be copied into the audit payload");
     }
 
     // ── Tenant scoping ──────────────────────────────────────────────────
