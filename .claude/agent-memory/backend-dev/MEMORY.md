@@ -62,5 +62,3 @@
 - [Masking a field means masking its derivations](reference-mask-derived-fields.md) — BUG-533: BudgetCharge is `BonusAmount ?? IncrementAmount`, so nulling the five comp fields alone left the figure exposed
 - [Upload content sniffer (FileSignatureValidator)](reference-upload-content-sniffer.md) — fail-closed on unmapped types (why adoption stalls); adding a key is additive; image/jpg alias; payroll adjustment is the only path with no virus scan
 - [Overtime defaultMultiplier reachability (BUG-456)](reference-overtime-default-multiplier.md) — the "legacy empty-buckets" path is UNREACHABLE; seed Multiplier<=0 instead; ARCH-004 KnownInert goes red when you fix an entry
-- [Read-through cache pattern + key traps](patterns-read-through-cache.md) — scope (as the resolved restrict-SET, not the kind) must be in the key; the tenant segment needs a STRUCTURAL assertion, not a behavioural one
-- [Mutation proofs inside a worktree](workflow-mutation-proof-in-worktree.md) — the ISSUE-512 guard blocks inline `trap`/`git`; move the mutate+revert harness into a scratchpad script
