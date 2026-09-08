@@ -1,3 +1,4 @@
+using HRM.Domain.Authorization;
 using System.Globalization;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
@@ -244,10 +245,34 @@ public sealed class PayrollReportService : IPayrollReportService
         Result<PayrollReportResult> reportResult;
         if (reportType == PayrollReportType.BankAdvice)
         {
+            // BUG-536: this file carries FULL account numbers, so it is the SAME sensitive read as the reveal
+            // endpoint and must carry the same permission and the same audit row. Before this, Payroll.Export
+            // alone sufficed — and HR Officer holds it, while PermissionCatalog.cs:200-202 states HR Officer
+            // "is not trusted with unmasked PII". Both claims could not be true.
+            // Gated HERE and not on the controller attribute: only BankAdvice is sensitive, so moving the
+            // requirement up would 403 every other export for a legitimate Payroll.Export holder.
+            if (_currentUserOrNull is null
+                || !_currentUserOrNull.Permissions.Contains(PermissionCatalog.Payroll.ViewSensitive))
+            {
+                return Result<PayrollReportExportResult>.Failure(
+                    "You do not have permission to export unmasked bank details.",
+                    403, "bank_advice_export_not_permitted");
+            }
+
             var (month, year, periodError) = await ResolvePeriodAsync(qp, ct);
             if (periodError is not null)
                 return Result<PayrollReportExportResult>.Failure(periodError, 404);
             reportResult = await BuildBankAdviceReportAsync(month, year, qp, masked: false, ct);
+
+            // BUG-536: audit BEFORE returning, mirroring RevealBankAdviceAsync. The reveal path wrote an audit
+            // row and the export path wrote none — so the EASIER route to bulk unmasked PII was the untraceable one.
+            await _auditLogger.LogAndSaveAsync(
+                action: PayrollAuditAction.PayrollReportViewSensitive,
+                resourceType: PayrollAuditAction.ResourceType.PayrollReport,
+                resourceId: PayrollReportType.BankAdvice.ToString(),
+                before: null,
+                after: new { reportType = PayrollReportType.BankAdvice.ToString(), payMonth = month, payYear = year, via = "export" },
+                cancellationToken: ct);
         }
         else
         {

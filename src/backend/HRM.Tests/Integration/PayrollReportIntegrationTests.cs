@@ -15,6 +15,7 @@
 // `dotnet test` with no PostgreSQL / Docker).
 // ============================================================================
 
+using HRM.Domain.Authorization;
 using System.Text;
 using ClosedXML.Excel;
 using FluentAssertions;
@@ -61,7 +62,7 @@ public sealed class PayrollReportIntegrationTests
         public Guid TenantId { get; init; }
         public Guid UserTenantId => TenantId;
         public IReadOnlyList<string> Roles => [];
-        public IReadOnlyList<string> Permissions => [];
+        public IReadOnlyList<string> Permissions { get; init; } = [];
         public bool IsAuthenticated => true;
         public bool IsImpersonating => false;
         public Guid? ImpersonatorId => null;
@@ -87,6 +88,18 @@ public sealed class PayrollReportIntegrationTests
             db, ctx, new FakeCurrentUser { TenantId = tenantId, UserId = _actor },
             NullLogger<PayrollAuditLogger>.Instance);
         return (db, ctx, new PayrollReportService(db, ctx, audit, NullLogger<PayrollReportService>.Instance));
+    }
+
+    /// <summary>BUG-536: same scope, but with an authenticated caller carrying <paramref name="permissions"/>.</summary>
+    private (AppDbContext Db, ITenantContext Ctx, PayrollReportService Svc) Scope(Guid tenantId, params string[] permissions)
+    {
+        var ctx = new MutableTenantContext { TenantId = tenantId };
+        var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(_dbName).Options;
+        var db = new AppDbContext(options, ctx);
+        var user = new FakeCurrentUser { TenantId = tenantId, UserId = _actor, Permissions = permissions };
+        var audit = new PayrollAuditLogger(db, ctx, user, NullLogger<PayrollAuditLogger>.Instance);
+        return (db, ctx, new PayrollReportService(db, ctx, audit, NullLogger<PayrollReportService>.Instance, statutoryResolver: null, currentUser: user));
     }
 
     // ══════════════ US-PAY-009 AC-3: individual month-wise statements + bulk ZIP ══════════════
@@ -461,7 +474,10 @@ public sealed class PayrollReportIntegrationTests
             line.AccountNumber.Should().Be("******7890"); // masked: last-4 only (BR-2)
             line.AccountNumber.Should().NotBe("1234567890"); // full number NOT leaked in the preview
 
-            var export = await svc.ExportReportAsync(
+            // BUG-536: the export is now gated on Payroll.ViewSensitive, so this arm uses a scope that holds
+            // it. The capability is unchanged — an AUTHORIZED caller still gets full numbers (BR-2).
+            var (_, _, svcSensitive) = Scope(_tenantA, PermissionCatalog.Payroll.ViewSensitive);
+            var export = await svcSensitive.ExportReportAsync(
                 PayrollReportType.BankAdvice, PayrollExportFormat.Csv,
                 new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 });
             export.IsSuccess.Should().BeTrue();
@@ -501,6 +517,62 @@ public sealed class PayrollReportIntegrationTests
                 .Where(a => a.TenantId == _tenantA && a.Action == "PayrollReport.ViewSensitive")
                 .ToList();
             audit.Should().ContainSingle();
+            audit[0].ResourceType.Should().Be("PayrollReport");
+        }
+    }
+
+    // ── BUG-536: the bank-advice EXPORT is the same sensitive read as the reveal, so it carries the same
+    //    permission and the same audit row. It previously required only Payroll.Export — which HR Officer
+    //    holds, while the catalogue states HR Officer "is not trusted with unmasked PII" ──
+
+    [Fact]
+    public async Task BankAdviceExport_WithoutViewSensitive_Is403_BUG536()
+    {
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
+        await SeedFinalizedSlip(_tenantA, runId, "A1", 50_000m, 5_000m,
+            bankAccountNumber: "1234567890", bankName: "Acme Bank", bankBranchCode: "BR001");
+
+        // Payroll.Export ONLY — exactly what HR Officer holds.
+        var (db, _, svc) = Scope(_tenantA, PermissionCatalog.Payroll.Export);
+        using (db)
+        {
+            var export = await svc.ExportReportAsync(
+                PayrollReportType.BankAdvice, PayrollExportFormat.Csv,
+                new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 });
+
+            export.IsFailure.Should().BeTrue("Payroll.Export alone must not yield unmasked bank PII");
+            export.StatusCode.Should().Be(403);
+            export.ErrorCode.Should().Be("bank_advice_export_not_permitted");
+
+            // And nothing was produced to leak.
+            export.Value.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public async Task BankAdviceExport_WithViewSensitive_Succeeds_AndWritesAuditRow_BUG536()
+    {
+        var runId = BaseEntity.NewUuidV7();
+        await SeedRun(_tenantA, runId, PayrollRunStatus.Finalized);
+        await SeedFinalizedSlip(_tenantA, runId, "A1", 50_000m, 5_000m,
+            bankAccountNumber: "1234567890", bankName: "Acme Bank", bankBranchCode: "BR001");
+
+        var (db, _, svc) = Scope(_tenantA, PermissionCatalog.Payroll.ViewSensitive);
+        using (db)
+        {
+            var export = await svc.ExportReportAsync(
+                PayrollReportType.BankAdvice, PayrollExportFormat.Csv,
+                new PayrollReportQueryParams { PayMonth = 5, PayYear = 2026 });
+
+            export.IsSuccess.Should().BeTrue();
+            Encoding.UTF8.GetString(export.Value!.FileContent).Should().Contain("1234567890");
+
+            // The whole point: the EASIER route to bulk unmasked PII is no longer the untraceable one.
+            var audit = db.AuditLogs.IgnoreQueryFilters()
+                .Where(a => a.TenantId == _tenantA && a.Action == "PayrollReport.ViewSensitive")
+                .ToList();
+            audit.Should().ContainSingle("the export must be audited exactly like the reveal path");
             audit[0].ResourceType.Should().Be("PayrollReport");
         }
     }
