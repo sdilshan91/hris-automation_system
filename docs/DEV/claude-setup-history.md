@@ -98,3 +98,58 @@
 > agent-memory is tracked, and the hook now nudges separately on **`private-only`** runs. Replaying 10 real
 > subagent transcripts: **3 nudges before, 10 after** — including a `backend-dev` run that touched 55 files
 > and left nothing shared.
+
+---
+
+## graphify — knowledge graph over the codebase (added 2026-09-08)
+
+> **Not a Claude Code plugin.** `graphify` ships no `plugin.json` and no
+> `.claude-plugin/marketplace.json`, so `/plugin` and `enabledPlugins` cannot install it and none of the
+> plugin machinery above applies. It is a **PyPI CLI** — package `graphifyy` (double `y`; the obvious name
+> was taken — verified on PyPI as pointing at `github.com/Graphify-Labs/graphify`, so it is not a
+> typosquat). Apache-2.0 / MIT dual-licensed, pinned here at **0.9.56**. There is **nothing to buy**: the
+> source carries no licence key, subscription gate or activation check.
+
+**Install (per developer — nothing in this repo installs it for you):**
+```
+python3 -m venv ~/.local/share/graphify/venv        # system python is PEP 668 externally-managed
+~/.local/share/graphify/venv/bin/pip install graphifyy
+ln -sf ~/.local/share/graphify/venv/bin/graphify ~/.local/bin/graphify
+graphify install --platform claude && graphify hook install && graphify claude install
+graphify update .                                   # build the graph (AST-only, no API cost)
+```
+The upstream docs say `uv tool install graphifyy`; a venv is used here to avoid piping a remote install
+script into a shell for a tool that then writes git hooks.
+
+**What lands where — most of it is NOT in this repo:**
+
+| Written to | Committed? |
+|---|---|
+| `~/.claude/skills/graphify/SKILL.md` (713 lines) + `~/.claude/CLAUDE.md` (3-line pointer) | **No** — user scope, loads in *all* your projects |
+| `.git/hooks/post-commit`, `post-checkout`; `merge.graphify` driver in `.git/config` | **No** — `.git/` is never committed |
+| `CLAUDE.md` graphify section + two `PreToolUse` hooks in `.claude/settings.json` | **Yes** |
+| `graphify-out/` (660 MB locally) | **No** — gitignored, see below |
+
+**Three traps already hit, so nobody re-hits them:**
+
+1. ⚠ **`graphify-out/` is gitignored deliberately.** It is **660 MB** locally (mostly `cache/`), and the
+   post-commit hook rewrites `graph.json` on **every commit**. `graphify hook install` also appends
+   `graphify-out/graph.json merge=graphify` to `.gitattributes` — that line is **not kept here**, because
+   committing a 348 KB auto-regenerated file that every commit rewrites would recreate the exact
+   merge-driver cascade this repo hit with `MEMORY.md`, at far larger scale. And the driver would not save
+   us: **GitHub ignores `.gitattributes` merge drivers** (A/B-verified 2026-09-04, and re-confirmed
+   2026-09-08 when four open PRs all went `DIRTY` on that one file). Each developer builds their own graph.
+2. ⚠ **`graphify claude install` writes an absolute path** — `/home/<user>/.local/bin/graphify` — straight
+   into the **committed, team-wide** `.claude/settings.json`. It is rewritten here as
+   `command -v graphify >/dev/null 2>&1 && graphify hook-guard … || true`, so the hook resolves via PATH
+   and **fails open** for anyone who has not installed the CLI, matching the fail-open contract every other
+   guard in this repo honours. Re-check this after any `graphify claude install` re-run — it will put the
+   absolute path back.
+3. ⚠ It strips the **trailing newline** from `.claude/settings.json`, and leaves a
+   `.claude/settings.json.graphify-bak` behind (gitignored here).
+
+**The two `PreToolUse` hooks match `Bash|Grep` and `Read|Glob` — i.e. nearly every tool call** — and inject
+a "MANDATORY: run `graphify query` first" instruction into the model's context each time. That is the
+integration working as designed, but it is a third-party tool writing into the agent's context on almost
+every action: worth knowing before debugging odd agent behaviour. Remove with `graphify claude uninstall`;
+`graphify uninstall` removes the rest.
