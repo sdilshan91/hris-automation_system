@@ -87,3 +87,11 @@ ops/backup/*.log
 docs/.obsidian/workspace.json
 docs/.obsidian/workspace-mobile.json
 docs/.obsidian/cache
+
+# graphify knowledge graph (generated). 660MB+ locally, and graph.json is rewritten by the
+# post-commit hook on EVERY commit. Committing it would recreate the merge-driver cascade this
+# repo already hit with MEMORY.md -- and GitHub ignores .gitattributes merge drivers, so the
+# `merge=graphify` driver would not save us either. Each developer builds their own graph:
+#   graphify update .
+graphify-out/
+.claude/settings.json.graphify-bak
