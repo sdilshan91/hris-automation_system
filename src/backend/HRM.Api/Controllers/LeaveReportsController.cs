@@ -10,9 +10,17 @@ using Microsoft.AspNetCore.Mvc;
 namespace HRM.Api.Controllers;
 
 /// <summary>
-/// Leave reports and analytics for HR (US-LV-012). All endpoints are gated with
-/// <c>Leave.Reports</c> (granted to Tenant Admin / HR Manager / HR Officer / Auditor); the handler
-/// applies the BR-2 row-level role scope on top (HR/All → all data, manager → team, employee → self).
+/// Leave reports and analytics (US-LV-012). Every endpoint is gated on ANY of the three BR-2 grants —
+/// <c>Leave.Reports</c> (admin tier: Tenant Admin / HR Manager / HR Officer / Auditor),
+/// <c>Leave.Reports.Team</c> (built-in Manager) or <c>Leave.Reports.Own</c> (built-in Employee) — and the
+/// service then applies the BR-2 ROW scope on top: All / the caller's direct reports + self / the caller's
+/// own record only.
+///
+/// <para>ENH-002: the gate used to demand <c>Leave.Reports</c> alone, which no Manager or Employee role
+/// holds, so both were rejected with a 403 before the manager/self scope branches in
+/// <c>LeaveReportService.ResolveScopeAsync</c> could ever run — BR-2's finer half was implemented but
+/// unreachable. The gate is BROADENED here, never bypassed: clearing it only gets a caller to the handler,
+/// and the row scope is what decides what they see. A caller holding none of the three is still 403.</para>
 ///
 /// A dedicated controller — following the <see cref="LeaveCarryForwardController"/> /
 /// <see cref="LeaveLopController"/> precedent for focused leave sub-resources.
@@ -22,6 +30,12 @@ namespace HRM.Api.Controllers;
 [Authorize]
 public sealed class LeaveReportsController : ControllerBase
 {
+    // Attribute arguments must be compile-time constants, so PermissionCatalog.Leave.Reports* cannot be
+    // referenced directly. RequirePermissionLiteralTests pins these aliases against the catalog.
+    private const string LeaveReports = "Leave.Reports";
+    private const string LeaveReportsTeam = "Leave.Reports.Team";
+    private const string LeaveReportsOwn = "Leave.Reports.Own";
+
     private readonly IMediator _mediator;
 
     public LeaveReportsController(IMediator mediator)
@@ -40,7 +54,7 @@ public sealed class LeaveReportsController : ControllerBase
     /// the frontend has been getting since the dashboard shipped.
     /// </remarks>
     [HttpGet("reports/summary")]
-    [RequirePermission("Leave.Reports")]
+    [RequirePermission(LeaveReports, LeaveReportsTeam, LeaveReportsOwn)]
     [ProducesResponseType(typeof(ApiResponse<LeaveSummaryMetricsDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSummaryMetrics(
         [FromQuery] LeaveReportQueryParams queryParams,
@@ -61,7 +75,7 @@ public sealed class LeaveReportsController : ControllerBase
     /// CarryForwardSummary, LopSummary, DepartmentCalendarCoverage (case-insensitive).
     /// </summary>
     [HttpGet("reports/{reportType}")]
-    [RequirePermission("Leave.Reports")]
+    [RequirePermission(LeaveReports, LeaveReportsTeam, LeaveReportsOwn)]
     [ProducesResponseType(typeof(ApiResponse<LeaveReportResult>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetReport(
@@ -86,7 +100,7 @@ public sealed class LeaveReportsController : ControllerBase
     /// UtilizationByDepartment, LeaveByType, MonthlyTrend (case-insensitive).
     /// </summary>
     [HttpGet("analytics/{chartType}")]
-    [RequirePermission("Leave.Reports")]
+    [RequirePermission(LeaveReports, LeaveReportsTeam, LeaveReportsOwn)]
     [ProducesResponseType(typeof(ApiResponse<LeaveAnalyticsResult>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> GetAnalytics(
@@ -112,7 +126,7 @@ public sealed class LeaveReportsController : ControllerBase
     /// returned (FR-5) — the file is stored via the blob-storage seam and a notification is logged.
     /// </summary>
     [HttpGet("reports/{reportType}/export")]
-    [RequirePermission("Leave.Reports")]
+    [RequirePermission(LeaveReports, LeaveReportsTeam, LeaveReportsOwn)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<LeaveReportExportResult>), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]

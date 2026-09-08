@@ -24,6 +24,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Testcontainers.PostgreSql;
+using HRM.Tests.Unit.Helpers;
 
 namespace HRM.Tests.Integration;
 
@@ -143,7 +144,7 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
         var service = new ApplicantService(read,
             new MutableTenantContext { TenantId = _tenantId }, Substitute.For<ICurrentUser>(),
             Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(),
-            Substitute.For<IRecruitmentNotificationService>(), new GanssHtmlSanitizer(),
+            RecruitmentNotifications.Succeeding(), new GanssHtmlSanitizer(),
             NullLogger<ApplicantService>.Instance);
 
         var result = await service.GetPipelineBoardAsync(vacancyId, new PipelineFilter());
@@ -254,7 +255,7 @@ public sealed class TolerantEnumReadPostgresTests : IAsyncLifetime
         var service = new ApplicantService(read,
             new MutableTenantContext { TenantId = _tenantId }, Substitute.For<ICurrentUser>(),
             Substitute.For<IFileStorage>(), Substitute.For<IVirusScanner>(),
-            Substitute.For<IRecruitmentNotificationService>(), new GanssHtmlSanitizer(),
+            RecruitmentNotifications.Succeeding(), new GanssHtmlSanitizer(),
             NullLogger<ApplicantService>.Instance);
 
         var result = await service.GetPipelineBoardAsync(vacancyId, new PipelineFilter());

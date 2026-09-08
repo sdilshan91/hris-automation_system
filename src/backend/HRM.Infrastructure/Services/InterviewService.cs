@@ -496,9 +496,16 @@ public sealed class InterviewService : IInterviewService
 
             var interviewerEmployeeIds = interview.Interviewers.Select(ii => ii.EmployeeId).ToList();
 
-            await _notifications.NotifyInterviewAsync(
+            // BUG-530: the seam reports a failed dispatch now; log it rather than discard it. Not retried here —
+            // the interview write is already committed and this runs on the request path.
+            var outcome = await _notifications.NotifyInterviewAsync(
                 eventType, interview.Id, interview.ApplicantId, interview.VacancyId,
                 applicantEmail, interviewerEmployeeIds, cancellationToken);
+            if (outcome.IsFailure)
+                _logger.LogWarning(
+                    "Interview notification did not fully dispatch (non-fatal). EventType={EventType}, " +
+                    "InterviewId={InterviewId}, TenantId={TenantId}, Error={Error}",
+                    eventType, interview.Id, _tenantContext.TenantId, outcome.Error);
         }
         catch (Exception ex)
         {

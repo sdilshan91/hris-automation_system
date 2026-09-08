@@ -59,13 +59,11 @@ public sealed class InertOptionalParameterTests
         // default that is correct precisely because nobody overrides it.
         "CtcResidualBalancer.Balance(residualFloor)",
 
-        // OPEN FINDING — GAP-022 recurrence, same file, same method. `defaultMultiplier` prices the
-        // legacy-attendance fallback path (empty per-multiplier breakdown + positive approved minutes),
-        // and the sole production caller (HRM.Infrastructure/Services/PayrollRunProcessor.cs:1001) omits
-        // it. Meanwhile AttendanceSettings.WeekdayOvertimeMultiplier is persisted and tenant-configurable
-        // (HRM.Domain/Entities/AttendanceSettings.cs:152, same 1.5m default). A tenant that sets 2.0x gets
-        // 1.5x on that path. Remove this entry when the caller threads the resolved multiplier through.
-        "PayrollOvertimeCalculator.Compute(defaultMultiplier)",
+        // ── RESOLVED, entry removed (BUG-456): `PayrollOvertimeCalculator.Compute(defaultMultiplier)`.
+        // PayrollRunProcessor now resolves AttendanceSettings.WeekdayOvertimeMultiplier off the employee's
+        // effective policy row and threads it through, so the parameter is live and this rule no longer
+        // reports it. Left as a comment, not a list entry, because this is the shape the baseline is FOR:
+        // an entry that got fixed and left, exactly as the second test demands.
 
         // OPEN FINDING — unwired capability rather than an ignored setting. Both production call sites
         // (HRM.Infrastructure/Services/StatutoryDeductionResolver.cs:196 and :205) omit

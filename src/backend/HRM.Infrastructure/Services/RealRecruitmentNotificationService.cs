@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
+using HRM.Application.Common.Models;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Infrastructure.Persistence;
@@ -31,6 +32,17 @@ namespace HRM.Infrastructure.Services;
 /// delivery failure must not break the committed recruitment write; every method is wrapped and per-recipient legs
 /// are individually guarded, mirroring the LogOnly contract. Resolution queries are tenant-scoped with
 /// <c>IgnoreQueryFilters</c> so they are correct even outside a request scope.</para>
+///
+/// <para><b>BUG-530 — never-throw is only half the contract.</b> Every guarded leg now REPORTS its outcome instead of
+/// discarding it: each dispatch leg returns a <see cref="Result"/>, the method aggregates them, and a single failed
+/// leg fails the whole method's <see cref="Result"/>. Previously the entire body sat inside one swallow-everything
+/// catch, so this service returned an identical completed <c>Task</c> whether every email was delivered or every one
+/// failed — and no caller could detect, let alone retry, a lost candidate email. The Hangfire reminder jobs read that
+/// <see cref="Result"/> and fail their run on a failure so Hangfire's automatic retries re-run the dispatch.</para>
+///
+/// <para><b>Limit, stated plainly:</b> this is retry-on-detected-failure, NOT at-least-once delivery. It does not
+/// survive process death between a successful dispatch and the caller's commit, because nothing durably records that a
+/// send is owed. An outbox would; it was deliberately not built. See <see cref="IRecruitmentNotificationService"/>.</para>
 ///
 /// <para><b>Offer-letter PDF (offer_sent):</b> the candidate leg sends the stored offer PDF INLINE via the generic
 /// <see cref="IEmailSender"/> + <see cref="EmailAttachment"/> (NOT the dispatcher — the multi-MB blob must not be
@@ -71,7 +83,7 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
         _logger = logger;
     }
 
-    public async Task NotifyApplicationReceivedAsync(
+    public async Task<Result> NotifyApplicationReceivedAsync(
         Guid applicantId, Guid vacancyId, string applicantEmail, string applicationReferenceNumber,
         CancellationToken cancellationToken = default)
     {
@@ -86,18 +98,19 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                 message: $"We've received the application for {vacancyTitle}.",
                 applicant, applicantEmail, vacancyTitle, applicationReferenceNumber);
 
-            await DispatchEmailOnlyAsync(tenantId, "application_received", payload,
+            return await DispatchEmailOnlyAsync(tenantId, "application_received", payload,
                 FirstNonEmpty(applicantEmail, applicant?.Email), cancellationToken);
         }
         catch (Exception ex)
         {
-            LogFailure(ex, "application_received", applicantId);
+            return LogFailure(ex, "application_received", applicantId);
         }
     }
 
-    public async Task NotifyNewApplicationAsync(
+    public async Task<Result> NotifyNewApplicationAsync(
         Guid applicantId, Guid vacancyId, Guid? hiringManagerEmployeeId, CancellationToken cancellationToken = default)
     {
+        var outcome = new DispatchOutcome("application_new");
         try
         {
             var tenantId = _tenantContext.TenantId;
@@ -124,18 +137,19 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                 if (hm?.UserId is { } hmUserId)
                     userIds.Add(hmUserId);
                 else if (!string.IsNullOrWhiteSpace(hm?.Email))
-                    await DispatchEmailOnlyAsync(tenantId, "application_new", payload, hm.Email, cancellationToken);
+                    outcome.Add(await DispatchEmailOnlyAsync(tenantId, "application_new", payload, hm.Email, cancellationToken));
             }
 
-            await DispatchToUsersAsync(tenantId, "application_new", payload, userIds, cancellationToken);
+            outcome.Add(await DispatchToUsersAsync(tenantId, "application_new", payload, userIds, cancellationToken));
+            return outcome.ToResult();
         }
         catch (Exception ex)
         {
-            LogFailure(ex, "application_new", applicantId);
+            return LogFailure(ex, "application_new", applicantId);
         }
     }
 
-    public async Task NotifyStageChangedAsync(
+    public async Task<Result> NotifyStageChangedAsync(
         Guid applicantId, Guid vacancyId, string applicantEmail, string fromStage, string toStage,
         CancellationToken cancellationToken = default)
     {
@@ -151,16 +165,16 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                 applicant, applicantEmail, vacancyTitle, applicant?.ApplicationReferenceNumber ?? string.Empty,
                 fromStage: fromStage, toStage: toStage);
 
-            await DispatchEmailOnlyAsync(tenantId, "application_stage_changed", payload,
+            return await DispatchEmailOnlyAsync(tenantId, "application_stage_changed", payload,
                 FirstNonEmpty(applicantEmail, applicant?.Email), cancellationToken);
         }
         catch (Exception ex)
         {
-            LogFailure(ex, "application_stage_changed", applicantId);
+            return LogFailure(ex, "application_stage_changed", applicantId);
         }
     }
 
-    public async Task NotifyInterviewAsync(
+    public async Task<Result> NotifyInterviewAsync(
         string eventType, Guid interviewId, Guid applicantId, Guid vacancyId, string applicantEmail,
         IReadOnlyList<Guid> interviewerEmployeeIds, CancellationToken cancellationToken = default)
     {
@@ -176,21 +190,25 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             _logger.LogWarning(
                 "RealRecruitmentNotificationService: unknown interview event '{EventType}' for interview {InterviewId}; nothing dispatched.",
                 eventType, interviewId);
-            return;
+            // BUG-530: nothing was dispatched, so this is not a success. It is a caller bug rather than a transient
+            // failure, and no job path can produce it (the jobs pass literal event keys), so it cannot cause retry churn.
+            return Result.Failure(
+                $"Unknown interview event '{eventType}'; nothing dispatched.", 400, "notification_unknown_event");
         }
 
-        await DispatchInterviewAsync(eventKey, interviewId, vacancyId, applicantEmail, interviewerEmployeeIds, cancellationToken);
+        return await DispatchInterviewAsync(eventKey, interviewId, vacancyId, applicantEmail, interviewerEmployeeIds, cancellationToken);
     }
 
-    public Task NotifyInterviewReminderAsync(
+    public Task<Result> NotifyInterviewReminderAsync(
         Guid interviewId, Guid applicantId, Guid vacancyId, string applicantEmail,
         IReadOnlyList<Guid> interviewerEmployeeIds, CancellationToken cancellationToken = default)
         => DispatchInterviewAsync("interview_reminder", interviewId, vacancyId, applicantEmail, interviewerEmployeeIds, cancellationToken);
 
-    private async Task DispatchInterviewAsync(
+    private async Task<Result> DispatchInterviewAsync(
         string eventKey, Guid interviewId, Guid vacancyId, string applicantEmail,
         IReadOnlyList<Guid> interviewerEmployeeIds, CancellationToken cancellationToken)
     {
+        var outcome = new DispatchOutcome(eventKey);
         try
         {
             var tenantId = _tenantContext.TenantId;
@@ -214,7 +232,7 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             });
 
             // Candidate is external → email-only (no User row).
-            await DispatchEmailOnlyAsync(tenantId, eventKey, payload, applicantEmail, cancellationToken);
+            outcome.Add(await DispatchEmailOnlyAsync(tenantId, eventKey, payload, applicantEmail, cancellationToken));
 
             // Interviewers are Employees: resolve {UserId, Email}. Linked account → in-app + email;
             // account-less → email-only fallback (ISSUE-263). Mirrors the hiring-manager resolution above.
@@ -232,19 +250,21 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                     if (iv.UserId is { } uid)
                         userIds.Add(uid);
                     else if (!string.IsNullOrWhiteSpace(iv.Email))
-                        await DispatchEmailOnlyAsync(tenantId, eventKey, payload, iv.Email, cancellationToken);
+                        outcome.Add(await DispatchEmailOnlyAsync(tenantId, eventKey, payload, iv.Email, cancellationToken));
                 }
 
-                await DispatchToUsersAsync(tenantId, eventKey, payload, userIds, cancellationToken);
+                outcome.Add(await DispatchToUsersAsync(tenantId, eventKey, payload, userIds, cancellationToken));
             }
+
+            return outcome.ToResult();
         }
         catch (Exception ex)
         {
-            LogFailure(ex, eventKey, interviewId);
+            return LogFailure(ex, eventKey, interviewId);
         }
     }
 
-    public async Task NotifyScorecardSubmittedAsync(
+    public async Task<Result> NotifyScorecardSubmittedAsync(
         Guid scorecardId, Guid interviewId, Guid applicantId, Guid vacancyId, Guid interviewerEmployeeId,
         CancellationToken cancellationToken = default)
     {
@@ -261,15 +281,15 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                 applicant, applicant?.Email, vacancyTitle, applicant?.ApplicationReferenceNumber ?? string.Empty);
 
             var userIds = await ResolveRecruiterUserIdsAsync(tenantId, cancellationToken);
-            await DispatchToUsersAsync(tenantId, "scorecard_submitted", payload, userIds, cancellationToken);
+            return await DispatchToUsersAsync(tenantId, "scorecard_submitted", payload, userIds, cancellationToken);
         }
         catch (Exception ex)
         {
-            LogFailure(ex, "scorecard_submitted", scorecardId);
+            return LogFailure(ex, "scorecard_submitted", scorecardId);
         }
     }
 
-    public async Task NotifyOfferAsync(
+    public async Task<Result> NotifyOfferAsync(
         string eventType, Guid offerId, Guid applicantId, Guid vacancyId, string applicantEmail,
         CancellationToken cancellationToken = default)
     {
@@ -286,9 +306,13 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             _logger.LogWarning(
                 "RealRecruitmentNotificationService: unknown offer event '{EventType}' for offer {OfferId}; nothing dispatched.",
                 eventType, offerId);
-            return;
+            // BUG-530: nothing was dispatched → not a success. See the interview sibling for why this cannot cause
+            // retry churn (job paths pass literal event keys).
+            return Result.Failure(
+                $"Unknown offer event '{eventType}'; nothing dispatched.", 400, "notification_unknown_event");
         }
 
+        var outcome = new DispatchOutcome(eventKey);
         try
         {
             var tenantId = _tenantContext.TenantId;
@@ -342,25 +366,27 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             // offer_sent → candidate leg carries the offer PDF inline (IEmailSender), NOT via the dispatcher.
             if (eventKey == "offer_sent")
             {
-                await SendOfferSentWithPdfAsync(
+                outcome.Add(await SendOfferSentWithPdfAsync(
                     tenantId, offerId, vacancyId, applicantId, candidateEmail, offer?.OfferReferenceNumber,
-                    offer?.PdfStorageKey, payloadData, payload, cancellationToken);
+                    offer?.PdfStorageKey, payloadData, payload, cancellationToken));
             }
             else
             {
-                await DispatchEmailOnlyAsync(tenantId, eventKey, payload, candidateEmail, cancellationToken);
+                outcome.Add(await DispatchEmailOnlyAsync(tenantId, eventKey, payload, candidateEmail, cancellationToken));
             }
 
             // Expiry-reminder / expired also notify the recruiter pool (in-app + email).
             if (toRecruiterPool)
             {
                 var userIds = await ResolveRecruiterUserIdsAsync(tenantId, cancellationToken);
-                await DispatchToUsersAsync(tenantId, eventKey, payload, userIds, cancellationToken);
+                outcome.Add(await DispatchToUsersAsync(tenantId, eventKey, payload, userIds, cancellationToken));
             }
+
+            return outcome.ToResult();
         }
         catch (Exception ex)
         {
-            LogFailure(ex, eventKey, offerId);
+            return LogFailure(ex, eventKey, offerId);
         }
     }
 
@@ -368,8 +394,10 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
     /// Sends the offer_sent candidate email with the stored offer-letter PDF attached INLINE via
     /// <see cref="IEmailSender"/> (the Phase-4 payslip pattern — the multi-MB blob must not be persisted as a Hangfire
     /// argument). Falls back to a dispatcher email with no attachment if the PDF cannot be read (never throws).
+    /// BUG-530: an unreadable PDF is a successful DEGRADED send (the fallback email still goes out), but a failure of
+    /// the send itself is reported as a failed <see cref="Result"/> so the caller can retry.
     /// </summary>
-    private async Task SendOfferSentWithPdfAsync(
+    private async Task<Result> SendOfferSentWithPdfAsync(
         Guid tenantId, Guid offerId, Guid vacancyId, Guid applicantId, string candidateEmail, string? offerReference,
         string? pdfStorageKey, IReadOnlyDictionary<string, object?> payloadData, string payloadJson,
         CancellationToken cancellationToken)
@@ -379,7 +407,10 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             _logger.LogWarning(
                 "RealRecruitmentNotificationService: no candidate email for offer_sent (offer {OfferId}); not sent.",
                 offerId);
-            return;
+            // A missing address is a permanent data defect, not a transient dispatch failure — see the contract note
+            // on IRecruitmentNotificationService. Reporting it as a failure would make Hangfire retry a send that can
+            // never succeed, burying the genuinely retryable failures.
+            return Result.Success();
         }
 
         byte[]? pdfBytes = null;
@@ -406,16 +437,14 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
         // No PDF → fall back to the plain dispatcher email (still delivers, just without the attachment).
         if (pdfBytes is null || pdfBytes.Length == 0)
         {
-            await DispatchEmailOnlyAsync(tenantId, "offer_sent", payloadJson, candidateEmail, cancellationToken);
-            return;
+            return await DispatchEmailOnlyAsync(tenantId, "offer_sent", payloadJson, candidateEmail, cancellationToken);
         }
 
         // Render the offer_sent template (tenant override → system default) against the payload, then send inline.
         var resolved = await _templateService.ResolveAsync("offer_sent", language: null, cancellationToken);
         if (resolved.IsFailure || resolved.Value is null)
         {
-            await DispatchEmailOnlyAsync(tenantId, "offer_sent", payloadJson, candidateEmail, cancellationToken);
-            return;
+            return await DispatchEmailOnlyAsync(tenantId, "offer_sent", payloadJson, candidateEmail, cancellationToken);
         }
 
         var t = resolved.Value;
@@ -430,7 +459,22 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             BodyText: rendered.BodyText,
             Attachments: [new EmailAttachment(fileName, pdfBytes, "application/pdf")]);
 
-        await _emailSender.SendAsync(message, cancellationToken);
+        // BUG-530: the inline send is the candidate's ONLY leg for offer_sent. Before this, a throwing IEmailSender
+        // propagated to NotifyOfferAsync's blanket catch and vanished — the offer letter was never delivered and
+        // OfferService still reported success. Guarded here and REPORTED so the failure is visible to the caller.
+        try
+        {
+            await _emailSender.SendAsync(message, cancellationToken);
+            return Result.Success();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "RealRecruitmentNotificationService: failed to send the offer_sent email with the offer PDF to {Email} (offer {OfferId}).",
+                candidateEmail, offerId);
+            return Result.Failure(
+                $"offer_sent inline email to {candidateEmail} failed: {ex.Message}", 502, "notification_dispatch_failed");
+        }
     }
 
     /// <summary>
@@ -499,10 +543,16 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
 
     // ── Dispatch legs ───────────────────────────────────────────────────────────────────────────────
 
-    private async Task DispatchToUsersAsync(
+    /// <summary>
+    /// Per-recipient in-app + email dispatch. Each recipient stays individually guarded (one bad recipient must not
+    /// stop the rest), but BUG-530: the guard now RECORDS the failure instead of discarding it, and the aggregate is
+    /// returned so the caller can retry.
+    /// </summary>
+    private async Task<Result> DispatchToUsersAsync(
         Guid tenantId, string eventKey, string payloadJson, IEnumerable<Guid> recipientUserIds,
         CancellationToken cancellationToken)
     {
+        var outcome = new DispatchOutcome(eventKey);
         foreach (var userId in recipientUserIds.Distinct())
         {
             try
@@ -517,11 +567,19 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             {
                 _logger.LogWarning(ex,
                     "RealRecruitmentNotificationService: failed to dispatch {EventKey} to user {UserId}.", eventKey, userId);
+                outcome.AddFailure($"user {userId}: {ex.Message}");
             }
         }
+
+        return outcome.ToResult();
     }
 
-    private async Task DispatchEmailOnlyAsync(
+    /// <summary>
+    /// Email-only dispatch (external candidates and account-less employees have no <c>User</c> row). BUG-530: a raised
+    /// dispatch is reported as a failed <see cref="Result"/>; a MISSING address is not — that is a permanent data
+    /// defect no retry can fix, so it stays a logged warning + success.
+    /// </summary>
+    private async Task<Result> DispatchEmailOnlyAsync(
         Guid tenantId, string eventKey, string payloadJson, string? recipientEmail, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(recipientEmail))
@@ -529,7 +587,7 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
             _logger.LogWarning(
                 "RealRecruitmentNotificationService: no email address for {EventKey} (tenant {TenantId}); not sent.",
                 eventKey, tenantId);
-            return;
+            return Result.Success();
         }
 
         try
@@ -538,11 +596,14 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
                 TenantId: tenantId, EventKey: eventKey, PayloadJson: payloadJson,
                 RecipientEmail: recipientEmail, NotificationType: eventKey);
             await _dispatcher.SendEmailAsync(request, cancellationToken);
+            return Result.Success();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "RealRecruitmentNotificationService: failed to dispatch email {EventKey} to {Email}.", eventKey, recipientEmail);
+            return Result.Failure(
+                $"email {eventKey} to {recipientEmail} failed: {ex.Message}", 502, "notification_dispatch_failed");
         }
     }
 
@@ -586,10 +647,47 @@ public sealed class RealRecruitmentNotificationService : IRecruitmentNotificatio
     private static string FirstNonEmpty(string? a, string? b)
         => !string.IsNullOrWhiteSpace(a) ? a : (b ?? string.Empty);
 
-    private void LogFailure(Exception ex, string eventKey, Guid subjectId)
-        => _logger.LogError(ex,
+    /// <summary>
+    /// Logs an unexpected failure of a whole dispatch method AND returns it as a failed <see cref="Result"/>
+    /// (BUG-530 — it used to ONLY log, which is exactly how the failure became invisible to every caller).
+    /// </summary>
+    private Result LogFailure(Exception ex, string eventKey, Guid subjectId)
+    {
+        _logger.LogError(ex,
             "RealRecruitmentNotificationService: failed to dispatch {EventKey} for {SubjectId} (tenant {TenantId}).",
             eventKey, subjectId, _tenantContext.TenantId);
 
+        return Result.Failure(
+            $"{eventKey} dispatch for {subjectId} failed: {ex.Message}", 502, "notification_dispatch_failed");
+    }
+
     private sealed record ApplicantLite(string FirstName, string LastName, string Email, string ApplicationReferenceNumber);
+
+    /// <summary>
+    /// BUG-530: collects the per-leg outcomes of one notification event so a single failed recipient leg fails the
+    /// method's <see cref="Result"/> without stopping the remaining legs. Partial delivery is reported as FAILURE —
+    /// the caller's only retry unit is the whole event, and under-reporting a partial loss is the defect being fixed.
+    /// </summary>
+    private sealed class DispatchOutcome
+    {
+        private readonly string _eventKey;
+        private readonly List<string> _failures = [];
+
+        public DispatchOutcome(string eventKey) => _eventKey = eventKey;
+
+        public void Add(Result legResult)
+        {
+            if (legResult.IsFailure)
+                _failures.Add(legResult.Error ?? "unknown dispatch failure");
+        }
+
+        public void AddFailure(string reason) => _failures.Add(reason);
+
+        public Result ToResult()
+            => _failures.Count == 0
+                ? Result.Success()
+                : Result.Failure(
+                    $"{_failures.Count} {_eventKey} dispatch leg(s) failed: {string.Join(" | ", _failures)}",
+                    502, "notification_dispatch_failed");
+    }
 }

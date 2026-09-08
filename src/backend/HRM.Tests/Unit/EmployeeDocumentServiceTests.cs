@@ -1161,6 +1161,54 @@ public sealed class EmployeeDocumentServiceTests : IDisposable
         result.Value!.StorageWarning.Should().BeNull();
     }
 
+    // ========================================================================
+    // BUG-075 regression guard on an EXISTING FileSignatureValidator adopter.
+    // The "image/jpg" alias added for the payroll adjustment path (site 3) changes a SHARED validator that
+    // this service depends on. These arms prove the alias did not weaken this adopter: spoofed bytes are
+    // still rejected, and JPEG bytes still do not satisfy any other declared type here.
+    // ========================================================================
+
+    [Theory]
+    [InlineData("application/pdf", "invoice.pdf")]
+    [InlineData("image/png", "photo.png")]
+    [InlineData("image/jpeg", "photo.jpg")]
+    public async Task Upload_spoofed_bytes_still_rejected_after_jpg_alias_bug075(
+        string contentType, string fileName)
+    {
+        var empId = await SeedEmployee();
+        var service = CreateService();
+
+        // "MZ" DOS/PE header renamed to an allowed extension and declared as an allowed MIME type.
+        var mz = new byte[] { 0x4D, 0x5A, 0x90, 0x00, 0x03, 0x00, 0x00, 0x00 };
+        using var stream = new MemoryStream(mz);
+
+        var result = await service.UploadAsync(
+            empId, stream, fileName, contentType, mz.Length, MakeMetadata());
+
+        result.IsFailure.Should().BeTrue();
+        result.StatusCode.Should().Be(400);
+        result.ErrorCode.Should().Be("invalid_file_type");
+
+        await _fileStorage.DidNotReceive().UploadAsync(
+            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<Stream>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Upload_jpeg_bytes_declared_as_pdf_still_rejected_bug075()
+    {
+        var empId = await SeedEmployee();
+        var service = CreateService();
+
+        using var stream = new MemoryStream(UploadTestBytes.Jpeg);
+
+        var result = await service.UploadAsync(
+            empId, stream, "contract.pdf", "application/pdf", UploadTestBytes.Jpeg.Length, MakeMetadata());
+
+        result.IsFailure.Should().BeTrue();
+        result.ErrorCode.Should().Be("invalid_file_type");
+    }
+
     public void Dispose()
     {
         // InMemory databases are cleaned up when the last connection closes

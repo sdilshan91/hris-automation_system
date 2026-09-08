@@ -29,6 +29,18 @@ public static class PayrollOvertimeCalculator
     /// <summary>The label used for the overtime earning line on the slip.</summary>
     public const string OvertimeLineName = "Overtime";
 
+    /// <summary>
+    /// The documented overtime multiplier applied when neither the attendance record nor the tenant supplies a
+    /// usable one — i.e. the value of <c>defaultMultiplier</c> when the caller omits it. Deliberately equal to
+    /// <c>AttendanceSettings.WeekdayOvertimeMultiplier</c>'s own default (1.50), so a tenant with no attendance
+    /// policy row is priced exactly as a tenant that saved the defaults.
+    ///
+    /// <para>BUG-456: exists so the payroll caller can express "no policy row ⇒ the code default" without
+    /// re-declaring the literal 1.5 next to a call that already has a 1.5 default. Two copies of a money
+    /// constant drift; one does not.</para>
+    /// </summary>
+    public const decimal DefaultOvertimeMultiplier = 1.5m;
+
     /// <summary>The result of an overtime computation for one employee in one period (US-PAY-010 AC-2).</summary>
     /// <param name="OvertimeHours">Total approved overtime hours (minutes / 60), 2 dp.</param>
     /// <param name="OvertimeAmount">Total overtime earning across all multiplier buckets, 2 dp.</param>
@@ -53,6 +65,14 @@ public static class PayrollOvertimeCalculator
     /// pre-US-CHR-013 value. The caller resolves the flag + the employee's FTE and passes them in; this stays
     /// pure, exactly as the work-week and holiday multipliers are already handled.</para>
     /// </summary>
+    /// <param name="defaultMultiplier">
+    /// Tenant policy <c>AttendanceSettings.WeekdayOvertimeMultiplier</c>, resolved by the caller off the
+    /// employee's EFFECTIVE policy row (BUG-456). <b>Strictly subordinate to the per-record rate:</b> a bucket
+    /// whose key parses to a positive decimal is paid at THAT rate and never at this one. This applies only
+    /// where no usable per-record multiplier exists — an empty breakdown with positive approved minutes, or a
+    /// bucket key that is not a positive decimal. Getting that precedence backwards would reprice every record
+    /// that already carries an explicit rate. Defaults to <see cref="DefaultOvertimeMultiplier"/>.
+    /// </param>
     /// <param name="fte">The employee's full-time equivalent. Ignored unless <paramref name="fteScaledBase"/>.</param>
     /// <param name="fteScaledBase">Tenant policy <c>AttendanceSettings.FteScaledOvertimeBase</c>. Default false.</param>
     public static OvertimeResult Compute(
@@ -60,7 +80,7 @@ public static class PayrollOvertimeCalculator
         decimal workingDays,
         IReadOnlyDictionary<string, int> multiplierBuckets,
         int totalApprovedMinutes,
-        decimal defaultMultiplier = 1.5m,
+        decimal defaultMultiplier = DefaultOvertimeMultiplier,
         decimal fte = 1.0m,
         bool fteScaledBase = false)
     {

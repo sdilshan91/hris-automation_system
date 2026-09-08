@@ -2,6 +2,7 @@ using System.Globalization;
 using HRM.Application.Common.Helpers;
 using HRM.Application.Common.Interfaces;
 using HRM.Application.Common.Models;
+using HRM.Application.Common.Security;
 using HRM.Application.Features.Payroll.DTOs;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
@@ -386,6 +387,17 @@ public sealed class PayrollAdjustmentService : IPayrollAdjustmentService
         var ext = Path.GetExtension(fileName);
         if (!AllowedContentTypes.Contains(contentType) || !AllowedExtensions.Contains(ext))
             return Result<string>.Failure("Only PDF, JPG, and PNG files are allowed.", 400, "unsupported_file_type");
+
+        // BUG-075: sniff the REAL magic bytes — the allow-list checks above only trust the client-supplied
+        // content type and file extension, so a renamed .exe declared as "image/jpeg" would otherwise be
+        // stored. Reject (400 invalid_file_type) when the bytes don't match the declared type. This path has
+        // no virus scan, so nothing else re-reads the stream first; ValidateStreamAsync seeks to 0 on entry
+        // and on exit, leaving `content` fully readable for the IFileStorage upload below.
+        var signature = await FileSignatureValidator.ValidateStreamAsync(contentType, content, cancellationToken);
+        if (signature.IsFailure)
+            return Result<string>.Failure(
+                "File content does not match its type. Supported: PDF, JPEG, PNG.",
+                400, FileSignatureValidator.ErrorCode);
 
         var adj = await _dbContext.PayrollAdjustments.FirstOrDefaultAsync(a => a.Id == adjustmentId, cancellationToken);
         if (adj is null)

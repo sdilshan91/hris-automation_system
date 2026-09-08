@@ -65,7 +65,7 @@ public sealed class ScorecardServiceTests
             CreateDbContext(),
             _tenantContext,
             _currentUser,
-            Substitute.For<IRecruitmentNotificationService>(),
+            RecruitmentNotifications.Succeeding(),
             config ?? new ConfigurationBuilder().Build(),
             Substitute.For<ILogger<ScorecardService>>());
     }

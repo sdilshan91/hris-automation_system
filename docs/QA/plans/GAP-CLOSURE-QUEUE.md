@@ -345,10 +345,222 @@ Cheapest possible reduction, and it stops the ledger manufacturing phantom work.
 
 | item | re-rate | why |
 |---|---|---|
-| **`ISSUE-036`** | LOW → **HIGH** | The FE sends **filenames only**; no bytes are ever stored. A leave type requiring a medical certificate is satisfied by **any non-blank string** — a compliance control defeated by a string, with the bound test enshrining it. **Sizing corrected 2026-09-06: M, not small.** The storage half ports cleanly from `SelfAssessmentAttachmentService`, but a BE-only fix breaks the leave-apply flow while the FE still sends filenames — three legs (upload endpoint · reference validation replacing the string check at `LeaveRequestService.cs:187` · FE file input) must land together. |
+| ~~**`ISSUE-036`**~~ ✅ **#655 — already fixed, verified 2026-09-08** | ~~LOW → **HIGH**~~ | The FE sends **filenames only**; no bytes are ever stored. A leave type requiring a medical certificate is satisfied by **any non-blank string** — a compliance control defeated by a string, with the bound test enshrining it. **Sizing corrected 2026-09-06: M, not small.** The storage half ports cleanly from `SelfAssessmentAttachmentService`, but a BE-only fix breaks the leave-apply flow while the FE still sends filenames — three legs (upload endpoint · reference validation replacing the string check at `LeaveRequestService.cs:187` · FE file input) must land together. |
 | **`ENH-008`** | ENH → **MED** | Employee sees *"N of 5 allowed lates"* while deduction begins at **3**. They read green while pay is docked. One line — and the existing test asserts the wrong value, so correcting it will trip the test-integrity guard. That is a correction, not a weakening. |
 | **`ISSUE-367`** | LOW → **MED** | Renders *"in use by **0** active employees. Reassign them before deleting."* `affectedEmployeeCount` has zero backend occurrences; two specs mock the phantom field and keep it green. |
-| **`ISSUE-373`** | HIGH → **MED**, but split | "17 gaps" is **6 rows / 9 fields**. Keep one out: `trend:'Flat'` is hardcoded *and rendered* — **wrong data beats missing data.** |
+| ~~**`ISSUE-373`**~~ ⤳ **superseded by `ISSUE-379` rows 7-9 (verified 2026-09-08)** | ~~HIGH → **MED**, but split~~ | "17 gaps" is **6 rows / 9 fields**. Keep one out: `trend:'Flat'` is hardcoded *and rendered* — **wrong data beats missing data.** |
+
+## 🔺 AUTO-HEAL 2026-09-08 (2) — the out-of-lane backfill: 39 audited, 8 filed, and a HIGH that jumps the queue
+
+Filed from the SURVEY+AUDIT backfill of the 39 live out-of-lane findings that had neither (PR #697).
+That population is now **75 of 75** covered. **This slice failed differently from the CRIT/HIGH one:**
+there, 11 of 36 entries were already fixed; here only **3 of 39** were (`BUG-308`, `ISSUE-383`,
+`ISSUE-376`, all merged). The dominant defect was **understatement** — entry after entry cited one site
+where many existed.
+
+### Jumps the queue — ahead of everything in this section
+
+- **`ISSUE-564` (HIGH)** — **a structurally complete stored-XSS chain.**
+  `review-signoff.component.ts:344` writes server-stored `meetingNotesHtml` straight to `innerHTML`,
+  bypassing Angular's DomSanitizer — while the component's own header at `:41` claims the opposite. That
+  makes server-side **AngleSharp 0.17.1** the *only* sanitization layer on the path, and it carries
+  **CVE-2026-54570** (mXSS via `annotation-xml`, fixed in AngleSharp 1.5.0). Manager-authored HTML,
+  rendered to their report, one layer, published bypass. **Two-part fix, both halves required:** bind
+  through `[innerHTML]` (or `DomSanitizer.sanitize`), **and** bump `HtmlSanitizer` 9.0.892 → **9.2.995**
+  — note `ISSUE-511`'s suggested "bump AngleSharp" **does not work**, because HtmlSanitizer pins it
+  exactly. **Not yet demonstrated end-to-end** — treat as a reachable chain, not an exploited vuln.
+
+### Then — MED, ordered by blast radius
+
+- `ISSUE-563` — **~35 tenant-isolation TCs instruct the wrong Postgres GUC** (`app.current_tenant_id`;
+  the real one is `app.current_tenant`), so an RLS probe matches 0 rows and the tester records a **PASS**.
+  These are the test cases for Critical Rule #1 and their failure mode is a silent green. Sweep, then add
+  a docs-gate assertion that any TC citing `current_setting(` names a GUC a migration creates.
+- `ISSUE-565` — the raw-SQL tenant-isolation semgrep rule exempts a query because the string `tenant_id`
+  appears **anywhere** in it, so `SELECT tenant_id FROM x` with no `WHERE` passes. Same class as
+  `ISSUE-486`/`ISSUE-492`. **Pair any widening with the false-positive fix** — extending it as `ISSUE-537`
+  proposes fires on 5 sites, all false positives, which is how guards get disabled.
+- `ISSUE-570` — `StatutoryRuleService.UpdateAsync` has **no overlap pre-check** (1 of 3 mutating paths);
+  create and clone both have one. An update can move a rule onto a sibling's window — the same
+  arbitrary-winner collision `ISSUE-299`/`ISSUE-505` exist to prevent, by an unguarded route.
+- `ISSUE-569` — **the worktree fence is blind in the reverse direction** (`worktree-fence.py:90-91` exits
+  allow whenever cwd is outside a worktree) and is **absent from the Bash matcher**, so `cat >` heredocs
+  are unfenced both ways. Not hypothetical: it let ~8 misdirected edits through during this very backfill.
+  This is also why `ISSUE-512` should move LOW → MED.
+- `ISSUE-567` — the **anonymous** public job-application upload (`CareersController.cs:73`,
+  `[AllowAnonymous]` at `:21`) has no `[RequestSizeLimit]`, so an unauthenticated caller forces a 30 MB
+  buffered body. Throttled to 10/hour/IP, which is what keeps it MED.
+
+### Then — LOW
+
+- `ISSUE-566` — 10 FE model files still document an "(ASSUMED)" backend contract against shipped endpoints.
+- `ISSUE-568` — the review PDF renders a permanent `"-"` in 3 Discussion rows. **Child of `ISSUE-289`'s
+  product decision** — if the structured fields get exposed, a skip-empty patch becomes the wrong fix.
+
+### ⛔ Re-rate before working — 5 severities are wrong, 2 dangerously
+
+| entry | change | why |
+|---|---|---|
+| **`ISSUE-298`** | LOW → **MED** | Its LOW rationale — "delivery is the log-only seam so no user receives the wrong copy" — is **false**: `DependencyInjection.cs:607` wires the real service. Managers **are** receiving a notification that misstates who commented and addresses them by their report's first name. |
+| **`ISSUE-531`** | LOW → **MED** | The root of the above: **7 of 13** notification interfaces carry the stale "log-only default" doc. It has now mis-rated two findings. Correcting the docs is cheaper than either fix it distorted. |
+| **`ISSUE-511`** | LOW → **MED** | LOW dismissed the CVE as build noise; the vulnerable component **is** the XSS sanitizer. See `ISSUE-564`. |
+| **`ISSUE-507`** | LOW → **MED** | 4 raw `FiscalYear` comparison sites, not 1 — one is the clone-collision guard, so a dirty value can duplicate a whole fiscal year's rule set. |
+| **`ISSUE-512`** | LOW → **MED** | LOW rested on "nothing was lost"; see `ISSUE-569`. |
+| `ISSUE-520` | MED → **LOW** | Its payroll/final-settlement blast-radius claim is **false** — `AttendancePayrollService` already special-cases leavers. Reporting-only. |
+| `ISSUE-506` | MED → **LOW** | One stale comment line, contradicted 270 lines later by an accurate in-place comment and an explicit `_IsRejectedByService` test name. |
+| `ISSUE-525` | MED → **LOW** | Nothing is shipped (branch unmerged). Becomes MED **on merge of #688** — so fix the tag before, not after. |
+| `ISSUE-521` | MED → **LOW** | No brief prescribes the colliding filenames; the fix must **add** a naming rule, not amend one. |
+
+### ⚠ Three entries whose own remedy is wrong — do not action as written
+
+- **`DECISION-504`** — both its numbers are wrong (**33** columns, not 32; **3-then-6** validators, not 5),
+  and `ISSUE-543`'s criticism **holds**: 49 columns are `numeric(p,s)` with `s<=2, p!=18`, and the repo's
+  newest scale guard is `PrecisionScale(5,2)` — a rule scoped to `numeric(18,2)` **would not cover the fix
+  that most recently shipped**. Amend the scope before answering the decision.
+- **`ISSUE-525`** — its proposed `TC-PRF-ISO-129.md` would **cement a wrong id**: the series is a
+  contiguous 001–041, and 129 is the *issue* number pasted into a TC slot. Retag to `TC-PRF-ISO-042`.
+- **`ISSUE-518`** — its "repoint so the 405 is earned" is **not achievable in Payroll**:
+  `PayrollAuditController` has no `/{id}` route, so any verb yields 404 by construction. Only
+  `AuditLogController.cs:143` can return a genuine 405, and `TC-ADM-008-17` already targets it.
+
+### What this slice says about the remaining backlog
+
+**151 of 256** live findings still have no survey or audit — all MED/LOW/unrated, none out-of-lane. Given
+that this slice found 5 wrong severities and systematic understatement rather than staleness, those 151
+should be assumed **mis-sized in both directions**, not merely undocumented.
+
+## 🔺 AUTO-HEAL 2026-09-08 — the CRIT/HIGH survey+audit backfill: 21 findings in, and 4 phantom items out
+
+Filed from the SURVEY+AUDIT backfill of every live CRIT/HIGH finding (PR #697). **Recording the process
+failure first, as rule #6 requires:** all 21 findings were written to `TEST-FINDINGS.md` and *not* folded in
+here until the user asked whether they had been documented. Filing to the ledger is half the protocol —
+a finding that is not in this file does not get scheduled, and this queue is what the loop reads. That is
+the same failure `ISSUE-552` describes (findings invisible to the worklist), committed by the pass that
+filed `ISSUE-552`.
+
+### ⛔ REMOVE FIRST — four live entries below are already fixed
+
+Auditing the 36 live CRIT/HIGH findings found **11 whose defect no longer exists**, each closed by a merged
+PR. Four of them are still scheduled as live work in this file, three at HIGH:
+
+| where | item | verdict |
+|---|---|---|
+| `AUTO-HEAL 2026-09-07`, *"jumps the queue"* | **`ISSUE-501` (HIGH)** | **Already fixed — #661 is merged.** `PrecisionScale(5,2)` is at `CreateStatutoryRuleValidator.cs:118`,`:122`; the mirrored arms exist at `StatutoryRuleAmountBoundsTests.cs:103`,`:133`,`:166`,`:178`. It has been sitting at the **top** of a jump-the-queue section for a fix that shipped. |
+| `P1.4 — checks that report safety they do not provide` | **`ISSUE-486` (HIGH)** | **Already fixed — #634 is merged.** The batched-projection arm is at `PlanLimitLookupUsageGuardTests.cs:130-154`, with an inertness arm at `:160-175`. |
+| `T1 — live user-facing defects, filed too low` | **`ISSUE-036`** (re-rated LOW → HIGH) | **Already fixed — #655 is merged.** Multipart upload at `LeaveRequestsController.cs:62-68`; the gate now counts real rows at `LeaveRequestService.cs:213-219`. |
+| `T1 — live user-facing defects, filed too low` | **`ISSUE-373`** (HIGH → MED, split) | **Superseded, not stale.** Its whole residual is already carried by `ISSUE-379` rows 7-9; the `trend:'Flat'` item the T1 row keeps out is one of them. Work `ISSUE-379`, delete this row. |
+
+The other seven (`BUG-441`, `BUG-450`, `BUG-431`, `BUG-309`, `BUG-448`, and the **three CRIT `BUG-003
+EXTENSION` entries**) appear here only as history or as already-ticked rows, so they cost nothing — but they
+are still `OPEN` in the ledger. **`ISSUE-545` tracks all eleven; none were closed by the backfill** (only
+`/verify-fix` may). Until that runs, the open-CRIT count is wrong in both files: for the cross-tenant class
+it is **0, not 3**.
+
+### Jumps the queue — ahead of everything else in this section
+
+- **`ISSUE-556` (HIGH)** — **the guard that closes the whole `BUG-003` cross-tenant class has no
+  end-to-end regression arm.** `TenantAccessGuardMiddleware` (registered at `Program.cs:762`) is what makes
+  a spoofed `X-Tenant-Subdomain` return 403 across **577 endpoints on 80 controllers**. `grep
+  cross_tenant_denied` over `HRM.Tests` returns **0**; the only coverage is 6 unit facts against
+  NSubstitute doubles that never exercise `Program.cs` ordering, and `UnresolvedTenantFailClosedApiTests`
+  covers only the *unresolved* case, never the mismatched-token one. **Deleting one line reopens the
+  platform's Critical-Rule-#1 control with a fully green suite.** It outranks the rest of this batch on
+  blast radius alone, and it is *why* three CRITs could sit stale for two months — nothing was watching
+  that guard in either direction. Cheap: one HTTP-level arm per shape, plus an ordering assertion.
+
+### Then, the remaining HIGHs — `BUG-550` first, it is time-sensitive
+
+- **`BUG-550` (HIGH) — work it WITH `BUG-533`, not after.** `BUG-533`'s fix
+  (`origin/fix/BUG-533-workspace-comp-leak`, **PR #693, open**) closes the workspace and auto-generate
+  reads. It **deliberately leaves** the three write paths: `SaveAsync` → `RecommendationService.cs:501`,
+  `SubmitAsync` → `:642`, `DecideAsync` → `:750`, all still `BuildDtoWithLookupsAsync(... includeCompensation: true)`
+  (`:1286`). A line manager holding only `Performance.Review.Team` (`PermissionCatalog.cs:765`) who approves
+  or rejects receives compensation figures they never supplied; an HR Officer gets rule-derived bonus and
+  increment percents back from `POST submit`. **If #693 merges and `BUG-533` is marked verified, this stays
+  open under a green check** — which is the entire reason it was filed separately rather than folded in.
+  6 of the 7 compensation-bearing actions are ungated today; #693 fixes 3.
+
+
+- **`ISSUE-542` (HIGH)** — **435 of 1558** `/api/v1/…` route citations in `docs/QA/*/TC-*.md` resolve to no
+  controller route, across **201 TC files** and 99 distinct paths (core-hr 130/403, leave 142/327,
+  admin-console 68/77, payroll 14/53). A TC citing a dead route cannot be executed — and where its expected
+  result is a 404/400 (tenant-isolation arms) it **passes for the wrong reason**; `ISSUE-516` alone hides 3
+  such arms. **Do not hand-fix 435 citations without the guard**: a docs-gate test asserting every cited
+  route resolves against the generated OpenAPI contract, the same shape as `LedgerTraceabilityTests`.
+  Otherwise the drift is simply re-earned.
+- **`ISSUE-558` (HIGH)** — `POST /api/v1/tenant/leave-entitlements/bulk` is called from
+  `entitlement-rules.component.ts:765` and served by nobody; `LeaveEntitlementsController.cs:146` has only
+  `rules/bulk`. Bulk entitlement assignment fails **100% of the time**. One of 7 members of the
+  "FE calls a path no controller serves" class enumerated under `BUG-316`, and one of the 2 that had no
+  ledger entry at all. **Decide first whether `rules/bulk` is the intended target (one FE line) or whether
+  the endpoint was never built** — that changes the size by an order of magnitude.
+
+### Scheduled normally — MED
+
+- `ISSUE-543` — **`DECISION-504`'s proposed guard is scoped too narrowly to work.** It targets
+  `numeric(18,2)`; **15** validator-bound fields across 8 validators sit on `numeric(p,s)` with `s ≤ 2` and
+  `p ≠ 18`, so the rule would go green while they stay unguarded. Sharpest: `UpsertLatePolicyValidator.cs:21`
+  accepts `DeductionDays = 0.75` against `numeric(3,1)` — **a 20% inflation of an unpaid-day deduction**.
+  **Fold into `DECISION-504` before answering it**; the answer changes if the scope is wrong.
+- `ISSUE-555` — **RLS is not the independent backstop this repo's docs claim.** `TenantGucConnectionInterceptor.cs:43-46`
+  sets `app.current_tenant` from `AmbientTenant.Current`, which mirrors the **header-resolved** tenant
+  (`TenantContext.cs:50`) — so a spoofed header moves the GUC too. Pairs with `ISSUE-556`: the middleware is
+  not one of three layers, it is the only one. Directly falsifies `ISSUE-032`'s premise.
+- `ISSUE-544` — the `ISSUE-036` class survives in Performance: `GoalProgressService.cs:151-163` and
+  `PipService.cs:393` persist a client-supplied `StorageKey` with no upload and no reference resolution.
+  The `LeaveAttachmentService` pattern is already there to port.
+- `ISSUE-561` — `emergency_contacts` and `employee_dependents` are fully plaintext PII, outside
+  `ISSUE-523`'s `employees`-scoped framing and, unlike bank data, **with live write paths**. Trace the write
+  paths first — that trace is what sets the real severity.
+- `ISSUE-560` — `IAuditExempt` records **no reason**: 0 of 53 exempt types declare which of the two permitted
+  justifications they invoke, so no test can drift-detect a wrong exemption. Shared root cause of `GAP-025`
+  and all 7 `ISSUE-392` instances.
+- `ISSUE-557` — `TenantJobRunner.cs:65` treats `Guid.Empty` as a resolved tenant; `TenantContext.cs:29-51`
+  validates nothing, so `IsResolved` reads true for an all-zero tenant. Compounds `ISSUE-513`.
+- `ISSUE-547` — **12 of 54** top-level routes have zero inbound reference of any kind, and 1 of 206 feature
+  components is unreachable by transitive closure. A triage list, not 12 defects — several are plausibly
+  URL-only by design.
+- `ISSUE-551` — the **whole FR-6 review-signoff PDF export is built end-to-end and dead behind one
+  hardcoded `false`** (`review-signoff.models.ts:410`). Endpoint `ReviewSignoffController.cs:193`, handler
+  `ReviewSignoffQueries.cs:56-63`, client `review-signoff.service.ts:215-218` all exist and work.
+  `ISSUE-379` misfiled this as a *backend* gap; it is a one-line FE constant. **Confirm it is not a
+  deliberate feature flag before flipping it** — the mapper carries no comment either way.
+- `ISSUE-562` — `GoalCategory` is `'KPI'` on the FE and `'Kpi'` on the wire, so editing an existing KPI goal
+  shows a **blank required Category**. Read path only; the write path survives on case-insensitive binding.
+
+### Scheduled normally — LOW
+
+- `ISSUE-553` — three source comments assert "no workflow engine exists" while the same file routes decisions
+  through one 380 lines below. **This is the source of `ENH-005`'s false "latent" premise** — fix the comment
+  and re-triage `ENH-005` together, or the next reader repeats the mis-triage.
+- `ISSUE-559` — `GET /api/v1/tenant/org-tree/search` 404s; LOW only because a documented client-side
+  filtering fallback keeps search working.
+- `ISSUE-548` — `DependencyInjection.cs:83-87` documents the field encryptor as a startup fail-fast while
+  `:88` registers it lazily, with **0** `ValidateOnStart` calls repo-wide.
+- `ISSUE-549` — `03-scale-reads.js:43` whitelists HTTP 429 as a pass. Backstopped today by a sibling
+  `http_req_failed` threshold, so it cannot produce a false green on its own.
+
+### 🚧 Parked at the decision gate — NOT auto-scheduled
+
+- **`ISSUE-554`** — `statutory-configuration.component.ts:614` hardcodes `countryCode = 'LK'` with no
+  selector, while the backend models `CountryCode` as a first-class dimension and resolves strictly by it.
+  **Is multi-country statutory support in scope?** If Sri Lanka is the only supported jurisdiction, this is a
+  deliberate simplification and the fix is a comment; if not, it is a missing product surface. Do not guess.
+- **`ISSUE-546`** — `ISSUE-436` and `ISSUE-500` are **two open HIGH findings for one gap**, ~2,600 lines
+  apart, each citing a different four defects. That double-counts the HIGH backlog and risks two partial
+  fixes. Recommendation: merge into `ISSUE-500` (better-evidenced four), leave `ISSUE-436` as a `MERGED
+  INTO` pointer, carrying across only its measured survey. **Needs a human to pick the survivor.**
+- **`ISSUE-552`** — the detector that builds worklists from this ledger drops headings matching
+  `NOTE|EXTENSION|EXTENDED` as "family sub-entries", hiding 3 CRIT entries; it also false-positives on
+  `ISSUE-121` and `ISSUE-175`, whose titles merely contain the word "note". The fix is a **schema decision**
+  — sub-entry membership should come from a field (`- **Parent:** BUG-003`), not from heading text — which
+  is why it is parked rather than patched.
+
+### What this batch says about the queue's own numbers
+
+**11 of 36** audited CRIT/HIGH findings were already fixed — just under a third. The ~190 MED/LOW/unrated
+entries have **not** been audited. Until they are, no backlog total or severity mix in this file or in
+`TEST-FINDINGS.md` should be treated as load-bearing, and "N open findings" is not a number worth reporting.
 
 ## 🔺 AUTO-HEAL 2026-09-07 — 11 findings from the T1/T3 batch, and one HIGH that jumps the queue
 
@@ -359,7 +571,9 @@ happened, and it was caught by the user asking, not by the loop.
 
 **Jumps the queue — ahead of the remaining T3:**
 
-- **`ISSUE-501` (HIGH)** — `SocialSecurityInputValidator` has the ISSUE-169 defect one field over, on **EPF/ETF
+- ~~**`ISSUE-501` (HIGH)**~~ ✅ **#661 — ALREADY FIXED, do not work** *(verified 2026-09-08, survey+audit backfill:
+  `PrecisionScale(5,2)` at `CreateStatutoryRuleValidator.cs:118`,`:122`; arms at `StatutoryRuleAmountBoundsTests.cs:103`,`:133`,`:166`,`:178`.
+  Ledger status is still OPEN — `ISSUE-545`.)* — `SocialSecurityInputValidator` has the ISSUE-169 defect one field over, on **EPF/ETF
   contribution rates**. Same `numeric(5,2)`, same silent rounding, same echo. Statutory contribution rates
   are a legal obligation, which is why this outranks the rest of the batch. Fix is the one-line
   `PrecisionScale` already proven in #652 — cheap, and the tests to mirror already exist.
@@ -612,7 +826,7 @@ These now have a tier.
 
 | tier | findings | why grouped |
 |---|---|---|
-| **P1.4 — checks that report safety they do not provide** | `ISSUE-486` (HIGH) · `ISSUE-492` | **The session's sharpest pattern: THREE false-greens in one day.** `ISSUE-486` — the BUG-307 guard matches one spelling and was blind to the batched projection, so it never saw `BUG-473`. `ISSUE-492` — running the test script from the repo root while in a worktree reports `Passed!` for code never executed. The third was `ledger-lock` itself, shipped inert and fixed in #619. A guard that reports safety it lacks is worse than none, because it stops anyone looking. **Fix these before trusting any further green.** |
+| **P1.4 — checks that report safety they do not provide** | ~~`ISSUE-486`~~ ✅ **#634 — already fixed, verified 2026-09-08** · `ISSUE-492` | **The session's sharpest pattern: THREE false-greens in one day.** `ISSUE-486` — the BUG-307 guard matches one spelling and was blind to the batched projection, so it never saw `BUG-473`. `ISSUE-492` — running the test script from the repo root while in a worktree reports `Passed!` for code never executed. The third was `ledger-lock` itself, shipped inert and fixed in #619. A guard that reports safety it lacks is worse than none, because it stops anyone looking. **Fix these before trusting any further green.** |
 | **P1.2 (fold in)** | `ISSUE-488` · `ISSUE-461` | Same dashboards and same files as `BUG-460`/`BUG-483`. `ISSUE-488` is the FE half of `BUG-473` — without it that fix is inert on screen. `ISSUE-461`'s four "always null" comments sit on the very fields `BUG-460` is about. |
 | **P3 — ledger + docs truth** | `ISSUE-479` · `ISSUE-464` · `ISSUE-466` · `ISSUE-491` | Register/TC/doc corrections. `ISSUE-479` matters most: a **security** row reading OPEN when the control shipped invites someone to rebuild it. |
 | **P4 — test infrastructure** | `ISSUE-469` | `ApiTestFactory` mints an unresolvable plan, so every persona suite runs with plan limits silently disabled — directly relevant to P1.1's subject matter. |
@@ -1295,6 +1509,34 @@ are not runner-selectable — no `[Trait("TC",…)]`, so G9's traceability is do
 8. **Decisions go to the human** with recommended options, and the recommendation is the *best* option, not the cheapest.
 
 ## Changelog
+
+- **2026-09-08 (out-of-lane backfill)** — **39 audited, 8 filed, 5 severities corrected** (#697). The
+  out-of-lane population is now 75 of 75 surveyed and audited. Unlike the CRIT/HIGH slice, almost nothing
+  here was stale — **3 of 39** were already fixed — and the systematic defect was **understatement**:
+  `ISSUE-515` cited 1 wrong-GUC site where 91 exist, `ISSUE-540` cited 3 stale RLS claims where 12 do,
+  `ISSUE-508` implied 1 uncounted table where 5 are, `ISSUE-510` claimed "the only upload controller"
+  where 5 qualify. **The lesson is that a finding's scope is a claim like any other** — nine of these were
+  filed by agents who had verified the defect and never counted it, which is exactly what rule #7's
+  SURVEY half exists to force. Two severities were wrong in the dangerous direction for one shared
+  reason: a stale "log-only notification seam" doc in **7 of 13** interfaces, which mis-rated `ISSUE-298`
+  to LOW while managers were in fact receiving misattributed notifications in production. And one finding
+  was filed against this session's own conduct — `ISSUE-569`, after the worktree fence failed to catch ~8
+  edits misdirected to the main checkout, because it only guards the direction out of a worktree, never
+  the direction into one.
+
+- **2026-09-08 (survey+audit backfill)** — **21 findings folded in, and 4 live entries removed as already
+  fixed** (#697). The removals matter more than the additions: `ISSUE-501` sat at the top of a
+  *"jumps the queue"* section for a fix merged in #661, and `ISSUE-486` under P1.4 for one merged in #634.
+  **11 of the 36 audited CRIT/HIGH findings were stale-OPEN** — the defect gone, the status line still
+  `OPEN` — including all three CRIT `BUG-003 EXTENSION` entries, closed by #119 on 2026-07-02 against
+  observations dated 2026-06-26. The ledger already recorded that fix 500 lines further up and missed them.
+  Two lessons, both about mechanism rather than any individual finding. **A finding filed to
+  `TEST-FINDINGS.md` and not folded in here is not tracked** — this batch was filed to the ledger and left
+  out of the queue until the user asked, which is precisely the failure `ISSUE-552` describes, committed by
+  the pass that filed `ISSUE-552`. And **a status line is a claim, not evidence**: every one of the 11 stale
+  entries asserted it was open, and the only reason anyone found out is that six agents re-read the code
+  instead of trusting the ledger. The single change that would catch the largest error here on its own is
+  `ISSUE-556` — an HTTP-level arm on the cross-tenant guard, which currently has none.
 
 - **2026-08-23 (D1/payroll)** — **Slice 2 done (#569): payroll 55 → 4, repo-wide 218 → 167.** Two CRITICALs
   — a payroll run cannot be started from the UI, and the statutory editor destroys tax bands on save. Neither

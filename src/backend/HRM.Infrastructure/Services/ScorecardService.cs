@@ -401,9 +401,16 @@ public sealed class ScorecardService : IScorecardService
     {
         try
         {
-            await _notifications.NotifyScorecardSubmittedAsync(
+            // BUG-530: the seam reports a failed dispatch now; log it rather than discard it. Not retried here —
+            // the scorecard write is already committed and this runs on the request path.
+            var outcome = await _notifications.NotifyScorecardSubmittedAsync(
                 scorecard.Id, interview.Id, interview.ApplicantId, interview.VacancyId,
                 scorecard.InterviewerEmployeeId, cancellationToken);
+            if (outcome.IsFailure)
+                _logger.LogWarning(
+                    "Scorecard notification did not fully dispatch (non-fatal). ScorecardId={ScorecardId}, " +
+                    "InterviewId={InterviewId}, TenantId={TenantId}, Error={Error}",
+                    scorecard.Id, interview.Id, _tenantContext.TenantId, outcome.Error);
         }
         catch (Exception ex)
         {
