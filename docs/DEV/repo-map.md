@@ -63,7 +63,7 @@
 │   │   ├── design-review.md       # Designer's-eye visual + UX audit (report-only)
 │   │   ├── fault-diagnosis.md     # Root-cause-before-fix discipline (local)
 │   │   ├── error-recovery.md      # Stuck-loop breaker / failure-counter (local)
-│   │   ├── retro.md               # Engineering retrospective from git + ledgers (local)
+│   │   ├── retro/SKILL.md         # Engineering retrospective from git + ledgers (local); dir layout = discoverable as /retro
 │   │   ├── advisor.md             # Technical-consultant advisory (report-only); + advisor/currency-scan.py
 │   │   └── github-pipeline.md     # Remote pipeline (needs credits)
 │   ├── hooks/                     # Automation hooks
