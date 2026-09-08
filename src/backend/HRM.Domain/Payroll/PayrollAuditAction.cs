@@ -65,6 +65,12 @@ public static class PayrollAuditAction
     // trail at all. Same "{Resource}.{Verb}" catalog convention as the payroll-run lifecycle above; the
     // Approved/Rejected pair deliberately mirrors PayrollRun.Approved/PayrollRun.Rejected.
     public const string RecommendationCreated = "Recommendation.Created";
+
+    /// <summary>ISSUE-144: a goal PROGRESS update — the percentage/status write, not the goal itself.</summary>
+    public const string GoalProgressUpdated = "GoalProgress.Updated";
+
+    /// <summary>ISSUE-144: a comment added to a goal's timeline. Free text, so it is audit-relevant.</summary>
+    public const string GoalCommentAdded = "GoalProgress.CommentAdded";
     public const string RecommendationOverridden = "Recommendation.Overridden";
     public const string RecommendationSubmitted = "Recommendation.Submitted";
     public const string RecommendationApproved = "Recommendation.Approved";
@@ -89,6 +95,9 @@ public static class PayrollAuditAction
         // BUG-083 sensitive-reveal resource types.
         public const string Payslip = "Payslip";
         public const string Recommendation = "Recommendation";
+
+        /// <summary>ISSUE-144: goal progress writes (updates + comments).</summary>
+        public const string Goal = "Goal";
         // ISSUE-293 sensitive-reveal resource type (Core-HR employee PII).
         public const string Employee = "Employee";
     }

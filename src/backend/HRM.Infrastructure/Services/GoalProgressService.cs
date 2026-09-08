@@ -4,6 +4,7 @@ using HRM.Application.Features.Performance.DTOs;
 using HRM.Domain.Authorization;
 using HRM.Domain.Entities;
 using HRM.Domain.Enums;
+using HRM.Domain.Payroll;
 using HRM.Domain.Performance;
 using HRM.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -38,14 +39,20 @@ public sealed class GoalProgressService : IGoalProgressService
     private readonly IPerformanceNotificationService _notifications;
     private readonly ILogger<GoalProgressService> _logger;
 
+    private readonly IPayrollAuditLogger? _auditLogger;
+
     public GoalProgressService(
         AppDbContext dbContext,
         ITenantContext tenantContext,
         ICurrentUser currentUser,
         IHtmlSanitizer sanitizer,
         IPerformanceNotificationService notifications,
-        ILogger<GoalProgressService> logger)
+        ILogger<GoalProgressService> logger,
+        IPayrollAuditLogger? auditLogger = null)
     {
+        // ISSUE-144: optional so existing test constructions keep compiling. Absent = no audit row, which
+        // is the pre-fix behaviour — a missing audit sink must not block an employee recording progress.
+        _auditLogger = auditLogger;
         _dbContext = dbContext;
         _tenantContext = tenantContext;
         _currentUser = currentUser;
@@ -164,6 +171,17 @@ public sealed class GoalProgressService : IGoalProgressService
         }
 
         _dbContext.GoalProgressUpdates.Add(update);
+
+        // ISSUE-144: a central audit_logs row for the progress WRITE. Staged on the same DbContext so it
+        // commits atomically with the update — an update that rolls back must not leave an orphan audit row
+        // claiming it happened. Mirrors ISSUE-149a's shape on the recommendation surface.
+        _auditLogger?.Log(
+            PayrollAuditAction.GoalProgressUpdated,
+            PayrollAuditAction.ResourceType.Goal,
+            goal.Id.ToString(),
+            before: null,
+            after: new { goalId = goal.Id, progressUpdateId = update.Id, progressPct = update.ProgressPct, status = update.Status.ToString() });
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -372,6 +390,17 @@ public sealed class GoalProgressService : IGoalProgressService
             IsDeleted = false,
         };
         _dbContext.GoalComments.Add(comment);
+
+        // ISSUE-144: comments are free text copied into history, so the write is audit-relevant. The BODY
+        // is deliberately NOT in the payload — it is already sanitized on write and duplicating user text
+        // into audit_logs widens the XSS surface this finding's other half just closed.
+        _auditLogger?.Log(
+            PayrollAuditAction.GoalCommentAdded,
+            PayrollAuditAction.ResourceType.Goal,
+            goal.Id.ToString(),
+            before: null,
+            after: new { goalId = goal.Id, commentId = comment.Id, progressUpdateId = comment.ProgressUpdateId, bodyLength = body?.Length ?? 0 });
+
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
