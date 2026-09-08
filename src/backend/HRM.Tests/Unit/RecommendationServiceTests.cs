@@ -76,6 +76,22 @@ public sealed class RecommendationServiceTests
             _integration, Auditor(db, user),
             Substitute.For<ILogger<RecommendationService>>());
 
+    /// <summary>ISSUE-150: same service, with a payroll seam returning <paramref name="ctc"/> per employee.</summary>
+    private RecommendationService ServiceWithComp(ICurrentUser user, AppDbContext db, IReadOnlyDictionary<Guid, decimal> ctc)
+    {
+        var salary = Substitute.For<ISalaryAssignmentService>();
+        salary.GetCurrentAnnualCtcAsync(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+              .Returns(call =>
+              {
+                  var asked = (IReadOnlyCollection<Guid>)call[0];
+                  return Task.FromResult<IReadOnlyDictionary<Guid, decimal>>(
+                      ctc.Where(kv => asked.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value));
+              });
+        return new(db, _tenantContext, user,
+            new GanssHtmlSanitizer(), _integration, Auditor(db, user),
+            Substitute.For<ILogger<RecommendationService>>(), salary);
+    }
+
     // Real audit writer over the SAME (name-shared InMemory) store so BUG-083 read-audit rows actually persist.
     private IPayrollAuditLogger Auditor(AppDbContext db, ICurrentUser user)
         => new HRM.Infrastructure.Services.PayrollAuditLogger(
@@ -652,6 +668,59 @@ public sealed class RecommendationServiceTests
         var ids = ws.Value!.Rows.Select(r => r.EmployeeId).ToList();
         ids.Should().Contain(new[] { _topPerformerId, _midPerformerId, _lowPerformerId });
         ids.Should().NotContain(_otherTeamEmpId); // not a direct report.
+    }
+
+    // ── ISSUE-150: the FR-5 "current" side. LIVE in the workspace, SNAPSHOT on the row ──
+
+    [Fact]
+    public async Task Workspace_shows_the_LIVE_current_compensation_from_payroll_ISSUE150()
+    {
+        await SeedAsync();
+        using var db = Db();
+        var svc = ServiceWithComp(HrUser(), db, new Dictionary<Guid, decimal>
+        {
+            [_topPerformerId] = 1_200_000m,
+            [_midPerformerId] = 900_000m,
+            // _lowPerformerId deliberately absent — an employee with NO active salary assignment.
+        });
+
+        var ws = await svc.GetWorkspaceAsync(new RecommendationWorkspaceQueryInput(_cycleId, 1, 100));
+
+        ws.IsSuccess.Should().BeTrue();
+        var rows = ws.Value!.Rows.ToDictionary(r => r.EmployeeId);
+        rows[_topPerformerId].CurrentCompensation.Should().Be(1_200_000m);
+        rows[_midPerformerId].CurrentCompensation.Should().Be(900_000m);
+        rows[_lowPerformerId].CurrentCompensation.Should().BeNull(
+            "an unassigned employee has no compensation — that must stay null, not render as 0");
+    }
+
+    [Fact]
+    public async Task Workspace_degrades_to_null_when_the_payroll_seam_is_absent_ISSUE150()
+    {
+        await SeedAsync();
+        // The seam is optional by construction. A missing payroll dependency must not 500 the whole screen.
+        var ws = await Service(HrUser()).GetWorkspaceAsync(new RecommendationWorkspaceQueryInput(_cycleId, 1, 100));
+
+        ws.IsSuccess.Should().BeTrue();
+        ws.Value!.Rows.Should().OnlyContain(r => r.CurrentCompensation == null);
+    }
+
+    [Fact]
+    public async Task Saving_a_recommendation_PERSISTS_the_compensation_snapshot_ISSUE150()
+    {
+        await SeedAsync();
+        using var db = Db();
+        var svc = ServiceWithComp(HrUser(), db, new Dictionary<Guid, decimal> { [_topPerformerId] = 1_200_000m });
+
+        var saved = await svc.SaveAsync(new SaveRecommendationInput(
+            _topPerformerId, _cycleId, RecommendationType.Bonus, Details(bonusAmount: 5000m), null, null));
+
+        saved.IsSuccess.Should().BeTrue();
+
+        // The SNAPSHOT is what the approver must see months later — the value the proposer actually saw.
+        var stored = db.Recommendations.Single(r => r.EmployeeId == _topPerformerId);
+        stored.CurrentCompensation.Should().Be(1_200_000m,
+            "the row must record the comp AT THE TIME it was written, independently of the live figure");
     }
 
     [Fact]

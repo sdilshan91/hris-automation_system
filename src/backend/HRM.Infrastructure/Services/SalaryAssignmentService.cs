@@ -145,6 +145,46 @@ public sealed class SalaryAssignmentService : ISalaryAssignmentService
         });
     }
 
+    /// <summary>
+    /// ISSUE-150: batched current annual CTC. Mirrors GetCurrentCompensationAsync's definition of
+    /// "current" (validity window contains today) and of CTC (sum of EARNING components' annual amounts),
+    /// but resolves many employees in one round trip and omits — rather than fails — employees with no
+    /// active assignment.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, decimal>> GetCurrentAnnualCtcAsync(
+        IReadOnlyCollection<Guid> employeeIds, CancellationToken cancellationToken = default)
+    {
+        if (!_tenantContext.IsResolved || employeeIds.Count == 0)
+            return new Dictionary<Guid, decimal>();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var ids = employeeIds.Distinct().ToList();
+
+        var rows = await _dbContext.EmployeeSalaryComponents.AsNoTracking()
+            .Where(r => ids.Contains(r.EmployeeId)
+                        && r.EffectiveFrom <= today
+                        && (r.EffectiveTo == null || r.EffectiveTo >= today))
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+            return new Dictionary<Guid, decimal>();
+
+        var componentIds = rows.Select(r => r.SalaryComponentId).Distinct().ToList();
+        var components = await _dbContext.SalaryComponents.AsNoTracking()
+            .Where(c => componentIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, cancellationToken);
+
+        // Same rule as the single-employee path: CTC is the sum of EARNING components only. Deductions
+        // must not net off, or a heavily-deducted employee would look cheaper than they are.
+        return rows
+            .GroupBy(r => r.EmployeeId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => ToLineDto(r, components))
+                      .Where(l => l.ComponentType == SalaryComponentType.Earning.ToString())
+                      .Sum(l => l.AnnualAmount));
+    }
+
     public async Task<Result<EmployeeCompensationDto>> GetCurrentCompensationAsync(Guid employeeId, CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)

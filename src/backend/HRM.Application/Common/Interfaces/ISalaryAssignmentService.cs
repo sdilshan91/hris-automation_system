@@ -55,6 +55,17 @@ public interface ISalaryAssignmentService
     /// <summary>Gets an employee's CURRENT compensation snapshot (FR-4 read side).</summary>
     Task<Result<EmployeeCompensationDto>> GetCurrentCompensationAsync(Guid employeeId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// ISSUE-150: current ANNUAL CTC for many employees in ONE round trip, keyed by employee id.
+    /// Employees with no active assignment are simply absent from the dictionary — that is a real state
+    /// (unassigned staff), not an error, so it must not fail the caller the way the single-employee
+    /// overload's <c>no_active_assignment</c> 404 does.
+    /// Batched deliberately: the recommendation workspace pages up to 200 employees, and calling the
+    /// per-employee overload once per row would be a 200-query N+1 on a screen HR actually waits on.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, decimal>> GetCurrentAnnualCtcAsync(
+        IReadOnlyCollection<Guid> employeeIds, CancellationToken cancellationToken = default);
+
     /// <summary>Gets an employee's salary-revision history, newest first (FR-4/BR-3).</summary>
     Task<Result<IReadOnlyList<SalaryRevisionDto>>> GetRevisionHistoryAsync(Guid employeeId, CancellationToken cancellationToken = default);
 }
