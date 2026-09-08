@@ -62,4 +62,3 @@
 - [Masking a field means masking its derivations](reference-mask-derived-fields.md) — BUG-533: BudgetCharge is `BonusAmount ?? IncrementAmount`, so nulling the five comp fields alone left the figure exposed
 - [Upload content sniffer (FileSignatureValidator)](reference-upload-content-sniffer.md) — fail-closed on unmapped types (why adoption stalls); adding a key is additive; image/jpg alias; payroll adjustment is the only path with no virus scan
 - [Overtime defaultMultiplier reachability (BUG-456)](reference-overtime-default-multiplier.md) — the "legacy empty-buckets" path is UNREACHABLE; seed Multiplier<=0 instead; ARCH-004 KnownInert goes red when you fix an entry
-- [Sign-off auto-close window (ENH-012)](reference-signoff-autoclose-window.md) — API-rejects 0 but the ops override accepts it; override BEATS per-cycle (else dead code); two-direction window tests
