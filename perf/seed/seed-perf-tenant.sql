@@ -6,11 +6,22 @@
 --
 -- Run (1k):  psql ... -v perf_tid="'11111111-2222-3333-4444-555555555555'" -v emp_count=1000 -f seed-perf-tenant.sql
 -- Run (5k):  psql ... -v perf_tid="'11111111-2222-3333-4444-555555555555'" -v emp_count=5000 -f seed-perf-tenant.sql
+-- Optional:  add -v user_pool=N to size the ISSUE-534 login pool (default 30, see below).
 --
 -- Login after seed:  POST /api/v1/auth/login  { "email":"perfadmin@perf.test", "password":"Admin@123!" }
 --                    header X-Tenant-Subdomain: perf   (password "Admin@123!": copied from tenantadmin@acme.test
 --                    when acme exists, else a freshly-derived bcrypt of the same password — DF-53)
 \set ON_ERROR_STOP on
+
+-- ISSUE-534: how many perfuserNNN@perf.test logins to create alongside perfadmin. The GLOBAL rate limiter
+-- (Program.cs) is 300 req/min per (tenantId, userId), so a load test that authenticates as ONE user is
+-- capped at 300 req/min and every excess request comes back 429 in ~2ms -- which drags p95 DOWN and makes a
+-- throttled run LOOK like a fast one. The k6 scripts spread their VUs across this pool so the partition key
+-- actually varies. Default 30; see perf/scripts/lib.js for the arithmetic that picks it.
+\if :{?user_pool}
+\else
+\set user_pool 30
+\endif
 
 -- DF-53: crypt()/gen_salt() (the fallback admin hash below) need pgcrypto. Idempotent; the perf seed runs as
 -- an admin/ops user on a throwaway or dev DB.
@@ -26,7 +37,10 @@ DELETE FROM role_permissions rp USING roles r WHERE rp.role_id = r.id AND r.tena
 DELETE FROM user_tenant_roles utr USING user_tenants ut WHERE utr.user_tenant_id = ut.id AND ut.tenant_id = :perf_tid;
 DELETE FROM user_tenants WHERE tenant_id = :perf_tid;
 DELETE FROM roles        WHERE tenant_id = :perf_tid;
-DELETE FROM users        WHERE email = 'perfadmin@perf.test' AND tenant_id = :perf_tid;
+-- ISSUE-534: the perfuserNNN pool shares this tenant_id, so it must go too or `DELETE FROM tenants`
+-- below fails on users.tenant_id. user_tenants + refresh_tokens cascade off users (UserConfiguration).
+DELETE FROM users        WHERE tenant_id = :perf_tid
+                           AND (email = 'perfadmin@perf.test' OR email LIKE 'perfuser%@perf.test');
 DELETE FROM tenants      WHERE id = :perf_tid;
 
 -- ---- tenant ---- (all NOT-NULL/no-DB-default cols supplied explicitly; EF defaults are app-side only)
@@ -99,6 +113,28 @@ SELECT p.admin_ut_id, rm.new_id, now()
 FROM perf_ids p, perf_role_map rm
 WHERE rm.name = 'Tenant Admin';
 
+-- ---- ISSUE-534: login pool (perfuser001..:user_pool), all Tenant Admin ----
+-- Same password as perfadmin ("Admin@123!"): the hash is COPIED from the row just inserted above rather
+-- than re-derived, so it costs nothing and cannot drift from perfadmin's credential.
+INSERT INTO users (id, email, display_name, password_hash, is_active, failed_login_count,
+                   password_changed_at, mfa_enabled, created_at, tenant_id, lockout_count, mfa_failed_attempt_count)
+SELECT gen_random_uuid(), 'perfuser' || lpad(g::text, 3, '0') || '@perf.test', 'Perf User ' || g,
+       (SELECT u.password_hash FROM users u WHERE u.email = 'perfadmin@perf.test' AND u.tenant_id = :perf_tid),
+       true, 0, now(), false, now(), :perf_tid, 0, 0
+FROM generate_series(1, :user_pool) g;
+
+INSERT INTO user_tenants (id, user_id, tenant_id, status, created_at)
+SELECT gen_random_uuid(), u.id, :perf_tid, 'Active', now()
+FROM users u
+WHERE u.tenant_id = :perf_tid AND u.email LIKE 'perfuser%@perf.test';
+
+INSERT INTO user_tenant_roles (user_tenant_id, role_id, assigned_at)
+SELECT ut.id, rm.new_id, now()
+FROM user_tenants ut
+JOIN users u ON u.id = ut.user_id
+JOIN perf_role_map rm ON rm.name = 'Tenant Admin'
+WHERE ut.tenant_id = :perf_tid AND u.email LIKE 'perfuser%@perf.test';
+
 -- ---- employees (:emp_count) round-robin across depts + titles ----
 WITH d AS (SELECT array_agg(id ORDER BY code) AS ids FROM departments WHERE tenant_id = :perf_tid),
      j AS (SELECT array_agg(id ORDER BY title_name) AS ids FROM job_titles WHERE tenant_id = :perf_tid)
@@ -121,4 +157,5 @@ UNION ALL SELECT 'employees', count(*)::text FROM employees   WHERE tenant_id = 
 UNION ALL SELECT 'departments', count(*)::text FROM departments WHERE tenant_id = :perf_tid
 UNION ALL SELECT 'job_titles',  count(*)::text FROM job_titles  WHERE tenant_id = :perf_tid
 UNION ALL SELECT 'roles',       count(*)::text FROM roles       WHERE tenant_id = :perf_tid
-UNION ALL SELECT 'perf_admin',  count(*)::text FROM users WHERE email='perfadmin@perf.test';
+UNION ALL SELECT 'perf_admin',  count(*)::text FROM users WHERE email='perfadmin@perf.test'
+UNION ALL SELECT 'perf_pool',   count(*)::text FROM users WHERE tenant_id = :perf_tid AND email LIKE 'perfuser%@perf.test';
