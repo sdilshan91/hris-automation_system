@@ -103,6 +103,17 @@
 > RESOLVED but the body documented a live residual, the **live** reading won.
 
 ### ISSUE-321 — Employee profile has NO backend for the Education / Work-History / Dependents sections (FE-only forms, can never persist)
+**▶ LIVE VERIFICATION 2026-09-08 — VERIFIED FIXED. The `/verify-fix` debt is discharged.**
+Education, Work History and Dependents all persist. `GET /tenant/employees/{id}/profile` returns
+`education`, `workHistory` and `dependents` keys, and the tables `employee_education`,
+`employee_work_history`, `employee_dependents` all exist.
+⚠ **A methodological note worth keeping, because it nearly produced a false finding.** My first probe hit
+`/employees/{id}/education`, `/work-history`, `/dependents` — all **404**, which reads as "still broken".
+They are **empty-body route 404s**: those paths were never the design, the sections live on the profile
+endpoint. The `ENH-011` scorecard probe minutes earlier returned a *domain* 404 with a JSON error code,
+and that contrast is the only thing that distinguished "no such route" from "no such feature". **An
+empty-body 404 is evidence about your URL, not about the system.**
+
 - **Type / Severity / Status:** ISSUE · MED · OPEN
 - **Layer:** BE (absent) + FE
 - **Module / US / TC:** Core HR / US-CHR-002 / (new TCs needed)
@@ -521,6 +532,15 @@ operator/tester, not an end user — `US-LV-002.md:89`'s own test hint describes
 
 
 ### ISSUE-534 — the perf scripts that would validate NFR-1 drive above a rate limiter, so a green p95 can be measuring the limiter
+**▶ CORRECTED BLOCKER 2026-09-08 — the re-measurement cannot run on this machine.**
+**k6 is not installed** (`which k6` → nothing), so the NFR-1 re-measurement this finding calls for
+cannot be executed here regardless of the container state. That is a *different* blocker from the stale
+image, and recording it stops the next session repeating the rebuild expecting a perf number.
+⚠ **Second, independent problem: the perf tenant holds 1,000 employees, not the 5,000 the fixture and
+NFR-1 assume.** `perf/seed/perf-volume-seed.sql` has not been applied to this database. So even with k6
+installed, a run today would measure a tenant one-fifth the intended size and report a flattering
+number — the same class of false-green this very finding is about.
+
 
 - **Type / Severity / Status:** ISSUE · **HIGH** · OPEN
 - **Layer:** TEST / perf
@@ -1180,6 +1200,19 @@ at all, so following the TCs would have produced a broken client. Five TCs corre
 > Routes: `/api/v1/tenant/performance/360/*` — reviewer config (`GET .../reviewers`), add/remove reviewer, `notify`, `submit feedback`, `results`, `report`. Config/results/report/notify/remove are **HR-only** (`Performance.Review.All`); **submit** is open to any authenticated user but self-resolves the reviewer from the caller + requires a Pending assignment (so all four categories self-submit, no IDOR). BR-2 (no self-as-peer), BR-3 (one feedback per reviewer/reviewee/cycle, 409 `already_submitted`), FR-4 rating-range (422), FR-6 composite via `ThreeSixtyScoreCalculator` (normalizes by weight of categories WITH data), BR-4 peer-threshold = **warn not block** (`releaseWarning`), anonymity captured per-row at submit (BR-5) + enforced in the projection (NFR-3 → `reviewerEmployeeId`/`reviewerName` null). Reminder job `performance-360-reviewer-reminders` IS DI-registered + tenant-iterates (unlike the US-PRF-004 cycle scheduler, BUG-063). Personas: `hr@acme.test`/`tenantadmin@acme.test` (Review.All); reviewers submitted AS `employee@acme.test` (John, Peer) + `manager@acme.test` (EMP-MGR01, Manager); reviewee = Et Contract (EMP-0014, no user). 18 TCs executed: **13 PASS / 4 FAIL / 1 BLOCKED-pair (= 2 BLOCKED)** → **13 PASS / 4 FAIL / 2 BLOCKED... wait** correction below. Actual: **12 PASS / 4 FAIL / 2 BLOCKED**. NEW finding: ISSUE-118. Extends: BUG-003.
 
 ### ENH-011 · ENH · BE — Scorecard lock-period (BR-4) is not testable/observable at the API layer; no `GET /scorecards/{id}`; no version history
+**▶ CORRECTED BLOCKER 2026-09-08 — the container rebuild did NOT unblock the three TCs.**
+I predicted it would; it did not, and the reason matters. **There are ZERO interviews and ZERO
+scorecards in EVERY tenant** (`e2e`, `perf`, `platform`, `techoneglobal` — all 0). TC-REC-006-05,
+TC-REC-006-08 step 4 and TC-REC-ISO-015 all require a live scorecard workflow (vacancy → applicant →
+interview → 2 interviewers → scorecards). The blocker is **missing seed data, not a stale image**.
+**What the rebuild DID achieve — this closure now rests on live evidence, not code-reading:**
+- `GET /scorecards/{id}` **exists** — returns `scorecard_not_found` (a *domain* 404 with an error code),
+  not an empty-body route 404. The distinction is load-bearing; see the `ISSUE-321` note.
+- **Version history shipped** — `interview_scorecard_revision` exists with 15 columns.
+- **Lock period modelled** — `interview_scorecard.locked_at` exists.
+All three of this finding's sub-claims are therefore confirmed false against the running system, as well
+as against `src/`. Only the QA bookkeeping remains, and it needs a recruitment seed fixture.
+
 **▶ DISPOSITION 2026-09-08 (T4).** **Code CLOSED — already done. QA residual outstanding.**
 Verified line by line against current `src/`: all three sub-claims are false, shipped by `c2cc333b` (#465). The
 queue recorded this as "~80% stale"; it is **100%**.
@@ -1201,6 +1234,25 @@ without a run would cross the report-only boundary.
 - **Suggested direction:** expose a configurable lock-lead override (test hook) or a recruiter `GET /scorecards/{id}` read to make BR-4 verifiable; consider the deferred version-history for the edit trail. Not a defect — the lock logic itself is code-correct (`if (DateTime.UtcNow >= existing.LockedAt) → 409 scorecard_locked`, `ScorecardService.cs:115-117`).
 
 ### BUG-003 NOTE (systemic, already filed — NOT re-filed) — scorecard read/write surface inherits the cross-tenant root, is NOT self-protected
+**▶ LIVE VERIFICATION 2026-09-08 — the parked `/verify-fix` is now SATISFIED.**
+Parked since 2026-09-02 solely because the dev stack served a stale image. Stack rebuilt
+(`scripts/rebuild-stack.sh`, backend image 5 days → 3 minutes old) and the cross-tenant arms re-run
+against it. **Control first** — an `e2e` token with its OWN subdomain returns **200** on
+`/tenant/employees` and `/tenant/departments`, so the guard is not simply rejecting everything:
+
+| arm | result |
+|---|---|
+| `e2e` token + `techoneglobal` → `/tenant/settings` | **403 `cross_tenant_denied`** |
+| → `/tenant/employees` | **403** |
+| → `/tenant/departments` | **403** |
+| → `/tenant/data-exports` (the finding's "maximum blast radius") | **403** |
+| **PUT** `/tenant/settings/org-profile` — the WRITE arm this finding is *about* | **403** |
+
+⚠ **The reproduction steps in this entry can no longer be followed as written.** They use tenant
+`acme`, which **does not exist** in the dev database — the tenants are `platform`, `e2e`,
+`techoneglobal`, `perf`. The probes above substitute `e2e` as the actor. A CRIT whose documented repro
+references a deleted tenant is itself a defect; recorded here rather than silently re-written.
+
 - **Type / Severity / Status:** BUG · — · OPEN
 - **Module / US / TC:** Recruitment / US-REC-006 / TC-REC-ISO-015 (AC-4, NFR-2). Root locus: US-AUTH-007 / `TenantResolutionMiddleware`.
 - **Finding:** The scorecard endpoints resolve the tenant from the spoofable `X-Tenant-Subdomain` header (dev) / subdomain, and the EF global query filter trusts `ITenantContext.TenantId`; there is NO check that the JWT's tenant matches the resolved tenant. Confirmed LIVE today: acme `hr@acme.test` JWT + header `X-Tenant-Subdomain: techoneglobal` → `GET /api/v1/recruitment/interviews` returned **HTTP 200** executed against techoneglobal's context (0 rows — techoneglobal has no interviews, but the request was ACCEPTED and re-scoped, not rejected). Platform/system `admin@hrm.local` JWT + `X-Tenant-Subdomain: acme` read acme's scorecards in full (privileged super-user). The scorecard surface therefore does NOT independently protect against BUG-003 — it relies entirely on the shared (broken) root.
@@ -1360,6 +1412,20 @@ read this block first.
 - **Severity rationale:** Each token is still tenant+email+expiry-bound and expires on its own; no privilege/cross-tenant impact. Spec drift + slightly larger token-revocation surface only. LOW.
 
 ### ISSUE-132 — Magic-link feature is operationally unreachable end-to-end: the only live token-minting path never emits the raw token; the FR-7 "email" seam (`GeneratePortalLinkCommand`) has no live caller
+**▶ DEFERRAL CONDITION MET 2026-09-08 — ready for `/verify-fix`, no longer blocked.**
+This was DEFERRED on US-NTF-006 delivery: "the token/security logic is correct; the only gap is
+*delivery*". That gap is closed. `RealRecruitmentNotificationService` is the wired implementation
+(`DependencyInjection.cs:378`) and now **builds the raw link itself** —
+`PortalLinkBuilder.Build(subdomain, baseDomain, issued.Value.Token)` at `:515` — dispatched as
+`applicant_portal_link`, with an explicit failure path logged at `ApplicantPortalTokenService.cs:202`
+("Portal link minted for {Email} but the magic-link email dispatch failed (FR-7)").
+Live: `POST /api/v1/careers/portal/request-link` returns **200** with the correct
+non-enumerating body ("If an application exists for this email, a new portal link has been sent.").
+⚠ **One of this entry's claims is now stale:** it states `GeneratePortalLinkCommand` has "zero live
+callers". That command **no longer exists at all** — `grep` returns no file, not even its own
+definition. The live path is `RequestPortalLinkCommand` → `ApplicantPortalTokenService` →
+`RealRecruitmentNotificationService`.
+
 - **Type / Severity / Status:** ISSUE · MED · DEFERRED
 - **Type:** ISSUE · **Severity:** MED · **Status:** DEFERRED (blocked on US-NTF-006 delivery — see DF-13) · **Layer:** BE
 - **Module / US / TC:** Recruitment / US-REC-008 / TC-REC-008-01/06 (FR-1/FR-7/FR-8 — applicant must RECEIVE a working link)
@@ -3363,6 +3429,18 @@ design: no DB, no container, so it cannot become the slow flaky test people lear
 - **Suggested direction (NOT applied):** none — report only.
 
 ### ISSUE-422 — INFRA: the running dev stack serves a container image built 2026-08-11, ~12 days behind `main` — live-API test verdicts taken on this stack can be false in either direction
+**▶ RECURRED, and re-closed with a durable fix 2026-09-08.**
+This was marked *"RESOLVED (2026-09-02, stack rebuilt)"*. **It recurred within six days**: on 2026-09-08
+the `hris-backend` image was built 2026-09-02 and ran **~98 commits stale**, so every live-API verdict
+taken in between was against code that no longer existed.
+**It recurred because the 2026-09-02 fix was a one-off command nobody had to run again, and which had no
+way to prove it worked.** The durable replacement is `scripts/rebuild-stack.sh`, which (1) refuses to
+build while a test host is running — an image build alongside Testcontainers SIGKILLed a suite on
+2026-09-07; (2) **FAILS if the image timestamp did not move**, because a cached no-op build reports
+success and changes nothing, which is precisely this finding's failure mode; and (3) waits for `/health`
+before claiming the stack is up.
+Rebuilt and verified 2026-09-08: backend image 5 days → 3 minutes, container healthy, API answering.
+
 - **Type / Severity / Status:** ISSUE · MED · RESOLVED (2026-09-02, stack rebuilt)
 - **Resolution (2026-09-02):** `docker compose build backend frontend && docker compose up -d` from `3129454c`. Container `hris-backend-1` now created **2026-09-01T21:43:31Z** (was 2026-08-11T13:31:11Z). `/health` 200. **Decisive proof the staleness was real:** the 360-release route that shipped 2026-08-17 (`d87b9e8b`, PR #510) now returns **401** (auth required) and appears in `swagger.json` as `/api/v1/tenant/performance/360/cycles/{cycleId}/employees/{employeeId}/release` — on the old image it would have 404'd, which would have recorded a FALSE FAIL for TC-PRF-005-05 and turned ISSUE-377 back into a phantom live defect. **Unblocks G10 and BUG-003's `--iso` close-out.**
 - **Layer:** INFRA
