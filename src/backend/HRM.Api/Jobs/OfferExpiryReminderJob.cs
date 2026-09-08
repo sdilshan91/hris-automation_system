@@ -67,10 +67,8 @@ public sealed class OfferExpiryReminderJob
             return;
         }
 
-        // Claim the reminder BEFORE dispatch (unchanged order) — see the ISSUE-116 note in InterviewReminderJob.
-        offer.ExpiryReminderJobId = null;
-        await dbContext.SaveChangesAsync();
-
+        // ISSUE-571: the marker is cleared only AFTER a confirmed-successful dispatch, further down — see the
+        // matching note in InterviewReminderJob. Clearing it here would make BUG-530's retry inert.
         var applicantEmail = await dbContext.Applicants
             .AsNoTracking()
             .Where(a => a.Id == offer.ApplicantId)
@@ -92,6 +90,12 @@ public sealed class OfferExpiryReminderJob
             throw new InvalidOperationException(
                 $"Offer expiry-reminder dispatch failed for offer {offer.Id} (tenant {tenantId}): {dispatch.Error}");
         }
+
+        // ISSUE-571: clear ONLY now that the dispatch is confirmed delivered, so a failed dispatch leaves the
+        // marker intact and the Hangfire retry above genuinely re-sends. Residual window: a process death
+        // between dispatch and this save yields ONE duplicate — far narrower than losing the reminder silently.
+        offer.ExpiryReminderJobId = null;
+        await dbContext.SaveChangesAsync();
 
         Log.Information(
             "OfferExpiryReminderJob: reminder sent for offer {OfferId} (tenant {TenantId})", offer.Id, tenantId);

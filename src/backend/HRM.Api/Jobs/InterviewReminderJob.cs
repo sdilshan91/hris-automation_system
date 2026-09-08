@@ -72,18 +72,11 @@ public sealed class InterviewReminderJob
         // (which commit their state change before notifying).
         //
         // Why not clear AFTER dispatch: the job cannot observe whether dispatch succeeded.
-        // RealRecruitmentNotificationService.DispatchInterviewAsync wraps its whole body in
-        // `catch (Exception) { LogFailure(...); }`, so NotifyInterviewReminderAsync returns an identical
-        // completed Task whether every email was delivered or every one failed. "Clear only on success" is
-        // therefore not expressible here. Clearing after the await would NOT save a failed reminder (the
-        // failure is already swallowed) but WOULD add a duplicate-send path: if SaveChanges then fails,
-        // Hangfire retries and re-dispatches an already-delivered reminder — the exact NFR-4 violation this
-        // guard exists to prevent.
-        //
-        // Residual risk, stated plainly: a reminder whose dispatch fails internally is LOST, and no ordering
-        // in this job can fix that — it needs a success signal from the seam (or an outbox). See ISSUE-116.
-        interview.ReminderJobId = null;
-        await dbContext.SaveChangesAsync();
+        // ISSUE-571: the marker is cleared only AFTER a confirmed-successful dispatch, further down.
+        // The earlier version cleared it here, before dispatching, because the seam swallowed every failure
+        // and returned an identical completed Task either way — "clear only on success" was genuinely not
+        // expressible. BUG-530 removed that constraint by making the seam return a Result, so the premise
+        // that forced clear-first no longer holds.
 
         var applicantEmail = await dbContext.Applicants
             .AsNoTracking()
@@ -109,6 +102,16 @@ public sealed class InterviewReminderJob
             throw new InvalidOperationException(
                 $"Interview reminder dispatch failed for interview {interview.Id} (tenant {tenantId}): {dispatch.Error}");
         }
+
+        // ISSUE-571: clear the marker ONLY now that the dispatch is confirmed delivered. A failed dispatch
+        // leaves it intact, so the Hangfire retry passes the guard above and genuinely re-sends — which is
+        // what BUG-530's throw exists to trigger and could not do while the marker was cleared first.
+        // Residual window, stated plainly: a process death between this dispatch and this SaveChanges leaves
+        // the marker set, so the retry re-sends and the candidate gets ONE duplicate. That is a far narrower
+        // and less harmful failure than the previous behaviour, where any dispatch failure lost the reminder
+        // permanently and silently. Only an outbox removes it entirely (BUG-530).
+        interview.ReminderJobId = null;
+        await dbContext.SaveChangesAsync();
 
         Log.Information(
             "InterviewReminderJob: sent reminder for interview {InterviewId} (tenant {TenantId}) to applicant + {Count} interviewer(s)",
