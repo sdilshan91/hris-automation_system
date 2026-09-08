@@ -40,6 +40,17 @@ public interface IWorkflowRuntime
     /// side-effect callback runs inside the same retry-safe transaction (AC-12/NFR-4) so exactly one caller
     /// wins and the domain side-effect commits atomically with the workflow state.
     /// </summary>
+    /// <param name="expectedStepOrder">
+    /// BUG-572: the step order the caller believes it is deciding. When supplied and it no longer matches the
+    /// instance's current step, the decision is rejected with 409 <c>step_already_decided</c> instead of being
+    /// applied to whatever step happens to be active now.
+    /// <para>Why it exists: a decision request otherwise carries no idempotency at all, so a double-click is
+    /// two independent, individually-valid requests. Where the same approver is configured on CONSECUTIVE
+    /// steps — which nothing forbids, and which role-based steps make likely — the second request legitimately
+    /// sees step N+1, legitimately passes the approver check, and approves it. One double-click clears TWO
+    /// approval levels. This is not a staleness bug: the second caller reads genuinely current state.</para>
+    /// <para>Optional so existing callers are unaffected; a caller that omits it keeps the previous behaviour.</para>
+    /// </param>
     Task<Result<WorkflowDecisionResult>> DecideAsync(
         WorkflowEntityType entityType,
         Guid entityId,
@@ -47,6 +58,7 @@ public interface IWorkflowRuntime
         string? comment,
         Func<CancellationToken, Task<Result>>? onApproved = null,
         Func<CancellationToken, Task>? onRejected = null,
+        int? expectedStepOrder = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

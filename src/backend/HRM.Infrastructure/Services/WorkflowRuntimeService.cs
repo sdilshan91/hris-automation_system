@@ -171,6 +171,7 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
         string? comment,
         Func<CancellationToken, Task<Result>>? onApproved = null,
         Func<CancellationToken, Task>? onRejected = null,
+        int? expectedStepOrder = null,
         CancellationToken cancellationToken = default)
     {
         if (!_tenantContext.IsResolved)
@@ -182,7 +183,7 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
         Result<WorkflowDecisionResult> result;
         if (!_db.Database.IsRelational())
         {
-            result = await DecideCoreAsync(entityType, entityId, action, comment, onApproved, onRejected, rowLock: false, cancellationToken);
+            result = await DecideCoreAsync(entityType, entityId, action, comment, onApproved, onRejected, expectedStepOrder, rowLock: false, cancellationToken);
         }
         else
         {
@@ -190,7 +191,7 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
             result = await strategy.ExecuteAsync(async () =>
             {
                 await using var tx = await _db.Database.BeginTransactionAsync(cancellationToken);
-                var r = await DecideCoreAsync(entityType, entityId, action, comment, onApproved, onRejected, rowLock: true, cancellationToken);
+                var r = await DecideCoreAsync(entityType, entityId, action, comment, onApproved, onRejected, expectedStepOrder, rowLock: true, cancellationToken);
                 if (r.IsSuccess)
                     await tx.CommitAsync(cancellationToken);
                 else
@@ -217,6 +218,7 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
         string? comment,
         Func<CancellationToken, Task<Result>>? onApproved,
         Func<CancellationToken, Task>? onRejected,
+        int? expectedStepOrder,
         bool rowLock,
         CancellationToken cancellationToken)
     {
@@ -251,6 +253,16 @@ public sealed class WorkflowRuntimeService : IWorkflowRuntime
 
         if (group.Count == 0)
             return Result<WorkflowDecisionResult>.Failure("No active step for this instance.", 409, "workflow_no_active_step");
+
+        // BUG-572: the caller told us which step it believes it is deciding. If the instance has moved on, this
+        // request is a stale duplicate — reject it rather than applying it to whatever step is active NOW.
+        // Without this, a double-click where the SAME approver is configured on consecutive steps clears TWO
+        // approval levels: the second request sees step N+1, is genuinely its approver, and approves it. The
+        // group-scoped idempotency check below cannot catch that, because it only fires when THIS user already
+        // decided a row in THIS group — and on N+1 they have not.
+        if (expectedStepOrder is not null && expectedStepOrder != instance.CurrentStepOrder)
+            return Result<WorkflowDecisionResult>.Failure(
+                "This step has already been actioned.", 409, "step_already_decided");
 
         if (rowLock)
             foreach (var s in group)
