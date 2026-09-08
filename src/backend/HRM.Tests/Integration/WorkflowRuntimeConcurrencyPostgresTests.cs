@@ -122,6 +122,82 @@ public sealed class WorkflowRuntimeConcurrencyPostgresTests : IAsyncLifetime
     private WorkflowRuntimeService Runtime(AppDbContext db, ICurrentUser user) =>
         new(db, _tc, user, NullLogger<WorkflowRuntimeService>.Instance);
 
+    // ── BUG-572: the same approver on CONSECUTIVE steps — the configuration no fixture had ────
+
+    [Fact]
+    public async Task SameApproverOnConsecutiveSteps_CannotClearTwoLevels_WithIntendedStep_BUG572()
+    {
+        // Nothing forbids one approver owning two sequential gates (WorkflowStepRequestValidator has no
+        // cross-step uniqueness rule), and role-based steps make it likely rather than exotic. Every other
+        // fixture in this suite uses DISTINCT approvers per step, which is exactly why this went unseen.
+        var defId = BaseEntity.NewUuidV7();
+        var entityId = BaseEntity.NewUuidV7();
+
+        await using (var seed = Db(User(_approver1)))
+        {
+            // Only ONE active definition per (tenant, entityType) — ix_workflow_definitions_tenant_entitytype_active.
+            // Retire the fixture's before inserting this one, or the insert violates the unique index.
+            foreach (var d in seed.WorkflowDefinitions.Where(d => d.Id == _definitionId))
+                d.IsActive = false;
+            await seed.SaveChangesAsync();
+
+            seed.WorkflowDefinitions.Add(new WorkflowDefinition
+            {
+                Id = defId, TenantId = _tenantId, Name = "same-approver-both-steps",
+                EntityType = WorkflowEntityType.Leave, Status = WorkflowStatus.Active, IsActive = true,
+            });
+            seed.WorkflowSteps.AddRange(
+                new WorkflowStep
+                {
+                    Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, WorkflowDefinitionId = defId,
+                    StepOrder = 1, ApproverType = WorkflowApproverType.NamedUser, ApproverIdentifier = _approver1, SlaHours = 24,
+                },
+                new WorkflowStep
+                {
+                    Id = BaseEntity.NewUuidV7(), TenantId = _tenantId, WorkflowDefinitionId = defId,
+                    StepOrder = 2, ApproverType = WorkflowApproverType.NamedUser, ApproverIdentifier = _approver1, SlaHours = 24,
+                });
+            await seed.SaveChangesAsync();
+
+            var created = await Runtime(seed, User(_approver1))
+                .CreateInstanceOnSubmitAsync(WorkflowEntityType.Leave, entityId, null,
+                    new Dictionary<string, object?> { ["days_requested"] = 3m });
+            created.InstanceCreated.Should().BeTrue();
+        }
+
+        // First click: approve step 1, naming step 1. Advances the instance to step 2.
+        await using (var db1 = Db(User(_approver1)))
+        {
+            var first = await Runtime(db1, User(_approver1)).DecideAsync(
+                WorkflowEntityType.Leave, entityId, WorkflowDecisionAction.Approve, "ok",
+                expectedStepOrder: 1);
+            first.IsSuccess.Should().BeTrue();
+        }
+
+        // Second click: the SAME request replayed. It still names step 1, but the instance is on step 2.
+        // Without BUG-572's guard this approves step 2 — the caller genuinely IS its approver — and one
+        // double-click clears TWO approval levels.
+        await using (var db2 = Db(User(_approver1)))
+        {
+            var replay = await Runtime(db2, User(_approver1)).DecideAsync(
+                WorkflowEntityType.Leave, entityId, WorkflowDecisionAction.Approve, "ok",
+                expectedStepOrder: 1);
+
+            replay.IsFailure.Should().BeTrue("a replayed decision must not fall through onto the NEXT step");
+            replay.StatusCode.Should().Be(409);
+            replay.ErrorCode.Should().Be("step_already_decided");
+        }
+
+        // Step 2 must still be awaiting its own, separate decision.
+        await using var verify = Db(User(_approver1));
+        var instance = await verify.WorkflowInstances.AsNoTracking().FirstAsync(i => i.EntityId == entityId);
+        instance.CurrentStepOrder.Should().Be(2, "the instance must still be waiting at step 2");
+        var step2 = await verify.WorkflowStepInstances.AsNoTracking()
+            .Where(s => s.WorkflowInstanceId == instance.Id && s.StepOrder == 2).ToListAsync();
+        step2.Should().ContainSingle().Which.Decision.Should().Be(WorkflowStepDecision.Pending,
+            "step 2 must NOT have been decided by the replayed step-1 request");
+    }
+
     // ── AC-12: two concurrent approvals of the same step → exactly one wins ────
 
     [Fact]
